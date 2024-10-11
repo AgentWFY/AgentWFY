@@ -28,4 +28,17 @@
 
 import './index.css';
 
-console.log('👋 This message is being logged by "renderer.ts", included via Vite');
+async function getDir() {
+  const paths = await window.electronDialog.open({ properties: ['openDirectory'] });
+  return paths[0];
+}
+
+document.getElementById('openDir').addEventListener('click', async () => {
+  const path = await getDir();
+  window.electronStore.setItem('dataDir', path);
+  window.close()
+});
+
+document.getElementById('cancel').addEventListener('click', async () => {
+  window.close()
+});

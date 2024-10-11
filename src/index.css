@@ -4,4 +4,6 @@ body {
   margin: auto;
   max-width: 38rem;
   padding: 2rem;
+  display: grid;
+  grid-gap: 10px;
 }

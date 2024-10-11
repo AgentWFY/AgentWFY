@@ -9,7 +9,10 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "clone-client": "./clone-client.sh",
+    "clone-server": "./clone-server.sh",
+    "package-all": "npm run clone-server && npm run clone-client && npm run package"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.5.0",
@@ -28,7 +31,8 @@
     "eslint-plugin-import": "^2.25.0",
     "ts-node": "^10.0.0",
     "typescript": "~4.5.4",
-    "vite": "^5.0.12"
+    "vite": "^5.0.12",
+    "vite-plugin-static-copy": "^2.0.0"
   },
   "keywords": [],
   "author": {
@@ -37,6 +41,21 @@
   },
   "license": "MIT",
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "electron-is-dev": "^3.0.1",
+    "electron-log": "^5.2.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^10.0.0",
+
+    "@anthropic-ai/sdk": "^0.24.3",
+    "axios": "^0.21.0",
+    "cors": "^2.8.5",
+    "dayjs": "^1.9.6",
+    "express": "^4.17.1",
+    "node-cron": "^3.0.0",
+    "playwright": "^1.18.0",
+    "reflect-metadata": "^0.1.13",
+    "sqlite3": "^5.0.0",
+    "tradingview-ws": "0.0.2",
+    "typeorm": "^0.3.11"
   }
 }
