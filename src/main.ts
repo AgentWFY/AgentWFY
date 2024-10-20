@@ -32,6 +32,8 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
   }
 });
 
+const DEFAULT_DATA_DIR = app.getPath('userData')
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   stopServer();
@@ -65,7 +67,7 @@ async function createAppWindow(dataDir: string) {
 const createWindow = () => {
   const dataDir = store.get('dataDir');
   if (typeof dataDir === 'string') return createAppWindow(dataDir)
-  createVaultWindow(mainWindow);
+  createAppWindow(DEFAULT_DATA_DIR)
 }
 
 // This method will be called when Electron has finished
