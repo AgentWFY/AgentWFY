@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the target directory
-TARGET_DIR="tmp/client/dist"
+TARGET_DIR="dist/client/dist"
 
 # Remove the target directory if it exists
 if [ -d "$TARGET_DIR" ]; then

@@ -4,18 +4,16 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { startServer, stopServer } from './server';
-import electronIsDev from "electron-is-dev";
 import path from 'path';
-import started from "electron-squirrel-startup"
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
 
-let clientPath = ''
-if (electronIsDev) {
-  clientPath = path.join(__dirname, 'client', 'dist', 'index.html');
+let clientPath = '';
+if (process.env.CLIENT_DIR) {
+  clientPath = path.join(process.env.CLIENT_DIR, 'dist', 'index.html');
 } else {
-  clientPath = path.join(process.resourcesPath, 'app', '.webpack', 'main', 'client', 'dist', 'index.html');
+  clientPath = path.join(__dirname, 'client', 'dist', 'index.html');
 }
 
 const store = new ElectronStore();
@@ -34,11 +32,6 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
 
 const DEFAULT_DATA_DIR = app.getPath('userData')
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  stopServer();
-  app.quit();
-}
 async function createAppWindow(dataDir: string) {
   // Create the browser window.
   mainWindow = new BrowserWindow({

@@ -22,4 +22,7 @@ cd "$TARGET_DIR"
 npm install
 npm run build-prod
 
+[ ! -d ../../dist/server ] && mkdir ../../dist/server
+cp -r dist/* ../../dist/server
+
 echo "Server build completed."

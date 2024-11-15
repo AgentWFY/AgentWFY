@@ -1,7 +1,6 @@
 import { fork } from "child_process";
 import type { ChildProcess } from 'child_process';
 import path from "path";
-import electronIsDev from "electron-is-dev";
 import log from "electron-log";
 import axios from 'axios';
 
@@ -30,12 +29,7 @@ export async function startServer(dataDir: string) {
 
   return new Promise<void>((resolve) => {
 
-    let clientDir;
-    if (electronIsDev) {
-      clientDir = path.join(__dirname, 'client');
-    } else {
-      clientDir = path.join(process.resourcesPath, 'app', '.webpack', 'main', 'client');
-    }
+    let clientDir = process.env.CLIENT_DIR || path.join(__dirname, 'client');
 
     const envs = {
       ...process.env,
@@ -44,12 +38,7 @@ export async function startServer(dataDir: string) {
       CLIENT_DIR: clientDir
     }
 
-    let serverPath;
-    if (electronIsDev) {
-      serverPath = path.join(__dirname, 'server', 'index.js');
-    } else {
-      serverPath = path.join(process.resourcesPath, 'app', '.webpack', 'main', 'server', 'index.js');
-    }
+    let serverPath = process.env.SERVER_PATH || path.join(__dirname, 'server', 'index.js');
 
     serverProcess = fork(serverPath, [], { env: envs, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
 
