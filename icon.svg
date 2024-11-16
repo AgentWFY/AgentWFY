@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Background -->
+  <rect width="200" height="200" rx="40" fill="#2563eb"/>
+  
+  <!-- Main circular frame -->
+  <circle cx="100" cy="100" r="70" fill="none" stroke="white" stroke-width="24"/>
+  
+  <!-- Trading chart line -->
+  <path 
+    d="M15,140 L80,70 L120,110 L185,45" 
+    stroke="white" 
+    stroke-width="24" 
+    stroke-linecap="round" 
+    stroke-linejoin="round"
+    fill="none"
+  />
+</svg>

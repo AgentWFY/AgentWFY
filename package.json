@@ -3,7 +3,7 @@
   "productName": "tradinglog-app",
   "version": "1.0.0",
   "description": "My Electron application description",
-  "main": "./dist/main.js",
+  "main": "./main.js",
   "updateSite": "http://localhost:3000",
   "scripts": {
     "lint": "eslint --ext .ts,.tsx .",
@@ -13,8 +13,8 @@
     "copy-main-modules": "cp package*.json dist && cd dist && npm ci --production",
     "build-main": "tsc --build && npm run copy-main-modules",
     "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run clone-client",
-    "make": "conveyor make site",
-    "start": "electron ."
+    "make": "conveyor make app",
+    "start": "electron ./dist"
   },
   "devDependencies": {
     "@hydraulic/conveyor": "^15.1.0",
