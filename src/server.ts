@@ -29,13 +29,10 @@ export async function startServer(dataDir: string) {
 
   return new Promise<void>((resolve) => {
 
-    let clientDir = process.env.CLIENT_DIR || path.join(__dirname, 'client');
-
     const envs = {
       ...process.env,
       NODE_ENV: "production",
-      DATA_DIR: dataDir,
-      CLIENT_DIR: clientDir
+      DATA_DIR: dataDir
     }
 
     let serverPath = process.env.SERVER_PATH || path.join(__dirname, 'server', 'index.js');
