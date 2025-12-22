@@ -199,7 +199,7 @@ const createWindow = () => {
 }
 
 app.on('ready', () => {
-  const menu = Menu.buildFromTemplate([
+  const template: any[] = [
     {
       label: 'File',
       submenu: [
@@ -216,13 +216,76 @@ app.on('ready', () => {
         {
           label: 'Devtools',
           click: () => {
-            mainWindow.webContents.openDevTools();
+            mainWindow?.webContents.openDevTools();
           },
         },
       ],
     },
-  ]);
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        ...(process.platform === 'darwin'
+          ? [
+              { type: 'separator' },
+              { role: 'front' },
+              { type: 'separator' },
+              { role: 'window' }
+            ]
+          : [
+              { role: 'close' }
+            ])
+      ]
+    }
+  ];
 
+  if (process.platform === 'darwin') {
+    template.unshift({
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    });
+  }
+
+  const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
   // --- MODIFIED MEDIA PROTOCOL HANDLER ---
