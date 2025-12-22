@@ -10,7 +10,7 @@
     "clean-dist": "rm -rf dist",
     "clone-client": "./clone-client.sh",
     "clone-server": "./clone-server.sh",
-    "copy-main-modules": "cp package*.json dist && cd dist && npm ci --production",
+    "copy-main-modules": "cp package*.json dist && find src -maxdepth 1 -name \"*.html\" -exec cp {} dist/ \\; && find src -maxdepth 1 -name \"*.css\" -exec cp {} dist/ \\; && cd dist && npm ci --production",
     "build-main": "tsc --build && npm run copy-main-modules",
     "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run clone-client",
     "make": "conveyor make app",

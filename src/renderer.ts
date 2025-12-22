@@ -26,8 +26,6 @@
  * ```
  */
 
-import './index.css';
-
 async function getDir() {
   const paths = await window.electronDialog.open({ properties: ['openDirectory'] });
   return paths[0];

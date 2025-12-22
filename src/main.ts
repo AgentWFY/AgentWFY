@@ -154,6 +154,7 @@ let clientPath = path.join(__dirname, 'client', 'index.html');
 
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
+registerDialogSubscribers();
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
@@ -207,9 +208,6 @@ app.on('ready', () => {
           click: () => {
             if (vaultWindow && !vaultWindow.isDestroyed()) {
               vaultWindow.show();
-            } else if (!vaultWindow) {
-              vaultWindow = createVaultWindow(mainWindow);
-              registerDialogSubscribers(vaultWindow);
             } else {
               vaultWindow = createVaultWindow(mainWindow);
             }

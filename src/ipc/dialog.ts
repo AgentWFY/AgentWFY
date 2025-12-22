@@ -6,9 +6,10 @@ export const ElectronDialog = {
   },
 }
 
-export const registerDialogSubscribers = (mainWindow: BrowserWindow) => {
-  ipcMain.handle('dialog:open', async (_event, options: OpenDialogOptions) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, options);
+export const registerDialogSubscribers = () => {
+  ipcMain.handle('dialog:open', async (event, options: OpenDialogOptions) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePaths } = await dialog.showOpenDialog(window, options);
 
     if (!canceled) {
       return filePaths;
