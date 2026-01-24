@@ -301,8 +301,15 @@ app.on('ready', () => {
 
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
-    const clientDir = path.dirname(clientPath);
     const p = decodeURIComponent(url.pathname);
+
+    if (p.startsWith('/agent/')) {
+      const dataDir = store.get('dataDir') as string || DEFAULT_DATA_DIR;
+      const absolutePath = path.join(dataDir, 'agent', p.replace(/^\/agent\//, ''));
+      return net.fetch(pathToFileURL(absolutePath).toString());
+    }
+
+    const clientDir = path.dirname(clientPath);
     const absolutePath = path.join(clientDir, p === '/' ? 'index.html' : p);
     return net.fetch(pathToFileURL(absolutePath).toString());
   });
