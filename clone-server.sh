@@ -1,28 +1,34 @@
 #!/bin/bash
+set -euo pipefail
 
-# Define the target directory
-TARGET_DIR="tmp/server"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLONE_DIR="$SCRIPT_DIR/tmp/server"
+OUTPUT_DIR="$SCRIPT_DIR/dist/server"
 
-# Remove the target directory if it exists
-if [ -d "$TARGET_DIR" ]; then
-    echo "Removing existing directory: $TARGET_DIR"
-    rm -rf "$TARGET_DIR"
+LOCAL_SERVER_REPO="${LOCAL_SERVER_REPO:-$SCRIPT_DIR/../server}"
+REMOTE_SERVER_REPO="${REMOTE_SERVER_REPO:-https://github.com/TradingLogApp/tradinglog-server}"
+
+if [ -d "$LOCAL_SERVER_REPO" ]; then
+  echo "Using local server repo: $LOCAL_SERVER_REPO"
+  BUILD_DIR="$LOCAL_SERVER_REPO"
+else
+  if [ -d "$CLONE_DIR" ]; then
+    echo "Removing existing directory: $CLONE_DIR"
+    rm -rf "$CLONE_DIR"
+  fi
+  mkdir -p "$CLONE_DIR"
+  echo "Local server repo not found, cloning from: $REMOTE_SERVER_REPO"
+  git clone "$REMOTE_SERVER_REPO" "$CLONE_DIR"
+  BUILD_DIR="$CLONE_DIR"
 fi
 
-# Create the target directory
-mkdir -p "$TARGET_DIR"
+cd "$BUILD_DIR"
 
-# Clone the repository
-git clone https://github.com/TradingLogApp/tradinglog-server "$TARGET_DIR"
-
-# Change to the cloned directory
-cd "$TARGET_DIR"
-
-# Install dependencies and run the build
 npm install
 npm run build-prod
 
-[ ! -d ../../dist/server ] && mkdir ../../dist/server
-cp -r dist/* ../../dist/server
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
+cp -r dist/. "$OUTPUT_DIR/"
 
 echo "Server build completed."
