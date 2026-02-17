@@ -14,7 +14,8 @@
     "build-main": "tsc --build && npm run copy-main-modules",
     "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run clone-client",
     "make": "conveyor make app",
-    "start": "electron ./dist"
+    "start": "electron ./dist",
+    "dev": "VITE_DEV_SERVER_URL=http://localhost:5173 electron ./dist"
   },
   "devDependencies": {
     "@hydraulic/conveyor": "^21.0.0",

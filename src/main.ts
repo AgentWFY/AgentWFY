@@ -193,7 +193,17 @@ async function createAppWindow(dataDir: string) {
   });
 
   mainWindow.maximize();
-  mainWindow.loadURL('app://index.html');
+
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  console.log('VITE_DEV_SERVER_URL:', devServerUrl);
+  if (devServerUrl) {
+    console.log('Loading from dev server:', devServerUrl);
+    mainWindow.loadURL(devServerUrl);
+  } else {
+    console.log('Loading from app:// protocol');
+    mainWindow.loadURL('app://index.html');
+  }
+
   mainWindow.show();
 
   await startServer(dataDir);
