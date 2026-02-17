@@ -3,6 +3,7 @@ import createVaultWindow from './vault_window';
 import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
+import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { startServer, stopServer } from './server';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -152,9 +153,19 @@ let mainWindow: BrowserWindow | null;
 
 let clientPath = path.join(__dirname, 'client', 'index.html');
 
+const DEFAULT_DATA_DIR = app.getPath('userData')
+
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
 registerDialogSubscribers();
+
+function getAgentToolsRoot(): string {
+  const dataDir = store.get('dataDir');
+  const base = typeof dataDir === 'string' ? dataDir : app.getPath('userData');
+  return path.join(base, 'agent');
+}
+
+registerAgentToolsHandlers(getAgentToolsRoot, () => mainWindow);
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
@@ -166,13 +177,15 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
   }
 });
 
-const DEFAULT_DATA_DIR = app.getPath('userData')
-
 async function createAppWindow(dataDir: string) {
   // Create the browser window.
   mainWindow = new BrowserWindow({
     show: false,
     title: dataDir,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false,
+    },
   });
 
   mainWindow.on('page-title-updated', (evt) => {
