@@ -20,6 +20,9 @@ declare global {
       captureWindowPng(): Promise<{ path: string; base64: string }>;
       getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>>;
     };
+    electronViewWatcher: {
+      onFileChanged(callback: (detail: { path: string, event: string }) => void): () => void;
+    };
   }
 }
 

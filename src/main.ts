@@ -4,6 +4,7 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
+import { registerViewFileWatcher } from './ipc/view-watcher';
 import { startServer, stopServer } from './server';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -150,6 +151,7 @@ const serveFile = async (request: Request, absolutePath: string) => {
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
+let viewWatcher: { dispose: () => void } | null = null;
 
 let clientPath = path.join(__dirname, 'client', 'index.html');
 
@@ -170,10 +172,13 @@ registerAgentToolsHandlers(getAgentToolsRoot, () => mainWindow);
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
     await stopServer();
+    viewWatcher?.dispose();
+    viewWatcher = null;
   }
   if (newValue && typeof newValue === 'string') {
     await startServer(newValue);
     mainWindow.reload();
+    viewWatcher = registerViewFileWatcher(getAgentToolsRoot, () => mainWindow);
   }
 });
 
@@ -205,6 +210,8 @@ async function createAppWindow(dataDir: string) {
   }
 
   mainWindow.show();
+
+  viewWatcher = registerViewFileWatcher(getAgentToolsRoot, () => mainWindow);
 
   await startServer(dataDir);
 
@@ -341,6 +348,8 @@ app.on('ready', () => {
 });
 
 app.on('window-all-closed', () => {
+  viewWatcher?.dispose();
+  viewWatcher = null;
   if (process.platform !== 'darwin') {
     stopServer();
     app.quit();
