@@ -190,6 +190,7 @@ async function createAppWindow(dataDir: string) {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: false,
+      webviewTag: true,
     },
   });
 
