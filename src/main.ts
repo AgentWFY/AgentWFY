@@ -6,6 +6,7 @@ import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerViewFileWatcher } from './ipc/view-watcher';
 import { startServer, stopServer } from './server';
+import { resolveAgentRuntimeFlags } from './runtime_flags';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
@@ -161,6 +162,10 @@ const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
 registerDialogSubscribers();
 
+function getAgentRuntimeFlags() {
+  return resolveAgentRuntimeFlags(store);
+}
+
 function getAgentToolsRoot(): string {
   const dataDir = store.get('dataDir');
   const base = typeof dataDir === 'string' ? dataDir : app.getPath('userData');
@@ -183,6 +188,8 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
 });
 
 async function createAppWindow(dataDir: string) {
+  const runtimeFlags = getAgentRuntimeFlags();
+
   // Create the browser window.
   mainWindow = new BrowserWindow({
     show: false,
@@ -212,6 +219,9 @@ async function createAppWindow(dataDir: string) {
 
   mainWindow.show();
 
+  if (runtimeFlags.agentRuntimeV2) {
+    console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}; legacy view watcher remains active during Phase 0.`);
+  }
   viewWatcher = registerViewFileWatcher(getAgentToolsRoot, () => mainWindow);
 
   await startServer(dataDir);
@@ -230,6 +240,9 @@ const createWindow = () => {
 }
 
 app.on('ready', () => {
+  const runtimeFlags = getAgentRuntimeFlags();
+  console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
+
   const template: any[] = [
     {
       label: 'File',
