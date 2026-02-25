@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
+import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
 
 // --- Constants ---
 
@@ -46,14 +47,6 @@ const Channel = {
 
 // --- Helpers ---
 
-function resolveSafePath(root: string, relativePath: string): string {
-  const resolved = path.resolve(root, relativePath);
-  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-    throw new Error(`Path traversal denied: "${relativePath}" resolves outside agent root`);
-  }
-  return resolved;
-}
-
 function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
   const lines = text.split('\n');
   const totalLines = lines.length;
@@ -94,6 +87,7 @@ async function walkDir(dir: string, root: string): Promise<string[]> {
   }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
+    if (isAgentPrivatePath(root, full)) continue;
     const rel = path.relative(root, full);
     if (entry.isDirectory()) {
       results.push(rel + '/');
@@ -118,10 +112,14 @@ function matchesGlob(filename: string, pattern: string): boolean {
 // --- Handler registration ---
 
 export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow: () => BrowserWindow | null) {
+  const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
+    assertPathAllowed(getRoot(), relativePath, options);
+  const resolveToolRoot = () =>
+    assertPathAllowed(getRoot(), '.', { allowMissing: true, allowAgentPrivate: true });
 
   // read(path, offset?, limit?) → text with line numbers
   ipcMain.handle(Channel.READ, async (_event, relativePath: string, offset?: number, limit?: number) => {
-    const filePath = resolveSafePath(getRoot(), relativePath);
+    const filePath = await resolveToolPath(relativePath);
     const raw = await fs.readFile(filePath, 'utf-8');
     const allLines = raw.split('\n');
     const totalLines = allLines.length;
@@ -150,7 +148,7 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
 
   // write(path, content) → success message
   ipcMain.handle(Channel.WRITE, async (_event, relativePath: string, content: string) => {
-    const filePath = resolveSafePath(getRoot(), relativePath);
+    const filePath = await resolveToolPath(relativePath, { allowMissing: true });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
     return `Successfully wrote ${Buffer.byteLength(content, 'utf-8')} bytes to ${relativePath}`;
@@ -158,7 +156,7 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
 
   // edit(path, oldText, newText) → success message
   ipcMain.handle(Channel.EDIT, async (_event, relativePath: string, oldText: string, newText: string) => {
-    const filePath = resolveSafePath(getRoot(), relativePath);
+    const filePath = await resolveToolPath(relativePath);
     const content = await fs.readFile(filePath, 'utf-8');
     const occurrences = content.split(oldText).length - 1;
     if (occurrences === 0) {
@@ -174,7 +172,7 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
 
   // ls(path?, limit?) → sorted text, dirs have / suffix
   ipcMain.handle(Channel.LS, async (_event, relativePath?: string, limit?: number) => {
-    const dirPath = resolveSafePath(getRoot(), relativePath || '.');
+    const dirPath = await resolveToolPath(relativePath || '.');
     const effectiveLimit = limit ?? DEFAULT_LS_LIMIT;
 
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -202,20 +200,20 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
 
   // mkdir(path, recursive?)
   ipcMain.handle(Channel.MKDIR, async (_event, relativePath: string, recursive?: boolean) => {
-    const dirPath = resolveSafePath(getRoot(), relativePath);
+    const dirPath = await resolveToolPath(relativePath, { allowMissing: true });
     await fs.mkdir(dirPath, { recursive: recursive ?? true });
   });
 
   // remove(path, recursive?)
   ipcMain.handle(Channel.REMOVE, async (_event, relativePath: string, recursive?: boolean) => {
-    const targetPath = resolveSafePath(getRoot(), relativePath);
+    const targetPath = await resolveToolPath(relativePath, { allowMissing: true });
     await fs.rm(targetPath, { recursive: recursive ?? false, force: false });
   });
 
   // find(pattern, path?, limit?) → text list of matching paths
   ipcMain.handle(Channel.FIND, async (_event, pattern: string, relativePath?: string, limit?: number) => {
-    const root = getRoot();
-    const searchDir = relativePath ? resolveSafePath(root, relativePath) : root;
+    const root = await resolveToolRoot();
+    const searchDir = relativePath ? await resolveToolPath(relativePath, { allowMissing: true }) : root;
     const effectiveLimit = limit ?? DEFAULT_FIND_LIMIT;
 
     const all = await walkDir(searchDir, root);
@@ -243,8 +241,8 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
     relativePath?: string,
     options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number },
   ) => {
-    const root = getRoot();
-    const searchDir = relativePath ? resolveSafePath(root, relativePath) : root;
+    const root = await resolveToolRoot();
+    const searchDir = relativePath ? await resolveToolPath(relativePath, { allowMissing: true }) : root;
     const ignoreCase = options?.ignoreCase ?? false;
     const literal = options?.literal ?? false;
     const contextLines = options?.context ?? 0;
@@ -338,7 +336,7 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
     const image = await win.webContents.capturePage();
     const pngBuffer = image.toPNG();
     const filename = `screenshot-${Date.now()}.png`;
-    const tmpDir = path.join(getRoot(), 'tmp');
+    const tmpDir = await resolveToolPath('tmp', { allowMissing: true });
     const savePath = path.join(tmpDir, filename);
     await fs.mkdir(tmpDir, { recursive: true });
     await fs.writeFile(savePath, pngBuffer);
