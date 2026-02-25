@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
+import { parseRunSqlRequest, routeSqlRequest } from '../services/sql-router';
 
 // --- Constants ---
 
@@ -41,6 +42,7 @@ const Channel = {
   REMOVE: 'electronAgentTools:remove',
   FIND: 'electronAgentTools:find',
   GREP: 'electronAgentTools:grep',
+  RUN_SQL: 'electronAgentTools:runSql',
   CAPTURE_WINDOW_PNG: 'electronAgentTools:captureWindowPng',
   GET_CONSOLE_LOGS: 'electronAgentTools:getConsoleLogs',
 } as const;
@@ -312,6 +314,12 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
     }
 
     return output;
+  });
+
+  // runSql({ target, path?, sql, params?, description?, confirmed? }) → query result
+  ipcMain.handle(Channel.RUN_SQL, async (_event, payload: unknown) => {
+    const request = parseRunSqlRequest(payload);
+    return routeSqlRequest(getRoot(), request);
   });
 
   // Console log capture

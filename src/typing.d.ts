@@ -1,4 +1,14 @@
 declare global {
+  interface ElectronRunSqlRequest {
+    target: 'agent' | 'sqlite-file';
+    // For target="sqlite-file", this path must resolve inside DATA_DIR and outside DATA_DIR/.agent.
+    path?: string;
+    sql: string;
+    params?: any[];
+    description?: string;
+    confirmed?: boolean;
+  }
+
   interface Window {
     electronDialog: {
       open(options: any): Promise<string[]>;
@@ -19,6 +29,7 @@ declare global {
       remove(path: string, recursive?: boolean): Promise<void>;
       find(pattern: string, path?: string, limit?: number): Promise<string>;
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
+      runSql(request: ElectronRunSqlRequest): Promise<any>;
       captureWindowPng(): Promise<{ path: string; base64: string }>;
       getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>>;
     };

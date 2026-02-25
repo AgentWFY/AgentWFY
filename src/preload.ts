@@ -59,6 +59,16 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
     return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
   },
+  runSql(request: {
+    target: 'agent' | 'sqlite-file';
+    path?: string;
+    sql: string;
+    params?: any[];
+    description?: string;
+    confirmed?: boolean;
+  }): Promise<any> {
+    return ipcRenderer.invoke('electronAgentTools:runSql', request);
+  },
   captureWindowPng(): Promise<{ path: string; base64: string }> {
     return ipcRenderer.invoke('electronAgentTools:captureWindowPng');
   },
