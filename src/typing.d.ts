@@ -9,6 +9,8 @@ declare global {
       removeItem(key: string): Promise<void>;
     };
     electronAgentTools: {
+      // Paths are resolved relative to the selected DATA_DIR.
+      // Access to DATA_DIR/.agent/** is denied for file-tool operations.
       read(path: string, offset?: number, limit?: number): Promise<string>;
       write(path: string, content: string): Promise<string>;
       edit(path: string, oldText: string, newText: string): Promise<string>;

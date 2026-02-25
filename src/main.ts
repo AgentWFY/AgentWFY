@@ -10,7 +10,7 @@ import { resolveAgentRuntimeFlags } from './runtime_flags';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, mkdir } from 'fs/promises';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -157,6 +157,7 @@ let viewWatcher: { dispose: () => void } | null = null;
 let clientPath = path.join(__dirname, 'client', 'index.html');
 
 const DEFAULT_DATA_DIR = app.getPath('userData')
+const AGENT_DIR_NAME = '.agent';
 
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
@@ -171,6 +172,19 @@ function getDataDir(): string {
   return typeof dataDir === 'string' ? dataDir : app.getPath('userData');
 }
 
+function getAgentDir(dataDir: string): string {
+  return path.join(dataDir, AGENT_DIR_NAME);
+}
+
+async function ensureAgentDir(dataDir: string): Promise<void> {
+  const agentDir = getAgentDir(dataDir);
+  try {
+    await mkdir(agentDir, { recursive: true });
+  } catch (error) {
+    console.error(`[agent-runtime] failed to ensure private agent directory at ${agentDir}`, error);
+  }
+}
+
 function getLegacyViewWatcherRoot(): string {
   return path.join(getDataDir(), 'agent');
 }
@@ -179,19 +193,21 @@ registerAgentToolsHandlers(getDataDir, () => mainWindow);
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
+    const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     await stopServer();
     viewWatcher?.dispose();
     viewWatcher = null;
-  }
-  if (newValue && typeof newValue === 'string') {
-    await startServer(newValue);
-    mainWindow.reload();
+
+    await ensureAgentDir(nextDataDir);
+    await startServer(nextDataDir);
+    mainWindow?.reload();
     viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
   }
 });
 
 async function createAppWindow(dataDir: string) {
   const runtimeFlags = getAgentRuntimeFlags();
+  await ensureAgentDir(dataDir);
 
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -242,9 +258,10 @@ const createWindow = () => {
   createAppWindow(DEFAULT_DATA_DIR)
 }
 
-app.on('ready', () => {
+app.on('ready', async () => {
   const runtimeFlags = getAgentRuntimeFlags();
   console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
+  await ensureAgentDir(getDataDir());
 
   const template: any[] = [
     {
