@@ -147,14 +147,6 @@ function installRunSqlEventShim() {
   });
 }
 
-contextBridge.exposeInMainWorld('electronViewWatcher', {
-  onFileChanged(callback: (detail: { path: string, event: string }) => void): () => void {
-    const handler = (_event: any, detail: { path: string, event: string }) => callback(detail);
-    ipcRenderer.on('viewFileChanged', handler);
-    return () => ipcRenderer.removeListener('viewFileChanged', handler);
-  }
-});
-
 contextBridge.exposeInMainWorld('electronDialog', {
   open(options: any): Promise<string[]> {
     return ipcRenderer.invoke('dialog:open', options);

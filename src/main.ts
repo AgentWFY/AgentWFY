@@ -4,7 +4,6 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
-import { registerViewFileWatcher } from './ipc/view-watcher';
 import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById } from './services/views-repo';
@@ -164,7 +163,6 @@ const serveFile = async (request: Request, absolutePath: string) => {
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
-let viewWatcher: { dispose: () => void } | null = null;
 let agentDbChangesPublisher: AgentDbChangesPublisher | null = null;
 
 let clientPath = path.join(__dirname, 'client', 'index.html');
@@ -631,10 +629,6 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
   return toHtmlResponse(200, html);
 }
 
-function getLegacyViewWatcherRoot(): string {
-  return path.join(getDataDir(), 'agent');
-}
-
 function publishAgentDbChanges(event: AgentDbChangedEvent): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -666,15 +660,12 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     await stopServer();
     agentDbChangesPublisher?.stop();
-    viewWatcher?.dispose();
-    viewWatcher = null;
     clearTrackedViewWebContents();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
     await restartAgentDbChangesPublisher();
     await startServer(nextDataDir);
     mainWindow?.reload();
-    viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
   }
 });
 
@@ -723,9 +714,8 @@ async function createAppWindow(dataDir: string) {
   mainWindow.show();
 
   if (runtimeFlags.agentRuntimeV2) {
-    console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}; legacy view watcher remains active during Phase 0.`);
+    console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}.`);
   }
-  viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
 
   await startServer(dataDir);
 
@@ -852,12 +842,6 @@ app.on('ready', async () => {
     const url = new URL(request.url);
     const p = decodeURIComponent(url.pathname);
 
-    if (p.startsWith('/agent/')) {
-      const dataDir = store.get('dataDir') as string || DEFAULT_DATA_DIR;
-      const absolutePath = path.join(dataDir, 'agent', p.replace(/^\/agent\//, ''));
-      return net.fetch(pathToFileURL(absolutePath).toString());
-    }
-
     const clientDir = path.dirname(clientPath);
     const absolutePath = path.join(clientDir, p === '/' ? 'index.html' : p);
     return net.fetch(pathToFileURL(absolutePath).toString());
@@ -871,8 +855,6 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
-  viewWatcher?.dispose();
-  viewWatcher = null;
   clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
     agentDbChangesPublisher?.stop();

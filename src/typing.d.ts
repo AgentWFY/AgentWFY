@@ -50,9 +50,6 @@ declare global {
       getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
     };
-    electronViewWatcher: {
-      onFileChanged(callback: (detail: { path: string, event: string }) => void): () => void;
-    };
     tradinglogViewBridge?: {
       runSql(request: ElectronRunSqlRequest): Promise<any>;
       mediaUrl(relativePath: string): string;
