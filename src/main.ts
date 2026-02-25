@@ -9,6 +9,7 @@ import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId, resolveSpectrumBundleUrls } from './services/agentview-runtime';
+import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
@@ -164,6 +165,7 @@ const serveFile = async (request: Request, absolutePath: string) => {
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
 let viewWatcher: { dispose: () => void } | null = null;
+let agentDbChangesPublisher: AgentDbChangesPublisher | null = null;
 
 let clientPath = path.join(__dirname, 'client', 'index.html');
 
@@ -257,16 +259,38 @@ function getLegacyViewWatcherRoot(): string {
   return path.join(getDataDir(), 'agent');
 }
 
+function publishAgentDbChanges(event: AgentDbChangedEvent): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('tradinglog:agent-db-changed', event);
+}
+
+async function restartAgentDbChangesPublisher(): Promise<void> {
+  agentDbChangesPublisher?.stop();
+  agentDbChangesPublisher = new AgentDbChangesPublisher({
+    getDataDir,
+    onChanges: publishAgentDbChanges,
+    onError: (error) => {
+      console.error('[agent-runtime] failed to publish agent DB changes', error);
+    },
+  });
+  await agentDbChangesPublisher.start();
+}
+
 registerAgentToolsHandlers(getDataDir, () => mainWindow);
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     await stopServer();
+    agentDbChangesPublisher?.stop();
     viewWatcher?.dispose();
     viewWatcher = null;
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
+    await restartAgentDbChangesPublisher();
     await startServer(nextDataDir);
     mainWindow?.reload();
     viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
@@ -341,6 +365,7 @@ app.on('ready', async () => {
   const runtimeFlags = getAgentRuntimeFlags();
   console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
   await ensureAgentRuntimeBootstrap(getDataDir());
+  await restartAgentDbChangesPublisher();
 
   const template: any[] = [
     {
@@ -468,9 +493,16 @@ app.on('window-all-closed', () => {
   viewWatcher?.dispose();
   viewWatcher = null;
   if (process.platform !== 'darwin') {
+    agentDbChangesPublisher?.stop();
+    agentDbChangesPublisher = null;
     stopServer();
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  agentDbChangesPublisher?.stop();
+  agentDbChangesPublisher = null;
 });
 
 app.on('activate', () => {

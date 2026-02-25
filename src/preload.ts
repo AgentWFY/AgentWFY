@@ -22,9 +22,23 @@ interface RunSqlResponseDetail {
   error?: string;
 }
 
+interface AgentDbChangeDetail {
+  seq: number;
+  table: string;
+  rowId: number;
+  op: 'insert' | 'update' | 'delete';
+  changedAt: number;
+}
+
+interface AgentDbChangedEventDetail {
+  cursor: number;
+  changes: AgentDbChangeDetail[];
+}
+
 const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
 const RUN_SQL_EVENT = 'tradinglog:run-sql';
 const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
+const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
 
 let runSqlShimInstalled = false;
 
@@ -186,6 +200,11 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   },
   getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>> {
     return ipcRenderer.invoke('electronAgentTools:getConsoleLogs', since);
+  },
+  onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
+    const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
+    ipcRenderer.on(AGENT_DB_CHANGED_CHANNEL, handler);
+    return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
   },
 });
 

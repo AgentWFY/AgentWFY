@@ -32,6 +32,35 @@ CREATE TABLE IF NOT EXISTS views (
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+CREATE TABLE IF NOT EXISTS db_changes (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_name TEXT NOT NULL,
+  row_id INTEGER NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('insert', 'update', 'delete')),
+  changed_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TRIGGER IF NOT EXISTS views_db_changes_insert
+AFTER INSERT ON views
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('views', NEW.id, 'insert', unixepoch());
+END;
+
+CREATE TRIGGER IF NOT EXISTS views_db_changes_update
+AFTER UPDATE ON views
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('views', NEW.id, 'update', unixepoch());
+END;
+
+CREATE TRIGGER IF NOT EXISTS views_db_changes_delete
+AFTER DELETE ON views
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('views', OLD.id, 'delete', unixepoch());
+END;
 `;
 
 export interface SqlExecutionRequest {
