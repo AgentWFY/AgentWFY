@@ -7,6 +7,7 @@ import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerViewFileWatcher } from './ipc/view-watcher';
 import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
+import { ensureViewsSchema } from './services/views-repo';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
@@ -185,6 +186,15 @@ async function ensureAgentDir(dataDir: string): Promise<void> {
   }
 }
 
+async function ensureAgentRuntimeBootstrap(dataDir: string): Promise<void> {
+  await ensureAgentDir(dataDir);
+  try {
+    await ensureViewsSchema(dataDir);
+  } catch (error) {
+    console.error(`[agent-runtime] failed to initialize views schema for data dir ${dataDir}`, error);
+  }
+}
+
 function getLegacyViewWatcherRoot(): string {
   return path.join(getDataDir(), 'agent');
 }
@@ -198,7 +208,7 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
     viewWatcher?.dispose();
     viewWatcher = null;
 
-    await ensureAgentDir(nextDataDir);
+    await ensureAgentRuntimeBootstrap(nextDataDir);
     await startServer(nextDataDir);
     mainWindow?.reload();
     viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
@@ -207,7 +217,7 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
 
 async function createAppWindow(dataDir: string) {
   const runtimeFlags = getAgentRuntimeFlags();
-  await ensureAgentDir(dataDir);
+  await ensureAgentRuntimeBootstrap(dataDir);
 
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -261,7 +271,7 @@ const createWindow = () => {
 app.on('ready', async () => {
   const runtimeFlags = getAgentRuntimeFlags();
   console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
-  await ensureAgentDir(getDataDir());
+  await ensureAgentRuntimeBootstrap(getDataDir());
 
   const template: any[] = [
     {
