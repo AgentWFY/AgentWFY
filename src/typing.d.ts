@@ -13,7 +13,7 @@ declare global {
   }
 
   interface ElectronRunSqlRequest {
-    target: 'agent' | 'sqlite-file';
+    target?: 'agent' | 'sqlite-file';
     // For target="sqlite-file", this path must resolve inside DATA_DIR and outside DATA_DIR/.agent.
     path?: string;
     sql: string;
@@ -43,6 +43,9 @@ declare global {
       find(pattern: string, path?: string, limit?: number): Promise<string>;
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
       runSql(request: ElectronRunSqlRequest): Promise<any>;
+      captureView(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }>;
+      getViewConsoleLogs(request: { viewId: string | number; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
+      execViewJs(request: { viewId: string | number; code: string; timeoutMs?: number }): Promise<any>;
       captureWindowPng(): Promise<{ path: string; base64: string }>;
       getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;

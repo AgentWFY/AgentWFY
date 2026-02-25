@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, net } from 'electron';
+import { app, BrowserWindow, Menu, protocol, net, WebContents } from 'electron';
 import createVaultWindow from './vault_window';
 import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
@@ -208,6 +208,382 @@ async function ensureAgentRuntimeBootstrap(dataDir: string): Promise<void> {
   }
 }
 
+const VIEW_LOG_BUFFER_MAX = 1000;
+const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
+const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
+
+const WEB_CONTENTS_LOG_LEVEL_MAP: Record<number, string> = {
+  0: 'verbose',
+  1: 'info',
+  2: 'warning',
+  3: 'error',
+};
+
+const ACTIVE_EXTERNAL_TAB_QUERY = `(() => {
+  const tabs = document.querySelector('tl-tabs');
+  if (!tabs) return null;
+  const selectedTabId = typeof tabs.selectedTabId === 'string' ? tabs.selectedTabId : null;
+  const tabList = Array.isArray(tabs.tabs) ? tabs.tabs : [];
+  const selectedTab = selectedTabId ? tabList.find((tab) => tab && tab.id === selectedTabId) : null;
+  const viewId = selectedTab && (typeof selectedTab.viewId === 'string' || typeof selectedTab.viewId === 'number')
+    ? String(selectedTab.viewId)
+    : null;
+  return { tabId: selectedTabId, viewId };
+})()`;
+
+interface ViewConsoleLogEntry {
+  level: string
+  message: string
+  timestamp: number
+}
+
+interface ViewRuntimeEntry {
+  webContentsId: number
+  webContents: WebContents
+  viewId: string
+  tabId: string | null
+  ownerWindowId: number | null
+  lastNavigationAt: number
+  lastFocusedAt: number
+  logs: ViewConsoleLogEntry[]
+}
+
+interface ActiveExternalTabContext {
+  tabId: string | null
+  viewId: string | null
+}
+
+const viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
+const viewIdIndex = new Map<string, Set<number>>();
+
+function normalizeViewIdInput(viewId: string | number): string {
+  if (typeof viewId === 'number') {
+    if (!Number.isFinite(viewId)) {
+      throw new Error('viewId must be a finite number');
+    }
+    return String(viewId);
+  }
+
+  const normalized = viewId.trim();
+  if (!normalized) {
+    throw new Error('viewId must be a non-empty string');
+  }
+  return normalized;
+}
+
+function parseTrackedViewFromUrl(urlString: string): { viewId: string; tabId: string | null } | null {
+  if (typeof urlString !== 'string' || !urlString.startsWith('agentview://')) {
+    return null;
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(urlString);
+  } catch {
+    return null;
+  }
+
+  let viewId: string;
+  try {
+    viewId = parseAgentViewId(parsedUrl);
+  } catch {
+    return null;
+  }
+
+  const rawTabId = parsedUrl.searchParams.get('tabId');
+  const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
+  return { viewId: String(viewId), tabId };
+}
+
+function resolveOwnerWindowId(webContents: WebContents): number | null {
+  const hostWebContents = (webContents as any).hostWebContents as WebContents | undefined;
+  const owner = hostWebContents
+    ? BrowserWindow.fromWebContents(hostWebContents)
+    : BrowserWindow.fromWebContents(webContents);
+  return owner?.id ?? null;
+}
+
+function unindexViewRuntimeEntry(entry: ViewRuntimeEntry): void {
+  const ids = viewIdIndex.get(entry.viewId);
+  if (!ids) {
+    return;
+  }
+
+  ids.delete(entry.webContentsId);
+  if (ids.size === 0) {
+    viewIdIndex.delete(entry.viewId);
+  }
+}
+
+function indexViewRuntimeEntry(entry: ViewRuntimeEntry): void {
+  let ids = viewIdIndex.get(entry.viewId);
+  if (!ids) {
+    ids = new Set<number>();
+    viewIdIndex.set(entry.viewId, ids);
+  }
+  ids.add(entry.webContentsId);
+}
+
+function removeTrackedViewWebContents(webContentsId: number): void {
+  const existing = viewRuntimeEntries.get(webContentsId);
+  if (!existing) {
+    return;
+  }
+
+  unindexViewRuntimeEntry(existing);
+  viewRuntimeEntries.delete(webContentsId);
+}
+
+function clearTrackedViewWebContents(): void {
+  viewRuntimeEntries.clear();
+  viewIdIndex.clear();
+}
+
+function updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {
+  const tracked = parseTrackedViewFromUrl(urlString);
+  if (!tracked) {
+    removeTrackedViewWebContents(webContents.id);
+    return;
+  }
+
+  const now = Date.now();
+  const existing = viewRuntimeEntries.get(webContents.id);
+  if (!existing) {
+    const entry: ViewRuntimeEntry = {
+      webContentsId: webContents.id,
+      webContents,
+      viewId: tracked.viewId,
+      tabId: tracked.tabId,
+      ownerWindowId: resolveOwnerWindowId(webContents),
+      lastNavigationAt: now,
+      lastFocusedAt: 0,
+      logs: [],
+    };
+    viewRuntimeEntries.set(webContents.id, entry);
+    indexViewRuntimeEntry(entry);
+    return;
+  }
+
+  if (existing.viewId !== tracked.viewId) {
+    unindexViewRuntimeEntry(existing);
+    existing.viewId = tracked.viewId;
+    indexViewRuntimeEntry(existing);
+  }
+
+  existing.tabId = tracked.tabId;
+  existing.ownerWindowId = resolveOwnerWindowId(webContents);
+  existing.lastNavigationAt = now;
+}
+
+app.on('web-contents-created', (_event, webContents) => {
+  if (webContents.getType() !== 'webview') {
+    return;
+  }
+
+  const updateFromNavigation = (url: string) => {
+    updateTrackedViewWebContents(webContents, url);
+  };
+
+  webContents.on('did-start-navigation', (_navEvent, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) {
+      updateFromNavigation(url);
+    }
+  });
+
+  webContents.on('did-navigate', (_navEvent, url) => {
+    updateFromNavigation(url);
+  });
+
+  webContents.on('did-navigate-in-page', (_navEvent, url, isMainFrame) => {
+    if (isMainFrame) {
+      updateFromNavigation(url);
+    }
+  });
+
+  webContents.on('focus', () => {
+    const entry = viewRuntimeEntries.get(webContents.id);
+    if (!entry) {
+      return;
+    }
+    entry.ownerWindowId = resolveOwnerWindowId(webContents);
+    entry.lastFocusedAt = Date.now();
+  });
+
+  webContents.on('console-message', (_consoleEvent, level, message) => {
+    const entry = viewRuntimeEntries.get(webContents.id);
+    if (!entry) {
+      return;
+    }
+
+    entry.logs.push({
+      level: WEB_CONTENTS_LOG_LEVEL_MAP[level] || 'info',
+      message,
+      timestamp: Date.now(),
+    });
+
+    if (entry.logs.length > VIEW_LOG_BUFFER_MAX) {
+      entry.logs.splice(0, entry.logs.length - VIEW_LOG_BUFFER_MAX);
+    }
+  });
+
+  webContents.once('destroyed', () => {
+    removeTrackedViewWebContents(webContents.id);
+  });
+
+  const initialUrl = webContents.getURL();
+  if (initialUrl) {
+    updateTrackedViewWebContents(webContents, initialUrl);
+  }
+});
+
+async function getActiveExternalTabContext(): Promise<ActiveExternalTabContext | null> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+
+  try {
+    const result = await mainWindow.webContents.executeJavaScript(ACTIVE_EXTERNAL_TAB_QUERY, true);
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const rawTabId = (result as any).tabId;
+    const rawViewId = (result as any).viewId;
+    const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
+    const viewId = typeof rawViewId === 'string' && rawViewId.trim().length > 0 ? rawViewId.trim() : null;
+    return { tabId, viewId };
+  } catch (error) {
+    console.warn('[agent-runtime] failed to read active tab context for view diagnostics', error);
+    return null;
+  }
+}
+
+async function resolveViewRuntimeEntry(viewId: string | number): Promise<ViewRuntimeEntry> {
+  const normalizedViewId = normalizeViewIdInput(viewId);
+  const ids = viewIdIndex.get(normalizedViewId);
+  if (!ids || ids.size === 0) {
+    throw new Error(`No open view runtime found for viewId \"${normalizedViewId}\"`);
+  }
+
+  const candidates: ViewRuntimeEntry[] = [];
+  for (const webContentsId of ids) {
+    const entry = viewRuntimeEntries.get(webContentsId);
+    if (!entry) {
+      continue;
+    }
+
+    if (entry.webContents.isDestroyed()) {
+      removeTrackedViewWebContents(webContentsId);
+      continue;
+    }
+
+    candidates.push(entry);
+  }
+
+  if (candidates.length === 0) {
+    throw new Error(`No live webview runtime found for viewId \"${normalizedViewId}\"`);
+  }
+
+  const activeContext = await getActiveExternalTabContext();
+  if (activeContext?.tabId && activeContext.viewId === normalizedViewId) {
+    const activeEntry = candidates.find((entry) => entry.tabId === activeContext.tabId);
+    if (activeEntry) {
+      return activeEntry;
+    }
+  }
+
+  const activeWindowId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.id : null;
+  candidates.sort((a, b) => {
+    const windowRankA = a.ownerWindowId === activeWindowId ? 1 : 0;
+    const windowRankB = b.ownerWindowId === activeWindowId ? 1 : 0;
+    if (windowRankA !== windowRankB) {
+      return windowRankB - windowRankA;
+    }
+
+    if (a.lastFocusedAt !== b.lastFocusedAt) {
+      return b.lastFocusedAt - a.lastFocusedAt;
+    }
+
+    if (a.lastNavigationAt !== b.lastNavigationAt) {
+      return b.lastNavigationAt - a.lastNavigationAt;
+    }
+
+    return b.webContentsId - a.webContentsId;
+  });
+
+  return candidates[0];
+}
+
+async function captureViewById(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }> {
+  const entry = await resolveViewRuntimeEntry(request.viewId);
+  const image = await entry.webContents.capturePage();
+  return {
+    base64: image.toPNG().toString('base64'),
+    mimeType: 'image/png',
+  };
+}
+
+async function getViewConsoleLogsById(request: {
+  viewId: string | number
+  since?: number
+  limit?: number
+}): Promise<Array<{ level: string; message: string; timestamp: number }>> {
+  const entry = await resolveViewRuntimeEntry(request.viewId);
+
+  const since = typeof request.since === 'number' && Number.isFinite(request.since)
+    ? request.since
+    : undefined;
+  const limit = typeof request.limit === 'number' && Number.isFinite(request.limit)
+    ? Math.max(1, Math.floor(request.limit))
+    : undefined;
+
+  const filtered = typeof since === 'number'
+    ? entry.logs.filter((log) => log.timestamp > since)
+    : entry.logs.slice();
+
+  if (typeof limit === 'number' && filtered.length > limit) {
+    return filtered.slice(filtered.length - limit);
+  }
+
+  return filtered;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`View JavaScript execution timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+async function execViewJsById(request: {
+  viewId: string | number
+  code: string
+  timeoutMs?: number
+}): Promise<any> {
+  const entry = await resolveViewRuntimeEntry(request.viewId);
+  if (typeof request.code !== 'string') {
+    throw new Error('execViewJs requires code as a string');
+  }
+
+  const requestedTimeout = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
+    ? Math.floor(request.timeoutMs)
+    : VIEW_EXEC_DEFAULT_TIMEOUT_MS;
+  const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
+
+  return withTimeout(entry.webContents.executeJavaScript(request.code, true), timeoutMs);
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -279,7 +655,11 @@ async function restartAgentDbChangesPublisher(): Promise<void> {
   await agentDbChangesPublisher.start();
 }
 
-registerAgentToolsHandlers(getDataDir, () => mainWindow);
+registerAgentToolsHandlers(getDataDir, () => mainWindow, {
+  captureView: captureViewById,
+  getViewConsoleLogs: getViewConsoleLogsById,
+  execViewJs: execViewJsById,
+});
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
@@ -288,6 +668,7 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
     agentDbChangesPublisher?.stop();
     viewWatcher?.dispose();
     viewWatcher = null;
+    clearTrackedViewWebContents();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
     await restartAgentDbChangesPublisher();
@@ -492,6 +873,7 @@ app.on('ready', async () => {
 app.on('window-all-closed', () => {
   viewWatcher?.dispose();
   viewWatcher = null;
+  clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
     agentDbChangesPublisher?.stop();
     agentDbChangesPublisher = null;
@@ -503,6 +885,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   agentDbChangesPublisher?.stop();
   agentDbChangesPublisher = null;
+  clearTrackedViewWebContents();
 });
 
 app.on('activate', () => {

@@ -11,6 +11,22 @@ interface RunSqlRequest {
   confirmed?: boolean;
 }
 
+interface CaptureViewRequest {
+  viewId: string | number;
+}
+
+interface GetViewConsoleLogsRequest {
+  viewId: string | number;
+  since?: number;
+  limit?: number;
+}
+
+interface ExecViewJsRequest {
+  viewId: string | number;
+  code: string;
+  timeoutMs?: number;
+}
+
 interface RunSqlResponseDetail {
   requestId: string;
   target?: 'agent' | 'sqlite-file';
@@ -36,6 +52,9 @@ interface AgentDbChangedEventDetail {
 }
 
 const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
+const CAPTURE_VIEW_CHANNEL = 'electronAgentTools:captureView';
+const GET_VIEW_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getViewConsoleLogs';
+const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
 const RUN_SQL_EVENT = 'tradinglog:run-sql';
 const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
 const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
@@ -186,7 +205,7 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
   },
   runSql(request: {
-    target: 'agent' | 'sqlite-file';
+    target?: 'agent' | 'sqlite-file';
     path?: string;
     sql: string;
     params?: any[];
@@ -194,6 +213,15 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     confirmed?: boolean;
   }): Promise<any> {
     return invokeRunSql(request);
+  },
+  captureView(request: CaptureViewRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
+    return ipcRenderer.invoke(CAPTURE_VIEW_CHANNEL, request);
+  },
+  getViewConsoleLogs(request: GetViewConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
+    return ipcRenderer.invoke(GET_VIEW_CONSOLE_LOGS_CHANNEL, request);
+  },
+  execViewJs(request: ExecViewJsRequest): Promise<any> {
+    return ipcRenderer.invoke(EXEC_VIEW_JS_CHANNEL, request);
   },
   captureWindowPng(): Promise<{ path: string; base64: string }> {
     return ipcRenderer.invoke('electronAgentTools:captureWindowPng');

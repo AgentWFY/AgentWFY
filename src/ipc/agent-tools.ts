@@ -31,6 +31,28 @@ const LOG_LEVEL_MAP: Record<number, string> = {
   3: 'error',
 };
 
+interface CaptureViewRequest {
+  viewId: string | number
+}
+
+interface GetViewConsoleLogsRequest {
+  viewId: string | number
+  since?: number
+  limit?: number
+}
+
+interface ExecViewJsRequest {
+  viewId: string | number
+  code: string
+  timeoutMs?: number
+}
+
+interface AgentViewTools {
+  captureView?: (request: CaptureViewRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
+  getViewConsoleLogs?: (request: GetViewConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
+  execViewJs?: (request: ExecViewJsRequest) => Promise<any>
+}
+
 // --- Channels ---
 
 const Channel = {
@@ -43,6 +65,9 @@ const Channel = {
   FIND: 'electronAgentTools:find',
   GREP: 'electronAgentTools:grep',
   RUN_SQL: 'electronAgentTools:runSql',
+  CAPTURE_VIEW: 'electronAgentTools:captureView',
+  GET_VIEW_CONSOLE_LOGS: 'electronAgentTools:getViewConsoleLogs',
+  EXEC_VIEW_JS: 'electronAgentTools:execViewJs',
   CAPTURE_WINDOW_PNG: 'electronAgentTools:captureWindowPng',
   GET_CONSOLE_LOGS: 'electronAgentTools:getConsoleLogs',
 } as const;
@@ -111,9 +136,37 @@ function matchesGlob(filename: string, pattern: string): boolean {
   return new RegExp(`^${regex}$`).test(filename);
 }
 
+function parseViewId(value: unknown): string | number {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  throw new Error('viewId must be a non-empty string or number');
+}
+
+function parseOptionalNumber(value: unknown, label: string): number | undefined {
+  if (typeof value === 'undefined' || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number when provided`);
+  }
+
+  return value;
+}
+
 // --- Handler registration ---
 
-export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow: () => BrowserWindow | null) {
+export function registerAgentToolsHandlers(
+  getRoot: () => string,
+  getMainWindow: () => BrowserWindow | null,
+  viewTools?: AgentViewTools
+) {
   const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
     assertPathAllowed(getRoot(), relativePath, options);
   const resolveToolRoot = () =>
@@ -320,6 +373,62 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
   ipcMain.handle(Channel.RUN_SQL, async (_event, payload: unknown) => {
     const request = parseRunSqlRequest(payload);
     return routeSqlRequest(getRoot(), request);
+  });
+
+  // captureView({ viewId }) → { base64, mimeType }
+  ipcMain.handle(Channel.CAPTURE_VIEW, async (_event, payload: unknown) => {
+    if (!viewTools?.captureView) {
+      throw new Error('captureView is not available in this runtime');
+    }
+
+    const input = payload as CaptureViewRequest | undefined;
+    const viewId = parseViewId(input?.viewId);
+    return viewTools.captureView({ viewId });
+  });
+
+  // getViewConsoleLogs({ viewId, since?, limit? }) → logs[]
+  ipcMain.handle(Channel.GET_VIEW_CONSOLE_LOGS, async (_event, payload: unknown) => {
+    if (!viewTools?.getViewConsoleLogs) {
+      throw new Error('getViewConsoleLogs is not available in this runtime');
+    }
+
+    const input = payload as GetViewConsoleLogsRequest | undefined;
+    const viewId = parseViewId(input?.viewId);
+    const since = parseOptionalNumber(input?.since, 'since');
+    const limit = parseOptionalNumber(input?.limit, 'limit');
+    if (typeof limit === 'number' && limit < 1) {
+      throw new Error('limit must be >= 1 when provided');
+    }
+
+    return viewTools.getViewConsoleLogs({
+      viewId,
+      since,
+      limit,
+    });
+  });
+
+  // execViewJs({ viewId, code, timeoutMs? }) → execution result
+  ipcMain.handle(Channel.EXEC_VIEW_JS, async (_event, payload: unknown) => {
+    if (!viewTools?.execViewJs) {
+      throw new Error('execViewJs is not available in this runtime');
+    }
+
+    const input = payload as ExecViewJsRequest | undefined;
+    const viewId = parseViewId(input?.viewId);
+    if (!input || typeof input.code !== 'string') {
+      throw new Error('execViewJs requires code as a string');
+    }
+
+    const timeoutMs = parseOptionalNumber(input.timeoutMs, 'timeoutMs');
+    if (typeof timeoutMs === 'number' && timeoutMs < 1) {
+      throw new Error('timeoutMs must be >= 1 when provided');
+    }
+
+    return viewTools.execViewJs({
+      viewId,
+      code: input.code,
+      timeoutMs,
+    });
   });
 
   // Console log capture
