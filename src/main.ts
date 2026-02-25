@@ -7,7 +7,7 @@ import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerViewFileWatcher } from './ipc/view-watcher';
 import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
-import { ensureViewsSchema } from './services/views-repo';
+import { ensureViewsSchema, getViewById } from './services/views-repo';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
@@ -32,6 +32,15 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       bypassCSP: true,
+      corsEnabled: true
+    }
+  },
+  {
+    scheme: 'agentview',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
       corsEnabled: true
     }
   }
@@ -159,6 +168,7 @@ let clientPath = path.join(__dirname, 'client', 'index.html');
 
 const DEFAULT_DATA_DIR = app.getPath('userData')
 const AGENT_DIR_NAME = '.agent';
+const SPECTRUM_BUNDLE_CDN_URL = 'https://unpkg.com/@spectrum-web-components/bundle/elements.js?module';
 
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
@@ -193,6 +203,192 @@ async function ensureAgentRuntimeBootstrap(dataDir: string): Promise<void> {
   } catch (error) {
     console.error(`[agent-runtime] failed to initialize views schema for data dir ${dataDir}`, error);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toScriptLiteral(value: string): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function buildSharedBootstrapScript(viewId: string): string {
+  return `
+<script type="module">
+  import('${SPECTRUM_BUNDLE_CDN_URL}').catch((error) => {
+    console.warn('[agentview] failed to load Spectrum bundle', error);
+  });
+</script>
+<script>
+  (() => {
+    const bridge = window.tradinglogViewBridge;
+    if (!bridge) {
+      console.error('[agentview] tradinglogViewBridge is unavailable');
+      return;
+    }
+
+    if (typeof bridge.installRunSqlEventShim === 'function') {
+      bridge.installRunSqlEventShim();
+    }
+
+    window.tradinglogView = {
+      viewId: ${toScriptLiteral(viewId)},
+      runSql: (request) => bridge.runSql(request),
+      mediaUrl: (relativePath) => bridge.mediaUrl(relativePath),
+    };
+
+    window.dispatchEvent(new CustomEvent('tradinglog:view-runtime-ready', {
+      detail: { viewId: ${toScriptLiteral(viewId)} }
+    }));
+  })();
+</script>
+`;
+}
+
+function looksLikeHtmlDocument(source: string): boolean {
+  const trimmed = source.trimStart().toLowerCase();
+  return trimmed.startsWith('<!doctype html') ||
+    trimmed.startsWith('<html') ||
+    trimmed.includes('<head') ||
+    trimmed.includes('<body');
+}
+
+function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
+  if (/<\/head>/i.test(source)) {
+    return source.replace(/<\/head>/i, `${bootstrap}</head>`);
+  }
+
+  if (/<body[^>]*>/i.test(source)) {
+    return source.replace(/<body[^>]*>/i, (match) => `${match}${bootstrap}`);
+  }
+
+  return `<!doctype html><html><head><meta charset="utf-8">${bootstrap}</head><body>${source}</body></html>`;
+}
+
+function buildLegacyModuleDocument(moduleSource: string, viewId: string): string {
+  const bootstrap = buildSharedBootstrapScript(viewId);
+  const encodedSource = toScriptLiteral(moduleSource);
+  const encodedViewId = toScriptLiteral(viewId);
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: auto; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+  ${bootstrap}
+</head>
+<body>
+  <script type="module">
+    const source = ${encodedSource};
+    const blob = new Blob([source], { type: 'text/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+
+    const showError = (message) => {
+      const pre = document.createElement('pre');
+      pre.textContent = message;
+      pre.style.cssText = 'margin:16px;padding:12px;border:1px solid #f99;background:#2b1f1f;color:#ffdcdc;white-space:pre-wrap;';
+      document.body.appendChild(pre);
+    };
+
+    try {
+      const mod = await import(blobUrl);
+      let Component = null;
+      for (const exported of Object.values(mod)) {
+        if (typeof exported === 'function' && exported.metadata) {
+          Component = exported;
+          break;
+        }
+      }
+
+      if (!Component) {
+        throw new Error('No component with static metadata found in agent view module');
+      }
+
+      const tagName = 'agent-runtime-view-' + Math.random().toString(36).slice(2);
+      customElements.define(tagName, Component);
+
+      const instance = document.createElement(tagName);
+      instance.setAttribute('view-id', ${encodedViewId});
+      instance.style.cssText = 'display:block;width:100%;height:100%;min-height:0;';
+      document.body.appendChild(instance);
+    } catch (error) {
+      const message = error instanceof Error ? error.stack || error.message : String(error);
+      showError('[agentview] failed to load legacy module\\n' + message);
+      console.error('[agentview] failed to load legacy module', error);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function buildViewDocument(viewId: string, content: string): string {
+  const bootstrap = buildSharedBootstrapScript(viewId);
+  if (looksLikeHtmlDocument(content)) {
+    return injectBootstrapIntoHtml(content, bootstrap);
+  }
+
+  return buildLegacyModuleDocument(content, viewId);
+}
+
+function toHtmlResponse(status: number, html: string): Response {
+  return new Response(html, {
+    status,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+function parseAgentViewId(url: URL): string {
+  if (url.hostname !== 'view') {
+    throw new Error(`Unsupported agentview route: ${url.hostname}`);
+  }
+
+  const rawPath = decodeURIComponent(url.pathname || '');
+  const normalized = rawPath.replace(/^\/+/, '').trim();
+  if (normalized.length === 0) {
+    throw new Error('Missing view id');
+  }
+
+  return normalized;
+}
+
+async function handleAgentViewRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  let viewId: string;
+  try {
+    viewId = parseAgentViewId(url);
+  } catch (error: any) {
+    return toHtmlResponse(400, `<pre>${escapeHtml(error?.message || 'Invalid agent view URL')}</pre>`);
+  }
+
+  const dataDir = getDataDir();
+  let record;
+  try {
+    record = await getViewById(dataDir, viewId);
+  } catch (error: any) {
+    console.error('[agentview] failed to read view from agent DB', error);
+    return toHtmlResponse(500, `<pre>${escapeHtml(error?.message || 'Failed to load view')}</pre>`);
+  }
+
+  if (!record) {
+    return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewId)}</pre>`);
+  }
+
+  const html = buildViewDocument(String(record.id), record.content);
+  return toHtmlResponse(200, html);
 }
 
 function getLegacyViewWatcherRoot(): string {
@@ -235,6 +431,17 @@ async function createAppWindow(dataDir: string) {
   });
 
   mainWindow.maximize();
+
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    const src = typeof params.src === 'string' ? params.src : '';
+    if (!src.startsWith('agentview://view/')) {
+      return;
+    }
+
+    webPreferences.preload = path.join(__dirname, 'preload.js');
+    webPreferences.contextIsolation = true;
+    webPreferences.nodeIntegration = false;
+  });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   console.log('VITE_DEV_SERVER_URL:', devServerUrl);
@@ -386,6 +593,10 @@ app.on('ready', async () => {
     const clientDir = path.dirname(clientPath);
     const absolutePath = path.join(clientDir, p === '/' ? 'index.html' : p);
     return net.fetch(pathToFileURL(absolutePath).toString());
+  });
+
+  protocol.handle('agentview', (request) => {
+    return handleAgentViewRequest(request);
   });
 
   createWindow()

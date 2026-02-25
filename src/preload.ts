@@ -2,6 +2,118 @@
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from 'electron';
 
+interface RunSqlRequest {
+  target?: 'agent' | 'sqlite-file';
+  path?: string;
+  sql: string;
+  params?: any[];
+  description?: string;
+  confirmed?: boolean;
+}
+
+interface RunSqlResponseDetail {
+  requestId: string;
+  target?: 'agent' | 'sqlite-file';
+  path?: string;
+  sql: string;
+  params?: any[];
+  description?: string;
+  result?: any;
+  error?: string;
+}
+
+const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
+const RUN_SQL_EVENT = 'tradinglog:run-sql';
+const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
+
+let runSqlShimInstalled = false;
+
+function normalizeRunSqlRequest(request: RunSqlRequest): Required<Pick<RunSqlRequest, 'target' | 'sql'>> & RunSqlRequest {
+  if (!request || typeof request !== 'object') {
+    throw new Error('runSql request payload is required');
+  }
+
+  if (typeof request.sql !== 'string' || request.sql.trim().length === 0) {
+    throw new Error('runSql request requires a non-empty sql string');
+  }
+
+  const target = request.target ?? 'agent';
+  if (target !== 'agent' && target !== 'sqlite-file') {
+    throw new Error('runSql target must be "agent" or "sqlite-file"');
+  }
+
+  return {
+    ...request,
+    target,
+    sql: request.sql,
+  };
+}
+
+function invokeRunSql(request: RunSqlRequest): Promise<any> {
+  const normalized = normalizeRunSqlRequest(request);
+  return ipcRenderer.invoke(RUN_SQL_CHANNEL, normalized);
+}
+
+function toMediaUrl(relativePath: string): string {
+  const input = typeof relativePath === 'string' ? relativePath : '';
+  const normalized = input.replace(/^\/+/, '');
+  const segments = normalized
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment));
+
+  if (segments.length === 0) {
+    return 'media://';
+  }
+
+  if (segments.length === 1) {
+    return `media://${segments[0]}`;
+  }
+
+  return `media://${segments[0]}/${segments.slice(1).join('/')}`;
+}
+
+function installRunSqlEventShim() {
+  if (runSqlShimInstalled) {
+    return;
+  }
+
+  runSqlShimInstalled = true;
+  window.addEventListener(RUN_SQL_EVENT, async (event: Event) => {
+    const customEvent = event as CustomEvent<any>;
+    const detail = customEvent.detail || {};
+    const requestId = typeof detail.requestId === 'string' ? detail.requestId : '';
+
+    const response: RunSqlResponseDetail = {
+      requestId,
+      target: detail.target,
+      path: detail.path,
+      sql: typeof detail.sql === 'string' ? detail.sql : '',
+      params: Array.isArray(detail.params) ? detail.params : undefined,
+      description: typeof detail.description === 'string' ? detail.description : undefined,
+    };
+
+    try {
+      const result = await invokeRunSql({
+        target: detail.target,
+        path: detail.path,
+        sql: detail.sql,
+        params: detail.params,
+        description: detail.description,
+        confirmed: detail.confirmed,
+      });
+
+      response.result = result;
+    } catch (error: any) {
+      response.error = error instanceof Error ? error.message : String(error);
+    }
+
+    window.dispatchEvent(new CustomEvent<RunSqlResponseDetail>(RUN_SQL_RESPONSE_EVENT, {
+      detail: response,
+    }));
+  });
+}
+
 contextBridge.exposeInMainWorld('electronViewWatcher', {
   onFileChanged(callback: (detail: { path: string, event: string }) => void): () => void {
     const handler = (_event: any, detail: { path: string, event: string }) => callback(detail);
@@ -67,7 +179,7 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     description?: string;
     confirmed?: boolean;
   }): Promise<any> {
-    return ipcRenderer.invoke('electronAgentTools:runSql', request);
+    return invokeRunSql(request);
   },
   captureWindowPng(): Promise<{ path: string; base64: string }> {
     return ipcRenderer.invoke('electronAgentTools:captureWindowPng');
@@ -76,3 +188,19 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     return ipcRenderer.invoke('electronAgentTools:getConsoleLogs', since);
   },
 });
+
+contextBridge.exposeInMainWorld('tradinglogViewBridge', {
+  runSql(request: RunSqlRequest): Promise<any> {
+    return invokeRunSql(request);
+  },
+  mediaUrl(relativePath: string): string {
+    return toMediaUrl(relativePath);
+  },
+  installRunSqlEventShim(): void {
+    installRunSqlEventShim();
+  },
+});
+
+if (window.location.protocol === 'agentview:') {
+  installRunSqlEventShim();
+}

@@ -36,6 +36,11 @@ declare global {
     electronViewWatcher: {
       onFileChanged(callback: (detail: { path: string, event: string }) => void): () => void;
     };
+    tradinglogViewBridge?: {
+      runSql(request: ElectronRunSqlRequest): Promise<any>;
+      mediaUrl(relativePath: string): string;
+      installRunSqlEventShim(): void;
+    };
   }
 }
 
