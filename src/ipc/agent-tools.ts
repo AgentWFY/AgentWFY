@@ -172,6 +172,7 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
 
   // ls(path?, limit?) → sorted text, dirs have / suffix
   ipcMain.handle(Channel.LS, async (_event, relativePath?: string, limit?: number) => {
+    const root = await resolveToolRoot();
     const dirPath = await resolveToolPath(relativePath || '.');
     const effectiveLimit = limit ?? DEFAULT_LS_LIMIT;
 
@@ -182,6 +183,8 @@ export function registerAgentToolsHandlers(getRoot: () => string, getMainWindow:
     let limitReached = false;
 
     for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (isAgentPrivatePath(root, entryPath)) continue;
       if (results.length >= effectiveLimit) {
         limitReached = true;
         break;

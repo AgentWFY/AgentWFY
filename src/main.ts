@@ -166,13 +166,16 @@ function getAgentRuntimeFlags() {
   return resolveAgentRuntimeFlags(store);
 }
 
-function getAgentToolsRoot(): string {
+function getDataDir(): string {
   const dataDir = store.get('dataDir');
-  const base = typeof dataDir === 'string' ? dataDir : app.getPath('userData');
-  return path.join(base, 'agent');
+  return typeof dataDir === 'string' ? dataDir : app.getPath('userData');
 }
 
-registerAgentToolsHandlers(getAgentToolsRoot, () => mainWindow);
+function getLegacyViewWatcherRoot(): string {
+  return path.join(getDataDir(), 'agent');
+}
+
+registerAgentToolsHandlers(getDataDir, () => mainWindow);
 
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
@@ -183,7 +186,7 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (newValue && typeof newValue === 'string') {
     await startServer(newValue);
     mainWindow.reload();
-    viewWatcher = registerViewFileWatcher(getAgentToolsRoot, () => mainWindow);
+    viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
   }
 });
 
@@ -222,7 +225,7 @@ async function createAppWindow(dataDir: string) {
   if (runtimeFlags.agentRuntimeV2) {
     console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}; legacy view watcher remains active during Phase 0.`);
   }
-  viewWatcher = registerViewFileWatcher(getAgentToolsRoot, () => mainWindow);
+  viewWatcher = registerViewFileWatcher(getLegacyViewWatcherRoot, () => mainWindow);
 
   await startServer(dataDir);
 
