@@ -8,23 +8,28 @@
   "scripts": {
     "lint": "eslint --ext .ts,.tsx .",
     "clean-dist": "rm -rf dist",
-    "clone-client": "./clone-client.sh",
     "clone-server": "./clone-server.sh",
     "copy-main-modules": "cp package*.json dist && find src -maxdepth 1 -name \"*.html\" -exec cp {} dist/ \\; && find src -maxdepth 1 -name \"*.css\" -exec cp {} dist/ \\; && cd dist && npm ci --production",
     "build-main": "tsc --build && npm run copy-main-modules",
-    "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run clone-client",
+    "build-renderer": "cd src/renderer && npx vite build && mkdir -p ../../dist/client/assets/spectrum-styles && cp ../../node_modules/@spectrum-web-components/styles/*.css ../../dist/client/assets/spectrum-styles/",
+    "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run build-renderer",
     "make": "conveyor make app",
     "start": "electron ./dist",
-    "dev": "VITE_DEV_SERVER_URL=http://localhost:5173 electron ./dist"
+    "dev-renderer": "cd src/renderer && npx vite",
+    "dev": "concurrently \"npm run dev-renderer\" \"wait-on http://localhost:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron ./dist\""
   },
   "devDependencies": {
     "@hydraulic/conveyor": "^21.0.0",
+    "@types/marked": "^4.0.3",
     "@typescript-eslint/eslint-plugin": "^8.14.0",
+    "concurrently": "^9.1.0",
     "eslint": "^8.0.1",
     "eslint-plugin-import": "^2.25.0",
     "typescript": "^5.6.3",
     "vite": "^5.0.12",
-    "vite-plugin-static-copy": "^2.0.0"
+    "vite-plugin-static-copy": "^2.0.0",
+    "vite-tsconfig-paths": "^4.0.3",
+    "wait-on": "^8.0.0"
   },
   "keywords": [],
   "author": {
@@ -33,9 +38,17 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.52.12",
+    "@mariozechner/pi-ai": "^0.52.12",
+    "@sinclair/typebox": "^0.34.48",
+    "@spectrum-web-components/bundle": "^1.11.2",
+    "@spectrum-web-components/icons-workflow": "^1.11.2",
+    "@spectrum-web-components/styles": "^1.11.2",
     "axios": "^0.21.0",
     "electron": "npm:electron-nightly@^41.0.0-nightly.20251219",
     "electron-log": "^5.2.0",
-    "electron-store": "^8.2.0"
+    "electron-store": "^8.2.0",
+    "lightweight-charts": "^5.0.9",
+    "marked": "^4.0.12"
   }
 }

@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "app/*": ["./src/*"]
+    },
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "checkJs": true,
+    "isolatedModules": true,
+    "baseUrl": "."
+  },
+  "include": [
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.js",
+    "types/**/*.d.ts"
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
