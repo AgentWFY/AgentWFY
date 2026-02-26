@@ -183,25 +183,6 @@ textarea::placeholder, input::placeholder {
   color: var(--color-placeholder);
 }
 
-select {
-  font-family: var(--font-family);
-  font-size: 13px;
-  color: var(--color-text4);
-  background: var(--color-input-bg);
-  border: 1px solid var(--color-input-border);
-  border-radius: var(--radius-sm);
-  padding: 5px 8px;
-  width: 100%;
-  box-sizing: border-box;
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-
-select:focus {
-  border-color: var(--color-focus-border);
-  outline: none;
-}
-
 /* ── Buttons ── */
 
 .btn-icon {

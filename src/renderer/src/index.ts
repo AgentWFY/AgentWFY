@@ -6,6 +6,7 @@ import { TlAgentSettings } from 'app/components/agent_settings'
 import { TlSqlModal } from 'app/components/sql_confirmation_modal'
 import { TlJson } from 'app/components/json_view'
 import { TlActivityBar } from 'app/components/activity_bar'
+import { TlSelect } from 'app/components/select'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -21,6 +22,7 @@ async function init() {
   defineElement('tl-tabs', TlTabs)
   defineElement('tl-agent-chat', TlAgentChat)
   defineElement('tl-activity-bar', TlActivityBar)
+  defineElement('tl-select', TlSelect)
   defineElement('tl-app', TlApp)
 
   document.body.appendChild(document.createElement('tl-app'))

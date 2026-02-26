@@ -14,49 +14,133 @@ const STYLES = `
   .settings {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 8px 0;
+    gap: 0;
+    padding: 4px 0;
     font-size: 13px;
   }
-  .field {
+
+  /* ── Sections ── */
+
+  .section {
+    padding: 10px 0;
+  }
+  .section + .section {
+    border-top: 1px solid var(--color-border);
+  }
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text2);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 8px;
+  }
+  .section-body {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-  }
-  .field-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--color-text1);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .field-row {
-    display: flex;
     gap: 8px;
+  }
+
+  /* ── Setting rows ── */
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 26px;
+  }
+  .setting-label {
+    font-size: 12px;
+    color: var(--color-text3);
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+  .setting-control {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ── API key row ── */
+
+  .key-row {
+    display: flex;
+    gap: 6px;
     align-items: center;
   }
-  .field-row input[type="text"],
-  .field-row input[type="password"] { flex: 1; }
-  .oauth-status {
+  .key-row input {
+    flex: 1;
+    min-width: 0;
+  }
+  .key-row .btn {
+    flex-shrink: 0;
+  }
+
+  /* ── OAuth ── */
+
+  .oauth-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0 4px 72px;
     font-size: 12px;
     color: var(--color-text2);
-    padding: 2px 0;
   }
-  .oauth-error {
+  .oauth-error-row {
+    padding: 4px 0 4px 72px;
     font-size: 12px;
     color: var(--color-red-fg);
-    padding: 2px 0;
   }
   .oauth-link {
     font-size: 11px;
     color: var(--color-accent);
     word-break: break-all;
+    padding: 2px 0 2px 72px;
   }
   .oauth-link a { color: inherit; }
-  .connected-badge {
-    font-size: 11px;
+  .connected-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-green-fg);
+    flex-shrink: 0;
+  }
+  .connected-text {
+    font-size: 12px;
     color: var(--color-green-fg);
-    font-weight: 600;
+    font-weight: 500;
+  }
+
+  /* ── Grid for compact pairs ── */
+
+  .pair-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .pair-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .pair-field-label {
+    font-size: 10px;
+    color: var(--color-text2);
+    letter-spacing: 0.3px;
+  }
+
+  /* ── Toggle row ── */
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .toggle-row-label {
+    font-size: 12px;
+    color: var(--color-text3);
   }
 `
 
@@ -286,6 +370,12 @@ export class TlAgentSettings extends HTMLElement {
     return d.innerHTML
   }
 
+  private buildOptions(items: { value: string; label: string }[], selected: string): string {
+    return items
+      .map(i => `<option value="${this.esc(i.value)}"${i.value === selected ? ' selected' : ''}>${this.esc(i.label)}</option>`)
+      .join('')
+  }
+
   render() {
     if (!this._authConfig) return
 
@@ -293,168 +383,177 @@ export class TlAgentSettings extends HTMLElement {
     const disabled = this._disabled
     const disabledAttr = disabled ? 'disabled' : ''
 
-    let authSectionHtml = ''
+    // ── Section 1: Connection ──
+
+    const authMethodOpts = this.buildOptions(
+      authMethods.map(m => ({ value: m.id, label: m.label })),
+      config.authMethod,
+    )
+
+    let credentialHtml = ''
 
     if (config.authMethod === 'api-key') {
       const saveDisabled = disabled || !this.apiKeyInput.trim() ? 'disabled' : ''
-      authSectionHtml = `
-        <div class="field">
-          <div class="field-row">
-            <input
-              type="password"
-              value="${this.esc(this.apiKeyInput)}"
-              placeholder="Enter your API key"
-              ${disabledAttr}
-              data-action="api-key-input"
-            >
-            <button
-              class="btn btn-accent"
-              ${saveDisabled}
-              data-action="save-api-key"
-            >Save</button>
+      credentialHtml = `
+        <div class="key-row">
+          <input
+            type="password"
+            value="${this.esc(this.apiKeyInput)}"
+            placeholder="sk-..."
+            ${disabledAttr}
+            data-action="api-key-input"
+          >
+          <button class="btn btn-accent" ${saveDisabled} data-action="save-api-key">Save</button>
+        </div>`
+    } else if (this.connected) {
+      credentialHtml = `
+        <div class="setting-row">
+          <div class="setting-label"></div>
+          <div class="setting-control" style="display:flex;align-items:center;gap:8px;">
+            <span class="connected-dot"></span>
+            <span class="connected-text">Connected</span>
+            <button class="btn" style="margin-left:auto;" ${disabledAttr} data-action="logout">Logout</button>
           </div>
         </div>`
-    } else {
-      if (this.connected) {
-        authSectionHtml = `
-          <div class="field">
-            <div class="field-row">
-              <span class="connected-badge">Connected</span>
-              <button
-                class="btn"
-                ${disabledAttr}
-                data-action="logout"
-              >Logout</button>
-            </div>
-          </div>`
-      } else if (this.awaitingCode) {
-        let linkHtml = ''
-        if (this.oauthAuthUrl) {
-          linkHtml = `
-            <div class="oauth-link">
-              <a href="${this.esc(this.oauthAuthUrl)}" target="_blank" rel="noopener">${this.esc(this.oauthAuthUrl)}</a>
-            </div>`
-        }
-        let statusHtml = ''
-        if (this.oauthStatus) {
-          statusHtml = `<div class="oauth-status">${this.esc(this.oauthStatus)}</div>`
-        }
-        const submitDisabled = !this.oauthCodeInput.trim() ? 'disabled' : ''
-        authSectionHtml = `
-          <div class="field">
-            ${linkHtml}
-            ${statusHtml}
-            <div class="field-row">
-              <input
-                type="text"
-                value="${this.esc(this.oauthCodeInput)}"
-                placeholder="Paste code here"
-                data-action="oauth-code-input"
-              >
-              <button
-                class="btn btn-accent"
-                ${submitDisabled}
-                data-action="submit-code"
-              >Submit</button>
-            </div>
-          </div>`
-      } else {
-        const loginDisabled = disabled || this.isLoggingIn ? 'disabled' : ''
-        const loginLabel = this.isLoggingIn ? 'Logging in...' : 'Login'
-        let statusHtml = ''
-        if (this.oauthStatus) {
-          statusHtml = `<div class="oauth-status">${this.esc(this.oauthStatus)}</div>`
-        }
-        authSectionHtml = `
-          <div class="field">
-            <button
-              class="btn btn-accent"
-              ${loginDisabled}
-              data-action="oauth-login"
-            >${loginLabel}</button>
-            ${statusHtml}
-          </div>`
+    } else if (this.awaitingCode) {
+      credentialHtml = ''
+      if (this.oauthAuthUrl) {
+        credentialHtml += `<div class="oauth-link"><a href="${this.esc(this.oauthAuthUrl)}" target="_blank" rel="noopener">${this.esc(this.oauthAuthUrl)}</a></div>`
       }
-
-      if (this.oauthError) {
-        authSectionHtml += `<div class="oauth-error">${this.esc(this.oauthError)}</div>`
+      if (this.oauthStatus) {
+        credentialHtml += `<div class="oauth-status-row">${this.esc(this.oauthStatus)}</div>`
+      }
+      const submitDisabled = !this.oauthCodeInput.trim() ? 'disabled' : ''
+      credentialHtml += `
+        <div class="key-row">
+          <input
+            type="text"
+            value="${this.esc(this.oauthCodeInput)}"
+            placeholder="Paste code here"
+            data-action="oauth-code-input"
+          >
+          <button class="btn btn-accent" ${submitDisabled} data-action="submit-code">Submit</button>
+        </div>`
+    } else {
+      const loginDisabled = disabled || this.isLoggingIn ? 'disabled' : ''
+      const loginLabel = this.isLoggingIn ? 'Logging in...' : 'Login'
+      credentialHtml = `
+        <div class="setting-row">
+          <div class="setting-label"></div>
+          <div class="setting-control">
+            <button class="btn btn-accent" style="width:100%;" ${loginDisabled} data-action="oauth-login">${loginLabel}</button>
+          </div>
+        </div>`
+      if (this.oauthStatus) {
+        credentialHtml += `<div class="oauth-status-row">${this.esc(this.oauthStatus)}</div>`
       }
     }
 
-    // Provider picker (only for api-key method)
-    let providerHtml = ''
+    if (this.oauthError) {
+      credentialHtml += `<div class="oauth-error-row">${this.esc(this.oauthError)}</div>`
+    }
+
+    const connectionHtml = `
+      <div class="section">
+        <div class="section-label">Connection</div>
+        <div class="section-body">
+          <div class="setting-row">
+            <div class="setting-label">Auth</div>
+            <div class="setting-control">
+              <tl-select value="${this.esc(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
+            </div>
+          </div>
+          ${credentialHtml}
+        </div>
+      </div>`
+
+    // ── Section 2: Model ──
+
+    let modelSectionBody = ''
+
     if (!this.isOAuth) {
-      const providerOptions = this.availableProviders
-        .map(prov => `<option value="${this.esc(prov)}"${prov === config.provider ? ' selected' : ''}>${this.esc(prov)}</option>`)
-        .join('')
-      providerHtml = `
-        <div class="field">
-          <span class="field-label">Provider</span>
-          <select
-            ${disabledAttr}
-            data-action="provider-picker"
-          >${providerOptions}</select>
+      const providerOpts = this.buildOptions(
+        this.availableProviders.map(p => ({ value: p, label: p })),
+        config.provider,
+      )
+      const modelOpts = this.buildOptions(
+        this.availableModels.map((m: any) => ({ value: m.id, label: m.name || m.id })),
+        config.modelId,
+      )
+      const thinkingOpts = this.buildOptions(
+        thinkingLevels.map(l => ({ value: l, label: l })),
+        config.thinkingLevel,
+      )
+
+      modelSectionBody = `
+        <div class="pair-grid">
+          <div class="pair-field">
+            <span class="pair-field-label">Provider</span>
+            <tl-select value="${this.esc(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</tl-select>
+          </div>
+          <div class="pair-field">
+            <span class="pair-field-label">Thinking</span>
+            <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+          </div>
+        </div>
+        <div class="pair-field">
+          <span class="pair-field-label">Model</span>
+          <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+        </div>`
+    } else {
+      const modelOpts = this.buildOptions(
+        this.availableModels.map((m: any) => ({ value: m.id, label: m.name || m.id })),
+        config.modelId,
+      )
+      const thinkingOpts = this.buildOptions(
+        thinkingLevels.map(l => ({ value: l, label: l })),
+        config.thinkingLevel,
+      )
+
+      modelSectionBody = `
+        <div class="pair-grid">
+          <div class="pair-field">
+            <span class="pair-field-label">Model</span>
+            <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+          </div>
+          <div class="pair-field">
+            <span class="pair-field-label">Thinking</span>
+            <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+          </div>
         </div>`
     }
 
-    // Model picker
-    const modelOptions = this.availableModels
-      .map((m: any) => `<option value="${this.esc(m.id)}"${m.id === config.modelId ? ' selected' : ''}>${this.esc(m.name || m.id)}</option>`)
-      .join('')
     const modelHtml = `
-      <div class="field">
-        <span class="field-label">Model</span>
-        <select
-          ${disabledAttr}
-          data-action="model-picker"
-        >${modelOptions}</select>
+      <div class="section">
+        <div class="section-label">Model</div>
+        <div class="section-body">
+          ${modelSectionBody}
+        </div>
       </div>`
 
-    // Thinking picker
-    const thinkingOptions = thinkingLevels
-      .map(level => `<option value="${level}"${level === config.thinkingLevel ? ' selected' : ''}>${level}</option>`)
-      .join('')
-    const thinkingHtml = `
-      <div class="field">
-        <span class="field-label">Thinking</span>
-        <select
-          ${disabledAttr}
-          data-action="thinking-picker"
-        >${thinkingOptions}</select>
-      </div>`
+    // ── Section 3: Display ──
 
-    // Show tools toggle
     const checkedAttr = this._showTools ? 'checked' : ''
-    const toolsHtml = `
-      <div class="field">
-        <span class="field-label">Display</span>
-        <label class="toggle-switch">
-          <input type="checkbox" ${checkedAttr} data-action="tools-toggle">
-          <span class="toggle-track"></span>
-          Show tool calls
-        </label>
+    const displayHtml = `
+      <div class="section">
+        <div class="section-label">Display</div>
+        <div class="section-body">
+          <div class="toggle-row">
+            <span class="toggle-row-label">Show tool calls</span>
+            <label class="toggle-switch">
+              <input type="checkbox" ${checkedAttr} data-action="tools-toggle">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
       </div>`
-
-    // Auth method picker
-    const authMethodOptions = authMethods
-      .map(m => `<option value="${this.esc(m.id)}"${m.id === config.authMethod ? ' selected' : ''}>${this.esc(m.label)}</option>`)
-      .join('')
 
     this.innerHTML = `
       <style>${STYLES}</style>
       <div class="settings">
-        <div class="field">
-          <span class="field-label">Authentication</span>
-          <select
-            ${disabledAttr}
-            data-action="auth-method-picker"
-          >${authMethodOptions}</select>
-        </div>
-        ${authSectionHtml}
-        ${providerHtml}
+        ${connectionHtml}
         ${modelHtml}
-        ${thinkingHtml}
-        ${toolsHtml}
+        ${displayHtml}
       </div>`
 
     this.attachListeners()
