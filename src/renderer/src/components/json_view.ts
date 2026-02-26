@@ -7,7 +7,7 @@ export class TlJson extends HTMLElement {
   constructor() {
     super()
     this.preEl = document.createElement('pre')
-    this.preEl.style.cssText = 'cursor:pointer;margin:0;color:var(--spectrum-global-color-gray-500);font-size:12px;'
+    this.preEl.style.cssText = 'cursor:pointer;margin:0;color:var(--color-text2);font-size:12px;'
     this.preEl.addEventListener('click', () => {
       this._isOpen = !this._isOpen
       this.updateDisplay()

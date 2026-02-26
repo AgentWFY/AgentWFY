@@ -26,7 +26,7 @@ const STYLES = `
   .field-label {
     font-size: 11px;
     font-weight: 600;
-    color: var(--spectrum-global-color-gray-700);
+    color: var(--color-text1);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -35,29 +35,29 @@ const STYLES = `
     gap: 8px;
     align-items: center;
   }
-  .field-row sp-textfield { flex: 1; }
+  .field-row input[type="text"],
+  .field-row input[type="password"] { flex: 1; }
   .oauth-status {
     font-size: 12px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
     padding: 2px 0;
   }
   .oauth-error {
     font-size: 12px;
-    color: var(--spectrum-global-color-red-700);
+    color: var(--color-red-fg);
     padding: 2px 0;
   }
   .oauth-link {
     font-size: 11px;
-    color: var(--spectrum-global-color-blue-600);
+    color: var(--color-accent);
     word-break: break-all;
   }
   .oauth-link a { color: inherit; }
   .connected-badge {
     font-size: 11px;
-    color: var(--spectrum-global-color-green-700);
+    color: var(--color-green-fg);
     font-weight: 600;
   }
-  sp-picker { width: 100%; }
 `
 
 const oauthProviders = getAvailableOAuthProviders()
@@ -300,19 +300,18 @@ export class TlAgentSettings extends HTMLElement {
       authSectionHtml = `
         <div class="field">
           <div class="field-row">
-            <sp-textfield
+            <input
+              type="password"
               value="${this.esc(this.apiKeyInput)}"
               placeholder="Enter your API key"
-              type="password"
               ${disabledAttr}
               data-action="api-key-input"
-            ></sp-textfield>
-            <sp-button
-              variant="primary"
-              size="s"
+            >
+            <button
+              class="btn btn-accent"
               ${saveDisabled}
               data-action="save-api-key"
-            >Save</sp-button>
+            >Save</button>
           </div>
         </div>`
     } else {
@@ -321,12 +320,11 @@ export class TlAgentSettings extends HTMLElement {
           <div class="field">
             <div class="field-row">
               <span class="connected-badge">Connected</span>
-              <sp-button
-                variant="secondary"
-                size="s"
+              <button
+                class="btn"
                 ${disabledAttr}
                 data-action="logout"
-              >Logout</sp-button>
+              >Logout</button>
             </div>
           </div>`
       } else if (this.awaitingCode) {
@@ -347,17 +345,17 @@ export class TlAgentSettings extends HTMLElement {
             ${linkHtml}
             ${statusHtml}
             <div class="field-row">
-              <sp-textfield
+              <input
+                type="text"
                 value="${this.esc(this.oauthCodeInput)}"
                 placeholder="Paste code here"
                 data-action="oauth-code-input"
-              ></sp-textfield>
-              <sp-button
-                variant="primary"
-                size="s"
+              >
+              <button
+                class="btn btn-accent"
                 ${submitDisabled}
                 data-action="submit-code"
-              >Submit</sp-button>
+              >Submit</button>
             </div>
           </div>`
       } else {
@@ -369,12 +367,11 @@ export class TlAgentSettings extends HTMLElement {
         }
         authSectionHtml = `
           <div class="field">
-            <sp-button
-              variant="primary"
-              size="s"
+            <button
+              class="btn btn-accent"
               ${loginDisabled}
               data-action="oauth-login"
-            >${loginLabel}</sp-button>
+            >${loginLabel}</button>
             ${statusHtml}
           </div>`
       }
@@ -387,46 +384,43 @@ export class TlAgentSettings extends HTMLElement {
     // Provider picker (only for api-key method)
     let providerHtml = ''
     if (!this.isOAuth) {
-      const providerItems = this.availableProviders
-        .map(prov => `<sp-menu-item value="${this.esc(prov)}">${this.esc(prov)}</sp-menu-item>`)
+      const providerOptions = this.availableProviders
+        .map(prov => `<option value="${this.esc(prov)}"${prov === config.provider ? ' selected' : ''}>${this.esc(prov)}</option>`)
         .join('')
       providerHtml = `
         <div class="field">
           <span class="field-label">Provider</span>
-          <sp-picker
-            value="${this.esc(config.provider)}"
+          <select
             ${disabledAttr}
             data-action="provider-picker"
-          >${providerItems}</sp-picker>
+          >${providerOptions}</select>
         </div>`
     }
 
     // Model picker
-    const modelItems = this.availableModels
-      .map((m: any) => `<sp-menu-item value="${this.esc(m.id)}">${this.esc(m.name || m.id)}</sp-menu-item>`)
+    const modelOptions = this.availableModels
+      .map((m: any) => `<option value="${this.esc(m.id)}"${m.id === config.modelId ? ' selected' : ''}>${this.esc(m.name || m.id)}</option>`)
       .join('')
     const modelHtml = `
       <div class="field">
         <span class="field-label">Model</span>
-        <sp-picker
-          value="${this.esc(config.modelId)}"
+        <select
           ${disabledAttr}
           data-action="model-picker"
-        >${modelItems}</sp-picker>
+        >${modelOptions}</select>
       </div>`
 
     // Thinking picker
-    const thinkingItems = thinkingLevels
-      .map(level => `<sp-menu-item value="${level}">${level}</sp-menu-item>`)
+    const thinkingOptions = thinkingLevels
+      .map(level => `<option value="${level}"${level === config.thinkingLevel ? ' selected' : ''}>${level}</option>`)
       .join('')
     const thinkingHtml = `
       <div class="field">
         <span class="field-label">Thinking</span>
-        <sp-picker
-          value="${this.esc(config.thinkingLevel)}"
+        <select
           ${disabledAttr}
           data-action="thinking-picker"
-        >${thinkingItems}</sp-picker>
+        >${thinkingOptions}</select>
       </div>`
 
     // Show tools toggle
@@ -434,15 +428,16 @@ export class TlAgentSettings extends HTMLElement {
     const toolsHtml = `
       <div class="field">
         <span class="field-label">Display</span>
-        <sp-switch
-          ${checkedAttr}
-          data-action="tools-toggle"
-        >Show tool calls</sp-switch>
+        <label class="toggle-switch">
+          <input type="checkbox" ${checkedAttr} data-action="tools-toggle">
+          <span class="toggle-track"></span>
+          Show tool calls
+        </label>
       </div>`
 
     // Auth method picker
-    const authMethodItems = authMethods
-      .map(m => `<sp-menu-item value="${this.esc(m.id)}">${this.esc(m.label)}</sp-menu-item>`)
+    const authMethodOptions = authMethods
+      .map(m => `<option value="${this.esc(m.id)}"${m.id === config.authMethod ? ' selected' : ''}>${this.esc(m.label)}</option>`)
       .join('')
 
     this.innerHTML = `
@@ -450,11 +445,10 @@ export class TlAgentSettings extends HTMLElement {
       <div class="settings">
         <div class="field">
           <span class="field-label">Authentication</span>
-          <sp-picker
-            value="${this.esc(config.authMethod)}"
+          <select
             ${disabledAttr}
             data-action="auth-method-picker"
-          >${authMethodItems}</sp-picker>
+          >${authMethodOptions}</select>
         </div>
         ${authSectionHtml}
         ${providerHtml}
@@ -474,11 +468,10 @@ export class TlAgentSettings extends HTMLElement {
       authPicker.addEventListener('change', (e) => this.handleAuthMethodChange(e))
     }
 
-    const apiKeyInput = q('[data-action="api-key-input"]') as any
+    const apiKeyInput = q('[data-action="api-key-input"]') as HTMLInputElement | null
     if (apiKeyInput) {
-      apiKeyInput.addEventListener('change', (e: any) => {
-        this.apiKeyInput = e.currentTarget.value
-        this.queueRender()
+      apiKeyInput.addEventListener('input', (e: Event) => {
+        this.apiKeyInput = (e.target as HTMLInputElement).value
       })
       apiKeyInput.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') this.handleSaveApiKey()
@@ -495,11 +488,10 @@ export class TlAgentSettings extends HTMLElement {
       oauthLoginBtn.addEventListener('click', () => this.handleOAuthLogin())
     }
 
-    const oauthCodeInput = q('[data-action="oauth-code-input"]') as any
+    const oauthCodeInput = q('[data-action="oauth-code-input"]') as HTMLInputElement | null
     if (oauthCodeInput) {
-      oauthCodeInput.addEventListener('change', (e: any) => {
-        this.oauthCodeInput = e.currentTarget.value
-        this.queueRender()
+      oauthCodeInput.addEventListener('input', (e: Event) => {
+        this.oauthCodeInput = (e.target as HTMLInputElement).value
       })
       oauthCodeInput.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') this.handleSubmitCode()
@@ -531,11 +523,11 @@ export class TlAgentSettings extends HTMLElement {
       thinkingPicker.addEventListener('change', (e) => this.handleThinkingChange(e))
     }
 
-    const toolsToggle = q('[data-action="tools-toggle"]')
+    const toolsToggle = q('[data-action="tools-toggle"]') as HTMLInputElement | null
     if (toolsToggle) {
       toolsToggle.addEventListener('change', () => {
         this.dispatchEvent(new CustomEvent('tools-toggle', {
-          detail: !this._showTools,
+          detail: toolsToggle.checked,
           bubbles: true,
           composed: true,
         }))

@@ -11,7 +11,7 @@
     "clone-server": "./clone-server.sh",
     "copy-main-modules": "cp package*.json dist && find src -maxdepth 1 -name \"*.html\" -exec cp {} dist/ \\; && find src -maxdepth 1 -name \"*.css\" -exec cp {} dist/ \\; && cd dist && npm ci --production",
     "build-main": "tsc --build && npm run copy-main-modules",
-    "build-renderer": "cd src/renderer && npx vite build && mkdir -p ../../dist/client/assets/spectrum-styles && cp ../../node_modules/@spectrum-web-components/styles/*.css ../../dist/client/assets/spectrum-styles/",
+    "build-renderer": "cd src/renderer && npx vite build",
     "build": "npm run clean-dist && npm run build-main && npm run clone-server && npm run build-renderer",
     "make": "conveyor make app",
     "start": "electron ./dist",

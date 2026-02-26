@@ -1,5 +1,6 @@
 import type { TabData } from 'app/types'
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-pin-on.js'
+
+const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
 function generateId(len = 8): string {
   const arr = new Uint8Array((len || 40) / 2)
@@ -296,9 +297,9 @@ export class TlTabs extends HTMLElement {
       })
 
       if (tab.pinned) {
-        const pin = document.createElement('sp-icon-pin-on') as HTMLElement
+        const pin = document.createElement('span')
         pin.className = 'tab-pin-icon'
-        pin.setAttribute('size', 's')
+        pin.innerHTML = PIN_ICON_SVG
         tabItem.appendChild(pin)
       } else {
         const title = document.createElement('span')
@@ -448,7 +449,7 @@ export class TlTabs extends HTMLElement {
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        border-left: 1px solid var(--spectrum-global-color-gray-200);
+        border-left: 1px solid var(--color-border);
         height: 100%;
         min-height: 0;
         min-width: 0;

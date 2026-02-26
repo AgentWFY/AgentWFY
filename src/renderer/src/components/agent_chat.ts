@@ -66,15 +66,15 @@ const STYLES = `
   .block p:last-child { margin-bottom: 0; }
   .block p:first-child { margin-top: 0; }
   .block-user {
-    background: var(--spectrum-global-color-gray-200);
+    background: var(--color-bg3);
     padding: 6px 10px;
-    border-radius: var(--spectrum-alias-border-radius-regular);
+    border-radius: var(--radius-sm);
   }
   .assistant-text { padding: 2px 0; }
   .tools-group {
     margin-top: 2px;
     font-size: 12px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
   }
   .tool-line {
     display: flex;
@@ -84,7 +84,7 @@ const STYLES = `
     cursor: pointer;
     user-select: none;
   }
-  .tool-line:hover { color: var(--spectrum-global-color-gray-800); }
+  .tool-line:hover { color: var(--color-text4); }
   .tool-line-name {
     white-space: nowrap;
     flex-shrink: 0;
@@ -102,7 +102,7 @@ const STYLES = `
     min-width: 0;
   }
   .tool-error-label {
-    color: var(--spectrum-global-color-red-700);
+    color: var(--color-red-fg);
     font-size: 11px;
   }
   .tool-detail {
@@ -113,16 +113,22 @@ const STYLES = `
     margin: 0;
     max-height: 200px;
     overflow: auto;
-    color: var(--spectrum-global-color-gray-700);
+    color: var(--color-text1);
   }
   .block-custom {
     font-size: 12px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
     padding: 2px 0;
   }
   .input-area {
     margin-top: 10px;
     flex-shrink: 0;
+  }
+  .input-area textarea {
+    resize: none;
+    min-height: 36px;
+    max-height: 120px;
+    line-height: 1.4;
   }
   .tools-row {
     margin-top: 6px;
@@ -131,11 +137,11 @@ const STYLES = `
     align-items: center;
   }
   .error-banner {
-    color: var(--spectrum-global-color-red-700);
+    color: var(--color-red-fg);
     padding: 6px 10px;
     margin: 6px 0;
-    background: var(--spectrum-global-color-red-100);
-    border-radius: var(--spectrum-alias-border-radius-regular);
+    background: var(--color-red-bg);
+    border-radius: var(--radius-sm);
     font-size: 13px;
   }
   .initializing {
@@ -145,9 +151,8 @@ const STYLES = `
     height: 100%;
     color: var(--color-text2);
   }
-  sp-textfield { width: 100%; }
   .streaming-indicator {
-    color: var(--spectrum-global-color-gray-500);
+    color: var(--color-text2);
     font-size: 12px;
     padding: 2px 0;
   }
@@ -155,15 +160,15 @@ const STYLES = `
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--spectrum-global-color-red-700);
+    color: var(--color-red-fg);
     font-size: 12px;
     padding: 0 4px;
     text-decoration: underline;
   }
-  .stop-btn:hover { color: var(--spectrum-global-color-red-900); }
+  .stop-btn:hover { opacity: 0.8; }
   .model-info {
     font-size: 11px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -176,7 +181,7 @@ const STYLES = `
     flex-shrink: 0;
   }
   .settings-panel {
-    border-top: 1px solid var(--spectrum-global-color-gray-300);
+    border-top: 1px solid var(--color-border);
     padding-top: 8px;
     margin-top: 4px;
   }
@@ -195,30 +200,30 @@ const STYLES = `
     border: none;
     cursor: pointer;
     padding: 2px 6px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
     font-size: 16px;
     line-height: 1;
     border-radius: 3px;
   }
   .gear-btn:hover {
-    color: var(--spectrum-global-color-gray-800);
-    background: var(--spectrum-global-color-gray-200);
+    color: var(--color-text4);
+    background: var(--color-item-hover);
   }
-  .gear-btn.active { color: var(--spectrum-global-color-blue-600); }
+  .gear-btn.active { color: var(--color-accent); }
   .session-indicator {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 4px 8px;
     margin-bottom: 4px;
-    border-bottom: 1px solid var(--spectrum-global-color-gray-300);
+    border-bottom: 1px solid var(--color-border);
     font-size: 12px;
-    color: var(--spectrum-global-color-gray-600);
+    color: var(--color-text2);
     cursor: pointer;
     user-select: none;
     flex-shrink: 0;
   }
-  .session-indicator:hover { color: var(--spectrum-global-color-gray-800); }
+  .session-indicator:hover { color: var(--color-text4); }
   .session-running-dot {
     width: 6px;
     height: 6px;
@@ -232,9 +237,9 @@ const STYLES = `
     50% { opacity: 0.4; }
   }
   .session-panel {
-    background: var(--spectrum-global-color-gray-100);
-    border: 1px solid var(--spectrum-global-color-gray-300);
-    border-radius: var(--spectrum-alias-border-radius-regular);
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     max-height: 300px;
     overflow-y: auto;
     box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
@@ -248,11 +253,11 @@ const STYLES = `
     padding: 5px 10px;
     cursor: pointer;
     font-size: 12px;
-    color: var(--spectrum-global-color-gray-800);
+    color: var(--color-text3);
   }
-  .session-panel-item:hover { background: var(--spectrum-global-color-gray-200); }
+  .session-panel-item:hover { background: var(--color-item-hover); }
   .session-panel-item.active {
-    background: var(--spectrum-global-color-gray-200);
+    background: var(--color-item-hover);
     font-weight: 600;
   }
   .session-panel-item-label {
@@ -264,7 +269,7 @@ const STYLES = `
   }
   .session-panel-item-date {
     font-size: 11px;
-    color: var(--spectrum-global-color-gray-500);
+    color: var(--color-text2);
     flex-shrink: 0;
   }
 `
@@ -748,13 +753,12 @@ export class TlAgentChat extends HTMLElement {
 
     // Input area
     html += '<div class="input-area" style="margin-top:10px;flex-shrink:0;">'
-    html += `<sp-textfield
+    html += `<textarea
       id="msg-input"
-      grows
-      multiline
+      rows="1"
       placeholder="${this.isStreaming ? 'Send follow-up message...' : 'Type your message here...'}"
       ${this.isInitializing ? 'disabled' : ''}
-    ></sp-textfield>`
+    ></textarea>`
     html += '<div class="tools-row">'
     html += `<div class="model-info">${this.escapeHtml(this.authConfig?.modelId ?? '')}</div>`
     html += '<div class="tools-row-actions">'
@@ -788,7 +792,7 @@ export class TlAgentChat extends HTMLElement {
     }
 
     // Set input value
-    const inputEl = this.containerEl.querySelector('#msg-input') as any
+    const inputEl = this.containerEl.querySelector('#msg-input') as HTMLTextAreaElement | null
     if (inputEl) {
       inputEl.value = this.inputValue
     }

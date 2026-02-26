@@ -160,7 +160,7 @@ export class TlExternalView extends HTMLElement {
     this.containerEl.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;min-height:0;overflow:hidden;'
 
     this.fileChangedBarEl = document.createElement('div')
-    this.fileChangedBarEl.style.cssText = 'display:none;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--spectrum-global-color-blue-100, #1a3a5c);color:#fff;font-size:13px;flex-shrink:0;'
+    this.fileChangedBarEl.style.cssText = 'display:none;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--color-accent);color:#fff;font-size:13px;flex-shrink:0;'
     const barText = document.createElement('span')
     barText.textContent = 'View changed'
     const reloadBtn = document.createElement('button')

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, type Rectangle } from 'electron';
+import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, nativeTheme, type Rectangle } from 'electron';
 import createVaultWindow from './vault_window';
 import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
@@ -541,7 +541,7 @@ function ensureCommandPaletteWindow(): BrowserWindow {
     acceptFirstMouse: true,
     alwaysOnTop: true,
     roundedCorners: true,
-    backgroundColor: '#1f1f1f',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1f1f1f' : '#f0f0f0',
     webPreferences: {
       preload: path.join(__dirname, 'command_palette_preload.js'),
       contextIsolation: true,

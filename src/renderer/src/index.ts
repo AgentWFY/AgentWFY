@@ -1,4 +1,3 @@
-import "@spectrum-web-components/bundle/elements.js"
 import { TlApp } from 'app/components/app'
 import { TlTabs } from 'app/components/tabs'
 import { TlExternalView } from 'app/components/external_view'
@@ -6,6 +5,7 @@ import { TlAgentChat } from 'app/components/agent_chat'
 import { TlAgentSettings } from 'app/components/agent_settings'
 import { TlSqlModal } from 'app/components/sql_confirmation_modal'
 import { TlJson } from 'app/components/json_view'
+import { TlActivityBar } from 'app/components/activity_bar'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -20,6 +20,7 @@ async function init() {
   defineElement('tl-external-view', TlExternalView)
   defineElement('tl-tabs', TlTabs)
   defineElement('tl-agent-chat', TlAgentChat)
+  defineElement('tl-activity-bar', TlActivityBar)
   defineElement('tl-app', TlApp)
 
   document.body.appendChild(document.createElement('tl-app'))

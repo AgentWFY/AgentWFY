@@ -2,13 +2,28 @@ import { initApp, destroyApp } from 'app/interactors/app'
 import type { PendingSqlConfirmation } from 'app/types'
 
 export class TlApp extends HTMLElement {
-  private isAgentChatOpen = false
-  private agentPanelEl!: HTMLDivElement
+  private activeSidebarPanel: string | null = null
   private sqlModalEl!: HTMLElement
+  private sidebarEl!: HTMLDivElement
+  private activityBarEl!: HTMLElement
+
+  private onPanelToggle = (e: Event) => {
+    const detail = (e as CustomEvent<{ panel: string }>).detail
+    if (this.activeSidebarPanel === detail.panel) {
+      this.activeSidebarPanel = null
+    } else {
+      this.activeSidebarPanel = detail.panel
+    }
+    this.updateSidebar()
+  }
 
   private onToggleAgentChat = () => {
-    this.isAgentChatOpen = !this.isAgentChatOpen
-    this.updateAgentPanel()
+    if (this.activeSidebarPanel === 'agent-chat') {
+      this.activeSidebarPanel = null
+    } else {
+      this.activeSidebarPanel = 'agent-chat'
+    }
+    this.updateSidebar()
   }
 
   private onSqlConfirmationNeeded = (e: Event) => {
@@ -31,16 +46,26 @@ export class TlApp extends HTMLElement {
     style.textContent = `
       .tl-app-container {
         display: flex;
-        flex-direction: column;
         width: 100vw;
         height: 100vh;
       }
-      .tl-app-content {
-        flex: 1;
-        overflow: hidden;
+      .tl-app-sidebar {
+        width: var(--sidebar-width);
         display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
         min-height: 0;
-        min-width: 0;
+        border-right: 1px solid var(--color-border);
+        background: var(--color-sidebar-bg);
+        overflow: hidden;
+      }
+      .tl-app-sidebar > tl-agent-chat {
+        display: block;
+        flex: 1;
+        min-height: 0;
+      }
+      .tl-app-sidebar-hidden {
+        display: none;
       }
       .tl-app-main-area {
         flex: 1;
@@ -49,63 +74,38 @@ export class TlApp extends HTMLElement {
         min-height: 0;
         min-width: 0;
       }
-      .tl-app-agent-panel {
-        width: 420px;
-        display: flex;
-        flex-direction: column;
-        flex-shrink: 0;
-        min-height: 0;
-        border-left: 1px solid var(--color-border);
-        overflow: hidden;
-      }
-      .tl-app-agent-panel > tl-agent-chat {
-        display: block;
-        flex: 1;
-        min-height: 0;
-      }
-      .tl-app-agent-panel-hidden {
-        display: none;
-      }
     `
     this.appendChild(style)
-
-    const theme = document.createElement('sp-theme')
-    theme.setAttribute('scale', 'medium')
-    theme.setAttribute('color', 'dark')
-
-    const iconsMedium = document.createElement('sp-icons-medium')
-    theme.appendChild(iconsMedium)
 
     const container = document.createElement('div')
     container.className = 'tl-app-container'
 
-    // Content area
-    const content = document.createElement('div')
-    content.className = 'tl-app-content'
+    // Activity bar
+    this.activityBarEl = document.createElement('tl-activity-bar')
+    container.appendChild(this.activityBarEl)
 
+    // Sidebar
+    this.sidebarEl = document.createElement('div')
+    this.sidebarEl.className = 'tl-app-sidebar tl-app-sidebar-hidden'
+    const agentChat = document.createElement('tl-agent-chat')
+    this.sidebarEl.appendChild(agentChat)
+    container.appendChild(this.sidebarEl)
+
+    // Main area
     const mainArea = document.createElement('div')
     mainArea.className = 'tl-app-main-area'
     const tabs = document.createElement('tl-tabs')
     mainArea.appendChild(tabs)
-    content.appendChild(mainArea)
+    container.appendChild(mainArea)
 
-    // Agent panel
-    this.agentPanelEl = document.createElement('div')
-    this.agentPanelEl.className = 'tl-app-agent-panel tl-app-agent-panel-hidden'
-    const agentChat = document.createElement('tl-agent-chat')
-    this.agentPanelEl.appendChild(agentChat)
-    content.appendChild(this.agentPanelEl)
-
-    container.appendChild(content)
-    theme.appendChild(container)
+    this.appendChild(container)
 
     // SQL Modal
     this.sqlModalEl = document.createElement('tl-sql-modal')
-    theme.appendChild(this.sqlModalEl)
-
-    this.appendChild(theme)
+    this.appendChild(this.sqlModalEl)
 
     // Event listeners
+    this.addEventListener('panel-toggle', this.onPanelToggle)
     window.addEventListener('tradinglog:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('tradinglog:sql-confirmation-needed', this.onSqlConfirmationNeeded)
     window.addEventListener('tradinglog:sql-confirmation-cleared', this.onSqlConfirmationCleared)
@@ -114,17 +114,19 @@ export class TlApp extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('tradinglog:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('tradinglog:sql-confirmation-needed', this.onSqlConfirmationNeeded)
     window.removeEventListener('tradinglog:sql-confirmation-cleared', this.onSqlConfirmationCleared)
     destroyApp()
   }
 
-  private updateAgentPanel() {
-    if (this.isAgentChatOpen) {
-      this.agentPanelEl.classList.remove('tl-app-agent-panel-hidden')
+  private updateSidebar() {
+    if (this.activeSidebarPanel) {
+      this.sidebarEl.classList.remove('tl-app-sidebar-hidden')
     } else {
-      this.agentPanelEl.classList.add('tl-app-agent-panel-hidden')
+      this.sidebarEl.classList.add('tl-app-sidebar-hidden')
     }
+    ;(this.activityBarEl as any).activePanel = this.activeSidebarPanel
   }
 }
