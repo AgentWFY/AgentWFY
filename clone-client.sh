@@ -42,4 +42,14 @@ rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 cp -a dist/. "$OUTPUT_DIR/"
 
+SPECTRUM_STYLES_DIR="$CLIENT_PROJECT_DIR/node_modules/@spectrum-web-components/styles"
+if [ -d "$SPECTRUM_STYLES_DIR" ]; then
+  SPECTRUM_OUTPUT_DIR="$OUTPUT_DIR/assets/spectrum-styles"
+  mkdir -p "$SPECTRUM_OUTPUT_DIR"
+  cp "$SPECTRUM_STYLES_DIR"/*.css "$SPECTRUM_OUTPUT_DIR"/
+  echo "Copied local Spectrum styles to: $SPECTRUM_OUTPUT_DIR"
+else
+  echo "Spectrum styles directory not found at $SPECTRUM_STYLES_DIR, using runtime CDN fallback"
+fi
+
 echo "Client build completed successfully!"

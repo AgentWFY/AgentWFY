@@ -27,6 +27,38 @@ interface ExecViewJsRequest {
   timeoutMs?: number;
 }
 
+interface ExternalViewBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ExternalViewMountRequest {
+  tabId: string;
+  viewId: string;
+  src: string;
+  bounds: ExternalViewBounds;
+  visible: boolean;
+}
+
+interface ExternalViewBoundsRequest {
+  tabId: string;
+  bounds: ExternalViewBounds;
+  visible: boolean;
+}
+
+interface ExternalViewDestroyRequest {
+  tabId: string;
+}
+
+interface ExternalViewEventDetail {
+  tabId: string;
+  type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load';
+  errorCode?: number;
+  errorDescription?: string;
+ }
+
 interface RunSqlResponseDetail {
   requestId: string;
   target?: 'agent' | 'sqlite-file';
@@ -55,6 +87,11 @@ const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
 const CAPTURE_VIEW_CHANNEL = 'electronAgentTools:captureView';
 const GET_VIEW_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getViewConsoleLogs';
 const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
+const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
+const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
+const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
+const EXTERNAL_VIEW_RELOAD_CHANNEL = 'electronExternalView:reload';
+const EXTERNAL_VIEW_EVENT_CHANNEL = 'tradinglog:external-view-event';
 const RUN_SQL_EVENT = 'tradinglog:run-sql';
 const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
 const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
@@ -214,6 +251,23 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   },
   execViewJs(request: ExecViewJsRequest): Promise<any> {
     return ipcRenderer.invoke(EXEC_VIEW_JS_CHANNEL, request);
+  },
+  mountExternalView(request: ExternalViewMountRequest): Promise<void> {
+    return ipcRenderer.invoke(EXTERNAL_VIEW_MOUNT_CHANNEL, request);
+  },
+  updateExternalViewBounds(request: ExternalViewBoundsRequest): Promise<void> {
+    return ipcRenderer.invoke(EXTERNAL_VIEW_BOUNDS_CHANNEL, request);
+  },
+  destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
+    return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
+  },
+  reloadExternalView(request: { tabId: string }): Promise<void> {
+    return ipcRenderer.invoke(EXTERNAL_VIEW_RELOAD_CHANNEL, request);
+  },
+  onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
+    const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);
+    ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
+    return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
   },
   captureWindowPng(): Promise<{ path: string; base64: string }> {
     return ipcRenderer.invoke('electronAgentTools:captureWindowPng');

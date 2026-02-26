@@ -1,0 +1,369 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Command Palette</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1f1f1f;
+      --panel: #2a2a2a;
+      --border: #3a3a3a;
+      --text: #e8e8e8;
+      --muted: #9a9a9a;
+      --active: #0e639c;
+      --active-text: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text);
+    }
+
+    body {
+      padding: 10px;
+    }
+
+    .palette {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      box-shadow: 0 12px 44px rgba(0, 0, 0, 0.55);
+      overflow: hidden;
+    }
+
+    .search {
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      padding: 14px 16px;
+      font-size: 16px;
+      outline: none;
+      width: 100%;
+    }
+
+    .results {
+      flex: 1;
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .group-title {
+      margin: 8px 8px 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    .item {
+      border: 0;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .item:hover {
+      background: #2f2f2f;
+    }
+
+    .item.active {
+      background: var(--active);
+      color: var(--active-text);
+    }
+
+    .item-title {
+      font-size: 14px;
+      line-height: 1.25;
+    }
+
+    .item-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.2;
+    }
+
+    .item.active .item-subtitle {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .empty {
+      padding: 24px 12px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .hint {
+      border-top: 1px solid var(--border);
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="palette">
+    <input id="searchInput" class="search" type="text" placeholder="Search views and actions..." autocomplete="off" spellcheck="false">
+    <div id="results" class="results"></div>
+    <div class="hint">Enter to run, Esc to close, Arrow keys to navigate</div>
+  </div>
+  <script>
+    (() => {
+      const bridge = window.commandPaletteBridge;
+      const searchInput = document.getElementById('searchInput');
+      const resultsEl = document.getElementById('results');
+
+      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any}>} */
+      let items = [];
+      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any}>} */
+      let filtered = [];
+      let selectedIndex = 0;
+      let actionInFlight = false;
+
+      const clampSelectedIndex = () => {
+        if (filtered.length === 0) {
+          selectedIndex = 0;
+          return;
+        }
+        selectedIndex = Math.max(0, Math.min(selectedIndex, filtered.length - 1));
+      };
+
+      const scoreMatches = (item, query) => {
+        if (!query) return true;
+        const haystack = `${item.title || ''} ${item.subtitle || ''} ${item.group || ''}`.toLowerCase();
+        const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+        return tokens.every((token) => haystack.includes(token));
+      };
+
+      const updateActiveItem = () => {
+        const items = resultsEl.querySelectorAll('.item');
+        items.forEach((el, i) => {
+          const idx = Number(/** @type {HTMLElement} */ (el).dataset.index);
+          if (idx === selectedIndex) {
+            el.classList.add('active');
+          } else {
+            el.classList.remove('active');
+          }
+        });
+      };
+
+      const scrollActiveIntoView = () => {
+        const activeEl = resultsEl.querySelector('.item.active');
+        if (activeEl) {
+          activeEl.scrollIntoView({ block: 'nearest' });
+        }
+      };
+
+      const render = () => {
+        resultsEl.innerHTML = '';
+        if (filtered.length === 0) {
+          const emptyEl = document.createElement('div');
+          emptyEl.className = 'empty';
+          emptyEl.textContent = 'No matches';
+          resultsEl.appendChild(emptyEl);
+          return;
+        }
+
+        let lastGroup = '';
+        filtered.forEach((item, index) => {
+          if (item.group !== lastGroup) {
+            lastGroup = item.group;
+            const groupTitleEl = document.createElement('div');
+            groupTitleEl.className = 'group-title';
+            groupTitleEl.textContent = item.group;
+            resultsEl.appendChild(groupTitleEl);
+          }
+
+          const itemButton = document.createElement('button');
+          itemButton.type = 'button';
+          itemButton.className = 'item' + (index === selectedIndex ? ' active' : '');
+          itemButton.dataset.index = String(index);
+
+          const titleEl = document.createElement('div');
+          titleEl.className = 'item-title';
+          titleEl.textContent = item.title || '';
+          itemButton.appendChild(titleEl);
+
+          if (item.subtitle) {
+            const subtitleEl = document.createElement('div');
+            subtitleEl.className = 'item-subtitle';
+            subtitleEl.textContent = item.subtitle;
+            itemButton.appendChild(subtitleEl);
+          }
+
+          resultsEl.appendChild(itemButton);
+        });
+      };
+
+      const applyFilter = () => {
+        const query = searchInput.value.trim();
+        filtered = items.filter((item) => scoreMatches(item, query));
+        clampSelectedIndex();
+        render();
+      };
+
+      const selectNext = () => {
+        if (filtered.length === 0) return;
+        selectedIndex = (selectedIndex + 1) % filtered.length;
+        updateActiveItem();
+        scrollActiveIntoView();
+      };
+
+      const selectPrev = () => {
+        if (filtered.length === 0) return;
+        selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
+        updateActiveItem();
+        scrollActiveIntoView();
+      };
+
+      const runActionForIndex = async (index) => {
+        if (actionInFlight) return;
+        const item = filtered[index];
+        if (!item) return;
+        actionInFlight = true;
+        try {
+          await bridge.runAction(item.action);
+        } catch (error) {
+          console.error('Failed to run command palette action:', error);
+        } finally {
+          actionInFlight = false;
+        }
+      };
+
+      const runSelected = async () => {
+        if (filtered.length === 0) return;
+        await runActionForIndex(selectedIndex);
+      };
+
+      const reloadItems = async () => {
+        try {
+          items = await bridge.listItems();
+        } catch (error) {
+          console.error('Failed to list command palette items:', error);
+          items = [];
+        }
+        applyFilter();
+      };
+
+      const handleKeyDown = async (event) => {
+        if (event.defaultPrevented) {
+          return;
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          await bridge.close();
+          return;
+        }
+
+        if (event.key === 'ArrowDown' || event.key === 'Down' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j')) {
+          event.preventDefault();
+          selectNext();
+          return;
+        }
+
+        if (event.key === 'ArrowUp' || event.key === 'Up' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) {
+          event.preventDefault();
+          selectPrev();
+          return;
+        }
+
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          await runSelected();
+        }
+      };
+
+      searchInput.addEventListener('keydown', (event) => {
+        if (
+          event.key === 'ArrowDown' ||
+          event.key === 'Down' ||
+          event.key === 'ArrowUp' ||
+          event.key === 'Up' ||
+          event.key === 'Enter' ||
+          event.key === 'Escape'
+        ) {
+          void handleKeyDown(event);
+        }
+      }, true);
+
+      window.addEventListener('keydown', (event) => {
+        if (event.target === searchInput) {
+          return;
+        }
+        void handleKeyDown(event);
+      }, true);
+
+      resultsEl.addEventListener('mouseover', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const itemEl = target.closest('.item');
+        if (!(itemEl instanceof HTMLElement)) return;
+        const index = Number(itemEl.dataset.index);
+        if (!Number.isFinite(index) || index === selectedIndex) return;
+        selectedIndex = index;
+        updateActiveItem();
+      });
+
+      resultsEl.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const itemEl = target.closest('.item');
+        if (!(itemEl instanceof HTMLElement)) return;
+        event.preventDefault();
+        const index = Number(itemEl.dataset.index);
+        if (!Number.isFinite(index)) return;
+        selectedIndex = index;
+        updateActiveItem();
+        void runActionForIndex(index);
+      });
+
+      searchInput.addEventListener('input', () => {
+        selectedIndex = 0;
+        applyFilter();
+      });
+
+      const focusSearchInput = () => {
+        requestAnimationFrame(() => {
+          searchInput.focus();
+          searchInput.select();
+        });
+      };
+
+      bridge.onOpened(async () => {
+        searchInput.value = '';
+        selectedIndex = 0;
+        await reloadItems();
+        focusSearchInput();
+      });
+
+      void reloadItems().then(() => {
+        focusSearchInput();
+      });
+    })();
+  </script>
+</body>
+</html>

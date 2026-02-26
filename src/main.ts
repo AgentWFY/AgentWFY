@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, net, WebContents } from 'electron';
+import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, type Rectangle } from 'electron';
 import createVaultWindow from './vault_window';
 import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
@@ -6,13 +6,13 @@ import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
-import { ensureViewsSchema, getViewById } from './services/views-repo';
+import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId, resolveSpectrumBundleUrls } from './services/agentview-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
-import { stat, mkdir } from 'fs/promises';
+import { stat, mkdir, readFile } from 'fs/promises';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -163,6 +163,7 @@ const serveFile = async (request: Request, absolutePath: string) => {
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
+let commandPaletteWindow: BrowserWindow | null = null;
 let agentDbChangesPublisher: AgentDbChangesPublisher | null = null;
 
 let clientPath = path.join(__dirname, 'client', 'index.html');
@@ -170,6 +171,164 @@ let clientPath = path.join(__dirname, 'client', 'index.html');
 const DEFAULT_DATA_DIR = app.getPath('userData')
 const AGENT_DIR_NAME = '.agent';
 const AGENTVIEW_SPECTRUM_BUNDLE_URLS = resolveSpectrumBundleUrls(process.env.AGENTVIEW_SPECTRUM_BUNDLE_URLS);
+const LOCAL_SPECTRUM_VENDOR_PATTERN = /(^|\/)vendor-[^/]+\.js(\?.*)?$/i;
+const LOCAL_SPECTRUM_STYLESHEET_PATTERN = /(^|\/)(all-medium-dark|typography)([^/]*?)\.css(\?.*)?$/i;
+const LOCAL_SPECTRUM_STYLESHEET_FALLBACK_PATHS = [
+  'assets/spectrum-styles/all-medium-dark.css',
+  'assets/spectrum-styles/typography.css',
+];
+
+interface AgentViewClientAssets {
+  spectrumModuleUrls: string[]
+  stylesheetUrls: string[]
+}
+
+let cachedAgentViewClientAssets: AgentViewClientAssets = {
+  spectrumModuleUrls: [],
+  stylesheetUrls: [],
+};
+
+function extractAttributeValue(tagSource: string, attributeName: string): string | null {
+  const pattern = new RegExp(`\\b${attributeName}\\s*=\\s*(['"])(.*?)\\1`, 'i');
+  const match = tagSource.match(pattern);
+  if (!match || typeof match[2] !== 'string') {
+    return null;
+  }
+
+  return match[2].trim();
+}
+
+function extractLinkHrefsByRel(htmlSource: string, relName: string): string[] {
+  const tags = htmlSource.match(/<link\b[^>]*>/gi) ?? [];
+  const hrefs: string[] = [];
+  for (const tag of tags) {
+    const relValue = extractAttributeValue(tag, 'rel');
+    if (!relValue) {
+      continue;
+    }
+
+    const relTokens = relValue.split(/\s+/).map((token) => token.trim().toLowerCase());
+    if (!relTokens.includes(relName.toLowerCase())) {
+      continue;
+    }
+
+    const hrefValue = extractAttributeValue(tag, 'href');
+    if (!hrefValue) {
+      continue;
+    }
+    hrefs.push(hrefValue);
+  }
+
+  return hrefs;
+}
+
+function toAgentViewAssetUrl(href: string): string | null {
+  if (typeof href !== 'string') {
+    return null;
+  }
+
+  const trimmed = href.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalizedPath = trimmed.replace(/^\/+/, '');
+  if (!normalizedPath) {
+    return null;
+  }
+
+  return `agentview://asset/${normalizedPath}`;
+}
+
+function dedupe(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function isPathInsideBase(basePath: string, targetPath: string): boolean {
+  const relative = path.relative(basePath, targetPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function resolveAgentViewAssetPath(relativePath: string): string | null {
+  if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
+    return null;
+  }
+
+  const normalizedRelativePath = relativePath.replace(/^\/+/, '').trim();
+  if (normalizedRelativePath.length === 0) {
+    return null;
+  }
+
+  // Restrict agentview://asset/* to bundled client assets only.
+  if (!normalizedRelativePath.startsWith('assets/')) {
+    return null;
+  }
+
+  const clientDir = path.dirname(clientPath);
+  const absolutePath = path.resolve(clientDir, normalizedRelativePath);
+  if (!isPathInsideBase(clientDir, absolutePath)) {
+    return null;
+  }
+
+  return absolutePath;
+}
+
+async function loadAgentViewClientAssets(): Promise<AgentViewClientAssets> {
+  try {
+    const indexHtml = await readFile(clientPath, 'utf8');
+    const clientDir = path.dirname(clientPath);
+
+    const modulePreloads = extractLinkHrefsByRel(indexHtml, 'modulepreload');
+    const vendorModuleCandidates = modulePreloads.filter((href) => LOCAL_SPECTRUM_VENDOR_PATTERN.test(href));
+    const spectrumModuleUrls = dedupe(
+      vendorModuleCandidates
+        .map((href) => toAgentViewAssetUrl(href))
+        .filter((url): url is string => typeof url === 'string')
+    );
+
+    let stylesheetUrls = dedupe(
+      extractLinkHrefsByRel(indexHtml, 'stylesheet')
+        // Do not inject app-wide CSS into agent views; it can override view-local classes.
+        .filter((href) => LOCAL_SPECTRUM_STYLESHEET_PATTERN.test(href))
+        .map((href) => toAgentViewAssetUrl(href))
+        .filter((url): url is string => typeof url === 'string')
+    );
+
+    if (stylesheetUrls.length === 0) {
+      const fallbackStylesheetUrls: string[] = [];
+      for (const relativePath of LOCAL_SPECTRUM_STYLESHEET_FALLBACK_PATHS) {
+        const absolutePath = path.resolve(clientDir, relativePath);
+        try {
+          await stat(absolutePath);
+        } catch {
+          continue;
+        }
+
+        const stylesheetUrl = toAgentViewAssetUrl(relativePath);
+        if (stylesheetUrl) {
+          fallbackStylesheetUrls.push(stylesheetUrl);
+        }
+      }
+
+      stylesheetUrls = dedupe(fallbackStylesheetUrls);
+    }
+
+    return {
+      spectrumModuleUrls,
+      stylesheetUrls,
+    };
+  } catch (error) {
+    console.warn('[agentview] failed to resolve local client assets for Spectrum bootstrap', error);
+    return {
+      spectrumModuleUrls: [],
+      stylesheetUrls: [],
+    };
+  }
+}
 
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
@@ -253,6 +412,687 @@ interface ActiveExternalTabContext {
 
 const viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
 const viewIdIndex = new Map<string, Set<number>>();
+const externalViewsByTabId = new Map<string, ExternalViewState>();
+
+const EXTERNAL_VIEW_CHANNEL = {
+  MOUNT: 'electronExternalView:mount',
+  SET_BOUNDS: 'electronExternalView:setBounds',
+  DESTROY: 'electronExternalView:destroy',
+  EVENT: 'tradinglog:external-view-event',
+} as const;
+
+const COMMAND_PALETTE_CHANNEL = {
+  CLOSE: 'tradinglog:command-palette:close',
+  LIST_ITEMS: 'tradinglog:command-palette:list-items',
+  RUN_ACTION: 'tradinglog:command-palette:run-action',
+  OPENED: 'tradinglog:command-palette:opened',
+} as const;
+
+interface ExternalViewBoundsPayload {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface ExternalViewMountPayload {
+  tabId: string
+  viewId: string
+  src: string
+  bounds: ExternalViewBoundsPayload
+  visible: boolean
+}
+
+interface ExternalViewSetBoundsPayload {
+  tabId: string
+  bounds: ExternalViewBoundsPayload
+  visible: boolean
+}
+
+interface ExternalViewDestroyPayload {
+  tabId: string
+}
+
+interface ExternalViewState {
+  tabId: string
+  viewId: string
+  currentSrc: string | null
+  view: WebContentsView
+}
+
+type CommandPaletteAction =
+  | {
+    type: 'open-view'
+    viewId: string
+    title: string
+    viewUpdatedAt: number | null
+  }
+  | {
+    type: 'toggle-agent-chat'
+  }
+  | {
+    type: 'close-current-tab'
+  }
+  | {
+    type: 'reload-views'
+  };
+
+interface CommandPaletteItem {
+  id: string
+  title: string
+  subtitle?: string
+  group: 'Views' | 'Actions'
+  action: CommandPaletteAction
+}
+
+function normalizeExternalViewNumber(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+function normalizeExternalViewBounds(raw: unknown): Rectangle {
+  const input = (raw && typeof raw === 'object') ? raw as Partial<ExternalViewBoundsPayload> : {};
+  return {
+    x: normalizeExternalViewNumber(input.x),
+    y: normalizeExternalViewNumber(input.y),
+    width: normalizeExternalViewNumber(input.width),
+    height: normalizeExternalViewNumber(input.height),
+  };
+}
+
+function toNonEmptyString(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new Error('Expected a string value');
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error('Expected a non-empty string value');
+  }
+
+  return normalized;
+}
+
+function emitExternalViewEvent(
+  tabId: string,
+  type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load',
+  detail?: { errorCode?: number; errorDescription?: string }
+): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send(EXTERNAL_VIEW_CHANNEL.EVENT, {
+    tabId,
+    type,
+    ...(detail || {}),
+  });
+}
+
+function focusMainRendererWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    if (!mainWindow.isFocused()) {
+      mainWindow.focus();
+    }
+    mainWindow.webContents.focus();
+  } catch (error) {
+    console.warn('[agent-runtime] failed to focus renderer window', error);
+  }
+}
+
+function toSafeJsonLiteral(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function dispatchRendererCustomEvent(eventName: string, detail?: unknown): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  focusMainRendererWindow();
+  const serializedName = JSON.stringify(eventName);
+  const eventInit = typeof detail === 'undefined'
+    ? ''
+    : `, { detail: ${toSafeJsonLiteral(detail)} }`;
+
+  void mainWindow.webContents.executeJavaScript(`
+    window.dispatchEvent(new CustomEvent(${serializedName}${eventInit}));
+  `, true).catch((error) => {
+    console.warn(`[agent-runtime] failed to dispatch renderer event ${eventName}`, error);
+  });
+}
+
+function dispatchRendererWindowEvent(eventName: string): void {
+  dispatchRendererCustomEvent(eventName);
+}
+
+function resolveCommandPaletteBounds(): Rectangle {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { x: 0, y: 0, width: 720, height: 520 };
+  }
+
+  const bounds = mainWindow.getBounds();
+  const width = Math.min(880, Math.max(540, Math.floor(bounds.width * 0.58)));
+  const height = Math.min(640, Math.max(360, Math.floor(bounds.height * 0.62)));
+  const x = bounds.x + Math.floor((bounds.width - width) / 2);
+  const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.2));
+  return { x, y, width, height };
+}
+
+function syncCommandPaletteBounds(): void {
+  if (!commandPaletteWindow || commandPaletteWindow.isDestroyed()) {
+    return;
+  }
+
+  commandPaletteWindow.setBounds(resolveCommandPaletteBounds());
+}
+
+function hideNativeCommandPalette(options?: { focusMain?: boolean }): void {
+  if (!commandPaletteWindow || commandPaletteWindow.isDestroyed() || !commandPaletteWindow.isVisible()) {
+    if (options?.focusMain) {
+      focusMainRendererWindow();
+    }
+    return;
+  }
+
+  commandPaletteWindow.hide();
+  if (options?.focusMain !== false) {
+    focusMainRendererWindow();
+  }
+}
+
+function destroyNativeCommandPalette(): void {
+  if (!commandPaletteWindow || commandPaletteWindow.isDestroyed()) {
+    commandPaletteWindow = null;
+    return;
+  }
+
+  commandPaletteWindow.destroy();
+  commandPaletteWindow = null;
+}
+
+function ensureCommandPaletteWindow(): BrowserWindow {
+  if (commandPaletteWindow && !commandPaletteWindow.isDestroyed()) {
+    return commandPaletteWindow;
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Main window is unavailable');
+  }
+
+  commandPaletteWindow = new BrowserWindow({
+    show: false,
+    frame: false,
+    transparent: false,
+    hasShadow: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: true,
+    acceptFirstMouse: true,
+    alwaysOnTop: true,
+    roundedCorners: true,
+    backgroundColor: '#1f1f1f',
+    webPreferences: {
+      preload: path.join(__dirname, 'command_palette_preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  if (process.platform === 'darwin') {
+    commandPaletteWindow.setAlwaysOnTop(true, 'floating');
+    commandPaletteWindow.setWindowButtonVisibility(false);
+  }
+
+
+
+  commandPaletteWindow.on('blur', () => {
+    setTimeout(() => {
+      if (!commandPaletteWindow || commandPaletteWindow.isDestroyed()) {
+        return;
+      }
+      if (commandPaletteWindow.isFocused()) {
+        return;
+      }
+      hideNativeCommandPalette({ focusMain: true });
+    }, 0);
+  });
+
+  commandPaletteWindow.on('closed', () => {
+    commandPaletteWindow = null;
+  });
+
+  void commandPaletteWindow.loadURL(pathToFileURL(path.join(__dirname, 'command_palette.html')).toString())
+    .catch((error) => {
+      console.error('[command-palette] failed to load native command palette window', error);
+    });
+
+  return commandPaletteWindow;
+}
+
+function showNativeCommandPalette(): void {
+  const paletteWindow = ensureCommandPaletteWindow();
+  syncCommandPaletteBounds();
+  paletteWindow.show();
+  paletteWindow.moveTop();
+  paletteWindow.focus();
+  paletteWindow.webContents.focus();
+
+  const focusSearchInput = () => {
+    if (paletteWindow.isDestroyed()) {
+      return;
+    }
+
+    void paletteWindow.webContents.executeJavaScript(`
+      (() => {
+        const input = document.getElementById('searchInput');
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+          input.select();
+          return true;
+        }
+        return false;
+      })();
+    `, true).catch((error) => {
+      console.warn('[command-palette] failed to focus search input', error);
+    });
+  };
+
+  setTimeout(focusSearchInput, 0);
+  setTimeout(focusSearchInput, 80);
+
+  const notifyOpened = () => {
+    if (!paletteWindow.isDestroyed()) {
+      paletteWindow.webContents.send(COMMAND_PALETTE_CHANNEL.OPENED);
+    }
+  };
+
+  if (paletteWindow.webContents.isLoadingMainFrame()) {
+    paletteWindow.webContents.once('did-finish-load', notifyOpened);
+  } else {
+    notifyOpened();
+  }
+}
+
+function toggleNativeCommandPalette(): void {
+  const paletteWindow = ensureCommandPaletteWindow();
+  if (paletteWindow.isVisible()) {
+    hideNativeCommandPalette({ focusMain: true });
+    return;
+  }
+
+  showNativeCommandPalette();
+}
+
+async function buildCommandPaletteItems(): Promise<CommandPaletteItem[]> {
+  const rows = await listViews(getDataDir());
+  const viewItems: CommandPaletteItem[] = rows.map((row) => ({
+    id: `view:${row.id}`,
+    title: row.name,
+    group: 'Views',
+    action: {
+      type: 'open-view',
+      viewId: String(row.id),
+      title: row.name,
+      viewUpdatedAt: row.updated_at ?? null,
+    },
+  }));
+
+  const actionItems: CommandPaletteItem[] = [
+    {
+      id: 'action:toggle-agent-chat',
+      title: 'Toggle AI Panel',
+      group: 'Actions',
+      action: { type: 'toggle-agent-chat' },
+    },
+    {
+      id: 'action:close-current-tab',
+      title: 'Close Current Tab',
+      group: 'Actions',
+      action: { type: 'close-current-tab' },
+    },
+    {
+      id: 'action:reload-views',
+      title: 'Reload Views Catalog',
+      group: 'Actions',
+      action: { type: 'reload-views' },
+    },
+  ];
+
+  return [...actionItems, ...viewItems];
+}
+
+async function runCommandPaletteAction(payload: unknown): Promise<void> {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Command palette action payload is required');
+  }
+
+  const action = payload as CommandPaletteAction;
+  const type = typeof (action as { type?: unknown }).type === 'string'
+    ? (action as { type: string }).type
+    : '';
+  if (!type) {
+    throw new Error('Command palette action requires a type');
+  }
+
+  switch (type) {
+    case 'open-view':
+      dispatchRendererCustomEvent('tradinglog:open-view', {
+        viewId: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewId,
+        title: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).title,
+        viewUpdatedAt: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewUpdatedAt ?? null,
+      });
+      break;
+
+    case 'toggle-agent-chat':
+      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      break;
+
+    case 'close-current-tab':
+      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      break;
+
+    case 'reload-views': {
+      const views = await listViews(getDataDir());
+      dispatchRendererCustomEvent('tradinglog:views-loaded', {
+        views: views.map((row) => ({
+          title: row.name,
+          viewId: row.id,
+          viewUpdatedAt: row.updated_at ?? null,
+        })),
+      });
+      reloadAllExternalViews();
+      break;
+    }
+
+    default:
+      throw new Error(`Unsupported command palette action type: ${type}`);
+  }
+
+  hideNativeCommandPalette({ focusMain: true });
+}
+
+function createExternalViewState(tabId: string, viewId: string): ExternalViewState {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Main window is unavailable');
+  }
+
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  const state: ExternalViewState = {
+    tabId,
+    viewId,
+    currentSrc: null,
+    view,
+  };
+
+  const viewWebContents = view.webContents;
+  const updateFromNavigation = (url: string) => {
+    updateTrackedViewWebContents(viewWebContents, url);
+  };
+
+  viewWebContents.on('did-start-navigation', (_navEvent, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) {
+      updateFromNavigation(url);
+    }
+  });
+
+  viewWebContents.on('did-navigate', (_navEvent, url) => {
+    updateFromNavigation(url);
+  });
+
+  viewWebContents.on('did-navigate-in-page', (_navEvent, url, isMainFrame) => {
+    if (isMainFrame) {
+      updateFromNavigation(url);
+    }
+  });
+
+  viewWebContents.on('did-start-loading', () => {
+    emitExternalViewEvent(tabId, 'did-start-loading');
+  });
+
+  viewWebContents.on('did-stop-loading', () => {
+    emitExternalViewEvent(tabId, 'did-stop-loading');
+  });
+
+  viewWebContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+
+    emitExternalViewEvent(tabId, 'did-fail-load', {
+      errorCode,
+      errorDescription,
+    });
+  });
+
+  viewWebContents.on('before-input-event', (event, input) => {
+    const key = String(input.key || '').toLowerCase();
+    if (!key || input.alt || input.isAutoRepeat) {
+      return;
+    }
+
+    const hasCommandModifier = process.platform === 'darwin' ? input.meta : input.control;
+    if (!hasCommandModifier || input.shift) {
+      return;
+    }
+
+    if (key === 'k') {
+      event.preventDefault();
+      toggleNativeCommandPalette();
+      return;
+    }
+
+    if (key === 'i') {
+      event.preventDefault();
+      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      return;
+    }
+
+    if (key === 'w') {
+      event.preventDefault();
+      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      return;
+    }
+
+    if (key === 'r') {
+      event.preventDefault();
+      reloadExternalView(tabId);
+    }
+  });
+
+  viewWebContents.on('focus', () => {
+    const entry = viewRuntimeEntries.get(viewWebContents.id);
+    if (!entry) {
+      return;
+    }
+    entry.ownerWindowId = resolveOwnerWindowId(viewWebContents);
+    entry.lastFocusedAt = Date.now();
+  });
+
+  viewWebContents.on('console-message', (_consoleEvent, level, message) => {
+    const entry = viewRuntimeEntries.get(viewWebContents.id);
+    if (!entry) {
+      return;
+    }
+
+    entry.logs.push({
+      level: WEB_CONTENTS_LOG_LEVEL_MAP[level] || 'info',
+      message,
+      timestamp: Date.now(),
+    });
+
+    if (entry.logs.length > VIEW_LOG_BUFFER_MAX) {
+      entry.logs.splice(0, entry.logs.length - VIEW_LOG_BUFFER_MAX);
+    }
+  });
+
+  viewWebContents.once('destroyed', () => {
+    removeTrackedViewWebContents(viewWebContents.id);
+    const existing = externalViewsByTabId.get(tabId);
+    if (existing?.view === view) {
+      externalViewsByTabId.delete(tabId);
+    }
+  });
+
+  externalViewsByTabId.set(tabId, state);
+  return state;
+}
+
+function ensureExternalViewState(tabId: string, viewId: string): ExternalViewState {
+  const existing = externalViewsByTabId.get(tabId);
+  if (existing) {
+    existing.viewId = viewId;
+    return existing;
+  }
+
+  return createExternalViewState(tabId, viewId);
+}
+
+function attachExternalViewToWindow(state: ExternalViewState): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    mainWindow.contentView.addChildView(state.view);
+  } catch {
+    // Ignore if already attached to the same parent view.
+  }
+}
+
+function applyExternalViewPlacement(state: ExternalViewState, bounds: Rectangle, visible: boolean): void {
+  attachExternalViewToWindow(state);
+
+  const effectiveBounds = visible
+    ? bounds
+    : { x: 0, y: 0, width: 0, height: 0 };
+
+  state.view.setBounds(effectiveBounds);
+  state.view.setVisible(visible);
+}
+
+async function mountExternalView(payload: unknown): Promise<void> {
+  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewMountPayload> : {};
+  const tabId = toNonEmptyString(input.tabId);
+  const viewId = toNonEmptyString(input.viewId);
+  const src = toNonEmptyString(input.src);
+  const visible = Boolean(input.visible);
+  const bounds = normalizeExternalViewBounds(input.bounds);
+  const state = ensureExternalViewState(tabId, viewId);
+
+  applyExternalViewPlacement(state, bounds, visible);
+
+  if (state.currentSrc === src) {
+    return;
+  }
+
+  state.currentSrc = src;
+  try {
+    await state.view.webContents.loadURL(src);
+  } catch (error: any) {
+    if (error?.code === 'ERR_ABORTED' || error?.errno === -3) {
+      return;
+    }
+    throw error;
+  }
+}
+
+function setExternalViewBounds(payload: unknown): void {
+  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewSetBoundsPayload> : {};
+  const tabId = toNonEmptyString(input.tabId);
+  const state = externalViewsByTabId.get(tabId);
+  if (!state) {
+    return;
+  }
+
+  const visible = Boolean(input.visible);
+  const bounds = normalizeExternalViewBounds(input.bounds);
+  applyExternalViewPlacement(state, bounds, visible);
+}
+
+function destroyExternalView(tabId: string): void {
+  const state = externalViewsByTabId.get(tabId);
+  if (!state) {
+    return;
+  }
+
+  externalViewsByTabId.delete(tabId);
+  removeTrackedViewWebContents(state.view.webContents.id);
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.contentView.removeChildView(state.view);
+    } catch {
+      // Ignore if it is already detached.
+    }
+  }
+
+  if (!state.view.webContents.isDestroyed()) {
+    const webContentsWithDestroy = state.view.webContents as WebContents & { destroy?: () => void };
+    if (typeof webContentsWithDestroy.destroy === 'function') {
+      webContentsWithDestroy.destroy();
+    } else {
+      state.view.webContents.close();
+    }
+  }
+}
+
+function destroyAllExternalViews(): void {
+  const tabIds = Array.from(externalViewsByTabId.keys());
+  for (const tabId of tabIds) {
+    destroyExternalView(tabId);
+  }
+}
+
+function reloadExternalView(tabId: string): void {
+  const state = externalViewsByTabId.get(tabId);
+  if (!state) {
+    return;
+  }
+
+  state.currentSrc = null;
+  if (!state.view.webContents.isDestroyed()) {
+    state.view.webContents.reload();
+  }
+}
+
+function reloadAllExternalViews(): void {
+  for (const [tabId] of externalViewsByTabId) {
+    reloadExternalView(tabId);
+  }
+}
+
+function reloadVisibleExternalView(): void {
+  for (const [tabId, state] of externalViewsByTabId) {
+    const bounds = state.view.getBounds();
+    if (bounds.width > 0 && bounds.height > 0) {
+      reloadExternalView(tabId);
+      return;
+    }
+  }
+}
 
 function normalizeViewIdInput(viewId: string | number): string {
   if (typeof viewId === 'number') {
@@ -603,6 +1443,20 @@ function toHtmlResponse(status: number, html: string): Response {
 
 async function handleAgentViewRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  if (url.hostname === 'asset') {
+    const assetPath = resolveAgentViewAssetPath(decodeURIComponent(url.pathname || ''));
+    if (!assetPath) {
+      return new Response('Asset not found', {
+        status: 404,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    return net.fetch(pathToFileURL(assetPath).toString());
+  }
+
   let viewId: string;
   try {
     viewId = parseAgentViewId(url);
@@ -623,8 +1477,14 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
     return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewId)}</pre>`);
   }
 
+  const spectrumBundleUrls = [
+    ...cachedAgentViewClientAssets.spectrumModuleUrls,
+    ...AGENTVIEW_SPECTRUM_BUNDLE_URLS,
+  ];
+
   const html = buildViewDocument(String(record.id), record.content, {
-    spectrumBundleUrls: AGENTVIEW_SPECTRUM_BUNDLE_URLS,
+    spectrumBundleUrls,
+    spectrumStylesheetUrls: cachedAgentViewClientAssets.stylesheetUrls,
   });
   return toHtmlResponse(200, html);
 }
@@ -655,11 +1515,45 @@ registerAgentToolsHandlers(getDataDir, () => mainWindow, {
   execViewJs: execViewJsById,
 });
 
+ipcMain.handle(EXTERNAL_VIEW_CHANNEL.MOUNT, async (_event, payload: unknown) => {
+  await mountExternalView(payload);
+});
+
+ipcMain.handle(EXTERNAL_VIEW_CHANNEL.SET_BOUNDS, async (_event, payload: unknown) => {
+  setExternalViewBounds(payload);
+});
+
+ipcMain.handle(EXTERNAL_VIEW_CHANNEL.DESTROY, async (_event, payload: unknown) => {
+  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewDestroyPayload> : {};
+  const tabId = toNonEmptyString(input.tabId);
+  destroyExternalView(tabId);
+});
+
+ipcMain.handle('electronExternalView:reload', async (_event, payload: unknown) => {
+  const input = payload && typeof payload === 'object' ? payload as Partial<{ tabId: string }> : {};
+  const tabId = toNonEmptyString(input.tabId);
+  reloadExternalView(tabId);
+});
+
+ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {
+  hideNativeCommandPalette({ focusMain: true });
+});
+
+ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_ITEMS, async () => {
+  return buildCommandPaletteItems();
+});
+
+ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unknown) => {
+  await runCommandPaletteAction(payload);
+});
+
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     await stopServer();
     agentDbChangesPublisher?.stop();
+    destroyNativeCommandPalette();
+    destroyAllExternalViews();
     clearTrackedViewWebContents();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
@@ -680,7 +1574,6 @@ async function createAppWindow(dataDir: string) {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: false,
-      webviewTag: true,
     },
   });
 
@@ -688,17 +1581,24 @@ async function createAppWindow(dataDir: string) {
     evt.preventDefault();
   });
 
+  mainWindow.on('closed', () => {
+    destroyNativeCommandPalette();
+    destroyAllExternalViews();
+  });
+
+  mainWindow.on('move', () => {
+    syncCommandPaletteBounds();
+  });
+
+  mainWindow.on('resize', () => {
+    syncCommandPaletteBounds();
+  });
+
   mainWindow.maximize();
 
-  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    const src = typeof params.src === 'string' ? params.src : '';
-    if (!src.startsWith('agentview://view/')) {
-      return;
-    }
-
-    webPreferences.preload = path.join(__dirname, 'preload.js');
-    webPreferences.contextIsolation = true;
-    webPreferences.nodeIntegration = false;
+  mainWindow.webContents.on('did-start-loading', () => {
+    destroyNativeCommandPalette();
+    destroyAllExternalViews();
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -719,9 +1619,38 @@ async function createAppWindow(dataDir: string) {
 
   await startServer(dataDir);
 
-  mainWindow.webContents.on('before-input-event', (_, input) => {
-    if (input.key === 'r' && input.control) {
-      mainWindow?.reload();
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const key = String(input.key || '').toLowerCase();
+    if (!key || input.alt || input.isAutoRepeat) {
+      return;
+    }
+
+    const hasCommandModifier = process.platform === 'darwin' ? input.meta : input.control;
+    if (!hasCommandModifier) {
+      return;
+    }
+
+    if (!input.shift && key === 'k') {
+      event.preventDefault();
+      toggleNativeCommandPalette();
+      return;
+    }
+
+    if (!input.shift && key === 'i') {
+      event.preventDefault();
+      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      return;
+    }
+
+    if (!input.shift && key === 'w') {
+      event.preventDefault();
+      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      return;
+    }
+
+    if (!input.shift && key === 'r') {
+      event.preventDefault();
+      reloadVisibleExternalView();
     }
   });
 }
@@ -737,6 +1666,12 @@ app.on('ready', async () => {
   console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
   await ensureAgentRuntimeBootstrap(getDataDir());
   await restartAgentDbChangesPublisher();
+  cachedAgentViewClientAssets = await loadAgentViewClientAssets();
+  if (cachedAgentViewClientAssets.spectrumModuleUrls.length > 0) {
+    console.log(`[agentview] local spectrum module candidates: ${cachedAgentViewClientAssets.spectrumModuleUrls.join(', ')}`);
+  } else {
+    console.warn('[agentview] no local spectrum module candidates found; using remote fallback only');
+  }
 
   const template: any[] = [
     {
@@ -777,8 +1712,6 @@ app.on('ready', async () => {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -831,7 +1764,11 @@ app.on('ready', async () => {
   protocol.handle('media', async (request) => {
     const dataDir = store.get('dataDir') as string || DEFAULT_DATA_DIR;
     const url = new URL(request.url);
-    const relativePath = path.join(url.hostname, decodeURIComponent(url.pathname));
+    const host = decodeURIComponent(url.hostname || '').replace(/^\/+|\/+$/g, '');
+    const pathname = decodeURIComponent(url.pathname || '').replace(/^\/+/, '');
+    const relativePath = host
+      ? path.join(host, pathname)
+      : pathname;
     const absolutePath = path.join(dataDir, relativePath);
 
     // Use the unified fs server instead of net.fetch
@@ -855,6 +1792,8 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
+  destroyNativeCommandPalette();
+  destroyAllExternalViews();
   clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
     agentDbChangesPublisher?.stop();
@@ -867,6 +1806,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   agentDbChangesPublisher?.stop();
   agentDbChangesPublisher = null;
+  destroyNativeCommandPalette();
+  destroyAllExternalViews();
   clearTrackedViewWebContents();
 });
 
