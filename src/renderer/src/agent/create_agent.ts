@@ -18,7 +18,7 @@ import { requireClientTools, requireElectronTools, stringifyUnknown } from 'app/
 
 export const DEFAULT_PROVIDER = 'openrouter'
 export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
-export const DEFAULT_SESSION_DIR = '.agent/sessions'
+export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
 const SESSION_VERSION = 1
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
@@ -48,7 +48,7 @@ const EXECJS_RUNTIME_API_DOCS = [
 
 const CODE_SYSTEM_PROMPT = [
   '## [system.core]',
-  'You are the TradingLog desktop AI agent.',
+  'You are the AgentWFY desktop AI agent.',
   'You have one tool: execJs.',
   'When you need to read files, write files, query SQL, inspect app views, run JS in views, or capture screenshots, call execJs.',
   'Always prefer targeted, minimal operations and return concrete, actionable results.',
@@ -87,7 +87,7 @@ const CODE_SYSTEM_PROMPT = [
   '- Example: await window.electronAgentTools.read("notes/todo.txt").',
 ].join('\n')
 
-export interface TradingLogAgentOptions {
+export interface AgentWFYAgentOptions {
   provider?: string
   modelId?: string
   apiKey?: string
@@ -98,7 +98,7 @@ export interface TradingLogAgentOptions {
   persistSessions?: boolean
 }
 
-export interface TradingLogAgentPromptOptions {
+export interface AgentWFYAgentPromptOptions {
   images?: ImageContent[]
   streamingBehavior?: 'steer' | 'followUp'
 }
@@ -123,7 +123,7 @@ export interface CompactionResult {
   summary: string
 }
 
-export interface TradingLogAgentInfo {
+export interface AgentWFYAgentInfo {
   provider: string
   modelId: string
   systemPromptChars: number
@@ -134,12 +134,12 @@ export interface TradingLogAgentInfo {
   persistSessions: boolean
 }
 
-export interface TradingLogAgentRunResult {
+export interface AgentWFYAgentRunResult {
   assistantText: string
   messageCount: number
 }
 
-export type TradingLogAgentEvent = AgentEvent | {
+export type AgentWFYAgentEvent = AgentEvent | {
   type: 'session_saved'
   sessionId: string
   sessionFile: string
@@ -149,7 +149,7 @@ export type TradingLogAgentEvent = AgentEvent | {
   sessionFile: string
 }
 
-export type TradingLogAgentEventListener = (event: TradingLogAgentEvent) => void
+export type AgentWFYAgentEventListener = (event: AgentWFYAgentEvent) => void
 
 interface StoredSession {
   version: number
@@ -164,7 +164,7 @@ interface StoredSession {
   updatedAt: number
 }
 
-interface TradingLogAgentCreateArgs {
+interface AgentWFYAgentCreateArgs {
   agent: Agent
   provider: string
   modelId: string
@@ -459,7 +459,7 @@ function parseStoredSession(raw: string, sessionFile: string): StoredSession {
   }
 }
 
-export class TradingLogAgent {
+export class AgentWFYAgent {
   readonly agent: Agent
 
   private readonly infoData: {
@@ -468,7 +468,7 @@ export class TradingLogAgent {
     systemPromptChars: number
   }
 
-  private readonly listeners = new Set<TradingLogAgentEventListener>()
+  private readonly listeners = new Set<AgentWFYAgentEventListener>()
   private readonly unsubscribeFromAgent: () => void
   private readonly sessionDirPath: string
   private readonly persistSessionsToDisk: boolean
@@ -483,7 +483,7 @@ export class TradingLogAgent {
   private _sessionFile?: string
   private _parentSession?: string
 
-  private constructor(args: TradingLogAgentCreateArgs) {
+  private constructor(args: AgentWFYAgentCreateArgs) {
     this.agent = args.agent
     this.infoData = {
       provider: args.provider,
@@ -513,7 +513,7 @@ export class TradingLogAgent {
     })
   }
 
-  static async create(options: TradingLogAgentOptions = {}): Promise<TradingLogAgent> {
+  static async create(options: AgentWFYAgentOptions = {}): Promise<AgentWFYAgent> {
     const provider = options.provider ?? DEFAULT_PROVIDER
     const modelId = options.modelId ?? DEFAULT_MODEL_ID
     const sessionDir = DEFAULT_SESSION_DIR
@@ -545,7 +545,7 @@ export class TradingLogAgent {
       getApiKey: getApiKeyFn
     })
 
-    const instance = new TradingLogAgent({
+    const instance = new AgentWFYAgent({
       agent,
       provider,
       modelId,
@@ -603,7 +603,7 @@ export class TradingLogAgent {
     return this.agent.state
   }
 
-  info(): TradingLogAgentInfo {
+  info(): AgentWFYAgentInfo {
     const model = this.model
 
     return {
@@ -618,7 +618,7 @@ export class TradingLogAgent {
     }
   }
 
-  async prompt(text: string, options: TradingLogAgentPromptOptions = {}): Promise<void> {
+  async prompt(text: string, options: AgentWFYAgentPromptOptions = {}): Promise<void> {
     if (!text || !text.trim()) {
       throw new Error('Prompt cannot be empty')
     }
@@ -640,7 +640,7 @@ export class TradingLogAgent {
     await this.persistSession()
   }
 
-  async run(prompt: string): Promise<TradingLogAgentRunResult> {
+  async run(prompt: string): Promise<AgentWFYAgentRunResult> {
     await this.prompt(prompt)
 
     return {
@@ -665,12 +665,12 @@ export class TradingLogAgent {
     this.agent.followUp(toUserMessage(text))
   }
 
-  subscribe(listener: TradingLogAgentEventListener): () => void {
+  subscribe(listener: AgentWFYAgentEventListener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
-  onEvent(listener: TradingLogAgentEventListener): () => void {
+  onEvent(listener: AgentWFYAgentEventListener): () => void {
     return this.subscribe(listener)
   }
 
@@ -770,7 +770,7 @@ export class TradingLogAgent {
 
     if (storedSession.version !== SESSION_VERSION) {
       console.warn(
-        `[TradingLogAgent] Loading session version ${storedSession.version} (expected ${SESSION_VERSION}). Attempting best-effort restore.`
+        `[AgentWFYAgent] Loading session version ${storedSession.version} (expected ${SESSION_VERSION}). Attempting best-effort restore.`
       )
     }
 
@@ -780,7 +780,7 @@ export class TradingLogAgent {
         this.agent.setModel(model)
       } catch (error) {
         console.warn(
-          `[TradingLogAgent] Failed to restore model ${storedSession.model.provider}/${storedSession.model.id}: ${error instanceof Error ? error.message : String(error)}`
+          `[AgentWFYAgent] Failed to restore model ${storedSession.model.provider}/${storedSession.model.id}: ${error instanceof Error ? error.message : String(error)}`
         )
       }
     }
@@ -848,7 +848,7 @@ export class TradingLogAgent {
       }
 
       const summaryMessage = toUserMessage(
-        `Context summary generated by TradingLogAgent compact():\n\n${summary}`
+        `Context summary generated by AgentWFYAgent compact():\n\n${summary}`
       )
 
       this.agent.replaceMessages([summaryMessage, ...keepMessages])
@@ -902,12 +902,12 @@ export class TradingLogAgent {
     this.dispose()
   }
 
-  private emit(event: TradingLogAgentEvent): void {
+  private emit(event: AgentWFYAgentEvent): void {
     this.listeners.forEach((listener) => {
       try {
         listener(event)
       } catch (error) {
-        console.error('[TradingLogAgent] event listener failed', error)
+        console.error('[AgentWFYAgent] event listener failed', error)
       }
     })
   }
@@ -951,7 +951,7 @@ export class TradingLogAgent {
         })
       })
       .catch((error) => {
-        console.error('[TradingLogAgent] failed to persist session', error)
+        console.error('[AgentWFYAgent] failed to persist session', error)
       })
 
     await this.sessionWritePromise

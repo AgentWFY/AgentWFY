@@ -33,7 +33,7 @@ export function attachRunSqlEventListener() {
     return
   }
 
-  window.addEventListener('tradinglog:run-sql', onRunSqlEvent as EventListener, { capture: true })
+  window.addEventListener('agentwfy:run-sql', onRunSqlEvent as EventListener, { capture: true })
   isRunSqlEventListenerAttached = true
 }
 
@@ -177,14 +177,14 @@ export function cancelPendingSqlConfirmation(reason?: Error) {
 
 function setPending(confirmation: PendingSqlConfirmation) {
   pendingSqlConfirmation = confirmation
-  window.dispatchEvent(new CustomEvent('tradinglog:sql-confirmation-needed', {
+  window.dispatchEvent(new CustomEvent('agentwfy:sql-confirmation-needed', {
     detail: confirmation
   }))
 }
 
 function clearPending() {
   pendingSqlConfirmation = null
-  window.dispatchEvent(new CustomEvent('tradinglog:sql-confirmation-cleared'))
+  window.dispatchEvent(new CustomEvent('agentwfy:sql-confirmation-cleared'))
 }
 
 function queuePendingSqlRequest(
@@ -292,7 +292,7 @@ function dispatchRunSqlResponse(detail: RunSqlResponseEventDetail) {
     return
   }
 
-  window.dispatchEvent(new CustomEvent<RunSqlResponseEventDetail>('tradinglog:run-sql-response', {
+  window.dispatchEvent(new CustomEvent<RunSqlResponseEventDetail>('agentwfy:run-sql-response', {
     detail,
   }))
 }

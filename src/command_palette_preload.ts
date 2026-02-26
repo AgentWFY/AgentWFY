@@ -26,10 +26,10 @@ interface CommandPaletteItem {
 }
 
 const COMMAND_PALETTE_CHANNEL = {
-  CLOSE: 'tradinglog:command-palette:close',
-  LIST_ITEMS: 'tradinglog:command-palette:list-items',
-  RUN_ACTION: 'tradinglog:command-palette:run-action',
-  OPENED: 'tradinglog:command-palette:opened',
+  CLOSE: 'agentwfy:command-palette:close',
+  LIST_ITEMS: 'agentwfy:command-palette:list-items',
+  RUN_ACTION: 'agentwfy:command-palette:run-action',
+  OPENED: 'agentwfy:command-palette:opened',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {

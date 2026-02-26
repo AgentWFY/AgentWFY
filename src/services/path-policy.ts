@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { assertPathAllowed, resolveInsideRoot } from '../security/path-policy';
 
-const AGENT_DIR_NAME = '.agent';
+const AGENT_DIR_NAME = '.agentwfy';
 const AGENT_DB_NAME = 'agent.db';
 
 export async function resolveAgentDbPath(dataDir: string): Promise<string> {

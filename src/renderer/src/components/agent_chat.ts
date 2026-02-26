@@ -4,7 +4,7 @@ import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
 import { AgentSessionManager } from 'app/agent/session_manager'
 import type { SessionHistoryItem } from 'app/agent/session_manager'
-import type { TradingLogAgent } from 'app/agent/create_agent'
+import type { AgentWFYAgent } from 'app/agent/create_agent'
 import type { TlJson } from 'app/components/json_view'
 
 interface ToolPair {
@@ -277,7 +277,7 @@ const STYLES = `
 export class TlAgentChat extends HTMLElement {
   private manager: AgentSessionManager | null = null
   private managerUnsub: (() => void) | null = null
-  private agent: TradingLogAgent | null = null
+  private agent: AgentWFYAgent | null = null
   private messages: AgentMessage[] = []
   private isStreaming = false
   private error: string | null = null

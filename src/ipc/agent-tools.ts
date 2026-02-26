@@ -210,16 +210,16 @@ export function registerAgentToolsHandlers(
   const resolvePrivatePath = (relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(), relativePath, { ...options, allowAgentPrivate: true });
   const ensureAgentSessionsDir = async (): Promise<string> => {
-    const sessionsDir = await resolvePrivatePath('.agent/sessions', { allowMissing: true });
+    const sessionsDir = await resolvePrivatePath('.agentwfy/sessions', { allowMissing: true });
     await fs.mkdir(sessionsDir, { recursive: true });
     return sessionsDir;
   };
   const resolveAgentSessionPath = (sessionFileName: string, options?: { allowMissing?: boolean }) =>
-    resolvePrivatePath(`.agent/sessions/${normalizeSessionFileName(sessionFileName)}`, options);
+    resolvePrivatePath(`.agentwfy/sessions/${normalizeSessionFileName(sessionFileName)}`, options);
   const resolveAuthConfigPath = (options?: { allowMissing?: boolean }) =>
-    resolvePrivatePath('.agent/config/auth.json', options);
+    resolvePrivatePath('.agentwfy/config/auth.json', options);
   const resolveLegacyApiKeyPath = () =>
-    resolvePrivatePath('.agent/config/api_key');
+    resolvePrivatePath('.agentwfy/config/api_key');
 
   // read(path, offset?, limit?) → text with line numbers
   ipcMain.handle(Channel.READ, async (_event, relativePath: string, offset?: number, limit?: number) => {

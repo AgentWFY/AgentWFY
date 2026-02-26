@@ -24,7 +24,7 @@ test('parseRunSqlRequest validates runSql payload shape', () => {
 });
 
 test('agent target blocks writes until confirmed and allows writes when confirmed', async () => {
-  await withTempDir('tradinglog-sql-agent-', async (dataDir) => {
+  await withTempDir('agentwfy-sql-agent-', async (dataDir) => {
     await assert.rejects(
       () => routeSqlRequest(dataDir, {
         target: 'agent',
@@ -53,7 +53,7 @@ test('agent target blocks writes until confirmed and allows writes when confirme
 });
 
 test('sqlite-file target blocks writes until confirmed and preserves routing by path', async () => {
-  await withTempDir('tradinglog-sql-file-', async (dataDir) => {
+  await withTempDir('agentwfy-sql-file-', async (dataDir) => {
     const sqlitePath = 'journal.sqlite';
 
     await routeSqlRequest(dataDir, {
@@ -92,14 +92,14 @@ test('sqlite-file target blocks writes until confirmed and preserves routing by 
   });
 });
 
-test('sqlite-file target denies .agent paths', async () => {
-  await withTempDir('tradinglog-sql-private-', async (dataDir) => {
-    await fs.mkdir(path.join(dataDir, '.agent'), { recursive: true });
+test('sqlite-file target denies .agentwfy paths', async () => {
+  await withTempDir('agentwfy-sql-private-', async (dataDir) => {
+    await fs.mkdir(path.join(dataDir, '.agentwfy'), { recursive: true });
 
     await assert.rejects(
       () => routeSqlRequest(dataDir, {
         target: 'sqlite-file',
-        path: '.agent/private.sqlite',
+        path: '.agentwfy/private.sqlite',
         sql: 'SELECT 1',
       }),
       /Access denied for private path/

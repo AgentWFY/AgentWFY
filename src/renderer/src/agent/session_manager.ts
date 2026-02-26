@@ -1,11 +1,11 @@
-import { TradingLogAgent } from 'app/agent/create_agent'
+import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey } from 'app/agent/agent_auth'
 import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
 import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 
 export interface SessionEntry {
-  agent: TradingLogAgent
+  agent: AgentWFYAgent
   label: string
   unsubscribe: () => void
 }
@@ -56,7 +56,7 @@ export class AgentSessionManager {
     const config = this.authConfig
     const apiKey = await getEffectiveApiKey(config)
 
-    const agent = await TradingLogAgent.create({
+    const agent = await AgentWFYAgent.create({
       provider: config.provider,
       modelId: config.modelId,
       thinkingLevel: config.thinkingLevel as ThinkingLevel,
@@ -135,7 +135,7 @@ export class AgentSessionManager {
     const config = this.authConfig
     const apiKey = await getEffectiveApiKey(config)
 
-    const agent = await TradingLogAgent.create({
+    const agent = await AgentWFYAgent.create({
       provider: config.provider,
       modelId: config.modelId,
       thinkingLevel: config.thinkingLevel as ThinkingLevel,
@@ -224,12 +224,12 @@ export class AgentSessionManager {
       })
     }
 
-    window.addEventListener('tradinglog:new-agent-session', this.domHandler)
+    window.addEventListener('agentwfy:new-agent-session', this.domHandler)
   }
 
   stopListening(): void {
     if (this.domHandler) {
-      window.removeEventListener('tradinglog:new-agent-session', this.domHandler)
+      window.removeEventListener('agentwfy:new-agent-session', this.domHandler)
       this.domHandler = null
     }
   }
@@ -291,7 +291,7 @@ export class AgentSessionManager {
     return text
   }
 
-  private scheduleBackgroundDispose(sessionId: string, agent: TradingLogAgent): void {
+  private scheduleBackgroundDispose(sessionId: string, agent: AgentWFYAgent): void {
     if (agent.isStreaming || sessionId === this._activeSessionId) return
 
     setTimeout(() => {

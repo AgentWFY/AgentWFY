@@ -105,7 +105,7 @@ export class TlExternalView extends HTMLElement {
     this.attachParentVisibilityObserver()
     this.subscribeToExternalViewEvents()
 
-    window.addEventListener('tradinglog:refresh-view', this.onRefreshView)
+    window.addEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.addEventListener('resize', this.onWindowOrVisibilityChanged)
     document.addEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
 
@@ -147,7 +147,7 @@ export class TlExternalView extends HTMLElement {
       this.unsubscribeExternalViewEvents = null
     }
 
-    window.removeEventListener('tradinglog:refresh-view', this.onRefreshView)
+    window.removeEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.removeEventListener('resize', this.onWindowOrVisibilityChanged)
     document.removeEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
 

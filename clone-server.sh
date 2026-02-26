@@ -6,7 +6,7 @@ CLONE_DIR="$SCRIPT_DIR/tmp/server"
 OUTPUT_DIR="$SCRIPT_DIR/dist/server"
 
 LOCAL_SERVER_REPO="${LOCAL_SERVER_REPO:-$SCRIPT_DIR/../server}"
-REMOTE_SERVER_REPO="${REMOTE_SERVER_REPO:-https://github.com/TradingLogApp/tradinglog-server}"
+REMOTE_SERVER_REPO="${REMOTE_SERVER_REPO:-https://github.com/AgentWFYApp/agentwfy-server}"
 
 if [ -d "$LOCAL_SERVER_REPO" ]; then
   echo "Using local server repo: $LOCAL_SERVER_REPO"

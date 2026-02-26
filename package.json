@@ -1,6 +1,6 @@
 {
-  "name": "tradinglog-app",
-  "productName": "tradinglog-app",
+  "name": "agentwfy-app",
+  "productName": "agentwfy-app",
   "version": "1.0.0",
   "description": "My Electron application description",
   "main": "./main.js",

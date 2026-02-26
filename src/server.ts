@@ -11,7 +11,7 @@ let pingInterval: NodeJS.Timeout;
 async function isServerRunning(): Promise<boolean> {
   try {
     const response = await axios.post('http://localhost:23578/ping');
-    return response.data === 'tradinglog-server';
+    return response.data === 'agentwfy-server';
   } catch (error) {
     return false;
   }

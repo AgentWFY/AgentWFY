@@ -106,18 +106,18 @@ export class TlApp extends HTMLElement {
 
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
-    window.addEventListener('tradinglog:toggle-agent-chat', this.onToggleAgentChat)
-    window.addEventListener('tradinglog:sql-confirmation-needed', this.onSqlConfirmationNeeded)
-    window.addEventListener('tradinglog:sql-confirmation-cleared', this.onSqlConfirmationCleared)
+    window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.addEventListener('agentwfy:sql-confirmation-needed', this.onSqlConfirmationNeeded)
+    window.addEventListener('agentwfy:sql-confirmation-cleared', this.onSqlConfirmationCleared)
 
     initApp()
   }
 
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
-    window.removeEventListener('tradinglog:toggle-agent-chat', this.onToggleAgentChat)
-    window.removeEventListener('tradinglog:sql-confirmation-needed', this.onSqlConfirmationNeeded)
-    window.removeEventListener('tradinglog:sql-confirmation-cleared', this.onSqlConfirmationCleared)
+    window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.removeEventListener('agentwfy:sql-confirmation-needed', this.onSqlConfirmationNeeded)
+    window.removeEventListener('agentwfy:sql-confirmation-cleared', this.onSqlConfirmationCleared)
     destroyApp()
   }
 

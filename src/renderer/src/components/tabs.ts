@@ -53,7 +53,7 @@ export class TlTabs extends HTMLElement {
     if (!this.selectedTabId) return
     const tab = this.tabs.find(t => t.id === this.selectedTabId)
     if (tab?.dataType !== 'external-view') return
-    window.dispatchEvent(new CustomEvent('tradinglog:refresh-view', {
+    window.dispatchEvent(new CustomEvent('agentwfy:refresh-view', {
       detail: { viewId: tab.id }
     }))
   }
@@ -172,27 +172,27 @@ export class TlTabs extends HTMLElement {
     this.containerEl.appendChild(this.emptyStateEl)
     this.appendChild(this.containerEl)
 
-    window.addEventListener('tradinglog:open-view', this.onOpenView)
-    window.addEventListener('tradinglog:remove-current-tab', this.onRemoveCurrentTab)
-    window.addEventListener('tradinglog:refresh-current-view', this.onRefreshCurrentView)
-    window.addEventListener('tradinglog:views-db-changed', this.onViewsDbChanged)
-    window.addEventListener('tradinglog:agent-open-tab', this.onAgentOpenTab)
-    window.addEventListener('tradinglog:agent-close-tab', this.onAgentCloseTab)
-    window.addEventListener('tradinglog:agent-select-tab', this.onAgentSelectTab)
-    window.addEventListener('tradinglog:agent-clear-view-changed', this.onAgentClearViewChanged)
+    window.addEventListener('agentwfy:open-view', this.onOpenView)
+    window.addEventListener('agentwfy:remove-current-tab', this.onRemoveCurrentTab)
+    window.addEventListener('agentwfy:refresh-current-view', this.onRefreshCurrentView)
+    window.addEventListener('agentwfy:views-db-changed', this.onViewsDbChanged)
+    window.addEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
+    window.addEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
+    window.addEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
+    window.addEventListener('agentwfy:agent-clear-view-changed', this.onAgentClearViewChanged)
 
     this.render()
   }
 
   disconnectedCallback() {
-    window.removeEventListener('tradinglog:open-view', this.onOpenView)
-    window.removeEventListener('tradinglog:remove-current-tab', this.onRemoveCurrentTab)
-    window.removeEventListener('tradinglog:refresh-current-view', this.onRefreshCurrentView)
-    window.removeEventListener('tradinglog:views-db-changed', this.onViewsDbChanged)
-    window.removeEventListener('tradinglog:agent-open-tab', this.onAgentOpenTab)
-    window.removeEventListener('tradinglog:agent-close-tab', this.onAgentCloseTab)
-    window.removeEventListener('tradinglog:agent-select-tab', this.onAgentSelectTab)
-    window.removeEventListener('tradinglog:agent-clear-view-changed', this.onAgentClearViewChanged)
+    window.removeEventListener('agentwfy:open-view', this.onOpenView)
+    window.removeEventListener('agentwfy:remove-current-tab', this.onRemoveCurrentTab)
+    window.removeEventListener('agentwfy:refresh-current-view', this.onRefreshCurrentView)
+    window.removeEventListener('agentwfy:views-db-changed', this.onViewsDbChanged)
+    window.removeEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
+    window.removeEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
+    window.removeEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
+    window.removeEventListener('agentwfy:agent-clear-view-changed', this.onAgentClearViewChanged)
   }
 
   private selectTab(id: string) {
@@ -256,7 +256,7 @@ export class TlTabs extends HTMLElement {
 
   private dispatchTabSelected() {
     const tab = this.tabs.find(t => t.id === this.selectedTabId) || null
-    window.dispatchEvent(new CustomEvent('tradinglog:tab-selected', {
+    window.dispatchEvent(new CustomEvent('agentwfy:tab-selected', {
       detail: { tab }
     }))
   }
@@ -482,7 +482,7 @@ export class TlTabs extends HTMLElement {
     if (viewEl) {
       viewEl.viewChanged = false
     }
-    window.dispatchEvent(new CustomEvent('tradinglog:refresh-view', {
+    window.dispatchEvent(new CustomEvent('agentwfy:refresh-view', {
       detail: { viewId: id }
     }))
     this.render()

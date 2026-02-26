@@ -5,7 +5,7 @@
   <!-- Main circular frame -->
   <circle cx="100" cy="100" r="70" fill="none" stroke="white" stroke-width="24"/>
   
-  <!-- Trading chart line -->
+  <!-- AgentWFY chart line -->
   <path 
     d="M15,140 L80,70 L120,110 L185,45" 
     stroke="white" 

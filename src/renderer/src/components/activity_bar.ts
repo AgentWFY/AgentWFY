@@ -96,11 +96,11 @@ export class TlActivityBar extends HTMLElement {
 
   connectedCallback() {
     this.render()
-    window.addEventListener('tradinglog:agent-count', this.onAgentCount)
+    window.addEventListener('agentwfy:agent-count', this.onAgentCount)
   }
 
   disconnectedCallback() {
-    window.removeEventListener('tradinglog:agent-count', this.onAgentCount)
+    window.removeEventListener('agentwfy:agent-count', this.onAgentCount)
   }
 
   private onAgentCount = (e: Event) => {

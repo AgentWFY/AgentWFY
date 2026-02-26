@@ -9,7 +9,7 @@ let catalogRefreshInFlight = false
 let catalogRefreshQueued = false
 
 function dispatchViewsLoaded(entries: ViewCatalogEntry[]) {
-  window.dispatchEvent(new CustomEvent<{ views: ViewCatalogEntry[] }>('tradinglog:views-loaded', {
+  window.dispatchEvent(new CustomEvent<{ views: ViewCatalogEntry[] }>('agentwfy:views-loaded', {
     detail: { views: entries }
   }))
 }
@@ -77,7 +77,7 @@ function subscribeToAgentDbChanges() {
     }
 
     queueViewCatalogRefresh()
-    window.dispatchEvent(new CustomEvent<{ changes: ElectronAgentDbChange[] }>('tradinglog:views-db-changed', {
+    window.dispatchEvent(new CustomEvent<{ changes: ElectronAgentDbChange[] }>('agentwfy:views-db-changed', {
       detail: { changes: viewChanges }
     }))
   })

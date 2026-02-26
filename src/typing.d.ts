@@ -14,7 +14,7 @@ declare global {
 
   interface ElectronRunSqlRequest {
     target?: 'agent' | 'sqlite-file';
-    // For target="sqlite-file", this path must resolve inside DATA_DIR and outside DATA_DIR/.agent.
+    // For target="sqlite-file", this path must resolve inside DATA_DIR and outside DATA_DIR/.agentwfy.
     path?: string;
     sql: string;
     params?: any[];
@@ -25,7 +25,7 @@ declare global {
   interface Window {
     electronAgentTools: {
       // Paths are resolved relative to the selected DATA_DIR.
-      // Access to DATA_DIR/.agent/** is denied for file-tool operations.
+      // Access to DATA_DIR/.agentwfy/** is denied for file-tool operations.
       read(path: string, offset?: number, limit?: number): Promise<string>;
       write(path: string, content: string): Promise<string>;
       edit(path: string, oldText: string, newText: string): Promise<string>;

@@ -24,7 +24,7 @@ export function resolveInsideRoot(root: string, relativePath: string): string {
 
 export function isAgentPrivatePath(root: string, candidate: string): boolean {
   const normalizedRoot = path.resolve(root);
-  const agentDir = path.resolve(normalizedRoot, '.agent');
+  const agentDir = path.resolve(normalizedRoot, '.agentwfy');
   const normalizedCandidate = path.resolve(candidate);
   return isInsideDir(agentDir, normalizedCandidate);
 }

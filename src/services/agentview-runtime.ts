@@ -35,7 +35,7 @@ function buildSharedBootstrapScript(viewId: string): string {
         revealFallbackTimer = 0;
       }
       root.dataset.agentviewReady = '1';
-      window.dispatchEvent(new CustomEvent('tradinglog:view-presented', {
+      window.dispatchEvent(new CustomEvent('agentwfy:view-presented', {
         detail: {
           viewId: currentViewId,
           reason,

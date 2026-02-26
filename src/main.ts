@@ -160,7 +160,7 @@ let agentDbChangesPublisher: AgentDbChangesPublisher | null = null;
 let clientPath = path.join(__dirname, 'client', 'index.html');
 
 const DEFAULT_DATA_DIR = app.getPath('userData')
-const AGENT_DIR_NAME = '.agent';
+const AGENT_DIR_NAME = '.agentwfy';
 
 
 function isPathInsideBase(basePath: string, targetPath: string): boolean {
@@ -317,16 +317,16 @@ const EXTERNAL_VIEW_CHANNEL = {
   MOUNT: 'electronExternalView:mount',
   SET_BOUNDS: 'electronExternalView:setBounds',
   DESTROY: 'electronExternalView:destroy',
-  EVENT: 'tradinglog:external-view-event',
+  EVENT: 'agentwfy:external-view-event',
 } as const;
 
-const TAB_CONTEXT_MENU_CHANNEL = 'tradinglog:tabs:context-menu';
+const TAB_CONTEXT_MENU_CHANNEL = 'agentwfy:tabs:context-menu';
 
 const COMMAND_PALETTE_CHANNEL = {
-  CLOSE: 'tradinglog:command-palette:close',
-  LIST_ITEMS: 'tradinglog:command-palette:list-items',
-  RUN_ACTION: 'tradinglog:command-palette:run-action',
-  OPENED: 'tradinglog:command-palette:opened',
+  CLOSE: 'agentwfy:command-palette:close',
+  LIST_ITEMS: 'agentwfy:command-palette:list-items',
+  RUN_ACTION: 'agentwfy:command-palette:run-action',
+  OPENED: 'agentwfy:command-palette:opened',
 } as const;
 
 interface ExternalViewBoundsPayload {
@@ -720,7 +720,7 @@ async function runCommandPaletteAction(payload: unknown): Promise<void> {
 
   switch (type) {
     case 'open-view':
-      dispatchRendererCustomEvent('tradinglog:open-view', {
+      dispatchRendererCustomEvent('agentwfy:open-view', {
         viewId: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewId,
         title: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).title,
         viewUpdatedAt: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewUpdatedAt ?? null,
@@ -728,16 +728,16 @@ async function runCommandPaletteAction(payload: unknown): Promise<void> {
       break;
 
     case 'toggle-agent-chat':
-      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
       break;
 
     case 'close-current-tab':
-      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      dispatchRendererWindowEvent('agentwfy:remove-current-tab');
       break;
 
     case 'reload-views': {
       const views = await listViews(getDataDir());
-      dispatchRendererCustomEvent('tradinglog:views-loaded', {
+      dispatchRendererCustomEvent('agentwfy:views-loaded', {
         views: views.map((row) => ({
           title: row.name,
           viewId: row.id,
@@ -836,13 +836,13 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
 
     if (key === 'i') {
       event.preventDefault();
-      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
       return;
     }
 
     if (key === 'w') {
       event.preventDefault();
-      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      dispatchRendererWindowEvent('agentwfy:remove-current-tab');
       return;
     }
 
@@ -1241,27 +1241,27 @@ async function getTabsHandler(): Promise<{ tabs: Array<any> }> {
 }
 
 async function openTabHandler(request: { viewId: string | number; title?: string }): Promise<void> {
-  dispatchRendererCustomEvent('tradinglog:agent-open-tab', {
+  dispatchRendererCustomEvent('agentwfy:agent-open-tab', {
     viewId: request.viewId,
     title: request.title,
   });
 }
 
 async function closeTabHandler(request: { tabId: string }): Promise<void> {
-  dispatchRendererCustomEvent('tradinglog:agent-close-tab', {
+  dispatchRendererCustomEvent('agentwfy:agent-close-tab', {
     tabId: request.tabId,
   });
 }
 
 async function selectTabHandler(request: { tabId: string }): Promise<void> {
-  dispatchRendererCustomEvent('tradinglog:agent-select-tab', {
+  dispatchRendererCustomEvent('agentwfy:agent-select-tab', {
     tabId: request.tabId,
   });
 }
 
 async function reloadTabHandler(request: { tabId: string }): Promise<void> {
   reloadExternalView(request.tabId);
-  dispatchRendererCustomEvent('tradinglog:agent-clear-view-changed', {
+  dispatchRendererCustomEvent('agentwfy:agent-clear-view-changed', {
     tabId: request.tabId,
   });
 }
@@ -1423,7 +1423,7 @@ function publishAgentDbChanges(event: AgentDbChangedEvent): void {
     return;
   }
 
-  mainWindow.webContents.send('tradinglog:agent-db-changed', event);
+  mainWindow.webContents.send('agentwfy:agent-db-changed', event);
 }
 
 async function restartAgentDbChangesPublisher(): Promise<void> {
@@ -1570,13 +1570,13 @@ async function createAppWindow(dataDir: string) {
 
     if (!input.shift && key === 'i') {
       event.preventDefault();
-      dispatchRendererWindowEvent('tradinglog:toggle-agent-chat');
+      dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
       return;
     }
 
     if (!input.shift && key === 'w') {
       event.preventDefault();
-      dispatchRendererWindowEvent('tradinglog:remove-current-tab');
+      dispatchRendererWindowEvent('agentwfy:remove-current-tab');
       return;
     }
 
