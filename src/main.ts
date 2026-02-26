@@ -1529,12 +1529,6 @@ ipcMain.handle(EXTERNAL_VIEW_CHANNEL.DESTROY, async (_event, payload: unknown) =
   destroyExternalView(tabId);
 });
 
-ipcMain.handle('electronExternalView:reload', async (_event, payload: unknown) => {
-  const input = payload && typeof payload === 'object' ? payload as Partial<{ tabId: string }> : {};
-  const tabId = toNonEmptyString(input.tabId);
-  reloadExternalView(tabId);
-});
-
 ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {
   hideNativeCommandPalette({ focusMain: true });
 });

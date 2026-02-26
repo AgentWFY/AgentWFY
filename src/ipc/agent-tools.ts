@@ -1,4 +1,4 @@
-import { ipcMain, app } from 'electron';
+import { ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
@@ -12,27 +12,9 @@ const GREP_MAX_LINE_LENGTH = 500;
 const DEFAULT_GREP_LIMIT = 100;
 const DEFAULT_FIND_LIMIT = 1000;
 const DEFAULT_LS_LIMIT = 500;
-const MAX_LOG_BUFFER = 1000;
 const DEFAULT_SESSION_LIST_LIMIT = 200;
 const MAX_SESSION_LIST_LIMIT = 1000;
 const SESSION_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/;
-
-// --- Console log buffer ---
-
-interface ConsoleLogEntry {
-  level: string;
-  message: string;
-  timestamp: number;
-}
-
-const consoleLogs: ConsoleLogEntry[] = [];
-
-const LOG_LEVEL_MAP: Record<number, string> = {
-  0: 'verbose',
-  1: 'info',
-  2: 'warning',
-  3: 'error',
-};
 
 interface CaptureViewRequest {
   viewId: string | number
@@ -77,7 +59,6 @@ const Channel = {
   CAPTURE_VIEW: 'electronAgentTools:captureView',
   GET_VIEW_CONSOLE_LOGS: 'electronAgentTools:getViewConsoleLogs',
   EXEC_VIEW_JS: 'electronAgentTools:execViewJs',
-  GET_CONSOLE_LOGS: 'electronAgentTools:getConsoleLogs',
 } as const;
 
 // --- Helpers ---
@@ -527,24 +508,6 @@ export function registerAgentToolsHandlers(
       code: input.code,
       timeoutMs,
     });
-  });
-
-  // Console log capture
-  app.on('web-contents-created', (_event, webContents) => {
-    webContents.on('console-message', (_e, level, message) => {
-      consoleLogs.push({ level: LOG_LEVEL_MAP[level] || 'info', message, timestamp: Date.now() });
-      if (consoleLogs.length > MAX_LOG_BUFFER) {
-        consoleLogs.splice(0, consoleLogs.length - MAX_LOG_BUFFER);
-      }
-    });
-  });
-
-  // getConsoleLogs(since?) → array of log entries
-  ipcMain.handle(Channel.GET_CONSOLE_LOGS, async (_event, since?: number) => {
-    if (since) {
-      return consoleLogs.filter((e) => e.timestamp > since);
-    }
-    return consoleLogs.slice();
   });
 
 }

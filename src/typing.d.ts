@@ -52,7 +52,6 @@ declare global {
       captureView(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }>;
       getViewConsoleLogs(request: { viewId: string | number; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       execViewJs(request: { viewId: string | number; code: string; timeoutMs?: number }): Promise<any>;
-      getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
     };
     tradinglogViewBridge?: {

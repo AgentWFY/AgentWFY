@@ -96,7 +96,6 @@ const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
 const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
-const EXTERNAL_VIEW_RELOAD_CHANNEL = 'electronExternalView:reload';
 const EXTERNAL_VIEW_EVENT_CHANNEL = 'tradinglog:external-view-event';
 const RUN_SQL_EVENT = 'tradinglog:run-sql';
 const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
@@ -285,16 +284,10 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
     return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
   },
-  reloadExternalView(request: { tabId: string }): Promise<void> {
-    return ipcRenderer.invoke(EXTERNAL_VIEW_RELOAD_CHANNEL, request);
-  },
   onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
     const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);
     ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
     return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
-  },
-  getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-    return ipcRenderer.invoke('electronAgentTools:getConsoleLogs', since);
   },
   onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
     const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
