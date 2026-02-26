@@ -4,7 +4,6 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
-import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId } from './services/agentview-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
@@ -231,10 +230,6 @@ async function resolveAgentViewDataPath(url: URL): Promise<string> {
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
 registerDialogSubscribers();
-
-function getAgentRuntimeFlags() {
-  return resolveAgentRuntimeFlags(store);
-}
 
 function getDataDir(): string {
   const dataDir = store.get('dataDir');
@@ -1493,7 +1488,6 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
 });
 
 async function createAppWindow(dataDir: string) {
-  const runtimeFlags = getAgentRuntimeFlags();
   await ensureAgentRuntimeBootstrap(dataDir);
 
   // Create the browser window.
@@ -1542,10 +1536,6 @@ async function createAppWindow(dataDir: string) {
 
   mainWindow.show();
 
-  if (runtimeFlags.agentRuntimeV2) {
-    console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}.`);
-  }
-
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = String(input.key || '').toLowerCase();
     if (!key || input.alt || input.isAutoRepeat) {
@@ -1589,8 +1579,6 @@ const createWindow = () => {
 }
 
 app.on('ready', async () => {
-  const runtimeFlags = getAgentRuntimeFlags();
-  console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
   await ensureAgentRuntimeBootstrap(getDataDir());
   await restartAgentDbChangesPublisher();
   const template: any[] = [

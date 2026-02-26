@@ -1,11 +1,10 @@
-import { initApp, destroyApp } from 'app/interactors/app'
-import type { PendingSqlConfirmation } from 'app/types'
+import type { ElectronAgentDbChange, ElectronAgentDbChangedEvent } from 'app/electron_agent_tools'
 
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
-  private sqlModalEl!: HTMLElement
   private sidebarEl!: HTMLDivElement
   private activityBarEl!: HTMLElement
+  private unlistenAgentDbChanged: (() => void) | null = null
 
   private onPanelToggle = (e: Event) => {
     const detail = (e as CustomEvent<{ panel: string }>).detail
@@ -24,15 +23,6 @@ export class TlApp extends HTMLElement {
       this.activeSidebarPanel = 'agent-chat'
     }
     this.updateSidebar()
-  }
-
-  private onSqlConfirmationNeeded = (e: Event) => {
-    const detail = (e as CustomEvent<PendingSqlConfirmation>).detail
-    ;(this.sqlModalEl as any).pending = detail
-  }
-
-  private onSqlConfirmationCleared = () => {
-    ;(this.sqlModalEl as any).pending = null
   }
 
   connectedCallback() {
@@ -100,25 +90,17 @@ export class TlApp extends HTMLElement {
 
     this.appendChild(container)
 
-    // SQL Modal
-    this.sqlModalEl = document.createElement('tl-sql-modal')
-    this.appendChild(this.sqlModalEl)
-
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
-    window.addEventListener('agentwfy:sql-confirmation-needed', this.onSqlConfirmationNeeded)
-    window.addEventListener('agentwfy:sql-confirmation-cleared', this.onSqlConfirmationCleared)
-
-    initApp()
+    this.subscribeToAgentDbChanges()
   }
 
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
-    window.removeEventListener('agentwfy:sql-confirmation-needed', this.onSqlConfirmationNeeded)
-    window.removeEventListener('agentwfy:sql-confirmation-cleared', this.onSqlConfirmationCleared)
-    destroyApp()
+    this.unlistenAgentDbChanged?.()
+    this.unlistenAgentDbChanged = null
   }
 
   private updateSidebar() {
@@ -128,5 +110,40 @@ export class TlApp extends HTMLElement {
       this.sidebarEl.classList.add('tl-app-sidebar-hidden')
     }
     ;(this.activityBarEl as any).activePanel = this.activeSidebarPanel
+  }
+
+  private subscribeToAgentDbChanges() {
+    const tools = window.electronClientTools
+    if (!tools?.onAgentDbChanged) {
+      return
+    }
+
+    this.unlistenAgentDbChanged?.()
+    this.unlistenAgentDbChanged = tools.onAgentDbChanged((detail: ElectronAgentDbChangedEvent) => {
+      const changes = this.normalizeViewChanges(detail)
+      if (!changes.length) {
+        return
+      }
+
+      window.dispatchEvent(new CustomEvent<{ changes: ElectronAgentDbChange[] }>('agentwfy:views-db-changed', {
+        detail: { changes }
+      }))
+    })
+  }
+
+  private normalizeViewChanges(detail: ElectronAgentDbChangedEvent): ElectronAgentDbChange[] {
+    if (!detail || !Array.isArray(detail.changes)) {
+      return []
+    }
+
+    const viewChanges: ElectronAgentDbChange[] = []
+    for (const change of detail.changes) {
+      if (!change || change.table !== 'views') continue
+      if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') continue
+      if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) continue
+      viewChanges.push(change)
+    }
+
+    return viewChanges
   }
 }

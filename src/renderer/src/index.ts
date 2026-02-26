@@ -3,7 +3,6 @@ import { TlTabs } from 'app/components/tabs'
 import { TlExternalView } from 'app/components/external_view'
 import { TlAgentChat } from 'app/components/agent_chat'
 import { TlAgentSettings } from 'app/components/agent_settings'
-import { TlSqlModal } from 'app/components/sql_confirmation_modal'
 import { TlJson } from 'app/components/json_view'
 import { TlActivityBar } from 'app/components/activity_bar'
 import { TlSelect } from 'app/components/select'
@@ -17,7 +16,6 @@ function defineElement(tagName: string, ctor: CustomElementConstructor) {
 async function init() {
   defineElement('tl-json', TlJson)
   defineElement('tl-agent-settings', TlAgentSettings)
-  defineElement('tl-sql-modal', TlSqlModal)
   defineElement('tl-external-view', TlExternalView)
   defineElement('tl-tabs', TlTabs)
   defineElement('tl-agent-chat', TlAgentChat)
