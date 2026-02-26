@@ -153,24 +153,6 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   }): Promise<any> {
     return invokeRunSql(request);
   },
-  listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
-    return ipcRenderer.invoke(LIST_SESSIONS_CHANNEL, limit);
-  },
-  readSession(sessionFileName: string): Promise<string> {
-    return ipcRenderer.invoke(READ_SESSION_CHANNEL, sessionFileName);
-  },
-  writeSession(sessionFileName: string, content: string): Promise<void> {
-    return ipcRenderer.invoke(WRITE_SESSION_CHANNEL, sessionFileName, content);
-  },
-  readAuthConfig(): Promise<string> {
-    return ipcRenderer.invoke(READ_AUTH_CONFIG_CHANNEL);
-  },
-  writeAuthConfig(content: string): Promise<void> {
-    return ipcRenderer.invoke(WRITE_AUTH_CONFIG_CHANNEL, content);
-  },
-  readLegacyApiKey(): Promise<string> {
-    return ipcRenderer.invoke(READ_LEGACY_API_KEY_CHANNEL);
-  },
   captureView(request: CaptureViewRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
     return ipcRenderer.invoke(CAPTURE_VIEW_CHANNEL, request);
   },
@@ -201,6 +183,24 @@ if (window.location.protocol !== 'agentview:') {
         ipcRenderer.invoke(STORE_REMOVE_CHANNEL, key);
       }, 0);
       return Promise.resolve();
+    },
+    listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
+      return ipcRenderer.invoke(LIST_SESSIONS_CHANNEL, limit);
+    },
+    readSession(sessionFileName: string): Promise<string> {
+      return ipcRenderer.invoke(READ_SESSION_CHANNEL, sessionFileName);
+    },
+    writeSession(sessionFileName: string, content: string): Promise<void> {
+      return ipcRenderer.invoke(WRITE_SESSION_CHANNEL, sessionFileName, content);
+    },
+    readAuthConfig(): Promise<string> {
+      return ipcRenderer.invoke(READ_AUTH_CONFIG_CHANNEL);
+    },
+    writeAuthConfig(content: string): Promise<void> {
+      return ipcRenderer.invoke(WRITE_AUTH_CONFIG_CHANNEL, content);
+    },
+    readLegacyApiKey(): Promise<string> {
+      return ipcRenderer.invoke(READ_LEGACY_API_KEY_CHANNEL);
     },
     mountExternalView(request: ExternalViewMountRequest): Promise<void> {
       return ipcRenderer.invoke(EXTERNAL_VIEW_MOUNT_CHANNEL, request);
