@@ -7,13 +7,13 @@ import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
-import { buildViewDocument, parseAgentViewId, resolveSpectrumBundleUrls } from './services/agentview-runtime';
+import { buildViewDocument, parseAgentViewId } from './services/agentview-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
 import { assertPathAllowed } from './security/path-policy';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
-import { stat, mkdir, readFile } from 'fs/promises';
+import { stat, mkdir } from 'fs/promises';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -161,83 +161,7 @@ let clientPath = path.join(__dirname, 'client', 'index.html');
 
 const DEFAULT_DATA_DIR = app.getPath('userData')
 const AGENT_DIR_NAME = '.agent';
-const AGENTVIEW_SPECTRUM_BUNDLE_URLS = resolveSpectrumBundleUrls(process.env.AGENTVIEW_SPECTRUM_BUNDLE_URLS);
-const LOCAL_SPECTRUM_VENDOR_PATTERN = /(^|\/)vendor-[^/]+\.js(\?.*)?$/i;
-const LOCAL_SPECTRUM_STYLESHEET_PATTERN = /(^|\/)(all-medium-dark|typography)([^/]*?)\.css(\?.*)?$/i;
-const LOCAL_SPECTRUM_STYLESHEET_FALLBACK_PATHS = [
-  'assets/spectrum-styles/all-medium-dark.css',
-  'assets/spectrum-styles/typography.css',
-];
 
-interface AgentViewClientAssets {
-  spectrumModuleUrls: string[]
-  stylesheetUrls: string[]
-}
-
-let cachedAgentViewClientAssets: AgentViewClientAssets = {
-  spectrumModuleUrls: [],
-  stylesheetUrls: [],
-};
-
-function extractAttributeValue(tagSource: string, attributeName: string): string | null {
-  const pattern = new RegExp(`\\b${attributeName}\\s*=\\s*(['"])(.*?)\\1`, 'i');
-  const match = tagSource.match(pattern);
-  if (!match || typeof match[2] !== 'string') {
-    return null;
-  }
-
-  return match[2].trim();
-}
-
-function extractLinkHrefsByRel(htmlSource: string, relName: string): string[] {
-  const tags = htmlSource.match(/<link\b[^>]*>/gi) ?? [];
-  const hrefs: string[] = [];
-  for (const tag of tags) {
-    const relValue = extractAttributeValue(tag, 'rel');
-    if (!relValue) {
-      continue;
-    }
-
-    const relTokens = relValue.split(/\s+/).map((token) => token.trim().toLowerCase());
-    if (!relTokens.includes(relName.toLowerCase())) {
-      continue;
-    }
-
-    const hrefValue = extractAttributeValue(tag, 'href');
-    if (!hrefValue) {
-      continue;
-    }
-    hrefs.push(hrefValue);
-  }
-
-  return hrefs;
-}
-
-function toAgentViewAssetUrl(href: string): string | null {
-  if (typeof href !== 'string') {
-    return null;
-  }
-
-  const trimmed = href.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    return trimmed;
-  }
-
-  const normalizedPath = trimmed.replace(/^\/+/, '');
-  if (!normalizedPath) {
-    return null;
-  }
-
-  return `agentview://asset/${normalizedPath}`;
-}
-
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values));
-}
 
 function isPathInsideBase(basePath: string, targetPath: string): boolean {
   const relative = path.relative(basePath, targetPath);
@@ -304,58 +228,6 @@ async function resolveAgentViewDataPath(url: URL): Promise<string> {
   return assertPathAllowed(getDataDir(), normalizedPath, { allowMissing: false });
 }
 
-async function loadAgentViewClientAssets(): Promise<AgentViewClientAssets> {
-  try {
-    const indexHtml = await readFile(clientPath, 'utf8');
-    const clientDir = path.dirname(clientPath);
-
-    const modulePreloads = extractLinkHrefsByRel(indexHtml, 'modulepreload');
-    const vendorModuleCandidates = modulePreloads.filter((href) => LOCAL_SPECTRUM_VENDOR_PATTERN.test(href));
-    const spectrumModuleUrls = dedupe(
-      vendorModuleCandidates
-        .map((href) => toAgentViewAssetUrl(href))
-        .filter((url): url is string => typeof url === 'string')
-    );
-
-    let stylesheetUrls = dedupe(
-      extractLinkHrefsByRel(indexHtml, 'stylesheet')
-        // Do not inject app-wide CSS into agent views; it can override view-local classes.
-        .filter((href) => LOCAL_SPECTRUM_STYLESHEET_PATTERN.test(href))
-        .map((href) => toAgentViewAssetUrl(href))
-        .filter((url): url is string => typeof url === 'string')
-    );
-
-    if (stylesheetUrls.length === 0) {
-      const fallbackStylesheetUrls: string[] = [];
-      for (const relativePath of LOCAL_SPECTRUM_STYLESHEET_FALLBACK_PATHS) {
-        const absolutePath = path.resolve(clientDir, relativePath);
-        try {
-          await stat(absolutePath);
-        } catch {
-          continue;
-        }
-
-        const stylesheetUrl = toAgentViewAssetUrl(relativePath);
-        if (stylesheetUrl) {
-          fallbackStylesheetUrls.push(stylesheetUrl);
-        }
-      }
-
-      stylesheetUrls = dedupe(fallbackStylesheetUrls);
-    }
-
-    return {
-      spectrumModuleUrls,
-      stylesheetUrls,
-    };
-  } catch (error) {
-    console.warn('[agentview] failed to resolve local client assets for Spectrum bootstrap', error);
-    return {
-      spectrumModuleUrls: [],
-      stylesheetUrls: [],
-    };
-  }
-}
 
 const store = new ElectronStore();
 registerElectronStoreSubscribers(store);
@@ -1531,15 +1403,7 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
     return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewId)}</pre>`);
   }
 
-  const spectrumBundleUrls = [
-    ...cachedAgentViewClientAssets.spectrumModuleUrls,
-    ...AGENTVIEW_SPECTRUM_BUNDLE_URLS,
-  ];
-
-  const html = buildViewDocument(String(record.id), record.content, {
-    spectrumBundleUrls,
-    spectrumStylesheetUrls: cachedAgentViewClientAssets.stylesheetUrls,
-  });
+  const html = buildViewDocument(String(record.id), record.content);
   return toHtmlResponse(200, html);
 }
 
@@ -1714,13 +1578,6 @@ app.on('ready', async () => {
   console.log(`[agent-runtime] mode=${runtimeFlags.agentRuntimeV2 ? 'v2' : 'legacy'} source=${runtimeFlags.source}`);
   await ensureAgentRuntimeBootstrap(getDataDir());
   await restartAgentDbChangesPublisher();
-  cachedAgentViewClientAssets = await loadAgentViewClientAssets();
-  if (cachedAgentViewClientAssets.spectrumModuleUrls.length > 0) {
-    console.log(`[agentview] local spectrum module candidates: ${cachedAgentViewClientAssets.spectrumModuleUrls.join(', ')}`);
-  } else {
-    console.warn('[agentview] no local spectrum module candidates found; using remote fallback only');
-  }
-
   const template: any[] = [
     {
       label: 'File',
