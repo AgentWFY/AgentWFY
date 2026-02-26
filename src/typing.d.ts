@@ -43,6 +43,12 @@ declare global {
       find(pattern: string, path?: string, limit?: number): Promise<string>;
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
       runSql(request: ElectronRunSqlRequest): Promise<any>;
+      listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>;
+      readSession(sessionFileName: string): Promise<string>;
+      writeSession(sessionFileName: string, content: string): Promise<void>;
+      readAuthConfig(): Promise<string>;
+      writeAuthConfig(content: string): Promise<void>;
+      readLegacyApiKey(): Promise<string>;
       captureView(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }>;
       getViewConsoleLogs(request: { viewId: string | number; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       execViewJs(request: { viewId: string | number; code: string; timeoutMs?: number }): Promise<any>;

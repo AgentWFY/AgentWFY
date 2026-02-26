@@ -84,6 +84,12 @@ interface AgentDbChangedEventDetail {
 }
 
 const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
+const LIST_SESSIONS_CHANNEL = 'electronAgentTools:listSessions';
+const READ_SESSION_CHANNEL = 'electronAgentTools:readSession';
+const WRITE_SESSION_CHANNEL = 'electronAgentTools:writeSession';
+const READ_AUTH_CONFIG_CHANNEL = 'electronAgentTools:readAuthConfig';
+const WRITE_AUTH_CONFIG_CHANNEL = 'electronAgentTools:writeAuthConfig';
+const READ_LEGACY_API_KEY_CHANNEL = 'electronAgentTools:readLegacyApiKey';
 const CAPTURE_VIEW_CHANNEL = 'electronAgentTools:captureView';
 const GET_VIEW_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getViewConsoleLogs';
 const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
@@ -242,6 +248,24 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     confirmed?: boolean;
   }): Promise<any> {
     return invokeRunSql(request);
+  },
+  listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
+    return ipcRenderer.invoke(LIST_SESSIONS_CHANNEL, limit);
+  },
+  readSession(sessionFileName: string): Promise<string> {
+    return ipcRenderer.invoke(READ_SESSION_CHANNEL, sessionFileName);
+  },
+  writeSession(sessionFileName: string, content: string): Promise<void> {
+    return ipcRenderer.invoke(WRITE_SESSION_CHANNEL, sessionFileName, content);
+  },
+  readAuthConfig(): Promise<string> {
+    return ipcRenderer.invoke(READ_AUTH_CONFIG_CHANNEL);
+  },
+  writeAuthConfig(content: string): Promise<void> {
+    return ipcRenderer.invoke(WRITE_AUTH_CONFIG_CHANNEL, content);
+  },
+  readLegacyApiKey(): Promise<string> {
+    return ipcRenderer.invoke(READ_LEGACY_API_KEY_CHANNEL);
   },
   captureView(request: CaptureViewRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
     return ipcRenderer.invoke(CAPTURE_VIEW_CHANNEL, request);

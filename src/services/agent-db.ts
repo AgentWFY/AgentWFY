@@ -33,6 +33,14 @@ CREATE TABLE IF NOT EXISTS views (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+CREATE TABLE IF NOT EXISTS docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  content TEXT NOT NULL,
+  preload INTEGER NOT NULL DEFAULT 0 CHECK(preload IN (0, 1)),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 CREATE TABLE IF NOT EXISTS db_changes (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   table_name TEXT NOT NULL,
@@ -60,6 +68,27 @@ AFTER DELETE ON views
 BEGIN
   INSERT INTO db_changes (table_name, row_id, op, changed_at)
   VALUES ('views', OLD.id, 'delete', unixepoch());
+END;
+
+CREATE TRIGGER IF NOT EXISTS docs_db_changes_insert
+AFTER INSERT ON docs
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('docs', NEW.id, 'insert', unixepoch());
+END;
+
+CREATE TRIGGER IF NOT EXISTS docs_db_changes_update
+AFTER UPDATE ON docs
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('docs', NEW.id, 'update', unixepoch());
+END;
+
+CREATE TRIGGER IF NOT EXISTS docs_db_changes_delete
+AFTER DELETE ON docs
+BEGIN
+  INSERT INTO db_changes (table_name, row_id, op, changed_at)
+  VALUES ('docs', OLD.id, 'delete', unixepoch());
 END;
 `;
 
