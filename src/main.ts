@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, nativeTheme, type Rectangle } from 'electron';
+import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, nativeTheme, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import createVaultWindow from './vault_window';
 import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
@@ -320,6 +320,8 @@ const EXTERNAL_VIEW_CHANNEL = {
   EVENT: 'tradinglog:external-view-event',
 } as const;
 
+const TAB_CONTEXT_MENU_CHANNEL = 'tradinglog:tabs:context-menu';
+
 const COMMAND_PALETTE_CHANNEL = {
   CLOSE: 'tradinglog:command-palette:close',
   LIST_ITEMS: 'tradinglog:command-palette:list-items',
@@ -351,6 +353,14 @@ interface ExternalViewSetBoundsPayload {
 interface ExternalViewDestroyPayload {
   tabId: string
 }
+
+interface TabContextMenuPayload {
+  x: number
+  y: number
+  pinned: boolean
+}
+
+type TabContextMenuAction = 'toggle-pin' | null;
 
 interface ExternalViewState {
   tabId: string
@@ -390,6 +400,23 @@ function normalizeExternalViewNumber(value: unknown): number {
     return 0;
   }
   return Math.max(0, Math.floor(parsed));
+}
+
+function normalizeContextMenuCoordinate(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(parsed));
+}
+
+function normalizeTabContextMenuPayload(raw: unknown): TabContextMenuPayload {
+  const input = raw && typeof raw === 'object' ? raw as Partial<TabContextMenuPayload> : {};
+  return {
+    x: normalizeContextMenuCoordinate(input.x),
+    y: normalizeContextMenuCoordinate(input.y),
+    pinned: Boolean(input.pinned),
+  };
 }
 
 function normalizeExternalViewBounds(raw: unknown): Rectangle {
@@ -993,6 +1020,42 @@ function reloadVisibleExternalView(): void {
   }
 }
 
+function showNativeTabContextMenu(
+  event: IpcMainInvokeEvent,
+  payload: unknown,
+): Promise<TabContextMenuAction> {
+  const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+  if (!ownerWindow || ownerWindow.isDestroyed()) {
+    return Promise.resolve(null);
+  }
+
+  const { x, y, pinned } = normalizeTabContextMenuPayload(payload);
+  let selectedAction: TabContextMenuAction = null;
+
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: pinned ? 'Unpin Tab' : 'Pin Tab',
+      click: () => {
+        selectedAction = 'toggle-pin';
+      },
+    },
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  return new Promise<TabContextMenuAction>((resolve) => {
+    try {
+      menu.popup({
+        window: ownerWindow,
+        x,
+        y,
+        callback: () => resolve(selectedAction),
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 function normalizeViewIdInput(viewId: string | number): string {
   if (typeof viewId === 'number') {
     if (!Number.isFinite(viewId)) {
@@ -1445,6 +1508,10 @@ ipcMain.handle(EXTERNAL_VIEW_CHANNEL.DESTROY, async (_event, payload: unknown) =
   const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewDestroyPayload> : {};
   const tabId = toNonEmptyString(input.tabId);
   destroyExternalView(tabId);
+});
+
+ipcMain.handle(TAB_CONTEXT_MENU_CHANNEL, async (event, payload: unknown) => {
+  return showNativeTabContextMenu(event, payload);
 });
 
 ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {

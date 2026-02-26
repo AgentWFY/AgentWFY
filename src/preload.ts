@@ -52,6 +52,14 @@ interface ExternalViewDestroyRequest {
   tabId: string;
 }
 
+type TabContextMenuAction = 'toggle-pin' | null;
+
+interface TabContextMenuRequest {
+  x: number;
+  y: number;
+  pinned: boolean;
+}
+
 interface ExternalViewEventDetail {
   tabId: string;
   type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load';
@@ -85,6 +93,7 @@ const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
 const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
+const TAB_CONTEXT_MENU_CHANNEL = 'tradinglog:tabs:context-menu';
 const EXTERNAL_VIEW_EVENT_CHANNEL = 'tradinglog:external-view-event';
 const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
 const DIALOG_OPEN_CHANNEL = 'dialog:open';
@@ -210,6 +219,9 @@ if (window.location.protocol !== 'agentview:') {
     },
     destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
       return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
+    },
+    showTabContextMenu(request: TabContextMenuRequest): Promise<TabContextMenuAction> {
+      return ipcRenderer.invoke(TAB_CONTEXT_MENU_CHANNEL, request);
     },
     onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
       const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);

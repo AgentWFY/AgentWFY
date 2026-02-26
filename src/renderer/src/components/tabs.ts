@@ -293,7 +293,7 @@ export class TlTabs extends HTMLElement {
       // Context menu for pin/unpin
       tabItem.addEventListener('contextmenu', (e) => {
         e.preventDefault()
-        this.showTabContextMenu(e, tab)
+        void this.showTabContextMenu(e, tab)
       })
 
       if (tab.pinned) {
@@ -386,61 +386,21 @@ export class TlTabs extends HTMLElement {
     }
   }
 
-  private showTabContextMenu(e: MouseEvent, tab: TabData) {
-    // Remove any existing context menu
-    const existing = document.querySelector('.tl-tab-context-menu')
-    if (existing) existing.remove()
-
-    const menu = document.createElement('div')
-    menu.className = 'tl-tab-context-menu'
-    menu.style.cssText = `
-      position: fixed;
-      left: ${e.clientX}px;
-      top: ${e.clientY}px;
-      background: var(--color-bg2, #2a2a2a);
-      border: 1px solid var(--color-border, #444);
-      border-radius: 4px;
-      padding: 4px 0;
-      z-index: 10000;
-      min-width: 140px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      font-family: '.SFNSDisplay-Regular', 'Helvetica Neue', 'Lucida Grande', sans-serif;
-    `
-
-    const item = document.createElement('div')
-    item.textContent = tab.pinned ? 'Unpin Tab' : 'Pin Tab'
-    item.style.cssText = `
-      padding: 6px 12px;
-      cursor: pointer;
-      font-size: 13px;
-      color: var(--color-text4, #eee);
-    `
-    item.addEventListener('mouseenter', () => {
-      item.style.background = 'var(--color-item-hover, #3a3a3a)'
-    })
-    item.addEventListener('mouseleave', () => {
-      item.style.background = 'none'
-    })
-    item.addEventListener('click', () => {
-      this.togglePin(tab.id)
-      menu.remove()
-    })
-
-    menu.appendChild(item)
-    document.body.appendChild(menu)
-
-    const dismiss = (ev: Event) => {
-      if (!menu.contains(ev.target as Node)) {
-        menu.remove()
-        document.removeEventListener('click', dismiss, true)
-        document.removeEventListener('contextmenu', dismiss, true)
-      }
+  private async showTabContextMenu(e: MouseEvent, tab: TabData) {
+    const tools = window.electronClientTools
+    if (!tools || typeof tools.showTabContextMenu !== 'function') {
+      return
     }
-    // Delay so the current event doesn't immediately dismiss
-    requestAnimationFrame(() => {
-      document.addEventListener('click', dismiss, true)
-      document.addEventListener('contextmenu', dismiss, true)
-    })
+
+    const action = await tools.showTabContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      pinned: Boolean(tab.pinned),
+    }).catch(() => null)
+
+    if (action === 'toggle-pin') {
+      this.togglePin(tab.id)
+    }
   }
 
   private getStyles(): string {

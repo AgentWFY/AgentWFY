@@ -63,6 +63,14 @@ export interface ElectronDestroyExternalViewRequest {
   tabId: string
 }
 
+export type ElectronTabContextMenuAction = 'toggle-pin' | null
+
+export interface ElectronTabContextMenuRequest {
+  x: number
+  y: number
+  pinned: boolean
+}
+
 export interface ElectronExternalViewEvent {
   tabId: string
   type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'
@@ -112,6 +120,7 @@ export interface ElectronClientTools {
   mountExternalView(request: ElectronMountExternalViewRequest): Promise<void>
   updateExternalViewBounds(request: ElectronUpdateExternalViewBoundsRequest): Promise<void>
   destroyExternalView(request: ElectronDestroyExternalViewRequest): Promise<void>
+  showTabContextMenu(request: ElectronTabContextMenuRequest): Promise<ElectronTabContextMenuAction>
   onExternalViewEvent(callback: (detail: ElectronExternalViewEvent) => void): () => void
   onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void
 }
