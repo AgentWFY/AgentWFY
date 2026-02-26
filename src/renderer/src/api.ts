@@ -1,7 +1,5 @@
 import type { SqlRequestParams } from 'app/api_types'
 
-// in development client is served by vite server, in prod it is server by the main server
-const base = import.meta.env.VITE_PUBLIC_API_URL || "/"
 const DEFAULT_SQL_SENDER = 'client'
 
 export class SqlApiError extends Error {
@@ -20,24 +18,25 @@ export async function sendSqlRequest(request: SqlRequestParams | string) {
     ? { sql: request, sender: DEFAULT_SQL_SENDER }
     : { sender: DEFAULT_SQL_SENDER, ...request }
 
-  const opts = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(normalizedRequest)
+  const tools = window.electronAgentTools
+  if (!tools?.runSql) {
+    throw new Error('window.electronAgentTools.runSql is not available in this renderer context')
   }
 
-  const r = await window.fetch(`${base}/sql`, opts)
-  const text = await r.text()
-  let body: any
   try {
-    body = JSON.parse(text)
-  } catch {
-    body = text
+    return await tools.runSql({
+      target: normalizedRequest.target ?? 'agent',
+      path: normalizedRequest.path,
+      sql: normalizedRequest.sql,
+      params: normalizedRequest.params,
+      description: normalizedRequest.description,
+      confirmed: normalizedRequest.confirmed,
+    })
+  } catch (error: any) {
+    const message = error instanceof Error ? error.message : String(error || '')
+    if (message.startsWith('ReadOnlyViolation:')) {
+      throw new SqlApiError(422, message)
+    }
+    throw error
   }
-
-  if (!r.ok) {
-    throw new SqlApiError(r.status, body)
-  }
-
-  return body
 }

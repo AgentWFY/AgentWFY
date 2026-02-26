@@ -4,7 +4,6 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
-import { startServer, stopServer } from './server';
 import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId } from './services/agentview-runtime';
@@ -1482,7 +1481,6 @@ ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unkno
 store.onDidChange('dataDir', async (newValue, oldValue) => {
   if (oldValue !== newValue) {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
-    await stopServer();
     agentDbChangesPublisher?.stop();
     destroyNativeCommandPalette();
     destroyAllExternalViews();
@@ -1490,7 +1488,6 @@ store.onDidChange('dataDir', async (newValue, oldValue) => {
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
     await restartAgentDbChangesPublisher();
-    await startServer(nextDataDir);
     mainWindow?.reload();
   }
 });
@@ -1548,8 +1545,6 @@ async function createAppWindow(dataDir: string) {
   if (runtimeFlags.agentRuntimeV2) {
     console.log(`[agent-runtime] v2 enabled via ${runtimeFlags.source}.`);
   }
-
-  await startServer(dataDir);
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
     const key = String(input.key || '').toLowerCase();
@@ -1708,7 +1703,6 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     agentDbChangesPublisher?.stop();
     agentDbChangesPublisher = null;
-    stopServer();
     app.quit();
   }
 });
