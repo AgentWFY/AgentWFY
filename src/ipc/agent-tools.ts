@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app } from 'electron';
+import { ipcMain, app } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
@@ -77,7 +77,6 @@ const Channel = {
   CAPTURE_VIEW: 'electronAgentTools:captureView',
   GET_VIEW_CONSOLE_LOGS: 'electronAgentTools:getViewConsoleLogs',
   EXEC_VIEW_JS: 'electronAgentTools:execViewJs',
-  CAPTURE_WINDOW_PNG: 'electronAgentTools:captureWindowPng',
   GET_CONSOLE_LOGS: 'electronAgentTools:getConsoleLogs',
 } as const;
 
@@ -186,7 +185,6 @@ function normalizeSessionFileName(value: unknown): string {
 
 export function registerAgentToolsHandlers(
   getRoot: () => string,
-  getMainWindow: () => BrowserWindow | null,
   viewTools?: AgentViewTools
 ) {
   const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
@@ -549,17 +547,4 @@ export function registerAgentToolsHandlers(
     return consoleLogs.slice();
   });
 
-  // captureWindowPng() → { path, base64 }
-  ipcMain.handle(Channel.CAPTURE_WINDOW_PNG, async () => {
-    const win = getMainWindow();
-    if (!win) throw new Error('No main window available');
-    const image = await win.webContents.capturePage();
-    const pngBuffer = image.toPNG();
-    const filename = `screenshot-${Date.now()}.png`;
-    const tmpDir = await resolveToolPath('tmp', { allowMissing: true });
-    const savePath = path.join(tmpDir, filename);
-    await fs.mkdir(tmpDir, { recursive: true });
-    await fs.writeFile(savePath, pngBuffer);
-    return { path: savePath, base64: pngBuffer.toString('base64') };
-  });
 }

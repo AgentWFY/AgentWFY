@@ -293,9 +293,6 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
     return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
   },
-  captureWindowPng(): Promise<{ path: string; base64: string }> {
-    return ipcRenderer.invoke('electronAgentTools:captureWindowPng');
-  },
   getConsoleLogs(since?: number): Promise<Array<{ level: string; message: string; timestamp: number }>> {
     return ipcRenderer.invoke('electronAgentTools:getConsoleLogs', since);
   },

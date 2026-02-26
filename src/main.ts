@@ -1509,7 +1509,7 @@ async function restartAgentDbChangesPublisher(): Promise<void> {
   await agentDbChangesPublisher.start();
 }
 
-registerAgentToolsHandlers(getDataDir, () => mainWindow, {
+registerAgentToolsHandlers(getDataDir, {
   captureView: captureViewById,
   getViewConsoleLogs: getViewConsoleLogsById,
   execViewJs: execViewJsById,
