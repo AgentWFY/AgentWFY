@@ -58,6 +58,54 @@ export class TlTabs extends HTMLElement {
     }))
   }
 
+  private onAgentOpenTab = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    if (!detail || (typeof detail.viewId !== 'string' && typeof detail.viewId !== 'number')) return
+    const tabId = generateId()
+    const tab: TabData = {
+      id: tabId,
+      dataType: 'external-view',
+      title: detail.title || 'Agent View',
+      viewId: detail.viewId,
+      viewUpdatedAt: null,
+      viewChanged: false,
+      pinned: false,
+    }
+    this.tabs = [...this.tabs, tab]
+    this.selectedTabId = tabId
+    this.render()
+    this.dispatchTabSelected()
+  }
+
+  private onAgentCloseTab = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    if (!detail || typeof detail.tabId !== 'string') return
+    const tab = this.tabs.find(t => t.id === detail.tabId)
+    if (!tab) return
+    this.removeTab(detail.tabId)
+  }
+
+  private onAgentSelectTab = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    if (!detail || typeof detail.tabId !== 'string') return
+    const tab = this.tabs.find(t => t.id === detail.tabId)
+    if (!tab) return
+    this.selectTab(detail.tabId)
+  }
+
+  private onAgentClearViewChanged = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    if (!detail || typeof detail.tabId !== 'string') return
+    const tab = this.tabs.find(t => t.id === detail.tabId)
+    if (!tab) return
+    tab.viewChanged = false
+    const viewEl = this.viewMap.get(tab.id) as any
+    if (viewEl) {
+      viewEl.viewChanged = false
+    }
+    this.render()
+  }
+
   private onViewsDbChanged = (e: Event) => {
     const detail = (e as CustomEvent).detail as { changes?: Array<{ rowId?: unknown; op?: unknown }> } | undefined
     const changes = Array.isArray(detail?.changes) ? detail.changes : []
@@ -128,6 +176,10 @@ export class TlTabs extends HTMLElement {
     window.addEventListener('tradinglog:remove-current-tab', this.onRemoveCurrentTab)
     window.addEventListener('tradinglog:refresh-current-view', this.onRefreshCurrentView)
     window.addEventListener('tradinglog:views-db-changed', this.onViewsDbChanged)
+    window.addEventListener('tradinglog:agent-open-tab', this.onAgentOpenTab)
+    window.addEventListener('tradinglog:agent-close-tab', this.onAgentCloseTab)
+    window.addEventListener('tradinglog:agent-select-tab', this.onAgentSelectTab)
+    window.addEventListener('tradinglog:agent-clear-view-changed', this.onAgentClearViewChanged)
 
     this.render()
   }
@@ -137,6 +189,10 @@ export class TlTabs extends HTMLElement {
     window.removeEventListener('tradinglog:remove-current-tab', this.onRemoveCurrentTab)
     window.removeEventListener('tradinglog:refresh-current-view', this.onRefreshCurrentView)
     window.removeEventListener('tradinglog:views-db-changed', this.onViewsDbChanged)
+    window.removeEventListener('tradinglog:agent-open-tab', this.onAgentOpenTab)
+    window.removeEventListener('tradinglog:agent-close-tab', this.onAgentCloseTab)
+    window.removeEventListener('tradinglog:agent-select-tab', this.onAgentSelectTab)
+    window.removeEventListener('tradinglog:agent-clear-view-changed', this.onAgentClearViewChanged)
   }
 
   private selectTab(id: string) {
@@ -301,11 +357,22 @@ export class TlTabs extends HTMLElement {
         pin.className = 'tab-pin-icon'
         pin.innerHTML = PIN_ICON_SVG
         tabItem.appendChild(pin)
+        if (tab.viewChanged) {
+          const dot = document.createElement('span')
+          dot.className = 'tab-changed-dot'
+          tabItem.appendChild(dot)
+        }
       } else {
         const title = document.createElement('span')
         title.className = 'tab-title'
         title.textContent = tab.title
         tabItem.appendChild(title)
+
+        if (tab.viewChanged) {
+          const dot = document.createElement('span')
+          dot.className = 'tab-changed-dot'
+          tabItem.appendChild(dot)
+        }
 
         const close = document.createElement('span')
         close.className = 'tab-close'
@@ -396,11 +463,29 @@ export class TlTabs extends HTMLElement {
       x: e.clientX,
       y: e.clientY,
       pinned: Boolean(tab.pinned),
+      viewChanged: Boolean(tab.viewChanged),
+      tabId: tab.id,
     }).catch(() => null)
 
     if (action === 'toggle-pin') {
       this.togglePin(tab.id)
+    } else if (action === 'reload') {
+      this.reloadTab(tab.id)
     }
+  }
+
+  private reloadTab(id: string) {
+    const tab = this.tabs.find(t => t.id === id)
+    if (!tab || tab.dataType !== 'external-view') return
+    tab.viewChanged = false
+    const viewEl = this.viewMap.get(id) as any
+    if (viewEl) {
+      viewEl.viewChanged = false
+    }
+    window.dispatchEvent(new CustomEvent('tradinglog:refresh-view', {
+      detail: { viewId: id }
+    }))
+    this.render()
   }
 
   private getStyles(): string {
@@ -482,6 +567,13 @@ export class TlTabs extends HTMLElement {
         width: 14px;
         height: 14px;
         color: var(--color-text2);
+      }
+      .tab-changed-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--color-accent);
+        flex-shrink: 0;
       }
       .pinned-separator {
         width: 1px;

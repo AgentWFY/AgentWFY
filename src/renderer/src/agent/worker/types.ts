@@ -80,29 +80,60 @@ export interface WorkerGrepRequest {
   options?: WorkerGrepOptions
 }
 
-export interface WorkerCaptureViewRequest {
-  viewId: string | number
+export interface WorkerGetTabsRequest {}
+
+export interface WorkerGetTabsResult {
+  tabs: Array<{
+    id: string
+    title: string
+    viewId: string | number | null
+    viewUpdatedAt: number | null
+    viewChanged: boolean
+    pinned: boolean
+    selected: boolean
+  }>
 }
 
-export interface WorkerGetViewConsoleLogsRequest {
+export interface WorkerOpenTabRequest {
   viewId: string | number
+  title?: string
+}
+
+export interface WorkerCloseTabRequest {
+  tabId: string
+}
+
+export interface WorkerSelectTabRequest {
+  tabId: string
+}
+
+export interface WorkerReloadTabRequest {
+  tabId: string
+}
+
+export interface WorkerCaptureTabRequest {
+  tabId: string
+}
+
+export interface WorkerGetTabConsoleLogsRequest {
+  tabId: string
   since?: number
   limit?: number
 }
 
-export interface WorkerExecViewJsRequest {
-  viewId: string | number
+export interface WorkerExecTabJsRequest {
+  tabId: string
   code: string
   timeoutMs?: number
 }
 
-export interface WorkerViewConsoleLogEntry {
+export interface WorkerTabConsoleLogEntry {
   level: string
   message: string
   timestamp: number
 }
 
-export interface WorkerCaptureViewResult {
+export interface WorkerCaptureTabResult {
   base64: string
   mimeType: 'image/png'
 }
@@ -144,16 +175,36 @@ export interface WorkerHostMethodMap {
     params: WorkerGrepRequest
     result: string
   }
-  captureView: {
-    params: WorkerCaptureViewRequest
-    result: WorkerCaptureViewResult
+  getTabs: {
+    params: WorkerGetTabsRequest
+    result: WorkerGetTabsResult
   }
-  getViewConsoleLogs: {
-    params: WorkerGetViewConsoleLogsRequest
-    result: WorkerViewConsoleLogEntry[]
+  openTab: {
+    params: WorkerOpenTabRequest
+    result: void
   }
-  execViewJs: {
-    params: WorkerExecViewJsRequest
+  closeTab: {
+    params: WorkerCloseTabRequest
+    result: void
+  }
+  selectTab: {
+    params: WorkerSelectTabRequest
+    result: void
+  }
+  reloadTab: {
+    params: WorkerReloadTabRequest
+    result: void
+  }
+  captureTab: {
+    params: WorkerCaptureTabRequest
+    result: WorkerCaptureTabResult
+  }
+  getTabConsoleLogs: {
+    params: WorkerGetTabConsoleLogsRequest
+    result: WorkerTabConsoleLogEntry[]
+  }
+  execTabJs: {
+    params: WorkerExecTabJsRequest
     result: any
   }
 }

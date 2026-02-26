@@ -6,7 +6,7 @@ import type {
   WorkerHostMethod,
   WorkerHostMethodMap,
   WorkerToHostMessage,
-  WorkerViewConsoleLogEntry,
+  WorkerTabConsoleLogEntry,
 } from './types'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
@@ -408,50 +408,109 @@ export class SessionWorkerManager {
         const result = await tools.grep(request.pattern, request.path, request.options)
         return result as WorkerHostMethodMap[M]['result']
       }
-      case 'captureView': {
-        const request = params as WorkerHostMethodMap['captureView']['params']
-        if (!request || (typeof request.viewId !== 'string' && typeof request.viewId !== 'number')) {
-          throw new Error('captureView requires a viewId')
+      case 'getTabs': {
+        if (typeof tools.getTabs !== 'function') {
+          throw new Error('window.electronAgentTools.getTabs is not available')
         }
 
-        if (typeof tools.captureView !== 'function') {
-          throw new Error('window.electronAgentTools.captureView is not available')
-        }
-
-        return tools.captureView({ viewId: request.viewId }) as Promise<WorkerHostMethodMap[M]['result']>
+        return tools.getTabs() as Promise<WorkerHostMethodMap[M]['result']>
       }
-      case 'getViewConsoleLogs': {
-        const request = params as WorkerHostMethodMap['getViewConsoleLogs']['params']
+      case 'openTab': {
+        const request = params as WorkerHostMethodMap['openTab']['params']
         if (!request || (typeof request.viewId !== 'string' && typeof request.viewId !== 'number')) {
-          throw new Error('getViewConsoleLogs requires a viewId')
+          throw new Error('openTab requires a viewId')
         }
 
-        if (typeof tools.getViewConsoleLogs !== 'function') {
-          throw new Error('window.electronAgentTools.getViewConsoleLogs is not available')
+        if (typeof tools.openTab !== 'function') {
+          throw new Error('window.electronAgentTools.openTab is not available')
         }
 
-        const logs = await tools.getViewConsoleLogs({
-          viewId: request.viewId,
+        await tools.openTab({ viewId: request.viewId, title: request.title })
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
+      case 'closeTab': {
+        const request = params as WorkerHostMethodMap['closeTab']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('closeTab requires a tabId')
+        }
+
+        if (typeof tools.closeTab !== 'function') {
+          throw new Error('window.electronAgentTools.closeTab is not available')
+        }
+
+        await tools.closeTab({ tabId: request.tabId })
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
+      case 'selectTab': {
+        const request = params as WorkerHostMethodMap['selectTab']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('selectTab requires a tabId')
+        }
+
+        if (typeof tools.selectTab !== 'function') {
+          throw new Error('window.electronAgentTools.selectTab is not available')
+        }
+
+        await tools.selectTab({ tabId: request.tabId })
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
+      case 'reloadTab': {
+        const request = params as WorkerHostMethodMap['reloadTab']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('reloadTab requires a tabId')
+        }
+
+        if (typeof tools.reloadTab !== 'function') {
+          throw new Error('window.electronAgentTools.reloadTab is not available')
+        }
+
+        await tools.reloadTab({ tabId: request.tabId })
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
+      case 'captureTab': {
+        const request = params as WorkerHostMethodMap['captureTab']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('captureTab requires a tabId')
+        }
+
+        if (typeof tools.captureTab !== 'function') {
+          throw new Error('window.electronAgentTools.captureTab is not available')
+        }
+
+        return tools.captureTab({ tabId: request.tabId }) as Promise<WorkerHostMethodMap[M]['result']>
+      }
+      case 'getTabConsoleLogs': {
+        const request = params as WorkerHostMethodMap['getTabConsoleLogs']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('getTabConsoleLogs requires a tabId')
+        }
+
+        if (typeof tools.getTabConsoleLogs !== 'function') {
+          throw new Error('window.electronAgentTools.getTabConsoleLogs is not available')
+        }
+
+        const logs = await tools.getTabConsoleLogs({
+          tabId: request.tabId,
           since: request.since,
           limit: request.limit,
         })
-        return logs as WorkerViewConsoleLogEntry[] as WorkerHostMethodMap[M]['result']
+        return logs as WorkerTabConsoleLogEntry[] as WorkerHostMethodMap[M]['result']
       }
-      case 'execViewJs': {
-        const request = params as WorkerHostMethodMap['execViewJs']['params']
-        if (!request || (typeof request.viewId !== 'string' && typeof request.viewId !== 'number')) {
-          throw new Error('execViewJs requires a viewId')
+      case 'execTabJs': {
+        const request = params as WorkerHostMethodMap['execTabJs']['params']
+        if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+          throw new Error('execTabJs requires a tabId')
         }
         if (typeof request.code !== 'string') {
-          throw new Error('execViewJs requires JavaScript code as a string')
+          throw new Error('execTabJs requires JavaScript code as a string')
         }
 
-        if (typeof tools.execViewJs !== 'function') {
-          throw new Error('window.electronAgentTools.execViewJs is not available')
+        if (typeof tools.execTabJs !== 'function') {
+          throw new Error('window.electronAgentTools.execTabJs is not available')
         }
 
-        const result = await tools.execViewJs({
-          viewId: request.viewId,
+        const result = await tools.execTabJs({
+          tabId: request.tabId,
           code: request.code,
           timeoutMs: request.timeoutMs,
         })

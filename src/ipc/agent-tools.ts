@@ -16,26 +16,60 @@ const DEFAULT_SESSION_LIST_LIMIT = 200;
 const MAX_SESSION_LIST_LIMIT = 1000;
 const SESSION_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/;
 
-interface CaptureViewRequest {
-  viewId: string | number
+interface CaptureTabRequest {
+  tabId: string
 }
 
-interface GetViewConsoleLogsRequest {
-  viewId: string | number
+interface GetTabConsoleLogsRequest {
+  tabId: string
   since?: number
   limit?: number
 }
 
-interface ExecViewJsRequest {
-  viewId: string | number
+interface ExecTabJsRequest {
+  tabId: string
   code: string
   timeoutMs?: number
 }
 
-interface AgentViewTools {
-  captureView?: (request: CaptureViewRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
-  getViewConsoleLogs?: (request: GetViewConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
-  execViewJs?: (request: ExecViewJsRequest) => Promise<any>
+interface GetTabsResult {
+  tabs: Array<{
+    id: string
+    title: string
+    viewId: string | number | null
+    viewUpdatedAt: number | null
+    viewChanged: boolean
+    pinned: boolean
+    selected: boolean
+  }>
+}
+
+interface OpenTabRequest {
+  viewId: string | number
+  title?: string
+}
+
+interface CloseTabRequest {
+  tabId: string
+}
+
+interface SelectTabRequest {
+  tabId: string
+}
+
+interface ReloadTabRequest {
+  tabId: string
+}
+
+interface AgentTabTools {
+  getTabs: () => Promise<GetTabsResult>
+  openTab: (request: OpenTabRequest) => Promise<void>
+  closeTab: (request: CloseTabRequest) => Promise<void>
+  selectTab: (request: SelectTabRequest) => Promise<void>
+  reloadTab: (request: ReloadTabRequest) => Promise<void>
+  captureTab: (request: CaptureTabRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
+  getTabConsoleLogs: (request: GetTabConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
+  execTabJs: (request: ExecTabJsRequest) => Promise<any>
 }
 
 // --- Channels ---
@@ -56,9 +90,14 @@ const Channel = {
   WRITE_AUTH_CONFIG: 'electronAgentTools:writeAuthConfig',
   READ_LEGACY_API_KEY: 'electronAgentTools:readLegacyApiKey',
   RUN_SQL: 'electronAgentTools:runSql',
-  CAPTURE_VIEW: 'electronAgentTools:captureView',
-  GET_VIEW_CONSOLE_LOGS: 'electronAgentTools:getViewConsoleLogs',
-  EXEC_VIEW_JS: 'electronAgentTools:execViewJs',
+  GET_TABS: 'electronAgentTools:getTabs',
+  OPEN_TAB: 'electronAgentTools:openTab',
+  CLOSE_TAB: 'electronAgentTools:closeTab',
+  SELECT_TAB: 'electronAgentTools:selectTab',
+  RELOAD_TAB: 'electronAgentTools:reloadTab',
+  CAPTURE_TAB: 'electronAgentTools:captureTab',
+  GET_TAB_CONSOLE_LOGS: 'electronAgentTools:getTabConsoleLogs',
+  EXEC_TAB_JS: 'electronAgentTools:execTabJs',
 } as const;
 
 // --- Helpers ---
@@ -125,16 +164,12 @@ function matchesGlob(filename: string, pattern: string): boolean {
   return new RegExp(`^${regex}$`).test(filename);
 }
 
-function parseViewId(value: unknown): string | number {
+function parseTabId(value: unknown): string {
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim();
   }
 
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-
-  throw new Error('viewId must be a non-empty string or number');
+  throw new Error('tabId must be a non-empty string');
 }
 
 function parseOptionalNumber(value: unknown, label: string): number | undefined {
@@ -166,7 +201,7 @@ function normalizeSessionFileName(value: unknown): string {
 
 export function registerAgentToolsHandlers(
   getRoot: () => string,
-  viewTools?: AgentViewTools
+  tabTools: AgentTabTools
 ) {
   const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
     assertPathAllowed(getRoot(), relativePath, options);
@@ -454,48 +489,75 @@ export function registerAgentToolsHandlers(
     return routeSqlRequest(getRoot(), request);
   });
 
-  // captureView({ viewId }) → { base64, mimeType }
-  ipcMain.handle(Channel.CAPTURE_VIEW, async (_event, payload: unknown) => {
-    if (!viewTools?.captureView) {
-      throw new Error('captureView is not available in this runtime');
-    }
-
-    const input = payload as CaptureViewRequest | undefined;
-    const viewId = parseViewId(input?.viewId);
-    return viewTools.captureView({ viewId });
+  // getTabs() → { tabs: [...] }
+  ipcMain.handle(Channel.GET_TABS, async () => {
+    return tabTools.getTabs();
   });
 
-  // getViewConsoleLogs({ viewId, since?, limit? }) → logs[]
-  ipcMain.handle(Channel.GET_VIEW_CONSOLE_LOGS, async (_event, payload: unknown) => {
-    if (!viewTools?.getViewConsoleLogs) {
-      throw new Error('getViewConsoleLogs is not available in this runtime');
+  // openTab({ viewId, title? })
+  ipcMain.handle(Channel.OPEN_TAB, async (_event, payload: unknown) => {
+    const input = payload as OpenTabRequest | undefined;
+    if (!input || (typeof input.viewId !== 'string' && typeof input.viewId !== 'number')) {
+      throw new Error('openTab requires a viewId');
     }
 
-    const input = payload as GetViewConsoleLogsRequest | undefined;
-    const viewId = parseViewId(input?.viewId);
+    return tabTools.openTab({
+      viewId: input.viewId,
+      title: typeof input.title === 'string' ? input.title : undefined,
+    });
+  });
+
+  // closeTab({ tabId })
+  ipcMain.handle(Channel.CLOSE_TAB, async (_event, payload: unknown) => {
+    const input = payload as CloseTabRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
+    return tabTools.closeTab({ tabId });
+  });
+
+  // selectTab({ tabId })
+  ipcMain.handle(Channel.SELECT_TAB, async (_event, payload: unknown) => {
+    const input = payload as SelectTabRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
+    return tabTools.selectTab({ tabId });
+  });
+
+  // reloadTab({ tabId })
+  ipcMain.handle(Channel.RELOAD_TAB, async (_event, payload: unknown) => {
+    const input = payload as ReloadTabRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
+    return tabTools.reloadTab({ tabId });
+  });
+
+  // captureTab({ tabId }) → { base64, mimeType }
+  ipcMain.handle(Channel.CAPTURE_TAB, async (_event, payload: unknown) => {
+    const input = payload as CaptureTabRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
+    return tabTools.captureTab({ tabId });
+  });
+
+  // getTabConsoleLogs({ tabId, since?, limit? }) → logs[]
+  ipcMain.handle(Channel.GET_TAB_CONSOLE_LOGS, async (_event, payload: unknown) => {
+    const input = payload as GetTabConsoleLogsRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
     const since = parseOptionalNumber(input?.since, 'since');
     const limit = parseOptionalNumber(input?.limit, 'limit');
     if (typeof limit === 'number' && limit < 1) {
       throw new Error('limit must be >= 1 when provided');
     }
 
-    return viewTools.getViewConsoleLogs({
-      viewId,
+    return tabTools.getTabConsoleLogs({
+      tabId,
       since,
       limit,
     });
   });
 
-  // execViewJs({ viewId, code, timeoutMs? }) → execution result
-  ipcMain.handle(Channel.EXEC_VIEW_JS, async (_event, payload: unknown) => {
-    if (!viewTools?.execViewJs) {
-      throw new Error('execViewJs is not available in this runtime');
-    }
-
-    const input = payload as ExecViewJsRequest | undefined;
-    const viewId = parseViewId(input?.viewId);
+  // execTabJs({ tabId, code, timeoutMs? }) → execution result
+  ipcMain.handle(Channel.EXEC_TAB_JS, async (_event, payload: unknown) => {
+    const input = payload as ExecTabJsRequest | undefined;
+    const tabId = parseTabId(input?.tabId);
     if (!input || typeof input.code !== 'string') {
-      throw new Error('execViewJs requires code as a string');
+      throw new Error('execTabJs requires code as a string');
     }
 
     const timeoutMs = parseOptionalNumber(input.timeoutMs, 'timeoutMs');
@@ -503,8 +565,8 @@ export function registerAgentToolsHandlers(
       throw new Error('timeoutMs must be >= 1 when provided');
     }
 
-    return viewTools.execViewJs({
-      viewId,
+    return tabTools.execTabJs({
+      tabId,
       code: input.code,
       timeoutMs,
     });

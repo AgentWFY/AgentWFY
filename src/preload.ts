@@ -11,20 +11,37 @@ interface RunSqlRequest {
   confirmed?: boolean;
 }
 
-interface CaptureViewRequest {
-  viewId: string | number;
+interface CaptureTabRequest {
+  tabId: string;
 }
 
-interface GetViewConsoleLogsRequest {
-  viewId: string | number;
+interface GetTabConsoleLogsRequest {
+  tabId: string;
   since?: number;
   limit?: number;
 }
 
-interface ExecViewJsRequest {
-  viewId: string | number;
+interface ExecTabJsRequest {
+  tabId: string;
   code: string;
   timeoutMs?: number;
+}
+
+interface OpenTabRequest {
+  viewId: string | number;
+  title?: string;
+}
+
+interface CloseTabRequest {
+  tabId: string;
+}
+
+interface SelectTabRequest {
+  tabId: string;
+}
+
+interface ReloadTabRequest {
+  tabId: string;
 }
 
 interface ExternalViewBounds {
@@ -52,12 +69,14 @@ interface ExternalViewDestroyRequest {
   tabId: string;
 }
 
-type TabContextMenuAction = 'toggle-pin' | null;
+type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
 
 interface TabContextMenuRequest {
   x: number;
   y: number;
   pinned: boolean;
+  viewChanged?: boolean;
+  tabId?: string;
 }
 
 interface ExternalViewEventDetail {
@@ -87,9 +106,14 @@ const WRITE_SESSION_CHANNEL = 'electronAgentTools:writeSession';
 const READ_AUTH_CONFIG_CHANNEL = 'electronAgentTools:readAuthConfig';
 const WRITE_AUTH_CONFIG_CHANNEL = 'electronAgentTools:writeAuthConfig';
 const READ_LEGACY_API_KEY_CHANNEL = 'electronAgentTools:readLegacyApiKey';
-const CAPTURE_VIEW_CHANNEL = 'electronAgentTools:captureView';
-const GET_VIEW_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getViewConsoleLogs';
-const EXEC_VIEW_JS_CHANNEL = 'electronAgentTools:execViewJs';
+const GET_TABS_CHANNEL = 'electronAgentTools:getTabs';
+const OPEN_TAB_CHANNEL = 'electronAgentTools:openTab';
+const CLOSE_TAB_CHANNEL = 'electronAgentTools:closeTab';
+const SELECT_TAB_CHANNEL = 'electronAgentTools:selectTab';
+const RELOAD_TAB_CHANNEL = 'electronAgentTools:reloadTab';
+const CAPTURE_TAB_CHANNEL = 'electronAgentTools:captureTab';
+const GET_TAB_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getTabConsoleLogs';
+const EXEC_TAB_JS_CHANNEL = 'electronAgentTools:execTabJs';
 const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
@@ -162,14 +186,29 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   }): Promise<any> {
     return invokeRunSql(request);
   },
-  captureView(request: CaptureViewRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
-    return ipcRenderer.invoke(CAPTURE_VIEW_CHANNEL, request);
+  getTabs(): Promise<any> {
+    return ipcRenderer.invoke(GET_TABS_CHANNEL);
   },
-  getViewConsoleLogs(request: GetViewConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-    return ipcRenderer.invoke(GET_VIEW_CONSOLE_LOGS_CHANNEL, request);
+  openTab(request: OpenTabRequest): Promise<void> {
+    return ipcRenderer.invoke(OPEN_TAB_CHANNEL, request);
   },
-  execViewJs(request: ExecViewJsRequest): Promise<any> {
-    return ipcRenderer.invoke(EXEC_VIEW_JS_CHANNEL, request);
+  closeTab(request: CloseTabRequest): Promise<void> {
+    return ipcRenderer.invoke(CLOSE_TAB_CHANNEL, request);
+  },
+  selectTab(request: SelectTabRequest): Promise<void> {
+    return ipcRenderer.invoke(SELECT_TAB_CHANNEL, request);
+  },
+  reloadTab(request: ReloadTabRequest): Promise<void> {
+    return ipcRenderer.invoke(RELOAD_TAB_CHANNEL, request);
+  },
+  captureTab(request: CaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
+    return ipcRenderer.invoke(CAPTURE_TAB_CHANNEL, request);
+  },
+  getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
+    return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
+  },
+  execTabJs(request: ExecTabJsRequest): Promise<any> {
+    return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
   },
 });
 

@@ -238,12 +238,22 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'find', params, abortController.signal)
     const grep = (params: WorkerHostMethodMap['grep']['params']) =>
       callHostMethod('' + requestId, 'grep', params, abortController.signal)
-    const captureView = (params: WorkerHostMethodMap['captureView']['params']) =>
-      callHostMethod('' + requestId, 'captureView', params, abortController.signal)
-    const getViewConsoleLogs = (params: WorkerHostMethodMap['getViewConsoleLogs']['params']) =>
-      callHostMethod('' + requestId, 'getViewConsoleLogs', params, abortController.signal)
-    const execViewJs = (params: WorkerHostMethodMap['execViewJs']['params']) =>
-      callHostMethod('' + requestId, 'execViewJs', params, abortController.signal)
+    const getTabs = (params: WorkerHostMethodMap['getTabs']['params']) =>
+      callHostMethod('' + requestId, 'getTabs', params ?? {}, abortController.signal)
+    const openTab = (params: WorkerHostMethodMap['openTab']['params']) =>
+      callHostMethod('' + requestId, 'openTab', params, abortController.signal)
+    const closeTab = (params: WorkerHostMethodMap['closeTab']['params']) =>
+      callHostMethod('' + requestId, 'closeTab', params, abortController.signal)
+    const selectTab = (params: WorkerHostMethodMap['selectTab']['params']) =>
+      callHostMethod('' + requestId, 'selectTab', params, abortController.signal)
+    const reloadTab = (params: WorkerHostMethodMap['reloadTab']['params']) =>
+      callHostMethod('' + requestId, 'reloadTab', params, abortController.signal)
+    const captureTab = (params: WorkerHostMethodMap['captureTab']['params']) =>
+      callHostMethod('' + requestId, 'captureTab', params, abortController.signal)
+    const getTabConsoleLogs = (params: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
+      callHostMethod('' + requestId, 'getTabConsoleLogs', params, abortController.signal)
+    const execTabJs = (params: WorkerHostMethodMap['execTabJs']['params']) =>
+      callHostMethod('' + requestId, 'execTabJs', params, abortController.signal)
 
     const fn = new AsyncFunction(
       'window',
@@ -259,9 +269,14 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'remove',
       'find',
       'grep',
-      'captureView',
-      'getViewConsoleLogs',
-      'execViewJs',
+      'getTabs',
+      'openTab',
+      'closeTab',
+      'selectTab',
+      'reloadTab',
+      'captureTab',
+      'getTabConsoleLogs',
+      'execTabJs',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
@@ -280,9 +295,14 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         remove,
         find,
         grep,
-        captureView,
-        getViewConsoleLogs,
-        execViewJs
+        getTabs,
+        openTab,
+        closeTab,
+        selectTab,
+        reloadTab,
+        captureTab,
+        getTabConsoleLogs,
+        execTabJs
       ),
       timeoutMs,
       abortController.signal

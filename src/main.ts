@@ -275,16 +275,22 @@ const WEB_CONTENTS_LOG_LEVEL_MAP: Record<number, string> = {
   3: 'error',
 };
 
-const ACTIVE_EXTERNAL_TAB_QUERY = `(() => {
-  const tabs = document.querySelector('tl-tabs');
-  if (!tabs) return null;
-  const selectedTabId = typeof tabs.selectedTabId === 'string' ? tabs.selectedTabId : null;
-  const tabList = Array.isArray(tabs.tabs) ? tabs.tabs : [];
-  const selectedTab = selectedTabId ? tabList.find((tab) => tab && tab.id === selectedTabId) : null;
-  const viewId = selectedTab && (typeof selectedTab.viewId === 'string' || typeof selectedTab.viewId === 'number')
-    ? String(selectedTab.viewId)
-    : null;
-  return { tabId: selectedTabId, viewId };
+const GET_TABS_QUERY = `(() => {
+  const tabsEl = document.querySelector('tl-tabs');
+  if (!tabsEl) return { tabs: [] };
+  const selectedTabId = typeof tabsEl.selectedTabId === 'string' ? tabsEl.selectedTabId : null;
+  const tabList = Array.isArray(tabsEl.tabs) ? tabsEl.tabs : [];
+  return {
+    tabs: tabList.map((tab) => ({
+      id: tab.id,
+      title: tab.title || '',
+      viewId: tab.viewId ?? null,
+      viewUpdatedAt: tab.viewUpdatedAt ?? null,
+      viewChanged: Boolean(tab.viewChanged),
+      pinned: Boolean(tab.pinned),
+      selected: tab.id === selectedTabId,
+    })),
+  };
 })()`;
 
 interface ViewConsoleLogEntry {
@@ -304,13 +310,7 @@ interface ViewRuntimeEntry {
   logs: ViewConsoleLogEntry[]
 }
 
-interface ActiveExternalTabContext {
-  tabId: string | null
-  viewId: string | null
-}
-
 const viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
-const viewIdIndex = new Map<string, Set<number>>();
 const externalViewsByTabId = new Map<string, ExternalViewState>();
 
 const EXTERNAL_VIEW_CHANNEL = {
@@ -358,9 +358,11 @@ interface TabContextMenuPayload {
   x: number
   y: number
   pinned: boolean
+  viewChanged?: boolean
+  tabId?: string
 }
 
-type TabContextMenuAction = 'toggle-pin' | null;
+type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
 
 interface ExternalViewState {
   tabId: string
@@ -416,6 +418,8 @@ function normalizeTabContextMenuPayload(raw: unknown): TabContextMenuPayload {
     x: normalizeContextMenuCoordinate(input.x),
     y: normalizeContextMenuCoordinate(input.y),
     pinned: Boolean(input.pinned),
+    viewChanged: Boolean(input.viewChanged),
+    tabId: typeof input.tabId === 'string' ? input.tabId : undefined,
   };
 }
 
@@ -1029,17 +1033,26 @@ function showNativeTabContextMenu(
     return Promise.resolve(null);
   }
 
-  const { x, y, pinned } = normalizeTabContextMenuPayload(payload);
+  const { x, y, pinned, viewChanged, tabId } = normalizeTabContextMenuPayload(payload);
   let selectedAction: TabContextMenuAction = null;
 
-  const template: MenuItemConstructorOptions[] = [
-    {
-      label: pinned ? 'Unpin Tab' : 'Pin Tab',
+  const template: MenuItemConstructorOptions[] = [];
+
+  if (viewChanged && tabId) {
+    template.push({
+      label: 'Reload',
       click: () => {
-        selectedAction = 'toggle-pin';
+        selectedAction = 'reload';
       },
+    });
+  }
+
+  template.push({
+    label: pinned ? 'Unpin Tab' : 'Pin Tab',
+    click: () => {
+      selectedAction = 'toggle-pin';
     },
-  ];
+  });
 
   const menu = Menu.buildFromTemplate(template);
   return new Promise<TabContextMenuAction>((resolve) => {
@@ -1054,21 +1067,6 @@ function showNativeTabContextMenu(
       resolve(null);
     }
   });
-}
-
-function normalizeViewIdInput(viewId: string | number): string {
-  if (typeof viewId === 'number') {
-    if (!Number.isFinite(viewId)) {
-      throw new Error('viewId must be a finite number');
-    }
-    return String(viewId);
-  }
-
-  const normalized = viewId.trim();
-  if (!normalized) {
-    throw new Error('viewId must be a non-empty string');
-  }
-  return normalized;
 }
 
 function parseTrackedViewFromUrl(urlString: string): { viewId: string; tabId: string | null } | null {
@@ -1107,40 +1105,12 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
   return owner?.id ?? null;
 }
 
-function unindexViewRuntimeEntry(entry: ViewRuntimeEntry): void {
-  const ids = viewIdIndex.get(entry.viewId);
-  if (!ids) {
-    return;
-  }
-
-  ids.delete(entry.webContentsId);
-  if (ids.size === 0) {
-    viewIdIndex.delete(entry.viewId);
-  }
-}
-
-function indexViewRuntimeEntry(entry: ViewRuntimeEntry): void {
-  let ids = viewIdIndex.get(entry.viewId);
-  if (!ids) {
-    ids = new Set<number>();
-    viewIdIndex.set(entry.viewId, ids);
-  }
-  ids.add(entry.webContentsId);
-}
-
 function removeTrackedViewWebContents(webContentsId: number): void {
-  const existing = viewRuntimeEntries.get(webContentsId);
-  if (!existing) {
-    return;
-  }
-
-  unindexViewRuntimeEntry(existing);
   viewRuntimeEntries.delete(webContentsId);
 }
 
 function clearTrackedViewWebContents(): void {
   viewRuntimeEntries.clear();
-  viewIdIndex.clear();
 }
 
 function updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {
@@ -1164,16 +1134,10 @@ function updateTrackedViewWebContents(webContents: WebContents, urlString: strin
       logs: [],
     };
     viewRuntimeEntries.set(webContents.id, entry);
-    indexViewRuntimeEntry(entry);
     return;
   }
 
-  if (existing.viewId !== tracked.viewId) {
-    unindexViewRuntimeEntry(existing);
-    existing.viewId = tracked.viewId;
-    indexViewRuntimeEntry(existing);
-  }
-
+  existing.viewId = tracked.viewId;
   existing.tabId = tracked.tabId;
   existing.ownerWindowId = resolveOwnerWindowId(webContents);
   existing.lastNavigationAt = now;
@@ -1240,86 +1204,70 @@ app.on('web-contents-created', (_event, webContents) => {
   }
 });
 
-async function getActiveExternalTabContext(): Promise<ActiveExternalTabContext | null> {
+function resolveViewRuntimeEntryByTabId(tabId: string): ViewRuntimeEntry {
+  const state = externalViewsByTabId.get(tabId);
+  if (!state) {
+    throw new Error(`No open tab found for tabId "${tabId}"`);
+  }
+
+  const webContentsId = state.view.webContents.id;
+  if (state.view.webContents.isDestroyed()) {
+    throw new Error(`Tab "${tabId}" webContents is destroyed`);
+  }
+
+  const entry = viewRuntimeEntries.get(webContentsId);
+  if (!entry) {
+    throw new Error(`No view runtime entry found for tabId "${tabId}"`);
+  }
+
+  return entry;
+}
+
+async function getTabsHandler(): Promise<{ tabs: Array<any> }> {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    return null;
+    return { tabs: [] };
   }
 
   try {
-    const result = await mainWindow.webContents.executeJavaScript(ACTIVE_EXTERNAL_TAB_QUERY, true);
-    if (!result || typeof result !== 'object') {
-      return null;
+    const result = await mainWindow.webContents.executeJavaScript(GET_TABS_QUERY, true);
+    if (!result || typeof result !== 'object' || !Array.isArray((result as any).tabs)) {
+      return { tabs: [] };
     }
-
-    const rawTabId = (result as any).tabId;
-    const rawViewId = (result as any).viewId;
-    const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
-    const viewId = typeof rawViewId === 'string' && rawViewId.trim().length > 0 ? rawViewId.trim() : null;
-    return { tabId, viewId };
+    return result as { tabs: Array<any> };
   } catch (error) {
-    console.warn('[agent-runtime] failed to read active tab context for view diagnostics', error);
-    return null;
+    console.warn('[agent-runtime] failed to read tabs from renderer', error);
+    return { tabs: [] };
   }
 }
 
-async function resolveViewRuntimeEntry(viewId: string | number): Promise<ViewRuntimeEntry> {
-  const normalizedViewId = normalizeViewIdInput(viewId);
-  const ids = viewIdIndex.get(normalizedViewId);
-  if (!ids || ids.size === 0) {
-    throw new Error(`No open view runtime found for viewId \"${normalizedViewId}\"`);
-  }
-
-  const candidates: ViewRuntimeEntry[] = [];
-  for (const webContentsId of ids) {
-    const entry = viewRuntimeEntries.get(webContentsId);
-    if (!entry) {
-      continue;
-    }
-
-    if (entry.webContents.isDestroyed()) {
-      removeTrackedViewWebContents(webContentsId);
-      continue;
-    }
-
-    candidates.push(entry);
-  }
-
-  if (candidates.length === 0) {
-    throw new Error(`No live webview runtime found for viewId \"${normalizedViewId}\"`);
-  }
-
-  const activeContext = await getActiveExternalTabContext();
-  if (activeContext?.tabId && activeContext.viewId === normalizedViewId) {
-    const activeEntry = candidates.find((entry) => entry.tabId === activeContext.tabId);
-    if (activeEntry) {
-      return activeEntry;
-    }
-  }
-
-  const activeWindowId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.id : null;
-  candidates.sort((a, b) => {
-    const windowRankA = a.ownerWindowId === activeWindowId ? 1 : 0;
-    const windowRankB = b.ownerWindowId === activeWindowId ? 1 : 0;
-    if (windowRankA !== windowRankB) {
-      return windowRankB - windowRankA;
-    }
-
-    if (a.lastFocusedAt !== b.lastFocusedAt) {
-      return b.lastFocusedAt - a.lastFocusedAt;
-    }
-
-    if (a.lastNavigationAt !== b.lastNavigationAt) {
-      return b.lastNavigationAt - a.lastNavigationAt;
-    }
-
-    return b.webContentsId - a.webContentsId;
+async function openTabHandler(request: { viewId: string | number; title?: string }): Promise<void> {
+  dispatchRendererCustomEvent('tradinglog:agent-open-tab', {
+    viewId: request.viewId,
+    title: request.title,
   });
-
-  return candidates[0];
 }
 
-async function captureViewById(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }> {
-  const entry = await resolveViewRuntimeEntry(request.viewId);
+async function closeTabHandler(request: { tabId: string }): Promise<void> {
+  dispatchRendererCustomEvent('tradinglog:agent-close-tab', {
+    tabId: request.tabId,
+  });
+}
+
+async function selectTabHandler(request: { tabId: string }): Promise<void> {
+  dispatchRendererCustomEvent('tradinglog:agent-select-tab', {
+    tabId: request.tabId,
+  });
+}
+
+async function reloadTabHandler(request: { tabId: string }): Promise<void> {
+  reloadExternalView(request.tabId);
+  dispatchRendererCustomEvent('tradinglog:agent-clear-view-changed', {
+    tabId: request.tabId,
+  });
+}
+
+async function captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
+  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
   const image = await entry.webContents.capturePage();
   return {
     base64: image.toPNG().toString('base64'),
@@ -1327,12 +1275,12 @@ async function captureViewById(request: { viewId: string | number }): Promise<{ 
   };
 }
 
-async function getViewConsoleLogsById(request: {
-  viewId: string | number
+async function getTabConsoleLogsById(request: {
+  tabId: string
   since?: number
   limit?: number
 }): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-  const entry = await resolveViewRuntimeEntry(request.viewId);
+  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
 
   const since = typeof request.since === 'number' && Number.isFinite(request.since)
     ? request.since
@@ -1370,14 +1318,14 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-async function execViewJsById(request: {
-  viewId: string | number
+async function execTabJsById(request: {
+  tabId: string
   code: string
   timeoutMs?: number
 }): Promise<any> {
-  const entry = await resolveViewRuntimeEntry(request.viewId);
+  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
   if (typeof request.code !== 'string') {
-    throw new Error('execViewJs requires code as a string');
+    throw new Error('execTabJs requires code as a string');
   }
 
   const requestedTimeout = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
@@ -1491,9 +1439,14 @@ async function restartAgentDbChangesPublisher(): Promise<void> {
 }
 
 registerAgentToolsHandlers(getDataDir, {
-  captureView: captureViewById,
-  getViewConsoleLogs: getViewConsoleLogsById,
-  execViewJs: execViewJsById,
+  getTabs: getTabsHandler,
+  openTab: openTabHandler,
+  closeTab: closeTabHandler,
+  selectTab: selectTabHandler,
+  reloadTab: reloadTabHandler,
+  captureTab: captureTabById,
+  getTabConsoleLogs: getTabConsoleLogsById,
+  execTabJs: execTabJsById,
 });
 
 ipcMain.handle(EXTERNAL_VIEW_CHANNEL.MOUNT, async (_event, payload: unknown) => {

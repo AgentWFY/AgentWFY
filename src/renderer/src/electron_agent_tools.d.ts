@@ -22,20 +22,49 @@ export interface ElectronRunSqlRequest {
   confirmed?: boolean
 }
 
-export interface ElectronCaptureViewRequest {
-  viewId: string | number
+export interface ElectronCaptureTabRequest {
+  tabId: string
 }
 
-export interface ElectronGetViewConsoleLogsRequest {
-  viewId: string | number
+export interface ElectronGetTabConsoleLogsRequest {
+  tabId: string
   since?: number
   limit?: number
 }
 
-export interface ElectronExecViewJsRequest {
-  viewId: string | number
+export interface ElectronExecTabJsRequest {
+  tabId: string
   code: string
   timeoutMs?: number
+}
+
+export interface ElectronOpenTabRequest {
+  viewId: string | number
+  title?: string
+}
+
+export interface ElectronCloseTabRequest {
+  tabId: string
+}
+
+export interface ElectronSelectTabRequest {
+  tabId: string
+}
+
+export interface ElectronReloadTabRequest {
+  tabId: string
+}
+
+export interface ElectronGetTabsResult {
+  tabs: Array<{
+    id: string
+    title: string
+    viewId: string | number | null
+    viewUpdatedAt: number | null
+    viewChanged: boolean
+    pinned: boolean
+    selected: boolean
+  }>
 }
 
 export interface ElectronExternalViewBounds {
@@ -63,12 +92,14 @@ export interface ElectronDestroyExternalViewRequest {
   tabId: string
 }
 
-export type ElectronTabContextMenuAction = 'toggle-pin' | null
+export type ElectronTabContextMenuAction = 'toggle-pin' | 'reload' | null
 
 export interface ElectronTabContextMenuRequest {
   x: number
   y: number
   pinned: boolean
+  viewChanged?: boolean
+  tabId?: string
 }
 
 export interface ElectronExternalViewEvent {
@@ -101,9 +132,14 @@ export interface ElectronAgentTools {
   find(pattern: string, path?: string, limit?: number): Promise<string>
   grep(pattern: string, path?: string, options?: ElectronGrepOptions): Promise<string>
   runSql(request: ElectronRunSqlRequest): Promise<any>
-  captureView(request: ElectronCaptureViewRequest): Promise<{ base64: string; mimeType: 'image/png' }>
-  getViewConsoleLogs(request: ElectronGetViewConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
-  execViewJs(request: ElectronExecViewJsRequest): Promise<any>
+  getTabs(): Promise<ElectronGetTabsResult>
+  openTab(request: ElectronOpenTabRequest): Promise<void>
+  closeTab(request: ElectronCloseTabRequest): Promise<void>
+  selectTab(request: ElectronSelectTabRequest): Promise<void>
+  reloadTab(request: ElectronReloadTabRequest): Promise<void>
+  captureTab(request: ElectronCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
+  getTabConsoleLogs(request: ElectronGetTabConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
+  execTabJs(request: ElectronExecTabJsRequest): Promise<any>
 }
 
 export interface ElectronClientTools {

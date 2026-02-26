@@ -13,7 +13,6 @@ export class TlExternalView extends HTMLElement {
   private loading = false
   private error: string | null = null
   private wrapperEl: HTMLDivElement | null = null
-  private fileChangedBarEl: HTMLDivElement | null = null
   private loadingEl: HTMLDivElement | null = null
   private errorEl: HTMLDivElement | null = null
   private containerEl: HTMLDivElement | null = null
@@ -159,19 +158,6 @@ export class TlExternalView extends HTMLElement {
     this.containerEl = document.createElement('div')
     this.containerEl.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;min-height:0;overflow:hidden;'
 
-    this.fileChangedBarEl = document.createElement('div')
-    this.fileChangedBarEl.style.cssText = 'display:none;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--color-accent);color:#fff;font-size:13px;flex-shrink:0;'
-    const barText = document.createElement('span')
-    barText.textContent = 'View changed'
-    const reloadBtn = document.createElement('button')
-    reloadBtn.textContent = 'Reload'
-    reloadBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.5);color:inherit;padding:2px 10px;border-radius:4px;cursor:pointer;font-size:12px;'
-    reloadBtn.addEventListener('click', () => this.handleReload())
-    reloadBtn.addEventListener('mouseenter', () => { reloadBtn.style.background = 'rgba(255,255,255,0.1)' })
-    reloadBtn.addEventListener('mouseleave', () => { reloadBtn.style.background = 'none' })
-    this.fileChangedBarEl.appendChild(barText)
-    this.fileChangedBarEl.appendChild(reloadBtn)
-
     this.wrapperEl = document.createElement('div')
     this.wrapperEl.style.cssText = 'flex:1;width:100%;min-height:0;overflow:hidden;position:relative;'
 
@@ -182,7 +168,6 @@ export class TlExternalView extends HTMLElement {
     this.errorEl = document.createElement('div')
     this.errorEl.style.cssText = 'display:none;padding:16px;border:2px solid red;color:red;font-family:monospace;'
 
-    this.containerEl.appendChild(this.fileChangedBarEl)
     this.containerEl.appendChild(this.wrapperEl)
     this.containerEl.appendChild(this.loadingEl)
     this.containerEl.appendChild(this.errorEl)
@@ -457,9 +442,8 @@ export class TlExternalView extends HTMLElement {
   }
 
   private render() {
-    if (!this.containerEl || !this.wrapperEl || !this.fileChangedBarEl || !this.loadingEl || !this.errorEl) return
+    if (!this.containerEl || !this.wrapperEl || !this.loadingEl || !this.errorEl) return
 
-    this.fileChangedBarEl.style.display = this._viewChanged ? 'flex' : 'none'
     this.loadingEl.style.display = this.loading ? 'flex' : 'none'
     this.errorEl.style.display = this.error ? 'block' : 'none'
     this.errorEl.textContent = this.error || ''
