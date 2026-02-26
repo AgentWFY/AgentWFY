@@ -87,6 +87,10 @@ const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
 const EXTERNAL_VIEW_EVENT_CHANNEL = 'tradinglog:external-view-event';
 const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
+const DIALOG_OPEN_CHANNEL = 'dialog:open';
+const STORE_GET_CHANNEL = 'electron-store:get';
+const STORE_SET_CHANNEL = 'electron-store:set';
+const STORE_REMOVE_CHANNEL = 'electron-store:remove';
 
 function normalizeRunSqlRequest(request: RunSqlRequest): Required<Pick<RunSqlRequest, 'target' | 'sql'>> & RunSqlRequest {
   if (!request || typeof request !== 'object') {
@@ -113,30 +117,6 @@ function invokeRunSql(request: RunSqlRequest): Promise<any> {
   const normalized = normalizeRunSqlRequest(request);
   return ipcRenderer.invoke(RUN_SQL_CHANNEL, normalized);
 }
-
-contextBridge.exposeInMainWorld('electronDialog', {
-  open(options: any): Promise<string[]> {
-    return ipcRenderer.invoke('dialog:open', options);
-  },
-});
-
-contextBridge.exposeInMainWorld('electronStore', {
-  getItem(key: string): Promise<any> {
-    return ipcRenderer.invoke('electron-store:get', key);
-  },
-  setItem(key: string, value: any): Promise<void> {
-    setTimeout(() => {
-      ipcRenderer.invoke('electron-store:set', key, value);
-    }, 0);
-    return Promise.resolve();
-  },
-  removeItem(key: string): Promise<void> {
-    setTimeout(() => {
-      ipcRenderer.invoke('electron-store:remove', key);
-    }, 0);
-    return Promise.resolve();
-  },
-});
 
 contextBridge.exposeInMainWorld('electronAgentTools', {
   read(path: string, offset?: number, limit?: number): Promise<string> {
@@ -200,23 +180,46 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
   execViewJs(request: ExecViewJsRequest): Promise<any> {
     return ipcRenderer.invoke(EXEC_VIEW_JS_CHANNEL, request);
   },
-  mountExternalView(request: ExternalViewMountRequest): Promise<void> {
-    return ipcRenderer.invoke(EXTERNAL_VIEW_MOUNT_CHANNEL, request);
-  },
-  updateExternalViewBounds(request: ExternalViewBoundsRequest): Promise<void> {
-    return ipcRenderer.invoke(EXTERNAL_VIEW_BOUNDS_CHANNEL, request);
-  },
-  destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
-    return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
-  },
-  onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
-    const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);
-    ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
-    return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
-  },
-  onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
-    const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
-    ipcRenderer.on(AGENT_DB_CHANGED_CHANNEL, handler);
-    return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
-  },
 });
+
+if (window.location.protocol !== 'agentview:') {
+  contextBridge.exposeInMainWorld('electronClientTools', {
+    openDialog(options: any): Promise<string[]> {
+      return ipcRenderer.invoke(DIALOG_OPEN_CHANNEL, options);
+    },
+    getStoreItem(key: string): Promise<any> {
+      return ipcRenderer.invoke(STORE_GET_CHANNEL, key);
+    },
+    setStoreItem(key: string, value: any): Promise<void> {
+      setTimeout(() => {
+        ipcRenderer.invoke(STORE_SET_CHANNEL, key, value);
+      }, 0);
+      return Promise.resolve();
+    },
+    removeStoreItem(key: string): Promise<void> {
+      setTimeout(() => {
+        ipcRenderer.invoke(STORE_REMOVE_CHANNEL, key);
+      }, 0);
+      return Promise.resolve();
+    },
+    mountExternalView(request: ExternalViewMountRequest): Promise<void> {
+      return ipcRenderer.invoke(EXTERNAL_VIEW_MOUNT_CHANNEL, request);
+    },
+    updateExternalViewBounds(request: ExternalViewBoundsRequest): Promise<void> {
+      return ipcRenderer.invoke(EXTERNAL_VIEW_BOUNDS_CHANNEL, request);
+    },
+    destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
+      return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
+    },
+    onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
+      const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);
+      ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
+      return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
+    },
+    onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
+      const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
+      ipcRenderer.on(AGENT_DB_CHANGED_CHANNEL, handler);
+      return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
+    },
+  });
+}

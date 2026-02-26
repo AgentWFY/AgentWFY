@@ -23,14 +23,6 @@ declare global {
   }
 
   interface Window {
-    electronDialog: {
-      open(options: any): Promise<string[]>;
-    };
-    electronStore: {
-      getItem<T = any>(key: string): Promise<T>;
-      setItem<T = any>(key: string, value: T): Promise<void>;
-      removeItem(key: string): Promise<void>;
-    };
     electronAgentTools: {
       // Paths are resolved relative to the selected DATA_DIR.
       // Access to DATA_DIR/.agent/** is denied for file-tool operations.
@@ -52,6 +44,16 @@ declare global {
       captureView(request: { viewId: string | number }): Promise<{ base64: string; mimeType: 'image/png' }>;
       getViewConsoleLogs(request: { viewId: string | number; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
       execViewJs(request: { viewId: string | number; code: string; timeoutMs?: number }): Promise<any>;
+    };
+    electronClientTools?: {
+      openDialog(options: any): Promise<string[]>;
+      getStoreItem<T = any>(key: string): Promise<T>;
+      setStoreItem<T = any>(key: string, value: T): Promise<void>;
+      removeStoreItem(key: string): Promise<void>;
+      mountExternalView(request: { tabId: string; viewId: string; src: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
+      updateExternalViewBounds(request: { tabId: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
+      destroyExternalView(request: { tabId: string }): Promise<void>;
+      onExternalViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
     };
   }

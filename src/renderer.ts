@@ -27,13 +27,20 @@
  */
 
 async function getDir() {
-  const paths = await window.electronDialog.open({ properties: ['openDirectory'] });
+  const tools = window.electronClientTools;
+  if (!tools || typeof tools.openDialog !== 'function') {
+    throw new Error('electronClientTools.openDialog is unavailable');
+  }
+  const paths = await tools.openDialog({ properties: ['openDirectory'] });
   return paths[0];
 }
 
 document.getElementById('openDir').addEventListener('click', async () => {
   const path = await getDir();
-  window.electronStore.setItem('dataDir', path);
+  const tools = window.electronClientTools;
+  if (tools && typeof tools.setStoreItem === 'function') {
+    await tools.setStoreItem('dataDir', path);
+  }
   window.close()
 });
 
