@@ -54,11 +54,6 @@ declare global {
       execViewJs(request: { viewId: string | number; code: string; timeoutMs?: number }): Promise<any>;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
     };
-    tradinglogViewBridge?: {
-      runSql(request: ElectronRunSqlRequest): Promise<any>;
-      mediaUrl(relativePath: string): string;
-      installRunSqlEventShim(): void;
-    };
   }
 }
 

@@ -59,17 +59,6 @@ interface ExternalViewEventDetail {
   errorDescription?: string;
  }
 
-interface RunSqlResponseDetail {
-  requestId: string;
-  target?: 'agent' | 'sqlite-file';
-  path?: string;
-  sql: string;
-  params?: any[];
-  description?: string;
-  result?: any;
-  error?: string;
-}
-
 interface AgentDbChangeDetail {
   seq: number;
   table: string;
@@ -97,11 +86,7 @@ const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
 const EXTERNAL_VIEW_EVENT_CHANNEL = 'tradinglog:external-view-event';
-const RUN_SQL_EVENT = 'tradinglog:run-sql';
-const RUN_SQL_RESPONSE_EVENT = 'tradinglog:run-sql-response';
 const AGENT_DB_CHANGED_CHANNEL = 'tradinglog:agent-db-changed';
-
-let runSqlShimInstalled = false;
 
 function normalizeRunSqlRequest(request: RunSqlRequest): Required<Pick<RunSqlRequest, 'target' | 'sql'>> & RunSqlRequest {
   if (!request || typeof request !== 'object') {
@@ -127,66 +112,6 @@ function normalizeRunSqlRequest(request: RunSqlRequest): Required<Pick<RunSqlReq
 function invokeRunSql(request: RunSqlRequest): Promise<any> {
   const normalized = normalizeRunSqlRequest(request);
   return ipcRenderer.invoke(RUN_SQL_CHANNEL, normalized);
-}
-
-function toMediaUrl(relativePath: string): string {
-  const input = typeof relativePath === 'string' ? relativePath : '';
-  const normalized = input.replace(/^\/+/, '');
-  const segments = normalized
-    .split('/')
-    .filter((segment) => segment.length > 0)
-    .map((segment) => encodeURIComponent(segment));
-
-  if (segments.length === 0) {
-    return 'media://';
-  }
-
-  if (segments.length === 1) {
-    return `media://${segments[0]}`;
-  }
-
-  return `media://${segments[0]}/${segments.slice(1).join('/')}`;
-}
-
-function installRunSqlEventShim() {
-  if (runSqlShimInstalled) {
-    return;
-  }
-
-  runSqlShimInstalled = true;
-  window.addEventListener(RUN_SQL_EVENT, async (event: Event) => {
-    const customEvent = event as CustomEvent<any>;
-    const detail = customEvent.detail || {};
-    const requestId = typeof detail.requestId === 'string' ? detail.requestId : '';
-
-    const response: RunSqlResponseDetail = {
-      requestId,
-      target: detail.target,
-      path: detail.path,
-      sql: typeof detail.sql === 'string' ? detail.sql : '',
-      params: Array.isArray(detail.params) ? detail.params : undefined,
-      description: typeof detail.description === 'string' ? detail.description : undefined,
-    };
-
-    try {
-      const result = await invokeRunSql({
-        target: detail.target,
-        path: detail.path,
-        sql: detail.sql,
-        params: detail.params,
-        description: detail.description,
-        confirmed: detail.confirmed,
-      });
-
-      response.result = result;
-    } catch (error: any) {
-      response.error = error instanceof Error ? error.message : String(error);
-    }
-
-    window.dispatchEvent(new CustomEvent<RunSqlResponseDetail>(RUN_SQL_RESPONSE_EVENT, {
-      detail: response,
-    }));
-  });
 }
 
 contextBridge.exposeInMainWorld('electronDialog', {
@@ -295,19 +220,3 @@ contextBridge.exposeInMainWorld('electronAgentTools', {
     return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
   },
 });
-
-contextBridge.exposeInMainWorld('tradinglogViewBridge', {
-  runSql(request: RunSqlRequest): Promise<any> {
-    return invokeRunSql(request);
-  },
-  mediaUrl(relativePath: string): string {
-    return toMediaUrl(relativePath);
-  },
-  installRunSqlEventShim(): void {
-    installRunSqlEventShim();
-  },
-});
-
-if (window.location.protocol === 'agentview:') {
-  installRunSqlEventShim();
-}

@@ -9,23 +9,13 @@ import { resolveAgentRuntimeFlags } from './runtime_flags';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId, resolveSpectrumBundleUrls } from './services/agentview-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
+import { assertPathAllowed } from './security/path-policy';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
 import { stat, mkdir, readFile } from 'fs/promises';
 
 protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'media',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      bypassCSP: true,
-      corsEnabled: true,
-      stream: true
-    }
-  },
   {
     scheme: 'app',
     privileges: {
@@ -42,7 +32,8 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       secure: true,
       supportFetchAPI: true,
-      corsEnabled: true
+      corsEnabled: true,
+      stream: true
     }
   }
 ]);
@@ -275,6 +266,42 @@ function resolveAgentViewAssetPath(relativePath: string): string | null {
   }
 
   return absolutePath;
+}
+
+function normalizeAgentViewPathname(pathname: string): string {
+  const decoded = decodeURIComponent(pathname || '');
+  return decoded.replace(/^\/+/, '').trim();
+}
+
+function isAgentViewDocumentRequest(url: URL): boolean {
+  if (url.hostname !== 'view') {
+    return false;
+  }
+
+  const normalizedPath = normalizeAgentViewPathname(url.pathname);
+  if (!normalizedPath) {
+    return false;
+  }
+
+  if (url.searchParams.has('tabId') || url.searchParams.has('rev') || url.searchParams.has('t')) {
+    return true;
+  }
+
+  // Treat paths that look like files (contains "/" or extension) as data-dir assets.
+  if (normalizedPath.includes('/') || normalizedPath.includes('.')) {
+    return false;
+  }
+
+  return true;
+}
+
+async function resolveAgentViewDataPath(url: URL): Promise<string> {
+  const normalizedPath = normalizeAgentViewPathname(url.pathname);
+  if (!normalizedPath) {
+    throw new Error('Missing file path');
+  }
+
+  return assertPathAllowed(getDataDir(), normalizedPath, { allowMissing: false });
 }
 
 async function loadAgentViewClientAssets(): Promise<AgentViewClientAssets> {
@@ -1121,6 +1148,10 @@ function parseTrackedViewFromUrl(urlString: string): { viewId: string; tabId: st
     return null;
   }
 
+  if (!isAgentViewDocumentRequest(parsedUrl)) {
+    return null;
+  }
+
   let viewId: string;
   try {
     viewId = parseAgentViewId(parsedUrl);
@@ -1457,6 +1488,29 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
     return net.fetch(pathToFileURL(assetPath).toString());
   }
 
+  if (url.hostname === 'file' || (url.hostname === 'view' && !isAgentViewDocumentRequest(url))) {
+    try {
+      const absolutePath = await resolveAgentViewDataPath(url);
+      return serveFile(request, absolutePath);
+    } catch {
+      return new Response('Asset not found', {
+        status: 404,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+  }
+
+  if (url.hostname !== 'view') {
+    return new Response('Unsupported agentview route', {
+      status: 404,
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   let viewId: string;
   try {
     viewId = parseAgentViewId(url);
@@ -1753,21 +1807,6 @@ app.on('ready', async () => {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
-
-  // --- MODIFIED MEDIA PROTOCOL HANDLER ---
-  protocol.handle('media', async (request) => {
-    const dataDir = store.get('dataDir') as string || DEFAULT_DATA_DIR;
-    const url = new URL(request.url);
-    const host = decodeURIComponent(url.hostname || '').replace(/^\/+|\/+$/g, '');
-    const pathname = decodeURIComponent(url.pathname || '').replace(/^\/+/, '');
-    const relativePath = host
-      ? path.join(host, pathname)
-      : pathname;
-    const absolutePath = path.join(dataDir, relativePath);
-
-    // Use the unified fs server instead of net.fetch
-    return serveFile(request, absolutePath);
-  });
 
   protocol.handle('app', (request) => {
     const url = new URL(request.url);

@@ -201,26 +201,6 @@ function buildSharedBootstrapScript(
         presentView('resources-settled');
       });
     });
-
-    const bridge = window.tradinglogViewBridge;
-    if (!bridge) {
-      console.error('[agentview] tradinglogViewBridge is unavailable');
-      return;
-    }
-
-    if (typeof bridge.installRunSqlEventShim === 'function') {
-      bridge.installRunSqlEventShim();
-    }
-
-    window.tradinglogView = {
-      viewId: currentViewId,
-      runSql: (request) => bridge.runSql(request),
-      mediaUrl: (relativePath) => bridge.mediaUrl(relativePath),
-    };
-
-    window.dispatchEvent(new CustomEvent('tradinglog:view-runtime-ready', {
-      detail: { viewId: currentViewId }
-    }));
   })();
 </script>
 `;
