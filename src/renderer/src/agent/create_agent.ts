@@ -41,7 +41,7 @@ const EXECJS_RUNTIME_API_DOCS = [
   '- closeTab({ tabId }) => Promise<void>',
   '- selectTab({ tabId }) => Promise<void>',
   '- reloadTab({ tabId }) => Promise<void>',
-  '- captureTab({ tabId }) => Promise<{ base64: string; mimeType: "image/png" }>',
+  '- captureTab({ tabId }) => Promise<{ captured: true; mimeType: "image/png" }> — the screenshot image is automatically attached to the tool result so you can see it',
   '- getTabConsoleLogs({ tabId, since?, limit? }) => Promise<Array<{ level: string; message: string; timestamp: number }>>',
   '- execTabJs({ tabId, code, timeoutMs? }) => Promise<any>',
 ].join('\n')

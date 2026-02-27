@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import type {
+  ExecJsCapturedImage,
   ExecJsDetails,
   ExecJsSerializedError,
   ExecJsLogEntry,
@@ -218,6 +219,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   activeRequests.set(requestId, abortController)
 
   const { logs, restore } = captureConsole()
+  const capturedImages: ExecJsCapturedImage[] = []
 
   try {
     const runSql = (params: WorkerHostMethodMap['runSql']['params']) =>
@@ -248,8 +250,11 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'selectTab', params, abortController.signal)
     const reloadTab = (params: WorkerHostMethodMap['reloadTab']['params']) =>
       callHostMethod('' + requestId, 'reloadTab', params, abortController.signal)
-    const captureTab = (params: WorkerHostMethodMap['captureTab']['params']) =>
-      callHostMethod('' + requestId, 'captureTab', params, abortController.signal)
+    const captureTab = async (params: WorkerHostMethodMap['captureTab']['params']) => {
+      const result = await callHostMethod('' + requestId, 'captureTab', params, abortController.signal)
+      capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
+      return { captured: true, mimeType: result.mimeType }
+    }
     const getTabConsoleLogs = (params: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
       callHostMethod('' + requestId, 'getTabConsoleLogs', params, abortController.signal)
     const execTabJs = (params: WorkerHostMethodMap['execTabJs']['params']) =>
@@ -312,6 +317,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       ok: true,
       value,
       logs,
+      images: capturedImages,
       timeoutMs,
     }
 
@@ -325,6 +331,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       ok: false,
       error: serializeError(error),
       logs,
+      images: capturedImages,
       timeoutMs,
     }
 

@@ -1,8 +1,9 @@
-import type { AgentTool } from '@mariozechner/pi-agent-core'
+import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
+import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
 import { Type } from '@sinclair/typebox'
 import { getSessionWorkerManager } from 'app/agent/worker/session_worker_manager'
 import type { ExecJsDetails } from 'app/agent/worker/types'
-import { stringifyUnknown, textResult } from 'app/agent/tool_utils'
+import { stringifyUnknown } from 'app/agent/tool_utils'
 
 interface CreateExecJsToolArgs {
   getSessionId: () => string
@@ -38,8 +39,26 @@ function toFailureDetails(error: unknown, timeoutMs: number): ExecJsDetails {
     ok: false,
     error: serializeError(error),
     logs: [],
+    images: [],
     timeoutMs,
   }
+}
+
+function buildToolResult(details: ExecJsDetails): AgentToolResult<ExecJsDetails> {
+  const hasImages = details.images && details.images.length > 0
+
+  // Strip images from text serialization — they're included as ImageContent
+  const textDetails = hasImages ? { ...details, images: `[${details.images.length} image(s) attached]` } : details
+  const text = truncate(stringifyUnknown(textDetails), 50000)
+  const content: (TextContent | ImageContent)[] = [{ type: 'text', text }]
+
+  if (hasImages) {
+    for (const image of details.images) {
+      content.push({ type: 'image', data: image.base64, mimeType: image.mimeType })
+    }
+  }
+
+  return { content, details }
 }
 
 export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
@@ -62,10 +81,10 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
         const sessionId = args.getSessionId()
         const manager = getSessionWorkerManager()
         const details = await manager.executeExecJs(sessionId, params.code, timeoutMs, signal)
-        return textResult(truncate(stringifyUnknown(details), 50000), details)
+        return buildToolResult(details)
       } catch (error) {
         const details = toFailureDetails(error, timeoutMs)
-        return textResult(truncate(stringifyUnknown(details), 50000), details)
+        return buildToolResult(details)
       }
     },
   }

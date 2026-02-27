@@ -115,6 +115,11 @@ const STYLES = `
     overflow: auto;
     color: var(--color-text1);
   }
+  .tool-detail img {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    margin: 4px 0;
+  }
   .block-custom {
     font-size: 12px;
     color: var(--color-text2);
@@ -620,6 +625,21 @@ export class TlAgentChat extends HTMLElement {
     return marked(text) as string
   }
 
+  private extractImagesFromResult(result: any): { images: Array<{ data: string; mimeType: string }>; filteredResult: any } {
+    const images: Array<{ data: string; mimeType: string }> = []
+    if (!Array.isArray(result)) return { images, filteredResult: result }
+
+    const filtered = result.filter((item: any) => {
+      if (item?.type === 'image' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
+        images.push({ data: item.data, mimeType: item.mimeType })
+        return false
+      }
+      return true
+    })
+
+    return { images, filteredResult: filtered }
+  }
+
   private summarizeArgs(args: any): string {
     if (!args || typeof args !== 'object') return ''
     const keys = Object.keys(args)
@@ -708,8 +728,10 @@ export class TlAgentChat extends HTMLElement {
                 ${tool.isError ? '<span class="tool-error-label">error</span>' : ''}
               </div>`
               if (this.isToolOpen(tool.id)) {
+                const { images, filteredResult } = this.extractImagesFromResult(tool.result)
                 html += `<div class="tool-detail">
-                  <pre>${this.escapeHtml(JSON.stringify({ args: tool.arguments, result: tool.result }, null, 2))}</pre>
+                  <pre>${this.escapeHtml(JSON.stringify({ args: tool.arguments, result: filteredResult }, null, 2))}</pre>
+                  ${images.map(img => `<img src="data:${this.escapeHtml(img.mimeType)};base64,${img.data}">`).join('')}
                 </div>`
               }
             }

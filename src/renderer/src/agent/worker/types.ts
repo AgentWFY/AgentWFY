@@ -12,11 +12,17 @@ export interface ExecJsSerializedError {
   stack?: string
 }
 
+export interface ExecJsCapturedImage {
+  base64: string
+  mimeType: string
+}
+
 export interface ExecJsDetails {
   ok: boolean
   value?: unknown
   error?: ExecJsSerializedError
   logs: ExecJsLogEntry[]
+  images: ExecJsCapturedImage[]
   timeoutMs: number
 }
 
