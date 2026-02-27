@@ -4,7 +4,10 @@ import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
 import { AgentSessionManager } from 'app/agent/session_manager'
 import type { SessionHistoryItem } from 'app/agent/session_manager'
-import type { AgentWFYAgent } from 'app/agent/create_agent'
+import {
+  COMPACTION_SUMMARY_CUSTOM_TYPE,
+  type AgentWFYAgent
+} from 'app/agent/create_agent'
 import type { TlJson } from 'app/components/json_view'
 
 interface ToolPair {
@@ -16,9 +19,10 @@ interface ToolPair {
 }
 
 interface DisplayBlock {
-  type: 'user' | 'assistant' | 'custom'
+  type: 'user' | 'assistant' | 'custom' | 'compaction'
   text: string
   tools: ToolPair[]
+  compactionBeforeCount?: number
   raw: any
 }
 
@@ -124,6 +128,25 @@ const STYLES = `
     font-size: 12px;
     color: var(--color-text2);
     padding: 2px 0;
+  }
+  .block-compaction {
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+  }
+  .compaction-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text2);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .compaction-meta {
+    font-size: 11px;
+    color: var(--color-text2);
+    margin-bottom: 6px;
   }
   .input-area {
     margin-top: 10px;
@@ -614,7 +637,19 @@ export class TlAgentChat extends HTMLElement {
       } else if (msg.role === 'toolResult') {
         i++
       } else if (msg.role === 'custom') {
-        blocks.push({ type: 'custom', text: '', tools: [], raw: msg })
+        if (msg.customType === COMPACTION_SUMMARY_CUSTOM_TYPE) {
+          const details = msg.details && typeof msg.details === 'object' ? msg.details as Record<string, unknown> : null
+          const beforeCount = typeof details?.beforeCount === 'number' ? details.beforeCount : undefined
+          blocks.push({
+            type: 'compaction',
+            text: this.getTextFromContent(msg.content),
+            tools: [],
+            compactionBeforeCount: beforeCount,
+            raw: msg
+          })
+        } else {
+          blocks.push({ type: 'custom', text: '', tools: [], raw: msg })
+        }
         i++
       } else {
         i++
@@ -741,6 +776,16 @@ export class TlAgentChat extends HTMLElement {
           }
           html += '</div>'
         }
+      } else if (block.type === 'compaction') {
+        html += '<div class="block block-compaction">'
+        html += '<div class="compaction-label">[compaction]</div>'
+        if (typeof block.compactionBeforeCount === 'number') {
+          html += `<div class="compaction-meta">Compacted ${block.compactionBeforeCount.toLocaleString()} messages</div>`
+        }
+        if (block.text.trim()) {
+          html += `<div class="assistant-text">${this.renderMarkdown(block.text)}</div>`
+        }
+        html += '</div>'
       } else if (block.type === 'custom') {
         html += `<div class="block block-custom"><tl-json data-block-idx="${displayBlocks.indexOf(block)}"></tl-json></div>`
       }

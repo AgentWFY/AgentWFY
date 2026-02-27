@@ -6,11 +6,15 @@ import {
   type ThinkingLevel
 } from '@mariozechner/pi-agent-core'
 import {
+  completeSimple,
   getModel,
   getModels,
   getProviders,
+  isContextOverflow,
   supportsXhigh,
+  type AssistantMessage,
   type ImageContent,
+  type Message,
   type Model
 } from '@mariozechner/pi-ai'
 import { createExecJsTool } from 'app/agent/exec_js'
@@ -25,6 +29,51 @@ const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'hi
 const THINKING_LEVELS_WITH_XHIGH: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SESSION_SUMMARY_TAIL_MESSAGES = 20
 const SESSION_SUMMARY_MAX_CHARS = 6000
+const AUTO_COMPACTION_MAX_RETRIES = 1
+const AUTO_COMPACTION_INSTRUCTIONS =
+  'Automatically compact context after overflow. Preserve user goals, constraints, unresolved tasks, tool outputs, file paths, and decisions.'
+export const COMPACTION_SUMMARY_CUSTOM_TYPE = 'compactionSummary'
+const COMPACTION_SUMMARY_CONTEXT_PREFIX = `The conversation history before this point was compacted into the following summary:
+
+<summary>
+`
+const COMPACTION_SUMMARY_CONTEXT_SUFFIX = `
+</summary>`
+const COMPACTION_SUMMARY_SYSTEM_PROMPT =
+  'You create concise, accurate context checkpoint summaries for coding sessions. Preserve exact file paths, function names, constraints, and unresolved tasks.'
+const COMPACTION_SUMMARY_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`
+const COMPACTION_SUMMARY_MAX_TOKENS = 2200
 const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
 export interface AgentWFYAgentOptions {
@@ -282,6 +331,29 @@ function createTools(sessionIdRef: { current: string }) {
   ]
 }
 
+function extractTextContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((item: any) => {
+        if (item?.type === 'text' && typeof item.text === 'string') {
+          return item.text
+        }
+        if (item?.type === 'image') {
+          return '[image]'
+        }
+        return ''
+      })
+      .filter((line: string) => line.length > 0)
+      .join('\n')
+  }
+
+  return stringifyUnknown(content)
+}
+
 function toUserMessage(text: string, images?: ImageContent[]): AgentMessage {
   const content: (ImageContent | { type: 'text'; text: string })[] = [{ type: 'text', text }]
   if (images && images.length > 0) {
@@ -295,6 +367,17 @@ function toUserMessage(text: string, images?: ImageContent[]): AgentMessage {
   } as AgentMessage
 }
 
+function toCompactionSummaryMessage(summary: string, beforeCount: number): AgentMessage {
+  return {
+    role: 'custom',
+    customType: COMPACTION_SUMMARY_CUSTOM_TYPE,
+    content: summary,
+    display: true,
+    details: { beforeCount },
+    timestamp: Date.now()
+  } as any
+}
+
 function toHookAgentMessage(message: HookMessage): AgentMessage {
   return {
     role: 'custom',
@@ -304,6 +387,35 @@ function toHookAgentMessage(message: HookMessage): AgentMessage {
     details: message.details,
     timestamp: Date.now()
   } as any
+}
+
+function convertAgentMessagesToLlm(messages: AgentMessage[]): Message[] {
+  const llmMessages: Message[] = []
+
+  for (const message of messages) {
+    const unknownMessage = message as any
+    const role = unknownMessage?.role
+
+    if (role === 'user' || role === 'assistant' || role === 'toolResult') {
+      llmMessages.push(message as unknown as Message)
+      continue
+    }
+
+    if (role === 'custom' && unknownMessage?.customType === COMPACTION_SUMMARY_CUSTOM_TYPE) {
+      const summary = extractTextContent(unknownMessage.content).trim()
+      if (!summary) {
+        continue
+      }
+
+      llmMessages.push({
+        role: 'user',
+        content: [{ type: 'text', text: `${COMPACTION_SUMMARY_CONTEXT_PREFIX}${summary}${COMPACTION_SUMMARY_CONTEXT_SUFFIX}` }],
+        timestamp: typeof unknownMessage.timestamp === 'number' ? unknownMessage.timestamp : Date.now()
+      } as Message)
+    }
+  }
+
+  return llmMessages
 }
 
 function messageToSummaryLine(message: AgentMessage): string {
@@ -356,6 +468,13 @@ function buildCompactionSummary(messages: AgentMessage[], customInstructions?: s
   }
 
   return `${summary.slice(0, SESSION_SUMMARY_MAX_CHARS)}\n...<truncated ${summary.length - SESSION_SUMMARY_MAX_CHARS} chars>`
+}
+
+function extractTextFromAssistant(message: AssistantMessage): string {
+  return message.content
+    .filter((item: any) => item?.type === 'text' && typeof item.text === 'string')
+    .map((item: any) => item.text)
+    .join('\n')
 }
 
 function parseStoredSession(raw: string, sessionFile: string): StoredSession {
@@ -473,6 +592,7 @@ export class AgentWFYAgent {
         tools
       },
       sessionId,
+      convertToLlm: convertAgentMessagesToLlm,
       getApiKey: getApiKeyFn
     })
 
@@ -567,7 +687,7 @@ export class AgentWFYAgent {
       return
     }
 
-    await this.agent.prompt(toUserMessage(text, options.images))
+    await this.promptWithAutoCompaction(toUserMessage(text, options.images))
     await this.persistSession()
   }
 
@@ -772,15 +892,13 @@ export class AgentWFYAgent {
     try {
       const summarySource = this.messages.slice(0, beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
       const keepMessages = this.messages.slice(beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-      const summary = buildCompactionSummary(summarySource, customInstructions)
+      const summary = await this.generateCompactionSummary(summarySource, customInstructions, abortController.signal)
 
       if (abortController.signal.aborted) {
         throw new Error('Compaction aborted')
       }
 
-      const summaryMessage = toUserMessage(
-        `Context summary generated by AgentWFYAgent compact():\n\n${summary}`
-      )
+      const summaryMessage = toCompactionSummaryMessage(summary, beforeCount)
 
       this.agent.replaceMessages([summaryMessage, ...keepMessages])
       await this.persistSession()
@@ -841,6 +959,133 @@ export class AgentWFYAgent {
         console.error('[AgentWFYAgent] event listener failed', error)
       }
     })
+  }
+
+  private async promptWithAutoCompaction(message: AgentMessage): Promise<void> {
+    let shouldContinue = false
+
+    for (let retryCount = 0; retryCount <= AUTO_COMPACTION_MAX_RETRIES; retryCount += 1) {
+      if (shouldContinue) {
+        await this.agent.continue()
+      } else {
+        await this.agent.prompt(message)
+      }
+
+      const overflowMessage = this.getLastOverflowAssistantMessage()
+      if (!overflowMessage) {
+        return
+      }
+
+      if (retryCount >= AUTO_COMPACTION_MAX_RETRIES) {
+        return
+      }
+
+      const compactResult = await this.compact(AUTO_COMPACTION_INSTRUCTIONS)
+      if (!compactResult.compacted) {
+        return
+      }
+
+      this.dropTrailingOverflowAssistant()
+      shouldContinue = true
+    }
+  }
+
+  private getLastOverflowAssistantMessage(): AssistantMessage | undefined {
+    const lastAssistant = getLastAssistantMessage(this.messages) as AssistantMessage | undefined
+    if (!lastAssistant) {
+      return undefined
+    }
+
+    const contextWindow = this.getModelContextWindow()
+    if (!isContextOverflow(lastAssistant, contextWindow)) {
+      return undefined
+    }
+
+    return lastAssistant
+  }
+
+  private dropTrailingOverflowAssistant(): void {
+    const messages = this.messages
+    if (messages.length === 0) {
+      return
+    }
+
+    const lastMessage = messages[messages.length - 1] as AssistantMessage
+    if (lastMessage?.role !== 'assistant') {
+      return
+    }
+
+    const contextWindow = this.getModelContextWindow()
+    if (!isContextOverflow(lastMessage, contextWindow)) {
+      return
+    }
+
+    this.agent.replaceMessages(messages.slice(0, -1))
+  }
+
+  private getModelContextWindow(): number | undefined {
+    const model = this.model as { contextWindow?: unknown } | undefined
+    if (typeof model?.contextWindow !== 'number' || !Number.isFinite(model.contextWindow) || model.contextWindow <= 0) {
+      return undefined
+    }
+
+    return model.contextWindow
+  }
+
+  private async generateCompactionSummary(
+    messages: AgentMessage[],
+    customInstructions: string | undefined,
+    signal: AbortSignal
+  ): Promise<string> {
+    const model = this.model
+    if (!model) {
+      return buildCompactionSummary(messages, customInstructions)
+    }
+
+    try {
+      const provider = model.provider
+      const apiKey = this.agent.getApiKey
+        ? await this.agent.getApiKey(provider)
+        : this.apiKey
+
+      const conversationText = messages.map((message) => messageToSummaryLine(message)).join('\n')
+      const additionalFocus = customInstructions?.trim()
+        ? `\n\nAdditional focus: ${customInstructions.trim()}`
+        : ''
+      const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${COMPACTION_SUMMARY_PROMPT}${additionalFocus}`
+
+      const response = await completeSimple(
+        model,
+        {
+          systemPrompt: COMPACTION_SUMMARY_SYSTEM_PROMPT,
+          messages: [toUserMessage(promptText)]
+        },
+        {
+          apiKey,
+          signal,
+          maxTokens: Math.min(COMPACTION_SUMMARY_MAX_TOKENS, model.maxTokens || COMPACTION_SUMMARY_MAX_TOKENS),
+          reasoning: model.reasoning ? 'high' : undefined
+        }
+      )
+
+      if (response.stopReason === 'error') {
+        throw new Error(response.errorMessage || 'Unknown summarization error')
+      }
+
+      const text = extractTextFromAssistant(response as AssistantMessage).trim()
+      if (!text) {
+        throw new Error('Summarization model returned empty text')
+      }
+
+      if (text.length <= SESSION_SUMMARY_MAX_CHARS) {
+        return text
+      }
+
+      return `${text.slice(0, SESSION_SUMMARY_MAX_CHARS)}\n...<truncated ${text.length - SESSION_SUMMARY_MAX_CHARS} chars>`
+    } catch (error) {
+      console.warn('[AgentWFYAgent] model-based compaction summary failed; falling back to local summary', error)
+      return buildCompactionSummary(messages, customInstructions)
+    }
   }
 
   private buildStoredSession(): StoredSession {

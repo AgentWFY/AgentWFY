@@ -24,6 +24,7 @@ import { streamOpenAICodexResponses, streamSimpleOpenAICodexResponses } from '@m
 import { streamAnthropic, streamSimpleAnthropic } from '@mariozechner/pi-ai/dist/providers/anthropic.js'
 import { EventStream, AssistantMessageEventStream, createAssistantMessageEventStream } from '@mariozechner/pi-ai/dist/utils/event-stream.js'
 import { parseStreamingJson } from '@mariozechner/pi-ai/dist/utils/json-parse.js'
+import { isContextOverflow } from '@mariozechner/pi-ai/dist/utils/overflow.js'
 import { validateToolArguments, validateToolCall } from '@mariozechner/pi-ai/dist/utils/validation.js'
 import { anthropicOAuthProvider, refreshAnthropicToken, loginAnthropic } from '@mariozechner/pi-ai/dist/utils/oauth/anthropic.js'
 import { githubCopilotOAuthProvider, refreshGitHubCopilotToken, loginGitHubCopilot } from '@mariozechner/pi-ai/dist/utils/oauth/github-copilot.js'
@@ -273,6 +274,7 @@ export {
   AssistantMessageEventStream,
   createAssistantMessageEventStream,
   parseStreamingJson,
+  isContextOverflow,
   validateToolArguments,
   validateToolCall,
   // Anthropic streaming
