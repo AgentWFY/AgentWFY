@@ -25,67 +25,7 @@ const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'hi
 const THINKING_LEVELS_WITH_XHIGH: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SESSION_SUMMARY_TAIL_MESSAGES = 20
 const SESSION_SUMMARY_MAX_CHARS = 6000
-const LEGACY_SYSTEM_DOC_PREFIX = 'system.'
-const EXECJS_RUNTIME_API_DOCS = [
-  '- runSql({ target?, path?, sql, params?, description?, confirmed? }) => Promise<any>',
-  '- read({ path, offset?, limit? }) => Promise<string>',
-  '- write({ path, content }) => Promise<string>',
-  '- edit({ path, oldText, newText }) => Promise<string>',
-  '- ls({ path?, limit? }) => Promise<string>',
-  '- mkdir({ path, recursive? }) => Promise<void>',
-  '- remove({ path, recursive? }) => Promise<void>',
-  '- find({ pattern, path?, limit? }) => Promise<string>',
-  '- grep({ pattern, path?, options? }) => Promise<string>',
-  '- getTabs() => Promise<{ tabs: Array<{ id, title, viewId, viewUpdatedAt, viewChanged, pinned, selected }> }>',
-  '- openTab({ viewId, title? }) => Promise<void>',
-  '- closeTab({ tabId }) => Promise<void>',
-  '- selectTab({ tabId }) => Promise<void>',
-  '- reloadTab({ tabId }) => Promise<void>',
-  '- captureTab({ tabId }) => Promise<{ captured: true; mimeType: "image/png" }> — the screenshot image is automatically attached to the tool result so you can see it',
-  '- getTabConsoleLogs({ tabId, since?, limit? }) => Promise<Array<{ level: string; message: string; timestamp: number }>>',
-  '- execTabJs({ tabId, code, timeoutMs? }) => Promise<any>',
-].join('\n')
-
-const CODE_SYSTEM_PROMPT = [
-  '## [system.core]',
-  'You are the AgentWFY desktop AI agent.',
-  'You have one tool: execJs.',
-  'When you need to read files, write files, query SQL, inspect app views, run JS in views, or capture screenshots, call execJs.',
-  'Always prefer targeted, minimal operations and return concrete, actionable results.',
-  '',
-  '## [execjs.runtime]',
-  'execJs runs JavaScript in a dedicated worker for the current session.',
-  'Inside execJs code you can call these async host APIs:',
-  EXECJS_RUNTIME_API_DOCS,
-  '',
-  'Rules:',
-  '- Return JSON-serializable values from execJs.',
-  '- Keep operations targeted and explicit.',
-  '- File tools (read/write/edit/ls/mkdir/remove/find/grep) operate on paths in the working directory.',
-  '- runSql accepts target="agent" or target="sqlite-file".',
-  '- For target="sqlite-file", path must point to a SQLite file in the working directory.',
-  '- Use runSql with confirmed=true only when a mutation is intentional and explicitly justified.',
-  '',
-  '## [tabs]',
-  'The app uses a tab-based UI. Agent views are DB-backed UI views stored in the agent database table "views" (columns include id, name, content, updated_at).',
-  'They are rendered as isolated webview runtimes via agentview://view/<viewId> when a view tab is opened.',
-  '',
-  'How to work with tabs:',
-  '- Use getTabs() to see all open tabs and which one is selected.',
-  '- Each tab has: id (tabId), title, viewId, viewUpdatedAt, viewChanged, pinned, selected.',
-  '- Use captureTab({ tabId }), getTabConsoleLogs({ tabId }), and execTabJs({ tabId, code }) with tabId (not viewId) for diagnostics.',
-  '- Use reloadTab({ tabId }) after updating a view\'s content via SQL to reload it in the browser.',
-  '- Use openTab({ viewId, title? }) to open a new tab for a view. Use selectTab({ tabId }) to switch to an existing tab.',
-  '- Use closeTab({ tabId }) to close a tab.',
-  '- viewChanged indicates the view\'s DB content was updated but the tab has not been reloaded yet.',
-  '- Discover views with runSql on target="agent" (for example: SELECT id, name, updated_at FROM views ORDER BY updated_at DESC).',
-  '',
-  'Inside an agent view runtime:',
-  '- execTabJs executes in that tab\'s webview context (window/document are from the tab\'s view runtime).',
-  '- In view code, call host APIs as window.electronAgentTools.<method>(...) (file methods use positional args; runSql and tab tools use object params).',
-  '- Example: await window.electronAgentTools.runSql({ target: "agent", sql: "SELECT id, name FROM views LIMIT 5" }).',
-  '- Example: await window.electronAgentTools.read("notes/todo.txt").',
-].join('\n')
+const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
 export interface AgentWFYAgentOptions {
   provider?: string
@@ -286,38 +226,29 @@ function requireSessionStorageTools() {
 }
 
 async function loadSystemPrompt(): Promise<string> {
-  const codePrompt = CODE_SYSTEM_PROMPT.trim()
-
   try {
     const tools = requireElectronTools()
     if (typeof tools.runSql !== 'function') {
       throw new Error('window.electronAgentTools.runSql is not available in this renderer context')
     }
 
-    await tools.runSql({
-      target: 'agent',
-      sql: 'DELETE FROM docs WHERE preload = 1 AND lower(name) LIKE ?',
-      params: [`${LEGACY_SYSTEM_DOC_PREFIX}%`],
-      description: 'Remove legacy system prompt docs now defined in code',
-      confirmed: true,
-    })
-
     const rows = await tools.runSql({
       target: 'agent',
       sql: 'SELECT name, content FROM docs WHERE preload = 1 ORDER BY name ASC',
-      description: 'Load data-dir-specific preload docs for agent context'
+      description: 'Load preload docs for agent system prompt'
     })
     const docs = parsePreloadDocRows(rows)
     const promptSection = buildDocsPromptSection(docs)
 
     if (!promptSection) {
-      return codePrompt
+      console.warn('[agent] no preload docs found in agent.db, using fallback prompt')
+      return FALLBACK_SYSTEM_PROMPT
     }
 
-    return `${codePrompt}\n\n${promptSection}`
+    return promptSection
   } catch (error) {
-    console.warn('[agent] failed to load data-dir prompt docs, using code prompt', error)
-    return codePrompt
+    console.warn('[agent] failed to load system prompt from DB, using fallback', error)
+    return FALLBACK_SYSTEM_PROMPT
   }
 }
 
