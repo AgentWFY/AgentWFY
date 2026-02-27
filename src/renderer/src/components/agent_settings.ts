@@ -7,6 +7,7 @@ import {
   performOAuthLogin,
   isOAuthConnected,
   getProviderForAuthMethod,
+  normalizeAuthConfig,
   logoutOAuth,
 } from 'app/agent/agent_auth'
 
@@ -153,7 +154,13 @@ const thinkingLevels: ThinkingLevel[] = ['off' as any, 'minimal', 'low', 'medium
 
 function safeGetModels(provider: string) {
   try {
-    return getModels(provider as any)
+    const models = getModels(provider as any)
+    if (provider === 'openai-codex') {
+      return [...models].sort((a: any, b: any) =>
+        String(b?.id ?? '').localeCompare(String(a?.id ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+      )
+    }
+    return models
   } catch {
     return []
   }
@@ -186,7 +193,7 @@ export class TlAgentSettings extends HTMLElement {
 
   get authConfig(): AgentAuthConfig { return this._authConfig }
   set authConfig(val: AgentAuthConfig) {
-    this._authConfig = val
+    this._authConfig = normalizeAuthConfig(val)
     this.apiKeyInput = val.apiKey ?? ''
     this.queueRender()
   }
@@ -241,7 +248,7 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   private async update(partial: Partial<AgentAuthConfig>) {
-    this._authConfig = { ...this._authConfig, ...partial }
+    this._authConfig = normalizeAuthConfig({ ...this._authConfig, ...partial })
     await saveAuthConfig(this._authConfig)
     this.dispatchEvent(new CustomEvent('config-change', {
       detail: this._authConfig,
@@ -286,7 +293,15 @@ export class TlAgentSettings extends HTMLElement {
           this.oauthAuthUrl = info.url
           this.oauthInstructions = info.instructions ?? ''
           this.oauthStatus = 'Waiting for authorization...'
-          window.open(info.url, '_blank')
+          const tools = window.electronClientTools
+          if (tools && typeof tools.openUrlInDefaultBrowser === 'function') {
+            tools.openUrlInDefaultBrowser(info.url).catch((err) => {
+              console.warn('[agent_settings] Failed to open external browser, falling back to window.open', err)
+              window.open(info.url, '_blank', 'noopener')
+            })
+          } else {
+            window.open(info.url, '_blank', 'noopener')
+          }
           this.queueRender()
         },
         onPrompt: (prompt) => {

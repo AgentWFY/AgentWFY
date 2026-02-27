@@ -418,11 +418,13 @@ export class TlAgentChat extends HTMLElement {
       this.render()
       return
     }
+    // Keep inline settings open when reconnecting from an already-active chat.
+    const keepInlineSettingsOpen = !!this.manager && this.showSettings
     this.isInitializing = true
     this.render()
     try {
       await this.initManager(this.authConfig)
-      this.showSettings = false
+      this.showSettings = keepInlineSettingsOpen
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     } finally {

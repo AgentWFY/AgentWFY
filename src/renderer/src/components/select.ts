@@ -57,19 +57,18 @@ const STYLES = `
   }
   .dropdown {
     display: none;
-    position: absolute;
-    top: 100%;
+    position: fixed;
+    top: 0;
     left: 0;
-    right: 0;
-    margin-top: 2px;
     background: var(--color-input-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 9000;
+    z-index: 2147483000;
     max-height: 200px;
     overflow-y: auto;
     padding: 3px 0;
+    width: 120px;
   }
   :host(.open) .dropdown {
     display: block;
@@ -111,6 +110,10 @@ export class TlSelect extends HTMLElement {
   private _value = ''
   private focusedIndex = -1
   private isOpen = false
+  private readonly onViewportChange = () => {
+    if (!this.isOpen) return
+    this.positionDropdown()
+  }
 
   constructor() {
     super()
@@ -155,6 +158,8 @@ export class TlSelect extends HTMLElement {
     this.observer = null
     document.removeEventListener('mousedown', this.onDocMousedown)
     document.removeEventListener('keydown', this.onDocKeydown)
+    window.removeEventListener('resize', this.onViewportChange)
+    window.removeEventListener('scroll', this.onViewportChange, true)
   }
 
   attributeChangedCallback(name: string, _old: string | null, val: string | null) {
@@ -237,8 +242,11 @@ export class TlSelect extends HTMLElement {
     this.classList.add('open')
     this.focusedIndex = this.options.findIndex(o => o.value === this._value)
     this.renderDropdown()
+    this.positionDropdown()
     document.addEventListener('mousedown', this.onDocMousedown)
     document.addEventListener('keydown', this.onDocKeydown)
+    window.addEventListener('resize', this.onViewportChange)
+    window.addEventListener('scroll', this.onViewportChange, true)
   }
 
   private close() {
@@ -248,6 +256,34 @@ export class TlSelect extends HTMLElement {
     this.focusedIndex = -1
     document.removeEventListener('mousedown', this.onDocMousedown)
     document.removeEventListener('keydown', this.onDocKeydown)
+    window.removeEventListener('resize', this.onViewportChange)
+    window.removeEventListener('scroll', this.onViewportChange, true)
+  }
+
+  private positionDropdown() {
+    const triggerRect = this.triggerEl.getBoundingClientRect()
+    const viewportPadding = 8
+    const spacing = 2
+    const preferredMaxHeight = 220
+
+    const below = Math.max(0, window.innerHeight - triggerRect.bottom - viewportPadding - spacing)
+    const above = Math.max(0, triggerRect.top - viewportPadding - spacing)
+    const openUp = below < 140 && above > below
+    const availableHeight = Math.max(0, Math.min(preferredMaxHeight, openUp ? above : below))
+    const contentHeight = this.dropdownEl.scrollHeight
+    const visibleHeight = Math.max(0, Math.min(contentHeight, availableHeight))
+
+    const top = openUp
+      ? Math.max(viewportPadding, triggerRect.top - spacing - visibleHeight)
+      : Math.max(
+        viewportPadding,
+        Math.min(window.innerHeight - viewportPadding - visibleHeight, triggerRect.bottom + spacing)
+      )
+
+    this.dropdownEl.style.left = `${Math.round(triggerRect.left)}px`
+    this.dropdownEl.style.top = `${Math.round(top)}px`
+    this.dropdownEl.style.width = `${Math.round(triggerRect.width)}px`
+    this.dropdownEl.style.maxHeight = `${Math.round(availableHeight)}px`
   }
 
   private select(value: string) {

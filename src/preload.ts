@@ -121,6 +121,7 @@ const TAB_CONTEXT_MENU_CHANNEL = 'agentwfy:tabs:context-menu';
 const EXTERNAL_VIEW_EVENT_CHANNEL = 'agentwfy:external-view-event';
 const AGENT_DB_CHANGED_CHANNEL = 'agentwfy:agent-db-changed';
 const DIALOG_OPEN_CHANNEL = 'dialog:open';
+const OPEN_URL_IN_DEFAULT_BROWSER_CHANNEL = 'shell:openUrlInDefaultBrowser';
 const STORE_GET_CHANNEL = 'electron-store:get';
 const STORE_SET_CHANNEL = 'electron-store:set';
 const STORE_REMOVE_CHANNEL = 'electron-store:remove';
@@ -216,6 +217,9 @@ if (window.location.protocol !== 'agentview:') {
   contextBridge.exposeInMainWorld('electronClientTools', {
     openDialog(options: any): Promise<string[]> {
       return ipcRenderer.invoke(DIALOG_OPEN_CHANNEL, options);
+    },
+    openUrlInDefaultBrowser(url: string): Promise<void> {
+      return ipcRenderer.invoke(OPEN_URL_IN_DEFAULT_BROWSER_CHANNEL, url);
     },
     getStoreItem(key: string): Promise<any> {
       return ipcRenderer.invoke(STORE_GET_CHANNEL, key);

@@ -144,6 +144,7 @@ export interface ElectronAgentTools {
 
 export interface ElectronClientTools {
   openDialog(options: any): Promise<string[]>
+  openUrlInDefaultBrowser(url: string): Promise<void>
   getStoreItem<T = any>(key: string): Promise<T>
   setStoreItem<T = any>(key: string, value: T): Promise<void>
   removeStoreItem(key: string): Promise<void>
