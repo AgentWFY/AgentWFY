@@ -100,12 +100,12 @@ interface AgentDbChangedEventDetail {
 }
 
 const RUN_SQL_CHANNEL = 'agentwfy:runSql';
-const LIST_SESSIONS_CHANNEL = 'agentwfy:listSessions';
-const READ_SESSION_CHANNEL = 'agentwfy:readSession';
-const WRITE_SESSION_CHANNEL = 'agentwfy:writeSession';
-const READ_AUTH_CONFIG_CHANNEL = 'agentwfy:readAuthConfig';
-const WRITE_AUTH_CONFIG_CHANNEL = 'agentwfy:writeAuthConfig';
-const READ_LEGACY_API_KEY_CHANNEL = 'agentwfy:readLegacyApiKey';
+const LIST_SESSIONS_CHANNEL = 'app:listSessions';
+const READ_SESSION_CHANNEL = 'app:readSession';
+const WRITE_SESSION_CHANNEL = 'app:writeSession';
+const READ_AUTH_CONFIG_CHANNEL = 'app:readAuthConfig';
+const WRITE_AUTH_CONFIG_CHANNEL = 'app:writeAuthConfig';
+const READ_LEGACY_API_KEY_CHANNEL = 'app:readLegacyApiKey';
 const GET_TABS_CHANNEL = 'agentwfy:getTabs';
 const OPEN_TAB_CHANNEL = 'agentwfy:openTab';
 const CLOSE_TAB_CHANNEL = 'agentwfy:closeTab';
@@ -117,9 +117,9 @@ const EXEC_TAB_JS_CHANNEL = 'agentwfy:execTabJs';
 const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
-const TAB_CONTEXT_MENU_CHANNEL = 'agentwfy:tabs:context-menu';
-const EXTERNAL_VIEW_EVENT_CHANNEL = 'agentwfy:external-view-event';
-const AGENT_DB_CHANGED_CHANNEL = 'agentwfy:agent-db-changed';
+const TAB_CONTEXT_MENU_CHANNEL = 'app:tabs:context-menu';
+const EXTERNAL_VIEW_EVENT_CHANNEL = 'app:external-view-event';
+const AGENT_DB_CHANGED_CHANNEL = 'app:agent-db-changed';
 const DIALOG_OPEN_CHANNEL = 'dialog:open';
 const OPEN_URL_IN_DEFAULT_BROWSER_CHANNEL = 'shell:openUrlInDefaultBrowser';
 const STORE_GET_CHANNEL = 'electron-store:get';

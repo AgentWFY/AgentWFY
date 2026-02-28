@@ -14,6 +14,16 @@ import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
 import { stat, mkdir } from 'fs/promises';
 
+// Suppress Electron's automatic "Error occurred in handler for '...'" console.error
+// messages from ipcMain.handle. These are expected validation errors from agent tool
+// calls and are already propagated to the renderer as rejected promises.
+const originalConsoleError = console.error;
+console.error = (...args: unknown[]) => {
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'agentwfy:')) return;
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'bus:')) return;
+  originalConsoleError.apply(console, args);
+};
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'app',
@@ -312,16 +322,16 @@ const EXTERNAL_VIEW_CHANNEL = {
   MOUNT: 'electronExternalView:mount',
   SET_BOUNDS: 'electronExternalView:setBounds',
   DESTROY: 'electronExternalView:destroy',
-  EVENT: 'agentwfy:external-view-event',
+  EVENT: 'app:external-view-event',
 } as const;
 
-const TAB_CONTEXT_MENU_CHANNEL = 'agentwfy:tabs:context-menu';
+const TAB_CONTEXT_MENU_CHANNEL = 'app:tabs:context-menu';
 
 const COMMAND_PALETTE_CHANNEL = {
-  CLOSE: 'agentwfy:command-palette:close',
-  LIST_ITEMS: 'agentwfy:command-palette:list-items',
-  RUN_ACTION: 'agentwfy:command-palette:run-action',
-  OPENED: 'agentwfy:command-palette:opened',
+  CLOSE: 'app:command-palette:close',
+  LIST_ITEMS: 'app:command-palette:list-items',
+  RUN_ACTION: 'app:command-palette:run-action',
+  OPENED: 'app:command-palette:opened',
 } as const;
 
 interface ExternalViewBoundsPayload {
@@ -1418,7 +1428,7 @@ function publishAgentDbChanges(event: AgentDbChangedEvent): void {
     return;
   }
 
-  mainWindow.webContents.send('agentwfy:agent-db-changed', event);
+  mainWindow.webContents.send('app:agent-db-changed', event);
 }
 
 async function restartAgentDbChangesPublisher(): Promise<void> {
