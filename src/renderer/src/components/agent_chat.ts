@@ -2,7 +2,7 @@ import { marked } from 'marked'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
-import { getSessionManager, initSessionManager } from 'app/agent/session_manager'
+import { getSessionManager, initSessionManager, listSessionHistory } from 'app/agent/session_manager'
 import type { AgentSessionManager, SessionHistoryItem } from 'app/agent/session_manager'
 import {
   COMPACTION_SUMMARY_CUSTOM_TYPE,
@@ -485,7 +485,7 @@ export class TlAgentChat extends HTMLElement {
 
     let history: SessionHistoryItem[] = []
     try {
-      history = await this.manager.listSessionHistory()
+      history = await listSessionHistory()
     } catch {
       history = []
     }

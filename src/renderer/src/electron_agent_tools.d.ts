@@ -1,71 +1,16 @@
-export interface ElectronConsoleLogEntry {
-  level: 'verbose' | 'info' | 'warning' | 'error'
-  message: string
-  timestamp: number
-}
-
-export interface ElectronGrepOptions {
-  ignoreCase?: boolean
-  literal?: boolean
-  context?: number
-  limit?: number
-}
-
-export type ElectronSqlTarget = 'agent' | 'sqlite-file'
-
-export interface ElectronRunSqlRequest {
-  target?: ElectronSqlTarget
-  path?: string
-  sql: string
-  params?: any[]
-  description?: string
-  confirmed?: boolean
-}
-
-export interface ElectronCaptureTabRequest {
-  tabId: string
-}
-
-export interface ElectronGetTabConsoleLogsRequest {
-  tabId: string
-  since?: number
-  limit?: number
-}
-
-export interface ElectronExecTabJsRequest {
-  tabId: string
-  code: string
-  timeoutMs?: number
-}
-
-export interface ElectronOpenTabRequest {
-  viewId: string | number
-  title?: string
-}
-
-export interface ElectronCloseTabRequest {
-  tabId: string
-}
-
-export interface ElectronSelectTabRequest {
-  tabId: string
-}
-
-export interface ElectronReloadTabRequest {
-  tabId: string
-}
-
-export interface ElectronGetTabsResult {
-  tabs: Array<{
-    id: string
-    title: string
-    viewId: string | number | null
-    viewUpdatedAt: number | null
-    viewChanged: boolean
-    pinned: boolean
-    selected: boolean
-  }>
-}
+import type {
+  WorkerRunSqlRequest,
+  WorkerGrepOptions,
+  WorkerGetTabsResult,
+  WorkerOpenTabRequest,
+  WorkerCloseTabRequest,
+  WorkerSelectTabRequest,
+  WorkerReloadTabRequest,
+  WorkerCaptureTabRequest,
+  WorkerGetTabConsoleLogsRequest,
+  WorkerExecTabJsRequest,
+  WorkerTabConsoleLogEntry,
+} from './agent/worker/types'
 
 export interface ElectronExternalViewBounds {
   x: number
@@ -130,16 +75,16 @@ export interface ElectronAgentTools {
   mkdir(path: string, recursive?: boolean): Promise<void>
   remove(path: string, recursive?: boolean): Promise<void>
   find(pattern: string, path?: string, limit?: number): Promise<string>
-  grep(pattern: string, path?: string, options?: ElectronGrepOptions): Promise<string>
-  runSql(request: ElectronRunSqlRequest): Promise<any>
-  getTabs(): Promise<ElectronGetTabsResult>
-  openTab(request: ElectronOpenTabRequest): Promise<void>
-  closeTab(request: ElectronCloseTabRequest): Promise<void>
-  selectTab(request: ElectronSelectTabRequest): Promise<void>
-  reloadTab(request: ElectronReloadTabRequest): Promise<void>
-  captureTab(request: ElectronCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
-  getTabConsoleLogs(request: ElectronGetTabConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
-  execTabJs(request: ElectronExecTabJsRequest): Promise<any>
+  grep(pattern: string, path?: string, options?: WorkerGrepOptions): Promise<string>
+  runSql(request: WorkerRunSqlRequest): Promise<any>
+  getTabs(): Promise<WorkerGetTabsResult>
+  openTab(request: WorkerOpenTabRequest): Promise<void>
+  closeTab(request: WorkerCloseTabRequest): Promise<void>
+  selectTab(request: WorkerSelectTabRequest): Promise<void>
+  reloadTab(request: WorkerReloadTabRequest): Promise<void>
+  captureTab(request: WorkerCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
+  getTabConsoleLogs(request: WorkerGetTabConsoleLogsRequest): Promise<WorkerTabConsoleLogEntry[]>
+  execTabJs(request: WorkerExecTabJsRequest): Promise<any>
   busPublish(topic: string, data: unknown): Promise<void>
   busWaitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>
@@ -178,16 +123,16 @@ export interface AgentWFYViewApi {
   mkdir(path: string, recursive?: boolean): Promise<void>
   remove(path: string, recursive?: boolean): Promise<void>
   find(pattern: string, path?: string, limit?: number): Promise<string>
-  grep(pattern: string, path?: string, options?: ElectronGrepOptions): Promise<string>
-  runSql(request: ElectronRunSqlRequest): Promise<any>
-  getTabs(): Promise<ElectronGetTabsResult>
-  openTab(request: ElectronOpenTabRequest): Promise<void>
-  closeTab(request: ElectronCloseTabRequest): Promise<void>
-  selectTab(request: ElectronSelectTabRequest): Promise<void>
-  reloadTab(request: ElectronReloadTabRequest): Promise<void>
-  captureTab(request: ElectronCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
-  getTabConsoleLogs(request: ElectronGetTabConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
-  execTabJs(request: ElectronExecTabJsRequest): Promise<any>
+  grep(pattern: string, path?: string, options?: WorkerGrepOptions): Promise<string>
+  runSql(request: WorkerRunSqlRequest): Promise<any>
+  getTabs(): Promise<WorkerGetTabsResult>
+  openTab(request: WorkerOpenTabRequest): Promise<void>
+  closeTab(request: WorkerCloseTabRequest): Promise<void>
+  selectTab(request: WorkerSelectTabRequest): Promise<void>
+  reloadTab(request: WorkerReloadTabRequest): Promise<void>
+  captureTab(request: WorkerCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
+  getTabConsoleLogs(request: WorkerGetTabConsoleLogsRequest): Promise<WorkerTabConsoleLogEntry[]>
+  execTabJs(request: WorkerExecTabJsRequest): Promise<any>
   publish(topic: string, data: unknown): Promise<void>
   waitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>

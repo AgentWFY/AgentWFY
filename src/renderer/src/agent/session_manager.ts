@@ -2,7 +2,6 @@ import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey } from 'app/agent/agent_auth'
 import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
-import { registerSpawnHandler } from 'app/agent/spawn-agent'
 import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 
 export interface SessionEntry {
@@ -24,7 +23,6 @@ export class AgentSessionManager {
   private _activeSessionId: string | null = null
   private authConfig: AgentAuthConfig
   private listeners = new Set<() => void>()
-  private unregisterSpawn: (() => void) | null = null
 
   constructor(authConfig: AgentAuthConfig) {
     this.authConfig = authConfig
@@ -77,12 +75,15 @@ export class AgentSessionManager {
     const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
     entry.unsubscribe = agent.subscribe(() => {
       if (entry.label === 'New session') {
-        const userLabel = this.extractFirstUserMessage(agent.messages, 60)
+        const userLabel = extractFirstUserMessage(agent.messages, 60)
         if (userLabel) entry.label = userLabel
       }
-      this.checkAgentFinished(entry)
+      const wasStreaming = entry.wasStreaming
+      entry.wasStreaming = agent.isStreaming
+      if (wasStreaming && !agent.isStreaming) {
+        this.handleStreamingFinished(sessionId, entry)
+      }
       this.notify()
-      this.scheduleBackgroundDispose(sessionId, agent)
     })
 
     this.sessions.set(sessionId, entry)
@@ -154,13 +155,16 @@ export class AgentSessionManager {
     const sessionId = agent.sessionId
     ensureSessionWorker(sessionId)
 
-    const label = this.extractFirstUserMessage(agent.messages, 60) ?? 'Session'
+    const label = extractFirstUserMessage(agent.messages, 60) ?? 'Session'
 
     const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
     entry.unsubscribe = agent.subscribe(() => {
-      this.checkAgentFinished(entry)
+      const wasStreaming = entry.wasStreaming
+      entry.wasStreaming = agent.isStreaming
+      if (wasStreaming && !agent.isStreaming) {
+        this.handleStreamingFinished(sessionId, entry)
+      }
       this.notify()
-      this.scheduleBackgroundDispose(sessionId, agent)
     })
 
     this.sessions.set(sessionId, entry)
@@ -173,68 +177,19 @@ export class AgentSessionManager {
     return sessionId
   }
 
-  async listSessionHistory(): Promise<SessionHistoryItem[]> {
-    const tools = window.electronClientTools
-    if (!tools || typeof tools.listSessions !== 'function' || typeof tools.readSession !== 'function') return []
-
-    try {
-      const sessions = await tools.listSessions(200)
-      if (!Array.isArray(sessions) || sessions.length === 0) return []
-
-      const items: SessionHistoryItem[] = []
-
-      for (const session of sessions) {
-        if (!session || typeof session.name !== 'string' || !session.name.endsWith('.json')) {
-          continue
-        }
-        const file = session.name
-
-        try {
-          const raw = await tools.readSession(file)
-          const parsed = JSON.parse(raw)
-          const fallbackUpdatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0
-          const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : fallbackUpdatedAt
-          const firstUserMessage = this.extractFirstUserMessage(parsed.messages, 100) ?? ''
-
-          if (firstUserMessage) {
-            items.push({ file, updatedAt, firstUserMessage })
-          }
-        } catch {
-          // Skip unparseable files
-        }
-      }
-
-      items.sort((a, b) => b.updatedAt - a.updatedAt)
-      return items.slice(0, 50)
-    } catch {
-      return []
-    }
-  }
-
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
-  startListening(): void {
-    if (this.unregisterSpawn) return
-
-    this.unregisterSpawn = registerSpawnHandler(async (prompt: string) => {
-      const sessionId = await this.createSession({
-        label: 'Spawned agent',
-        prompt,
-        background: true,
-        persistSessions: false,
-      })
-      return { agentId: sessionId }
+  async spawnSession(prompt: string): Promise<{ agentId: string }> {
+    const sessionId = await this.createSession({
+      label: 'Spawned agent',
+      prompt,
+      background: true,
+      persistSessions: false,
     })
-  }
-
-  stopListening(): void {
-    if (this.unregisterSpawn) {
-      this.unregisterSpawn()
-      this.unregisterSpawn = null
-    }
+    return { agentId: sessionId }
   }
 
   updateAuthConfig(config: AgentAuthConfig): void {
@@ -242,8 +197,6 @@ export class AgentSessionManager {
   }
 
   async disposeAll(): Promise<void> {
-    this.stopListening()
-
     for (const [, entry] of this.sessions) {
       if (entry.agent.isStreaming) {
         await entry.agent.abort()
@@ -266,16 +219,18 @@ export class AgentSessionManager {
     }
   }
 
-  private checkAgentFinished(entry: SessionEntry): void {
-    const streaming = entry.agent.isStreaming
-    if (entry.wasStreaming && !streaming && entry.notifyOnFinish) {
+  private handleStreamingFinished(sessionId: string, entry: SessionEntry): void {
+    if (entry.notifyOnFinish) {
       try {
         new Notification('Agent finished', { body: entry.label })
       } catch {
         // Notifications may not be supported
       }
     }
-    entry.wasStreaming = streaming
+
+    if (sessionId !== this._activeSessionId) {
+      this.disposeIfIdle(sessionId)
+    }
   }
 
   private disposeIfIdle(sessionId: string): void {
@@ -285,43 +240,6 @@ export class AgentSessionManager {
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
-  }
-
-  private extractFirstUserMessage(messages: unknown, maxLen: number): string | null {
-    if (!Array.isArray(messages)) return null
-
-    for (const msg of messages) {
-      const m = msg as any
-      if (m?.role !== 'user') continue
-      const trimmed = this.getTextContent(m.content).trim()
-      if (trimmed) return trimmed.slice(0, maxLen)
-    }
-
-    return null
-  }
-
-  private getTextContent(content: unknown): string {
-    if (typeof content === 'string') return content
-    if (!Array.isArray(content)) return ''
-
-    let text = ''
-    for (const block of content) {
-      const item = block as any
-      if (item?.type === 'text' && typeof item.text === 'string') {
-        text += item.text
-      }
-    }
-    return text
-  }
-
-  private scheduleBackgroundDispose(sessionId: string, agent: AgentWFYAgent): void {
-    if (agent.isStreaming || sessionId === this._activeSessionId) return
-
-    setTimeout(() => {
-      if (!this.sessions.has(sessionId) || agent.isStreaming || sessionId === this._activeSessionId) return
-      this.disposeIfIdle(sessionId)
-      this.notify()
-    }, 0)
   }
 
   private notify(): void {
@@ -346,6 +264,70 @@ export async function initSessionManager(config: AgentAuthConfig): Promise<Agent
     await instance.disposeAll()
   }
   instance = new AgentSessionManager(config)
-  instance.startListening()
   return instance
+}
+
+function getTextContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+
+  let text = ''
+  for (const block of content) {
+    const item = block as any
+    if (item?.type === 'text' && typeof item.text === 'string') {
+      text += item.text
+    }
+  }
+  return text
+}
+
+export function extractFirstUserMessage(messages: unknown, maxLen: number): string | null {
+  if (!Array.isArray(messages)) return null
+
+  for (const msg of messages) {
+    const m = msg as any
+    if (m?.role !== 'user') continue
+    const trimmed = getTextContent(m.content).trim()
+    if (trimmed) return trimmed.slice(0, maxLen)
+  }
+
+  return null
+}
+
+export async function listSessionHistory(): Promise<SessionHistoryItem[]> {
+  const tools = window.electronClientTools
+  if (!tools || typeof tools.listSessions !== 'function' || typeof tools.readSession !== 'function') return []
+
+  try {
+    const sessions = await tools.listSessions(200)
+    if (!Array.isArray(sessions) || sessions.length === 0) return []
+
+    const items: SessionHistoryItem[] = []
+
+    for (const session of sessions) {
+      if (!session || typeof session.name !== 'string' || !session.name.endsWith('.json')) {
+        continue
+      }
+      const file = session.name
+
+      try {
+        const raw = await tools.readSession(file)
+        const parsed = JSON.parse(raw)
+        const fallbackUpdatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0
+        const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : fallbackUpdatedAt
+        const firstUserMessage = extractFirstUserMessage(parsed.messages, 100) ?? ''
+
+        if (firstUserMessage) {
+          items.push({ file, updatedAt, firstUserMessage })
+        }
+      } catch {
+        // Skip unparseable files
+      }
+    }
+
+    items.sort((a, b) => b.updatedAt - a.updatedAt)
+    return items.slice(0, 50)
+  } catch {
+    return []
+  }
 }

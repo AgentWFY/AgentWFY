@@ -1,5 +1,5 @@
 import { bus } from './event-bus'
-import { spawnAgent } from './agent/spawn-agent'
+import { getSessionManager } from './agent/session_manager'
 
 export function initBusBridge(): void {
   const tools = window.electronClientTools
@@ -23,7 +23,9 @@ export function initBusBridge(): void {
   // Forward spawnAgent from views → session manager
   tools.onAgentForwardSpawnAgent(async (detail) => {
     try {
-      const result = await spawnAgent(detail.prompt)
+      const mgr = getSessionManager()
+      if (!mgr) throw new Error('AgentSessionManager not initialized')
+      const result = await mgr.spawnSession(detail.prompt)
       tools.agentSpawnAgentResult(detail.waiterId, result)
     } catch (err) {
       tools.agentSpawnAgentResult(detail.waiterId, { error: String(err) })

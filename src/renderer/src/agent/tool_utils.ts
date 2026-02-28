@@ -1,5 +1,3 @@
-import type { AgentToolResult } from '@mariozechner/pi-agent-core'
-
 export function requireElectronTools() {
   if (!window.electronAgentTools) {
     throw new Error('window.electronAgentTools is not available in this renderer context')
@@ -23,12 +21,5 @@ export function stringifyUnknown(value: unknown): string {
     return JSON.stringify(value, null, 2)
   } catch {
     return String(value)
-  }
-}
-
-export function textResult<TDetails>(text: string, details: TDetails): AgentToolResult<TDetails> {
-  return {
-    content: [{ type: 'text', text }],
-    details
   }
 }

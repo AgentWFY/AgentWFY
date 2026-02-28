@@ -99,25 +99,6 @@ export class EventBus {
     }
   }
 
-  drain(topicPrefix: string): void {
-    // Remove queued messages for topics matching prefix
-    for (const topic of this.queues.keys()) {
-      if (topic.startsWith(topicPrefix)) {
-        this.queues.delete(topic)
-      }
-    }
-
-    // Reject waiters for topics matching prefix
-    for (const [topic, topicWaiters] of this.waiters.entries()) {
-      if (topic.startsWith(topicPrefix)) {
-        for (const waiter of topicWaiters) {
-          if (waiter.timer) clearTimeout(waiter.timer)
-          waiter.reject(new Error(`Topic "${topic}" drained`))
-        }
-        this.waiters.delete(topic)
-      }
-    }
-  }
 }
 
 export const bus = new EventBus()

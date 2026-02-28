@@ -134,7 +134,7 @@ export interface WorkerExecTabJsRequest {
 }
 
 export interface WorkerTabConsoleLogEntry {
-  level: string
+  level: 'verbose' | 'info' | 'warning' | 'error'
   message: string
   timestamp: number
 }

@@ -9,7 +9,7 @@ import type {
   WorkerTabConsoleLogEntry,
 } from './types'
 import { bus } from '../../event-bus'
-import { spawnAgent } from '../spawn-agent'
+import { getSessionManager } from '../session_manager'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
 
@@ -542,7 +542,9 @@ export class SessionWorkerManager {
         if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
           throw new Error('spawnAgent requires a non-empty prompt string')
         }
-        const result = await spawnAgent(request.prompt)
+        const mgr = getSessionManager()
+        if (!mgr) throw new Error('AgentSessionManager not initialized')
+        const result = await mgr.spawnSession(request.prompt)
         return result as WorkerHostMethodMap[M]['result']
       }
       default:
@@ -585,6 +587,3 @@ export function terminateSessionWorker(sessionId: string): void {
   sharedSessionWorkerManager.terminateSessionWorker(sessionId)
 }
 
-export function disposeAllSessionWorkers(): void {
-  sharedSessionWorkerManager.disposeAll()
-}
