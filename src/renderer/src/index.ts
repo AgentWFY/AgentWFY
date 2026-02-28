@@ -26,14 +26,14 @@ async function init() {
   defineElement('tl-select', TlSelect)
   defineElement('tl-app', TlApp)
 
-  document.body.appendChild(document.createElement('tl-app'))
-
   const authConfig = await loadAuthConfig()
   if (hasValidAuth(authConfig)) {
     await initSessionManager(authConfig)
   }
 
   initBusBridge()
+
+  document.body.appendChild(document.createElement('tl-app'))
 }
 
 export default init()
