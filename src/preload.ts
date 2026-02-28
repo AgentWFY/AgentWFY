@@ -99,21 +99,21 @@ interface AgentDbChangedEventDetail {
   changes: AgentDbChangeDetail[];
 }
 
-const RUN_SQL_CHANNEL = 'electronAgentTools:runSql';
-const LIST_SESSIONS_CHANNEL = 'electronAgentTools:listSessions';
-const READ_SESSION_CHANNEL = 'electronAgentTools:readSession';
-const WRITE_SESSION_CHANNEL = 'electronAgentTools:writeSession';
-const READ_AUTH_CONFIG_CHANNEL = 'electronAgentTools:readAuthConfig';
-const WRITE_AUTH_CONFIG_CHANNEL = 'electronAgentTools:writeAuthConfig';
-const READ_LEGACY_API_KEY_CHANNEL = 'electronAgentTools:readLegacyApiKey';
-const GET_TABS_CHANNEL = 'electronAgentTools:getTabs';
-const OPEN_TAB_CHANNEL = 'electronAgentTools:openTab';
-const CLOSE_TAB_CHANNEL = 'electronAgentTools:closeTab';
-const SELECT_TAB_CHANNEL = 'electronAgentTools:selectTab';
-const RELOAD_TAB_CHANNEL = 'electronAgentTools:reloadTab';
-const CAPTURE_TAB_CHANNEL = 'electronAgentTools:captureTab';
-const GET_TAB_CONSOLE_LOGS_CHANNEL = 'electronAgentTools:getTabConsoleLogs';
-const EXEC_TAB_JS_CHANNEL = 'electronAgentTools:execTabJs';
+const RUN_SQL_CHANNEL = 'agentwfy:runSql';
+const LIST_SESSIONS_CHANNEL = 'agentwfy:listSessions';
+const READ_SESSION_CHANNEL = 'agentwfy:readSession';
+const WRITE_SESSION_CHANNEL = 'agentwfy:writeSession';
+const READ_AUTH_CONFIG_CHANNEL = 'agentwfy:readAuthConfig';
+const WRITE_AUTH_CONFIG_CHANNEL = 'agentwfy:writeAuthConfig';
+const READ_LEGACY_API_KEY_CHANNEL = 'agentwfy:readLegacyApiKey';
+const GET_TABS_CHANNEL = 'agentwfy:getTabs';
+const OPEN_TAB_CHANNEL = 'agentwfy:openTab';
+const CLOSE_TAB_CHANNEL = 'agentwfy:closeTab';
+const SELECT_TAB_CHANNEL = 'agentwfy:selectTab';
+const RELOAD_TAB_CHANNEL = 'agentwfy:reloadTab';
+const CAPTURE_TAB_CHANNEL = 'agentwfy:captureTab';
+const GET_TAB_CONSOLE_LOGS_CHANNEL = 'agentwfy:getTabConsoleLogs';
+const EXEC_TAB_JS_CHANNEL = 'agentwfy:execTabJs';
 const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
 const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
 const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
@@ -155,30 +155,30 @@ function invokeRunSql(request: RunSqlRequest): Promise<any> {
 const isAgentView = window.location.protocol === 'agentview:';
 
 if (!isAgentView) {
-  contextBridge.exposeInMainWorld('electronAgentTools', {
+  contextBridge.exposeInMainWorld('agentwfy', {
     read(path: string, offset?: number, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:read', path, offset, limit);
+      return ipcRenderer.invoke('agentwfy:read', path, offset, limit);
     },
     write(path: string, content: string): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:write', path, content);
+      return ipcRenderer.invoke('agentwfy:write', path, content);
     },
     edit(path: string, oldText: string, newText: string): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:edit', path, oldText, newText);
+      return ipcRenderer.invoke('agentwfy:edit', path, oldText, newText);
     },
     ls(path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:ls', path, limit);
+      return ipcRenderer.invoke('agentwfy:ls', path, limit);
     },
     mkdir(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke('electronAgentTools:mkdir', path, recursive);
+      return ipcRenderer.invoke('agentwfy:mkdir', path, recursive);
     },
     remove(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke('electronAgentTools:remove', path, recursive);
+      return ipcRenderer.invoke('agentwfy:remove', path, recursive);
     },
     find(pattern: string, path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:find', pattern, path, limit);
+      return ipcRenderer.invoke('agentwfy:find', pattern, path, limit);
     },
     grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
+      return ipcRenderer.invoke('agentwfy:grep', pattern, path, options);
     },
     runSql(request: {
       target?: 'agent' | 'sqlite-file';
@@ -221,7 +221,7 @@ if (!isAgentView) {
       return ipcRenderer.invoke('bus:waitFor', topic, timeoutMs);
     },
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
-      return ipcRenderer.invoke('electronAgentTools:spawnAgent', prompt);
+      return ipcRenderer.invoke('agentwfy:spawnAgent', prompt);
     },
   });
 }
@@ -316,28 +316,28 @@ if (!isAgentView) {
 if (isAgentView) {
   contextBridge.exposeInMainWorld('agentwfy', {
     read(path: string, offset?: number, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:read', path, offset, limit);
+      return ipcRenderer.invoke('agentwfy:read', path, offset, limit);
     },
     write(path: string, content: string): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:write', path, content);
+      return ipcRenderer.invoke('agentwfy:write', path, content);
     },
     edit(path: string, oldText: string, newText: string): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:edit', path, oldText, newText);
+      return ipcRenderer.invoke('agentwfy:edit', path, oldText, newText);
     },
     ls(path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:ls', path, limit);
+      return ipcRenderer.invoke('agentwfy:ls', path, limit);
     },
     mkdir(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke('electronAgentTools:mkdir', path, recursive);
+      return ipcRenderer.invoke('agentwfy:mkdir', path, recursive);
     },
     remove(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke('electronAgentTools:remove', path, recursive);
+      return ipcRenderer.invoke('agentwfy:remove', path, recursive);
     },
     find(pattern: string, path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:find', pattern, path, limit);
+      return ipcRenderer.invoke('agentwfy:find', pattern, path, limit);
     },
     grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
-      return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
+      return ipcRenderer.invoke('agentwfy:grep', pattern, path, options);
     },
     runSql(request: {
       target?: 'agent' | 'sqlite-file';
@@ -380,7 +380,7 @@ if (isAgentView) {
       return ipcRenderer.invoke('bus:waitFor', topic, timeoutMs);
     },
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
-      return ipcRenderer.invoke('electronAgentTools:spawnAgent', prompt);
+      return ipcRenderer.invoke('agentwfy:spawnAgent', prompt);
     },
   });
 }

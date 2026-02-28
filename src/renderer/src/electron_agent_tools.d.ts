@@ -140,7 +140,7 @@ export interface AgentWFYViewApi {
 
 declare global {
   interface Window {
-    electronAgentTools?: ElectronAgentTools
+    agentwfy?: ElectronAgentTools
     electronClientTools?: ElectronClientTools
     agentwfy?: AgentWFYViewApi
   }

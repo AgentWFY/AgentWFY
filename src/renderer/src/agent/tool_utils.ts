@@ -1,9 +1,9 @@
 export function requireElectronTools() {
-  if (!window.electronAgentTools) {
-    throw new Error('window.electronAgentTools is not available in this renderer context')
+  if (!window.agentwfy) {
+    throw new Error('window.agentwfy is not available in this renderer context')
   }
 
-  return window.electronAgentTools
+  return window.agentwfy
 }
 
 export function requireClientTools() {

@@ -42,7 +42,7 @@ export function registerBusHandlers(mainWindow: BrowserWindow): void {
   // spawnAgent(prompt) → { agentId } — forwarded to renderer for agent creation
   const pendingSpawnRequests = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>()
 
-  ipcMain.handle('electronAgentTools:spawnAgent', async (_event, prompt: string) => {
+  ipcMain.handle('agentwfy:spawnAgent', async (_event, prompt: string) => {
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('spawnAgent requires a non-empty prompt string')
     }

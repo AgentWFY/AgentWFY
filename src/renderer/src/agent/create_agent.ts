@@ -278,7 +278,7 @@ async function loadSystemPrompt(): Promise<string> {
   try {
     const tools = requireElectronTools()
     if (typeof tools.runSql !== 'function') {
-      throw new Error('window.electronAgentTools.runSql is not available in this renderer context')
+      throw new Error('window.agentwfy.runSql is not available in this renderer context')
     }
 
     const rows = await tools.runSql({

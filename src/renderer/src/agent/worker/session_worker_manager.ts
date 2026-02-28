@@ -60,11 +60,11 @@ function normalizeSessionId(sessionId: string): string {
 }
 
 function getElectronTools() {
-  if (!window.electronAgentTools) {
-    throw new Error('window.electronAgentTools is not available in this renderer context')
+  if (!window.agentwfy) {
+    throw new Error('window.agentwfy is not available in this renderer context')
   }
 
-  return window.electronAgentTools
+  return window.agentwfy
 }
 
 export class SessionWorkerManager {
@@ -275,7 +275,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.read !== 'function') {
-          throw new Error('window.electronAgentTools.read is not available')
+          throw new Error('window.agentwfy.read is not available')
         }
 
         const result = await tools.read(request.path, request.offset, request.limit)
@@ -292,7 +292,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.write !== 'function') {
-          throw new Error('window.electronAgentTools.write is not available')
+          throw new Error('window.agentwfy.write is not available')
         }
 
         const result = await tools.write(request.path, request.content)
@@ -311,7 +311,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.edit !== 'function') {
-          throw new Error('window.electronAgentTools.edit is not available')
+          throw new Error('window.agentwfy.edit is not available')
         }
 
         const result = await tools.edit(request.path, request.oldText, request.newText)
@@ -328,7 +328,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.ls !== 'function') {
-          throw new Error('window.electronAgentTools.ls is not available')
+          throw new Error('window.agentwfy.ls is not available')
         }
 
         const result = await tools.ls(request.path, request.limit)
@@ -345,7 +345,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.mkdir !== 'function') {
-          throw new Error('window.electronAgentTools.mkdir is not available')
+          throw new Error('window.agentwfy.mkdir is not available')
         }
 
         await tools.mkdir(request.path, request.recursive)
@@ -362,7 +362,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.remove !== 'function') {
-          throw new Error('window.electronAgentTools.remove is not available')
+          throw new Error('window.agentwfy.remove is not available')
         }
 
         await tools.remove(request.path, request.recursive)
@@ -383,7 +383,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.find !== 'function') {
-          throw new Error('window.electronAgentTools.find is not available')
+          throw new Error('window.agentwfy.find is not available')
         }
 
         const result = await tools.find(request.pattern, request.path, request.limit)
@@ -404,7 +404,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.grep !== 'function') {
-          throw new Error('window.electronAgentTools.grep is not available')
+          throw new Error('window.agentwfy.grep is not available')
         }
 
         const result = await tools.grep(request.pattern, request.path, request.options)
@@ -412,7 +412,7 @@ export class SessionWorkerManager {
       }
       case 'getTabs': {
         if (typeof tools.getTabs !== 'function') {
-          throw new Error('window.electronAgentTools.getTabs is not available')
+          throw new Error('window.agentwfy.getTabs is not available')
         }
 
         return tools.getTabs() as Promise<WorkerHostMethodMap[M]['result']>
@@ -424,7 +424,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.openTab !== 'function') {
-          throw new Error('window.electronAgentTools.openTab is not available')
+          throw new Error('window.agentwfy.openTab is not available')
         }
 
         await tools.openTab({ viewId: request.viewId, title: request.title })
@@ -437,7 +437,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.closeTab !== 'function') {
-          throw new Error('window.electronAgentTools.closeTab is not available')
+          throw new Error('window.agentwfy.closeTab is not available')
         }
 
         await tools.closeTab({ tabId: request.tabId })
@@ -450,7 +450,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.selectTab !== 'function') {
-          throw new Error('window.electronAgentTools.selectTab is not available')
+          throw new Error('window.agentwfy.selectTab is not available')
         }
 
         await tools.selectTab({ tabId: request.tabId })
@@ -463,7 +463,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.reloadTab !== 'function') {
-          throw new Error('window.electronAgentTools.reloadTab is not available')
+          throw new Error('window.agentwfy.reloadTab is not available')
         }
 
         await tools.reloadTab({ tabId: request.tabId })
@@ -476,7 +476,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.captureTab !== 'function') {
-          throw new Error('window.electronAgentTools.captureTab is not available')
+          throw new Error('window.agentwfy.captureTab is not available')
         }
 
         return tools.captureTab({ tabId: request.tabId }) as Promise<WorkerHostMethodMap[M]['result']>
@@ -488,7 +488,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.getTabConsoleLogs !== 'function') {
-          throw new Error('window.electronAgentTools.getTabConsoleLogs is not available')
+          throw new Error('window.agentwfy.getTabConsoleLogs is not available')
         }
 
         const logs = await tools.getTabConsoleLogs({
@@ -508,7 +508,7 @@ export class SessionWorkerManager {
         }
 
         if (typeof tools.execTabJs !== 'function') {
-          throw new Error('window.electronAgentTools.execTabJs is not available')
+          throw new Error('window.agentwfy.execTabJs is not available')
         }
 
         const result = await tools.execTabJs({
