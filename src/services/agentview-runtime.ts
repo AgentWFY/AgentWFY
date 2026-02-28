@@ -1,8 +1,4 @@
-function toScriptLiteral(value: string): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
-}
-
-function buildSharedBootstrapScript(viewId: string): string {
+function buildSharedBootstrapScript(): string {
   return `
 <style id="agentview-design-tokens">
   :root {
@@ -108,14 +104,13 @@ function buildSharedBootstrapScript(viewId: string): string {
 </style>
 <script>
   (() => {
-    const currentViewId = ${toScriptLiteral(viewId)};
     const root = document.documentElement;
     root.dataset.agentviewReady = '0';
 
     let presented = false;
     let revealFallbackTimer = 0;
 
-    const presentView = (reason) => {
+    const presentView = () => {
       if (presented) {
         return;
       }
@@ -126,21 +121,11 @@ function buildSharedBootstrapScript(viewId: string): string {
         revealFallbackTimer = 0;
       }
       root.dataset.agentviewReady = '1';
-      window.dispatchEvent(new CustomEvent('agentwfy:view-presented', {
-        detail: {
-          viewId: currentViewId,
-          reason,
-        }
-      }));
     };
 
-    revealFallbackTimer = window.setTimeout(() => {
-      presentView('timeout');
-    }, 5000);
+    revealFallbackTimer = window.setTimeout(presentView, 5000);
 
-    window.requestAnimationFrame(() => {
-      presentView('ready');
-    });
+    window.requestAnimationFrame(presentView);
   })();
 </script>
 `;
@@ -171,7 +156,7 @@ export function parseAgentViewId(url: URL): string {
   return normalized;
 }
 
-export function buildViewDocument(viewId: string, content: string): string {
-  const bootstrap = buildSharedBootstrapScript(viewId);
+export function buildViewDocument(content: string): string {
+  const bootstrap = buildSharedBootstrapScript();
   return injectBootstrapIntoHtml(content, bootstrap);
 }

@@ -1419,7 +1419,7 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
     return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewId)}</pre>`);
   }
 
-  const html = buildViewDocument(String(record.id), record.content);
+  const html = buildViewDocument(record.content);
   return toHtmlResponse(200, html);
 }
 
