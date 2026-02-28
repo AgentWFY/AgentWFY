@@ -273,11 +273,11 @@ const VIEW_LOG_BUFFER_MAX = 1000;
 const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 
-const WEB_CONTENTS_LOG_LEVEL_MAP: Record<number, string> = {
-  0: 'verbose',
-  1: 'info',
-  2: 'warning',
-  3: 'error',
+const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
+  debug: 'verbose',
+  info: 'info',
+  warning: 'warning',
+  error: 'error',
 };
 
 const GET_TABS_QUERY = `(() => {
