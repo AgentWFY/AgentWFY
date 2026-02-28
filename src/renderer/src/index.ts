@@ -6,6 +6,9 @@ import { TlAgentSettings } from 'app/components/agent_settings'
 import { TlJson } from 'app/components/json_view'
 import { TlActivityBar } from 'app/components/activity_bar'
 import { TlSelect } from 'app/components/select'
+import { initBusBridge } from 'app/bus-bridge'
+import { initSessionManager } from 'app/agent/session_manager'
+import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -24,6 +27,13 @@ async function init() {
   defineElement('tl-app', TlApp)
 
   document.body.appendChild(document.createElement('tl-app'))
+
+  const authConfig = await loadAuthConfig()
+  if (hasValidAuth(authConfig)) {
+    await initSessionManager(authConfig)
+  }
+
+  initBusBridge()
 }
 
 export default init()

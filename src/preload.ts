@@ -152,68 +152,81 @@ function invokeRunSql(request: RunSqlRequest): Promise<any> {
   return ipcRenderer.invoke(RUN_SQL_CHANNEL, normalized);
 }
 
-contextBridge.exposeInMainWorld('electronAgentTools', {
-  read(path: string, offset?: number, limit?: number): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:read', path, offset, limit);
-  },
-  write(path: string, content: string): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:write', path, content);
-  },
-  edit(path: string, oldText: string, newText: string): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:edit', path, oldText, newText);
-  },
-  ls(path?: string, limit?: number): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:ls', path, limit);
-  },
-  mkdir(path: string, recursive?: boolean): Promise<void> {
-    return ipcRenderer.invoke('electronAgentTools:mkdir', path, recursive);
-  },
-  remove(path: string, recursive?: boolean): Promise<void> {
-    return ipcRenderer.invoke('electronAgentTools:remove', path, recursive);
-  },
-  find(pattern: string, path?: string, limit?: number): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:find', pattern, path, limit);
-  },
-  grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
-    return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
-  },
-  runSql(request: {
-    target?: 'agent' | 'sqlite-file';
-    path?: string;
-    sql: string;
-    params?: any[];
-    description?: string;
-    confirmed?: boolean;
-  }): Promise<any> {
-    return invokeRunSql(request);
-  },
-  getTabs(): Promise<any> {
-    return ipcRenderer.invoke(GET_TABS_CHANNEL);
-  },
-  openTab(request: OpenTabRequest): Promise<void> {
-    return ipcRenderer.invoke(OPEN_TAB_CHANNEL, request);
-  },
-  closeTab(request: CloseTabRequest): Promise<void> {
-    return ipcRenderer.invoke(CLOSE_TAB_CHANNEL, request);
-  },
-  selectTab(request: SelectTabRequest): Promise<void> {
-    return ipcRenderer.invoke(SELECT_TAB_CHANNEL, request);
-  },
-  reloadTab(request: ReloadTabRequest): Promise<void> {
-    return ipcRenderer.invoke(RELOAD_TAB_CHANNEL, request);
-  },
-  captureTab(request: CaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
-    return ipcRenderer.invoke(CAPTURE_TAB_CHANNEL, request);
-  },
-  getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-    return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
-  },
-  execTabJs(request: ExecTabJsRequest): Promise<any> {
-    return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
-  },
-});
+const isAgentView = window.location.protocol === 'agentview:';
 
-if (window.location.protocol !== 'agentview:') {
+if (!isAgentView) {
+  contextBridge.exposeInMainWorld('electronAgentTools', {
+    read(path: string, offset?: number, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:read', path, offset, limit);
+    },
+    write(path: string, content: string): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:write', path, content);
+    },
+    edit(path: string, oldText: string, newText: string): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:edit', path, oldText, newText);
+    },
+    ls(path?: string, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:ls', path, limit);
+    },
+    mkdir(path: string, recursive?: boolean): Promise<void> {
+      return ipcRenderer.invoke('electronAgentTools:mkdir', path, recursive);
+    },
+    remove(path: string, recursive?: boolean): Promise<void> {
+      return ipcRenderer.invoke('electronAgentTools:remove', path, recursive);
+    },
+    find(pattern: string, path?: string, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:find', pattern, path, limit);
+    },
+    grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
+    },
+    runSql(request: {
+      target?: 'agent' | 'sqlite-file';
+      path?: string;
+      sql: string;
+      params?: any[];
+      description?: string;
+      confirmed?: boolean;
+    }): Promise<any> {
+      return invokeRunSql(request);
+    },
+    getTabs(): Promise<any> {
+      return ipcRenderer.invoke(GET_TABS_CHANNEL);
+    },
+    openTab(request: OpenTabRequest): Promise<void> {
+      return ipcRenderer.invoke(OPEN_TAB_CHANNEL, request);
+    },
+    closeTab(request: CloseTabRequest): Promise<void> {
+      return ipcRenderer.invoke(CLOSE_TAB_CHANNEL, request);
+    },
+    selectTab(request: SelectTabRequest): Promise<void> {
+      return ipcRenderer.invoke(SELECT_TAB_CHANNEL, request);
+    },
+    reloadTab(request: ReloadTabRequest): Promise<void> {
+      return ipcRenderer.invoke(RELOAD_TAB_CHANNEL, request);
+    },
+    captureTab(request: CaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
+      return ipcRenderer.invoke(CAPTURE_TAB_CHANNEL, request);
+    },
+    getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
+      return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
+    },
+    execTabJs(request: ExecTabJsRequest): Promise<any> {
+      return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
+    },
+    busPublish(topic: string, data: unknown): Promise<void> {
+      return ipcRenderer.invoke('bus:publish', topic, data);
+    },
+    busWaitFor(topic: string, timeoutMs?: number): Promise<unknown> {
+      return ipcRenderer.invoke('bus:waitFor', topic, timeoutMs);
+    },
+    spawnAgent(prompt: string): Promise<{ agentId: string }> {
+      return ipcRenderer.invoke('electronAgentTools:spawnAgent', prompt);
+    },
+  });
+}
+
+if (!isAgentView) {
   contextBridge.exposeInMainWorld('electronClientTools', {
     openDialog(options: any): Promise<string[]> {
       return ipcRenderer.invoke(DIALOG_OPEN_CHANNEL, options);
@@ -275,6 +288,99 @@ if (window.location.protocol !== 'agentview:') {
       const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
       ipcRenderer.on(AGENT_DB_CHANGED_CHANNEL, handler);
       return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
+    },
+    onBusForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void {
+      const handler = (_event: unknown, detail: { topic: string; data: unknown }) => callback(detail);
+      ipcRenderer.on('bus:forward-publish', handler);
+      return () => ipcRenderer.removeListener('bus:forward-publish', handler);
+    },
+    onBusForwardWaitFor(callback: (detail: { waiterId: string; topic: string; timeoutMs?: number }) => void): () => void {
+      const handler = (_event: unknown, detail: { waiterId: string; topic: string; timeoutMs?: number }) => callback(detail);
+      ipcRenderer.on('bus:forward-waitFor', handler);
+      return () => ipcRenderer.removeListener('bus:forward-waitFor', handler);
+    },
+    busWaitForResolved(waiterId: string, data: unknown): void {
+      ipcRenderer.send('bus:waitFor-resolved', { waiterId, data });
+    },
+    onAgentForwardSpawnAgent(callback: (detail: { waiterId: string; prompt: string }) => void): () => void {
+      const handler = (_event: unknown, detail: { waiterId: string; prompt: string }) => callback(detail);
+      ipcRenderer.on('agent:forward-spawnAgent', handler);
+      return () => ipcRenderer.removeListener('agent:forward-spawnAgent', handler);
+    },
+    agentSpawnAgentResult(waiterId: string, result: unknown): void {
+      ipcRenderer.send('agent:spawnAgent-result', { waiterId, result });
+    },
+  });
+}
+
+if (isAgentView) {
+  contextBridge.exposeInMainWorld('agentwfy', {
+    read(path: string, offset?: number, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:read', path, offset, limit);
+    },
+    write(path: string, content: string): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:write', path, content);
+    },
+    edit(path: string, oldText: string, newText: string): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:edit', path, oldText, newText);
+    },
+    ls(path?: string, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:ls', path, limit);
+    },
+    mkdir(path: string, recursive?: boolean): Promise<void> {
+      return ipcRenderer.invoke('electronAgentTools:mkdir', path, recursive);
+    },
+    remove(path: string, recursive?: boolean): Promise<void> {
+      return ipcRenderer.invoke('electronAgentTools:remove', path, recursive);
+    },
+    find(pattern: string, path?: string, limit?: number): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:find', pattern, path, limit);
+    },
+    grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
+      return ipcRenderer.invoke('electronAgentTools:grep', pattern, path, options);
+    },
+    runSql(request: {
+      target?: 'agent' | 'sqlite-file';
+      path?: string;
+      sql: string;
+      params?: any[];
+      description?: string;
+      confirmed?: boolean;
+    }): Promise<any> {
+      return invokeRunSql(request);
+    },
+    getTabs(): Promise<any> {
+      return ipcRenderer.invoke(GET_TABS_CHANNEL);
+    },
+    openTab(request: OpenTabRequest): Promise<void> {
+      return ipcRenderer.invoke(OPEN_TAB_CHANNEL, request);
+    },
+    closeTab(request: CloseTabRequest): Promise<void> {
+      return ipcRenderer.invoke(CLOSE_TAB_CHANNEL, request);
+    },
+    selectTab(request: SelectTabRequest): Promise<void> {
+      return ipcRenderer.invoke(SELECT_TAB_CHANNEL, request);
+    },
+    reloadTab(request: ReloadTabRequest): Promise<void> {
+      return ipcRenderer.invoke(RELOAD_TAB_CHANNEL, request);
+    },
+    captureTab(request: CaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }> {
+      return ipcRenderer.invoke(CAPTURE_TAB_CHANNEL, request);
+    },
+    getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
+      return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
+    },
+    execTabJs(request: ExecTabJsRequest): Promise<any> {
+      return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
+    },
+    publish(topic: string, data: unknown): Promise<void> {
+      return ipcRenderer.invoke('bus:publish', topic, data);
+    },
+    waitFor(topic: string, timeoutMs?: number): Promise<unknown> {
+      return ipcRenderer.invoke('bus:waitFor', topic, timeoutMs);
+    },
+    spawnAgent(prompt: string): Promise<{ agentId: string }> {
+      return ipcRenderer.invoke('electronAgentTools:spawnAgent', prompt);
     },
   });
 }

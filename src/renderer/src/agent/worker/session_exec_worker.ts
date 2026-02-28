@@ -259,6 +259,12 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'getTabConsoleLogs', params, abortController.signal)
     const execTabJs = (params: WorkerHostMethodMap['execTabJs']['params']) =>
       callHostMethod('' + requestId, 'execTabJs', params, abortController.signal)
+    const publish = (topic: string, data: unknown) =>
+      callHostMethod('' + requestId, 'busPublish', { topic, data }, abortController.signal)
+    const waitFor = (topic: string, timeoutMs?: number) =>
+      callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, abortController.signal)
+    const spawnAgent = (params: { prompt: string }) =>
+      callHostMethod('' + requestId, 'spawnAgent', params, abortController.signal)
 
     const fn = new AsyncFunction(
       'window',
@@ -282,6 +288,9 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'captureTab',
       'getTabConsoleLogs',
       'execTabJs',
+      'publish',
+      'waitFor',
+      'spawnAgent',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
@@ -307,7 +316,10 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         reloadTab,
         captureTab,
         getTabConsoleLogs,
-        execTabJs
+        execTabJs,
+        publish,
+        waitFor,
+        spawnAgent
       ),
       timeoutMs,
       abortController.signal

@@ -23,7 +23,7 @@ declare global {
   }
 
   interface Window {
-    electronAgentTools: {
+    electronAgentTools?: {
       // Paths are resolved relative to the selected DATA_DIR.
       // Access to DATA_DIR/.agentwfy/** is denied for file-tool operations.
       read(path: string, offset?: number, limit?: number): Promise<string>;
@@ -61,6 +61,28 @@ declare global {
       destroyExternalView(request: { tabId: string }): Promise<void>;
       onExternalViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
+    };
+    agentwfy?: {
+      read(path: string, offset?: number, limit?: number): Promise<string>;
+      write(path: string, content: string): Promise<string>;
+      edit(path: string, oldText: string, newText: string): Promise<string>;
+      ls(path?: string, limit?: number): Promise<string>;
+      mkdir(path: string, recursive?: boolean): Promise<void>;
+      remove(path: string, recursive?: boolean): Promise<void>;
+      find(pattern: string, path?: string, limit?: number): Promise<string>;
+      grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
+      runSql(request: ElectronRunSqlRequest): Promise<any>;
+      getTabs(): Promise<{ tabs: Array<{ id: string; title: string; viewId: string | number | null; viewUpdatedAt: number | null; viewChanged: boolean; pinned: boolean; selected: boolean }> }>;
+      openTab(request: { viewId: string | number; title?: string }): Promise<void>;
+      closeTab(request: { tabId: string }): Promise<void>;
+      selectTab(request: { tabId: string }): Promise<void>;
+      reloadTab(request: { tabId: string }): Promise<void>;
+      captureTab(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }>;
+      getTabConsoleLogs(request: { tabId: string; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
+      execTabJs(request: { tabId: string; code: string; timeoutMs?: number }): Promise<any>;
+      publish(topic: string, data: unknown): Promise<void>;
+      waitFor(topic: string, timeoutMs?: number): Promise<unknown>;
+      spawnAgent(prompt: string): Promise<{ agentId: string }>;
     };
   }
 }

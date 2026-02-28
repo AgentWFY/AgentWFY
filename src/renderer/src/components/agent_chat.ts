@@ -2,8 +2,8 @@ import { marked } from 'marked'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
-import { AgentSessionManager } from 'app/agent/session_manager'
-import type { SessionHistoryItem } from 'app/agent/session_manager'
+import { getSessionManager, initSessionManager } from 'app/agent/session_manager'
+import type { AgentSessionManager, SessionHistoryItem } from 'app/agent/session_manager'
 import {
   COMPACTION_SUMMARY_CUSTOM_TYPE,
   type AgentWFYAgent
@@ -352,14 +352,30 @@ export class TlAgentChat extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.disposeManager()
+    this.managerUnsub?.()
+    this.managerUnsub = null
+    this.manager = null
+    this.agent = null
+    this.messages = []
+    this.isStreaming = false
+    this.backgroundStreamingCount = 0
+    this.sessionListItems = []
   }
 
   private async init() {
     try {
       this.authConfig = await loadAuthConfig()
       if (hasValidAuth(this.authConfig)) {
-        await this.initManager(this.authConfig)
+        let mgr = getSessionManager()
+        if (!mgr) {
+          mgr = await initSessionManager(this.authConfig)
+        }
+        this.manager = mgr
+        this.managerUnsub = mgr.subscribe(() => this.refreshState())
+        if (!mgr.activeSession) {
+          await mgr.createSession()
+        }
+        this.refreshState()
       } else {
         this.showSettings = true
       }
@@ -394,43 +410,6 @@ export class TlAgentChat extends HTMLElement {
     this.render()
   }
 
-  private async initManager(config: AgentAuthConfig) {
-    this.disposeManager()
-
-    this.manager = new AgentSessionManager(config)
-    this.manager.startListening()
-
-    this.managerUnsub = this.manager.subscribe(() => {
-      this.refreshState()
-    })
-
-    try {
-      await this.manager.createSession()
-    } catch (e) {
-      this.disposeManager()
-      throw e
-    }
-    this.refreshState()
-  }
-
-  private disposeManager() {
-    if (this.managerUnsub) {
-      this.managerUnsub()
-      this.managerUnsub = null
-    }
-    if (this.manager) {
-      this.manager.disposeAll().catch((err) => {
-        console.error('[agent_chat] dispose manager failed', err)
-      })
-      this.manager = null
-    }
-    this.agent = null
-    this.messages = []
-    this.isStreaming = false
-    this.backgroundStreamingCount = 0
-    this.sessionListItems = []
-  }
-
   private handleConfigChange(e: Event) {
     const detail = (e as CustomEvent<AgentAuthConfig>).detail
     this.authConfig = detail
@@ -442,7 +421,14 @@ export class TlAgentChat extends HTMLElement {
   private async handleReconnect() {
     this.error = null
     if (!this.authConfig || !hasValidAuth(this.authConfig)) {
-      this.disposeManager()
+      this.managerUnsub?.()
+      this.managerUnsub = null
+      this.manager = null
+      this.agent = null
+      this.messages = []
+      this.isStreaming = false
+      this.backgroundStreamingCount = 0
+      this.sessionListItems = []
       this.showSettings = true
       this.isInitializing = false
       this.render()
@@ -453,7 +439,12 @@ export class TlAgentChat extends HTMLElement {
     this.isInitializing = true
     this.render()
     try {
-      await this.initManager(this.authConfig)
+      this.managerUnsub?.()
+      const mgr = await initSessionManager(this.authConfig)
+      this.manager = mgr
+      this.managerUnsub = mgr.subscribe(() => this.refreshState())
+      await mgr.createSession()
+      this.refreshState()
       this.showSettings = keepInlineSettingsOpen
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)

@@ -4,6 +4,7 @@ import ElectronStore from 'electron-store';
 import { registerElectronStoreSubscribers } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
+import { registerBusHandlers } from './ipc/bus';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
 import { buildViewDocument, parseAgentViewId } from './services/agentview-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
@@ -1516,6 +1517,8 @@ async function createAppWindow(dataDir: string) {
   mainWindow.on('resize', () => {
     syncCommandPaletteBounds();
   });
+
+  registerBusHandlers(mainWindow);
 
   mainWindow.maximize();
 

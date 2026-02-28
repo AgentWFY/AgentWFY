@@ -2,6 +2,7 @@ import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey } from 'app/agent/agent_auth'
 import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
+import { registerSpawnHandler } from 'app/agent/spawn-agent'
 import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 
 export interface SessionEntry {
@@ -23,7 +24,7 @@ export class AgentSessionManager {
   private _activeSessionId: string | null = null
   private authConfig: AgentAuthConfig
   private listeners = new Set<() => void>()
-  private domHandler: ((e: Event) => void) | null = null
+  private unregisterSpawn: (() => void) | null = null
 
   constructor(authConfig: AgentAuthConfig) {
     this.authConfig = authConfig
@@ -52,7 +53,7 @@ export class AgentSessionManager {
     return result
   }
 
-  async createSession(opts?: { label?: string; prompt?: string; background?: boolean }): Promise<string> {
+  async createSession(opts?: { label?: string; prompt?: string; background?: boolean; persistSessions?: boolean }): Promise<string> {
     const prevId = this._activeSessionId
 
     const config = this.authConfig
@@ -66,6 +67,7 @@ export class AgentSessionManager {
         ? { apiKey }
         : { getApiKey: () => getEffectiveApiKey(config) }
       ),
+      ...(opts?.persistSessions === false ? { persistSessions: false } : {}),
     })
 
     const sessionId = agent.sessionId
@@ -215,26 +217,23 @@ export class AgentSessionManager {
   }
 
   startListening(): void {
-    if (this.domHandler) return
+    if (this.unregisterSpawn) return
 
-    this.domHandler = (e: Event) => {
-      const detail = (e as CustomEvent).detail || {}
-      this.createSession({
-        label: detail.label,
-        prompt: detail.prompt,
+    this.unregisterSpawn = registerSpawnHandler(async (prompt: string) => {
+      const sessionId = await this.createSession({
+        label: 'Spawned agent',
+        prompt,
         background: true,
-      }).catch((err) => {
-        console.error('[AgentSessionManager] new-agent-session event failed', err)
+        persistSessions: false,
       })
-    }
-
-    window.addEventListener('agentwfy:new-agent-session', this.domHandler)
+      return { agentId: sessionId }
+    })
   }
 
   stopListening(): void {
-    if (this.domHandler) {
-      window.removeEventListener('agentwfy:new-agent-session', this.domHandler)
-      this.domHandler = null
+    if (this.unregisterSpawn) {
+      this.unregisterSpawn()
+      this.unregisterSpawn = null
     }
   }
 
@@ -334,4 +333,19 @@ export class AgentSessionManager {
       }
     }
   }
+}
+
+let instance: AgentSessionManager | null = null
+
+export function getSessionManager(): AgentSessionManager | null {
+  return instance
+}
+
+export async function initSessionManager(config: AgentAuthConfig): Promise<AgentSessionManager> {
+  if (instance) {
+    await instance.disposeAll()
+  }
+  instance = new AgentSessionManager(config)
+  instance.startListening()
+  return instance
 }

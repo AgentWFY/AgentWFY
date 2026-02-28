@@ -140,6 +140,9 @@ export interface ElectronAgentTools {
   captureTab(request: ElectronCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
   getTabConsoleLogs(request: ElectronGetTabConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
   execTabJs(request: ElectronExecTabJsRequest): Promise<any>
+  busPublish(topic: string, data: unknown): Promise<void>
+  busWaitFor(topic: string, timeoutMs?: number): Promise<unknown>
+  spawnAgent(prompt: string): Promise<{ agentId: string }>
 }
 
 export interface ElectronClientTools {
@@ -160,12 +163,41 @@ export interface ElectronClientTools {
   showTabContextMenu(request: ElectronTabContextMenuRequest): Promise<ElectronTabContextMenuAction>
   onExternalViewEvent(callback: (detail: ElectronExternalViewEvent) => void): () => void
   onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void
+  onBusForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void
+  onBusForwardWaitFor(callback: (detail: { waiterId: string; topic: string; timeoutMs?: number }) => void): () => void
+  busWaitForResolved(waiterId: string, data: unknown): void
+  onAgentForwardSpawnAgent(callback: (detail: { waiterId: string; prompt: string }) => void): () => void
+  agentSpawnAgentResult(waiterId: string, result: unknown): void
+}
+
+export interface AgentWFYViewApi {
+  read(path: string, offset?: number, limit?: number): Promise<string>
+  write(path: string, content: string): Promise<string>
+  edit(path: string, oldText: string, newText: string): Promise<string>
+  ls(path?: string, limit?: number): Promise<string>
+  mkdir(path: string, recursive?: boolean): Promise<void>
+  remove(path: string, recursive?: boolean): Promise<void>
+  find(pattern: string, path?: string, limit?: number): Promise<string>
+  grep(pattern: string, path?: string, options?: ElectronGrepOptions): Promise<string>
+  runSql(request: ElectronRunSqlRequest): Promise<any>
+  getTabs(): Promise<ElectronGetTabsResult>
+  openTab(request: ElectronOpenTabRequest): Promise<void>
+  closeTab(request: ElectronCloseTabRequest): Promise<void>
+  selectTab(request: ElectronSelectTabRequest): Promise<void>
+  reloadTab(request: ElectronReloadTabRequest): Promise<void>
+  captureTab(request: ElectronCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
+  getTabConsoleLogs(request: ElectronGetTabConsoleLogsRequest): Promise<ElectronConsoleLogEntry[]>
+  execTabJs(request: ElectronExecTabJsRequest): Promise<any>
+  publish(topic: string, data: unknown): Promise<void>
+  waitFor(topic: string, timeoutMs?: number): Promise<unknown>
+  spawnAgent(prompt: string): Promise<{ agentId: string }>
 }
 
 declare global {
   interface Window {
     electronAgentTools?: ElectronAgentTools
     electronClientTools?: ElectronClientTools
+    agentwfy?: AgentWFYViewApi
   }
 }
 

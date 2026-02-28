@@ -8,6 +8,8 @@ import type {
   WorkerToHostMessage,
   WorkerTabConsoleLogEntry,
 } from './types'
+import { bus } from '../../event-bus'
+import { spawnAgent } from '../spawn-agent'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
 
@@ -514,6 +516,33 @@ export class SessionWorkerManager {
           code: request.code,
           timeoutMs: request.timeoutMs,
         })
+        return result as WorkerHostMethodMap[M]['result']
+      }
+      case 'busPublish': {
+        const request = params as WorkerHostMethodMap['busPublish']['params']
+        if (!request || typeof request.topic !== 'string' || request.topic.trim().length === 0) {
+          throw new Error('busPublish requires a non-empty topic string')
+        }
+        bus.publish(request.topic, request.data)
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
+      case 'busWaitFor': {
+        const request = params as WorkerHostMethodMap['busWaitFor']['params']
+        if (!request || typeof request.topic !== 'string' || request.topic.trim().length === 0) {
+          throw new Error('busWaitFor requires a non-empty topic string')
+        }
+        const timeoutMs = typeof request.timeoutMs === 'number' && request.timeoutMs > 0
+          ? request.timeoutMs
+          : 120_000
+        const result = await bus.waitFor(request.topic, timeoutMs)
+        return result as WorkerHostMethodMap[M]['result']
+      }
+      case 'spawnAgent': {
+        const request = params as WorkerHostMethodMap['spawnAgent']['params']
+        if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
+          throw new Error('spawnAgent requires a non-empty prompt string')
+        }
+        const result = await spawnAgent(request.prompt)
         return result as WorkerHostMethodMap[M]['result']
       }
       default:

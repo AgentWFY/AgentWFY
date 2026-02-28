@@ -213,6 +213,18 @@ export interface WorkerHostMethodMap {
     params: WorkerExecTabJsRequest
     result: any
   }
+  busPublish: {
+    params: { topic: string; data: unknown }
+    result: void
+  }
+  busWaitFor: {
+    params: { topic: string; timeoutMs?: number }
+    result: unknown
+  }
+  spawnAgent: {
+    params: { prompt: string }
+    result: { agentId: string }
+  }
 }
 
 export type WorkerHostMethod = keyof WorkerHostMethodMap
