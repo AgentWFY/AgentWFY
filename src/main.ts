@@ -866,15 +866,15 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
     entry.lastFocusedAt = Date.now();
   });
 
-  viewWebContents.on('console-message', (_consoleEvent, level, message) => {
+  viewWebContents.on('console-message', (consoleEvent) => {
     const entry = viewRuntimeEntries.get(viewWebContents.id);
     if (!entry) {
       return;
     }
 
     entry.logs.push({
-      level: WEB_CONTENTS_LOG_LEVEL_MAP[level] || 'info',
-      message,
+      level: WEB_CONTENTS_LOG_LEVEL_MAP[consoleEvent.level] || 'info',
+      message: consoleEvent.message,
       timestamp: Date.now(),
     });
 
@@ -1182,15 +1182,15 @@ app.on('web-contents-created', (_event, webContents) => {
     entry.lastFocusedAt = Date.now();
   });
 
-  webContents.on('console-message', (_consoleEvent, level, message) => {
+  webContents.on('console-message', (consoleEvent) => {
     const entry = viewRuntimeEntries.get(webContents.id);
     if (!entry) {
       return;
     }
 
     entry.logs.push({
-      level: WEB_CONTENTS_LOG_LEVEL_MAP[level] || 'info',
-      message,
+      level: WEB_CONTENTS_LOG_LEVEL_MAP[consoleEvent.level] || 'info',
+      message: consoleEvent.message,
       timestamp: Date.now(),
     });
 
