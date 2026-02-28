@@ -722,6 +722,12 @@ export class TlAgentChat extends HTMLElement {
   private render() {
     if (!this.containerEl) return
 
+    // Save focus & cursor state before DOM rebuild
+    const inputEl = this.containerEl.querySelector('#msg-input') as HTMLTextAreaElement | null
+    const hadFocus = inputEl && document.activeElement === inputEl
+    const selStart = inputEl?.selectionStart ?? 0
+    const selEnd = inputEl?.selectionEnd ?? 0
+
     const displayBlocks = this.buildDisplayBlocks(this.messages)
 
     if (this.isInitializing) {
@@ -868,10 +874,15 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // Set input value
-    const inputEl = this.containerEl.querySelector('#msg-input') as HTMLTextAreaElement | null
-    if (inputEl) {
-      inputEl.value = this.inputValue
+    // Set input value & restore focus/cursor
+    const newInputEl = this.containerEl.querySelector('#msg-input') as HTMLTextAreaElement | null
+    if (newInputEl) {
+      newInputEl.value = this.inputValue
+      if (hadFocus) {
+        newInputEl.focus()
+        newInputEl.selectionStart = selStart
+        newInputEl.selectionEnd = selEnd
+      }
     }
 
     this.attachListeners()
@@ -926,7 +937,10 @@ export class TlAgentChat extends HTMLElement {
     // Stop button
     const stopBtn = this.containerEl.querySelector('#stop-btn')
     if (stopBtn) {
-      stopBtn.addEventListener('click', () => this.handleStop())
+      stopBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        this.handleStop()
+      })
     }
 
     // Tool lines
@@ -949,13 +963,17 @@ export class TlAgentChat extends HTMLElement {
     // New session button in toolbar
     const newSessionBtn = this.containerEl.querySelector('#new-session-action-btn')
     if (newSessionBtn) {
-      newSessionBtn.addEventListener('click', () => this.handleNewSession())
+      newSessionBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        this.handleNewSession()
+      })
     }
 
     // Notify button
     const notifyBtn = this.containerEl.querySelector('#notify-btn')
     if (notifyBtn) {
-      notifyBtn.addEventListener('click', () => {
+      notifyBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
         if (this.manager && this.manager.activeSessionId) {
           this.manager.setNotifyOnFinish(this.manager.activeSessionId, !this.notifyOnFinish)
         }
@@ -965,13 +983,17 @@ export class TlAgentChat extends HTMLElement {
     // Sessions button
     const sessionsBtn = this.containerEl.querySelector('#sessions-btn')
     if (sessionsBtn) {
-      sessionsBtn.addEventListener('click', () => this.toggleSessionPanel())
+      sessionsBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        this.toggleSessionPanel()
+      })
     }
 
     // Settings button
     const settingsBtn = this.containerEl.querySelector('#settings-btn')
     if (settingsBtn) {
-      settingsBtn.addEventListener('click', () => {
+      settingsBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
         this.showSettings = !this.showSettings
         this.render()
       })
