@@ -483,7 +483,7 @@ export function registerAgentToolsHandlers(
     return fs.readFile(legacyApiKeyPath, 'utf-8');
   });
 
-  // runSql({ target, path?, sql, params?, description?, confirmed? }) → query result
+  // runSql({ target, path?, sql, params?, description? }) → query result
   ipcMain.handle(Channel.RUN_SQL, async (_event, payload: unknown) => {
     const request = parseRunSqlRequest(payload);
     return routeSqlRequest(getRoot(), request);

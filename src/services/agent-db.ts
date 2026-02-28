@@ -14,15 +14,6 @@ type DatabaseSyncCtor = new (location: string) => DatabaseSyncLike;
 
 const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: DatabaseSyncCtor };
 
-const MUTATING_KEYWORDS = [
-  'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE',
-  'TRUNCATE', 'REPLACE', 'MERGE', 'UPSERT',
-  'ATTACH', 'DETACH', 'COPY', 'EXPORT',
-  'BEGIN', 'COMMIT', 'ROLLBACK',
-  'GRANT', 'REVOKE', 'SET', 'RESET',
-  'VACUUM', 'CHECKPOINT', 'LOAD', 'INSTALL',
-  'CALL', 'EXECUTE', 'PREPARE',
-];
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
@@ -95,52 +86,8 @@ END;
 export interface SqlExecutionRequest {
   sql: string;
   params?: unknown[];
-  confirmed?: boolean;
 }
 
-function stripLeadingComments(sql: string): string {
-  let remaining = sql.trimStart();
-
-  while (remaining.length > 0) {
-    if (remaining.startsWith('--')) {
-      const newline = remaining.indexOf('\n');
-      remaining = newline >= 0 ? remaining.slice(newline + 1).trimStart() : '';
-      continue;
-    }
-
-    if (remaining.startsWith('/*')) {
-      const end = remaining.indexOf('*/');
-      if (end < 0) return '';
-      remaining = remaining.slice(end + 2).trimStart();
-      continue;
-    }
-
-    break;
-  }
-
-  return remaining;
-}
-
-function assertReadOnlySql(sql: string): void {
-  const query = sql.trim();
-  if (query.length === 0) {
-    throw new Error('SQL query is required');
-  }
-
-  if (query.includes(';')) {
-    const parts = query.split(';').filter((part) => part.trim().length > 0);
-    if (parts.length > 1) {
-      throw new Error('ReadOnlyViolation: Multiple statements are not allowed.');
-    }
-  }
-
-  const normalized = stripLeadingComments(query).trim().toUpperCase();
-  for (const keyword of MUTATING_KEYWORDS) {
-    if (normalized.startsWith(keyword)) {
-      throw new Error(`ReadOnlyViolation: ${keyword} statements are not permitted.`);
-    }
-  }
-}
 
 function normalizeSqlValue(value: unknown): unknown {
   if (typeof value === 'bigint') {
@@ -180,10 +127,6 @@ function normalizeParams(params: unknown[] | undefined): unknown[] {
 }
 
 function runSqliteQuery(dbPath: string, request: SqlExecutionRequest, initSql?: string): unknown[] {
-  if (request.confirmed !== true) {
-    assertReadOnlySql(request.sql);
-  }
-
   const params = normalizeParams(request.params);
   const db = new DatabaseSync(dbPath);
 

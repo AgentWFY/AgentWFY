@@ -19,7 +19,6 @@ declare global {
     sql: string;
     params?: any[];
     description?: string;
-    confirmed?: boolean;
   }
 
   interface Window {

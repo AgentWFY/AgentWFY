@@ -32,7 +32,6 @@ export interface WorkerRunSqlRequest {
   sql: string
   params?: any[]
   description?: string
-  confirmed?: boolean
 }
 
 export interface WorkerReadRequest {

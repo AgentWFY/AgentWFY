@@ -8,7 +8,6 @@ interface RunSqlRequest {
   sql: string;
   params?: any[];
   description?: string;
-  confirmed?: boolean;
 }
 
 interface CaptureTabRequest {
@@ -186,7 +185,6 @@ if (!isAgentView) {
       sql: string;
       params?: any[];
       description?: string;
-      confirmed?: boolean;
     }): Promise<any> {
       return invokeRunSql(request);
     },
@@ -345,7 +343,6 @@ if (isAgentView) {
       sql: string;
       params?: any[];
       description?: string;
-      confirmed?: boolean;
     }): Promise<any> {
       return invokeRunSql(request);
     },

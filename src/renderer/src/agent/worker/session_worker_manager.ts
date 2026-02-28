@@ -256,7 +256,6 @@ export class SessionWorkerManager {
           sql: request.sql,
           params: request.params,
           description: request.description,
-          confirmed: request.confirmed,
         })
         return result as WorkerHostMethodMap[M]['result']
       }

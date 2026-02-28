@@ -222,49 +222,49 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   const capturedImages: ExecJsCapturedImage[] = []
 
   try {
-    const runSql = (params: WorkerHostMethodMap['runSql']['params']) =>
-      callHostMethod('' + requestId, 'runSql', params, abortController.signal)
-    const read = (params: WorkerHostMethodMap['read']['params']) =>
-      callHostMethod('' + requestId, 'read', params, abortController.signal)
-    const write = (params: WorkerHostMethodMap['write']['params']) =>
-      callHostMethod('' + requestId, 'write', params, abortController.signal)
-    const edit = (params: WorkerHostMethodMap['edit']['params']) =>
-      callHostMethod('' + requestId, 'edit', params, abortController.signal)
-    const ls = (params: WorkerHostMethodMap['ls']['params']) =>
-      callHostMethod('' + requestId, 'ls', params, abortController.signal)
-    const mkdir = (params: WorkerHostMethodMap['mkdir']['params']) =>
-      callHostMethod('' + requestId, 'mkdir', params, abortController.signal)
-    const remove = (params: WorkerHostMethodMap['remove']['params']) =>
-      callHostMethod('' + requestId, 'remove', params, abortController.signal)
-    const find = (params: WorkerHostMethodMap['find']['params']) =>
-      callHostMethod('' + requestId, 'find', params, abortController.signal)
-    const grep = (params: WorkerHostMethodMap['grep']['params']) =>
-      callHostMethod('' + requestId, 'grep', params, abortController.signal)
-    const getTabs = (params: WorkerHostMethodMap['getTabs']['params']) =>
-      callHostMethod('' + requestId, 'getTabs', params ?? {}, abortController.signal)
-    const openTab = (params: WorkerHostMethodMap['openTab']['params']) =>
-      callHostMethod('' + requestId, 'openTab', params, abortController.signal)
-    const closeTab = (params: WorkerHostMethodMap['closeTab']['params']) =>
-      callHostMethod('' + requestId, 'closeTab', params, abortController.signal)
-    const selectTab = (params: WorkerHostMethodMap['selectTab']['params']) =>
-      callHostMethod('' + requestId, 'selectTab', params, abortController.signal)
-    const reloadTab = (params: WorkerHostMethodMap['reloadTab']['params']) =>
-      callHostMethod('' + requestId, 'reloadTab', params, abortController.signal)
-    const captureTab = async (params: WorkerHostMethodMap['captureTab']['params']) => {
-      const result = await callHostMethod('' + requestId, 'captureTab', params, abortController.signal)
+    const runSql = (request: WorkerHostMethodMap['runSql']['params']) =>
+      callHostMethod('' + requestId, 'runSql', request, abortController.signal)
+    const read = (path: string, offset?: number, limit?: number) =>
+      callHostMethod('' + requestId, 'read', { path, offset, limit }, abortController.signal)
+    const write = (path: string, content: string) =>
+      callHostMethod('' + requestId, 'write', { path, content }, abortController.signal)
+    const edit = (path: string, oldText: string, newText: string) =>
+      callHostMethod('' + requestId, 'edit', { path, oldText, newText }, abortController.signal)
+    const ls = (path?: string, limit?: number) =>
+      callHostMethod('' + requestId, 'ls', { path, limit }, abortController.signal)
+    const mkdir = (path: string, recursive?: boolean) =>
+      callHostMethod('' + requestId, 'mkdir', { path, recursive }, abortController.signal)
+    const remove = (path: string, recursive?: boolean) =>
+      callHostMethod('' + requestId, 'remove', { path, recursive }, abortController.signal)
+    const find = (pattern: string, path?: string, limit?: number) =>
+      callHostMethod('' + requestId, 'find', { pattern, path, limit }, abortController.signal)
+    const grep = (pattern: string, path?: string, options?: WorkerHostMethodMap['grep']['params']['options']) =>
+      callHostMethod('' + requestId, 'grep', { pattern, path, options }, abortController.signal)
+    const getTabs = () =>
+      callHostMethod('' + requestId, 'getTabs', {}, abortController.signal)
+    const openTab = (request: WorkerHostMethodMap['openTab']['params']) =>
+      callHostMethod('' + requestId, 'openTab', request, abortController.signal)
+    const closeTab = (request: WorkerHostMethodMap['closeTab']['params']) =>
+      callHostMethod('' + requestId, 'closeTab', request, abortController.signal)
+    const selectTab = (request: WorkerHostMethodMap['selectTab']['params']) =>
+      callHostMethod('' + requestId, 'selectTab', request, abortController.signal)
+    const reloadTab = (request: WorkerHostMethodMap['reloadTab']['params']) =>
+      callHostMethod('' + requestId, 'reloadTab', request, abortController.signal)
+    const captureTab = async (request: WorkerHostMethodMap['captureTab']['params']) => {
+      const result = await callHostMethod('' + requestId, 'captureTab', request, abortController.signal)
       capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
       return { captured: true, mimeType: result.mimeType }
     }
-    const getTabConsoleLogs = (params: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
-      callHostMethod('' + requestId, 'getTabConsoleLogs', params, abortController.signal)
-    const execTabJs = (params: WorkerHostMethodMap['execTabJs']['params']) =>
-      callHostMethod('' + requestId, 'execTabJs', params, abortController.signal)
+    const getTabConsoleLogs = (request: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
+      callHostMethod('' + requestId, 'getTabConsoleLogs', request, abortController.signal)
+    const execTabJs = (request: WorkerHostMethodMap['execTabJs']['params']) =>
+      callHostMethod('' + requestId, 'execTabJs', request, abortController.signal)
     const publish = (topic: string, data: unknown) =>
       callHostMethod('' + requestId, 'busPublish', { topic, data }, abortController.signal)
     const waitFor = (topic: string, timeoutMs?: number) =>
       callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, abortController.signal)
-    const spawnAgent = (params: { prompt: string }) =>
-      callHostMethod('' + requestId, 'spawnAgent', params, abortController.signal)
+    const spawnAgent = (prompt: string) =>
+      callHostMethod('' + requestId, 'spawnAgent', { prompt }, abortController.signal)
 
     const fn = new AsyncFunction(
       'window',

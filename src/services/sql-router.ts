@@ -39,17 +39,12 @@ export function parseRunSqlRequest(payload: unknown): RunSqlRequest {
     throw new Error('Invalid runSql payload: description must be a string when provided');
   }
 
-  if (typeof raw.confirmed !== 'undefined' && typeof raw.confirmed !== 'boolean') {
-    throw new Error('Invalid runSql payload: confirmed must be a boolean when provided');
-  }
-
   return {
     target: raw.target,
     path: raw.path as string | undefined,
     sql: raw.sql,
     params: raw.params as unknown[] | undefined,
     description: raw.description as string | undefined,
-    confirmed: raw.confirmed as boolean | undefined,
   };
 }
 
