@@ -14,7 +14,7 @@
 - [ ] Run backup from ui
 - [ ] Restore from back from ui
 - [ ] Create a way to generate node js scripts similar to views
-- [ ] Add notifications for when agent finishes work.
+- [x] Add notifications for when agent finishes work.
 - [ ] When agent is thinking for a long time, there is no feedback visible in the ui. It is unclear if it is still working or not. Maybe show some more indication other than just "in progress".
 - [ ] Show context size, so use can use compact session or start a new one. Also need to add ability to compact session or use auto compact.
 - [ ] Rewrite how tools cals are shown. There is only one tool right now, maybe format it in a better way.

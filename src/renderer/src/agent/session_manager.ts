@@ -8,6 +8,8 @@ export interface SessionEntry {
   agent: AgentWFYAgent
   label: string
   unsubscribe: () => void
+  wasStreaming?: boolean
+  notifyOnFinish?: boolean
 }
 
 export interface SessionHistoryItem {
@@ -70,12 +72,13 @@ export class AgentSessionManager {
     ensureSessionWorker(sessionId)
     const label = opts?.label || 'New session'
 
-    const entry: SessionEntry = { agent, label, unsubscribe: () => {} }
+    const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
     entry.unsubscribe = agent.subscribe(() => {
       if (entry.label === 'New session') {
         const userLabel = this.extractFirstUserMessage(agent.messages, 60)
         if (userLabel) entry.label = userLabel
       }
+      this.checkAgentFinished(entry)
       this.notify()
       this.scheduleBackgroundDispose(sessionId, agent)
     })
@@ -151,8 +154,9 @@ export class AgentSessionManager {
 
     const label = this.extractFirstUserMessage(agent.messages, 60) ?? 'Session'
 
-    const entry: SessionEntry = { agent, label, unsubscribe: () => {} }
+    const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
     entry.unsubscribe = agent.subscribe(() => {
+      this.checkAgentFinished(entry)
       this.notify()
       this.scheduleBackgroundDispose(sessionId, agent)
     })
@@ -253,6 +257,26 @@ export class AgentSessionManager {
     this.sessions.clear()
     this._activeSessionId = null
     this.listeners.clear()
+  }
+
+  setNotifyOnFinish(sessionId: string, value: boolean): void {
+    const entry = this.sessions.get(sessionId)
+    if (entry) {
+      entry.notifyOnFinish = value
+      this.notify()
+    }
+  }
+
+  private checkAgentFinished(entry: SessionEntry): void {
+    const streaming = entry.agent.isStreaming
+    if (entry.wasStreaming && !streaming && entry.notifyOnFinish) {
+      try {
+        new Notification('Agent finished', { body: entry.label })
+      } catch {
+        // Notifications may not be supported
+      }
+    }
+    entry.wasStreaming = streaming
   }
 
   private disposeIfIdle(sessionId: string): void {

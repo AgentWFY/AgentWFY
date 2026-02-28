@@ -233,12 +233,16 @@ const STYLES = `
     font-size: 16px;
     line-height: 1;
     border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .gear-btn:hover {
     color: var(--color-text4);
     background: var(--color-item-hover);
   }
   .gear-btn.active { color: var(--color-accent); }
+  .gear-btn.active svg { fill: currentColor; }
   .session-indicator {
     display: flex;
     align-items: center;
@@ -316,6 +320,7 @@ export class TlAgentChat extends HTMLElement {
   private isInitializing = true
   private authConfig: AgentAuthConfig | null = null
   private showSessionPanel = false
+  private notifyOnFinish = false
   private backgroundStreamingCount = 0
   private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
@@ -378,6 +383,7 @@ export class TlAgentChat extends HTMLElement {
     this.backgroundStreamingCount = this.manager.backgroundStreamingSessions.length
     const session = this.manager.activeSession
     this.agent = session?.agent ?? null
+    this.notifyOnFinish = session?.notifyOnFinish ?? false
     if (this.agent) {
       this.messages = this.agent.messages
       this.isStreaming = this.agent.isStreaming
@@ -842,10 +848,11 @@ export class TlAgentChat extends HTMLElement {
     html += `<div class="model-info">${this.escapeHtml(this.authConfig?.modelId ?? '')}</div>`
     html += '<div class="tools-row-actions">'
     if (this.messages.length > 0) {
-      html += `<button class="gear-btn" title="New session" id="new-session-action-btn">+</button>`
+      html += `<button class="gear-btn" title="New session" id="new-session-action-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg></button>`
     }
-    html += `<button class="gear-btn${this.showSessionPanel ? ' active' : ''}" title="Sessions" id="sessions-btn">&#9776;</button>`
-    html += `<button class="gear-btn${this.showSettings ? ' active' : ''}" title="Settings" id="settings-btn">&#9881;</button>`
+    html += `<button class="gear-btn${this.notifyOnFinish ? ' active' : ''}" title="Notify when finished" id="notify-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 4 3.5 4 5.5c0 3-1.5 4.5-2 5h12c-.5-.5-2-2-2-5 0-2-1.5-4-4-4z"/><path d="M6.5 12.5c.3.6.9 1 1.5 1s1.2-.4 1.5-1"/></svg></button>`
+    html += `<button class="gear-btn${this.showSessionPanel ? ' active' : ''}" title="Sessions" id="sessions-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg></button>`
+    html += `<button class="gear-btn${this.showSettings ? ' active' : ''}" title="Settings" id="settings-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>`
     html += '</div></div>'
 
     if (this.showSettings && this.authConfig) {
@@ -952,6 +959,16 @@ export class TlAgentChat extends HTMLElement {
     const newSessionBtn = this.containerEl.querySelector('#new-session-action-btn')
     if (newSessionBtn) {
       newSessionBtn.addEventListener('click', () => this.handleNewSession())
+    }
+
+    // Notify button
+    const notifyBtn = this.containerEl.querySelector('#notify-btn')
+    if (notifyBtn) {
+      notifyBtn.addEventListener('click', () => {
+        if (this.manager && this.manager.activeSessionId) {
+          this.manager.setNotifyOnFinish(this.manager.activeSessionId, !this.notifyOnFinish)
+        }
+      })
     }
 
     // Sessions button
