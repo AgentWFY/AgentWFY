@@ -157,6 +157,7 @@ const STYLES = `
     min-height: 36px;
     max-height: 120px;
     line-height: 1.4;
+    overflow-y: auto;
   }
   .tools-row {
     margin-top: 6px;
@@ -573,11 +574,20 @@ export class TlAgentChat extends HTMLElement {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       this.sendMessage()
+    } else if (e.key === 'Enter' && e.shiftKey) {
+      requestAnimationFrame(() => this.autoResizeTextarea(e.target as HTMLTextAreaElement))
     }
   }
 
   private handleInput(e: Event) {
-    this.inputValue = (e.target as any).value
+    const textarea = e.target as HTMLTextAreaElement
+    this.inputValue = textarea.value
+    this.autoResizeTextarea(textarea)
+  }
+
+  private autoResizeTextarea(textarea: HTMLTextAreaElement) {
+    textarea.style.height = 'auto'
+    textarea.style.height = textarea.scrollHeight + 'px'
   }
 
   private toggleTool(id: string) {
