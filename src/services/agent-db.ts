@@ -29,8 +29,8 @@ CREATE TABLE IF NOT EXISTS views (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   content TEXT NOT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
 CREATE TABLE IF NOT EXISTS docs (
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS docs (
   name TEXT NOT NULL UNIQUE,
   content TEXT NOT NULL,
   preload INTEGER NOT NULL DEFAULT 0 CHECK(preload IN (0, 1)),
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
 CREATE TABLE IF NOT EXISTS db_changes (
