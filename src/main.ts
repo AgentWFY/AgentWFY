@@ -376,6 +376,7 @@ interface TabViewState {
   viewId: string
   currentSrc: string | null
   view: WebContentsView
+  logs: ViewConsoleLogEntry[]
 }
 
 type CommandPaletteAction =
@@ -785,6 +786,7 @@ function createTabViewState(tabId: string, viewId: string, options?: { tabType?:
     viewId,
     currentSrc: null,
     view,
+    logs: [],
   };
 
   const viewWebContents = view.webContents;
@@ -872,19 +874,14 @@ function createTabViewState(tabId: string, viewId: string, options?: { tabType?:
   });
 
   viewWebContents.on('console-message', (consoleEvent) => {
-    const entry = viewRuntimeEntries.get(viewWebContents.id);
-    if (!entry) {
-      return;
-    }
-
-    entry.logs.push({
+    state.logs.push({
       level: WEB_CONTENTS_LOG_LEVEL_MAP[consoleEvent.level] || 'info',
       message: consoleEvent.message,
       timestamp: Date.now(),
     });
 
-    if (entry.logs.length > VIEW_LOG_BUFFER_MAX) {
-      entry.logs.splice(0, entry.logs.length - VIEW_LOG_BUFFER_MAX);
+    if (state.logs.length > VIEW_LOG_BUFFER_MAX) {
+      state.logs.splice(0, state.logs.length - VIEW_LOG_BUFFER_MAX);
     }
   });
 
@@ -897,6 +894,7 @@ function createTabViewState(tabId: string, viewId: string, options?: { tabType?:
   });
 
   tabViewsByTabId.set(tabId, state);
+
   return state;
 }
 
@@ -1215,23 +1213,17 @@ app.on('web-contents-created', (_event, webContents) => {
   }
 });
 
-function resolveViewRuntimeEntryByTabId(tabId: string): ViewRuntimeEntry {
+function resolveTabViewState(tabId: string): TabViewState {
   const state = tabViewsByTabId.get(tabId);
   if (!state) {
     throw new Error(`No open tab found for tabId "${tabId}"`);
   }
 
-  const webContentsId = state.view.webContents.id;
   if (state.view.webContents.isDestroyed()) {
     throw new Error(`Tab "${tabId}" webContents is destroyed`);
   }
 
-  const entry = viewRuntimeEntries.get(webContentsId);
-  if (!entry) {
-    throw new Error(`No view runtime entry found for tabId "${tabId}"`);
-  }
-
-  return entry;
+  return state;
 }
 
 async function getTabsHandler(): Promise<{ tabs: Array<any> }> {
@@ -1282,8 +1274,8 @@ async function reloadTabHandler(request: { tabId: string }): Promise<void> {
 }
 
 async function captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
-  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
-  const image = await entry.webContents.capturePage();
+  const state = resolveTabViewState(request.tabId);
+  const image = await state.view.webContents.capturePage();
   return {
     base64: image.toPNG().toString('base64'),
     mimeType: 'image/png',
@@ -1295,7 +1287,7 @@ async function getTabConsoleLogsById(request: {
   since?: number
   limit?: number
 }): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
+  const state = resolveTabViewState(request.tabId);
 
   const since = typeof request.since === 'number' && Number.isFinite(request.since)
     ? request.since
@@ -1305,8 +1297,8 @@ async function getTabConsoleLogsById(request: {
     : undefined;
 
   const filtered = typeof since === 'number'
-    ? entry.logs.filter((log) => log.timestamp > since)
-    : entry.logs.slice();
+    ? state.logs.filter((log) => log.timestamp > since)
+    : state.logs.slice();
 
   if (typeof limit === 'number' && filtered.length > limit) {
     return filtered.slice(filtered.length - limit);
@@ -1338,7 +1330,7 @@ async function execTabJsById(request: {
   code: string
   timeoutMs?: number
 }): Promise<any> {
-  const entry = resolveViewRuntimeEntryByTabId(request.tabId);
+  const state = resolveTabViewState(request.tabId);
   if (typeof request.code !== 'string') {
     throw new Error('execTabJs requires code as a string');
   }
@@ -1348,7 +1340,7 @@ async function execTabJsById(request: {
     : VIEW_EXEC_DEFAULT_TIMEOUT_MS;
   const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
-  return withTimeout(entry.webContents.executeJavaScript(request.code, true), timeoutMs);
+  return withTimeout(state.view.webContents.executeJavaScript(request.code, true), timeoutMs);
 }
 
 function escapeHtml(text: string): string {
