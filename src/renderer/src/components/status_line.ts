@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { getSessionManager } from 'app/agent/session_manager'
+import { getTaskRunner } from 'app/tasks/task_runner'
 
 const STYLES = `
   :host {
@@ -54,6 +55,45 @@ const STYLES = `
   .agent-label {
     white-space: nowrap;
   }
+  .task-indicator {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    position: relative;
+    cursor: default;
+  }
+  .task-indicator.visible {
+    display: flex;
+  }
+  .task-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    animation: dot-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  .task-label {
+    white-space: nowrap;
+  }
+  .task-tooltip {
+    display: none;
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    min-width: 140px;
+    max-width: 220px;
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md, 6px);
+    padding: 8px 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    z-index: 1000;
+    pointer-events: none;
+  }
+  .task-indicator:hover .task-tooltip {
+    display: block;
+  }
   .agent-tooltip {
     display: none;
     position: absolute;
@@ -99,7 +139,9 @@ const STYLES = `
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
+  private _taskCount = 0
   private managerUnsub: (() => void) | null = null
+  private taskRunnerUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -109,12 +151,15 @@ export class TlStatusLine extends HTMLElement {
   connectedCallback() {
     this.render()
     this.subscribeToManager()
+    this.subscribeToTaskRunner()
     this.loadDataDir()
   }
 
   disconnectedCallback() {
     this.managerUnsub?.()
     this.managerUnsub = null
+    this.taskRunnerUnsub?.()
+    this.taskRunnerUnsub = null
   }
 
   private render() {
@@ -126,6 +171,13 @@ export class TlStatusLine extends HTMLElement {
           <span class="agent-label" id="agent-label"></span>
           <div class="agent-tooltip" id="agent-tooltip">
             <div class="tooltip-title">Running agents</div>
+          </div>
+        </div>
+        <div class="task-indicator" id="task-indicator">
+          <div class="task-dot"></div>
+          <span class="task-label" id="task-label"></span>
+          <div class="task-tooltip" id="task-tooltip">
+            <div class="tooltip-title">Running tasks</div>
           </div>
         </div>
       </div>
@@ -178,6 +230,54 @@ export class TlStatusLine extends HTMLElement {
         ? labels.map(l => `<div class="tooltip-session">${this.escapeHtml(l)}</div>`).join('')
         : ''
       tooltip.innerHTML = `<div class="tooltip-title">Running agents</div>${sessionListHtml}`
+    } else {
+      indicator.classList.remove('visible')
+    }
+  }
+
+  private subscribeToTaskRunner() {
+    const runner = getTaskRunner()
+    if (!runner) {
+      const interval = setInterval(() => {
+        const r = getTaskRunner()
+        if (r) {
+          clearInterval(interval)
+          this.taskRunnerUnsub = r.subscribe(() => this.syncTaskCount())
+          this.syncTaskCount()
+        }
+      }, 500)
+      return
+    }
+    this.taskRunnerUnsub = runner.subscribe(() => this.syncTaskCount())
+    this.syncTaskCount()
+  }
+
+  private syncTaskCount() {
+    const runner = getTaskRunner()
+    const count = runner ? runner.runningCount : 0
+    if (count !== this._taskCount) {
+      this._taskCount = count
+      this.updateTaskIndicator()
+    }
+  }
+
+  private updateTaskIndicator() {
+    const indicator = this.shadow.querySelector('#task-indicator')
+    const label = this.shadow.querySelector('#task-label')
+    const tooltip = this.shadow.querySelector('#task-tooltip')
+    if (!indicator || !label || !tooltip) return
+
+    if (this._taskCount > 0) {
+      const suffix = this._taskCount === 1 ? 'task running' : 'tasks running'
+      label.textContent = `${this._taskCount} ${suffix}`
+      indicator.classList.add('visible')
+
+      const runner = getTaskRunner()
+      const labels = runner ? runner.runningLabels : []
+      const listHtml = labels.length > 0
+        ? labels.map(l => `<div class="tooltip-session">${this.escapeHtml(l)}</div>`).join('')
+        : ''
+      tooltip.innerHTML = `<div class="tooltip-title">Running tasks</div>${listHtml}`
     } else {
       indicator.classList.remove('visible')
     }

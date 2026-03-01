@@ -265,6 +265,10 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, abortController.signal)
     const spawnAgent = (prompt: string) =>
       callHostMethod('' + requestId, 'spawnAgent', { prompt }, abortController.signal)
+    const startTask = (taskId: number) =>
+      callHostMethod('' + requestId, 'startTask', { taskId }, abortController.signal)
+    const stopTask = (runId: string) =>
+      callHostMethod('' + requestId, 'stopTask', { runId }, abortController.signal)
 
     const fn = new AsyncFunction(
       'window',
@@ -291,6 +295,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'publish',
       'waitFor',
       'spawnAgent',
+      'startTask',
+      'stopTask',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
@@ -319,7 +325,9 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         execTabJs,
         publish,
         waitFor,
-        spawnAgent
+        spawnAgent,
+        startTask,
+        stopTask
       ),
       timeoutMs,
       abortController.signal

@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS docs (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  timeout_ms INTEGER DEFAULT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 DROP TABLE IF EXISTS db_changes;
 DROP TRIGGER IF EXISTS views_db_changes_insert;
 DROP TRIGGER IF EXISTS views_db_changes_update;
@@ -40,6 +49,9 @@ DROP TRIGGER IF EXISTS views_db_changes_delete;
 DROP TRIGGER IF EXISTS docs_db_changes_insert;
 DROP TRIGGER IF EXISTS docs_db_changes_update;
 DROP TRIGGER IF EXISTS docs_db_changes_delete;
+DROP TRIGGER IF EXISTS tasks_db_changes_insert;
+DROP TRIGGER IF EXISTS tasks_db_changes_update;
+DROP TRIGGER IF EXISTS tasks_db_changes_delete;
 `;
 
 const CHANGE_TRACKING_SQL = `
@@ -66,6 +78,15 @@ CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.id, 'delete');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'insert');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_update AFTER UPDATE ON tasks BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'update');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_delete AFTER DELETE ON tasks BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', OLD.id, 'delete');
 END;
 `;
 

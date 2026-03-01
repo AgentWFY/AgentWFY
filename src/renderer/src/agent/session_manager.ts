@@ -2,7 +2,7 @@
 import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'
-import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
+import { ensureWorker, terminateWorker } from 'app/runtime/js_runtime'
 import type { ThinkingLevel } from 'app/agent/types'
 
 export interface SessionEntry {
@@ -99,7 +99,7 @@ export class AgentSessionManager {
     })
 
     const sessionId = agent.sessionId
-    ensureSessionWorker(sessionId)
+    ensureWorker(sessionId)
     const label = opts?.label || 'New session'
 
     const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
@@ -152,7 +152,7 @@ export class AgentSessionManager {
     if (entry.agent.isStreaming) {
       await entry.agent.abort()
     }
-    terminateSessionWorker(entry.agent.sessionId)
+    terminateWorker(entry.agent.sessionId)
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
@@ -183,7 +183,7 @@ export class AgentSessionManager {
     })
 
     const sessionId = agent.sessionId
-    ensureSessionWorker(sessionId)
+    ensureWorker(sessionId)
 
     const label = extractFirstUserMessage(agent.messages, 60) ?? 'Session'
 
@@ -231,7 +231,7 @@ export class AgentSessionManager {
       if (entry.agent.isStreaming) {
         await entry.agent.abort()
       }
-      terminateSessionWorker(entry.agent.sessionId)
+      terminateWorker(entry.agent.sessionId)
       entry.unsubscribe()
       entry.agent.dispose()
     }
@@ -315,7 +315,7 @@ export class AgentSessionManager {
   private disposeIfIdle(sessionId: string): void {
     const entry = this.sessions.get(sessionId)
     if (!entry || entry.agent.isStreaming) return
-    terminateSessionWorker(entry.agent.sessionId)
+    terminateWorker(entry.agent.sessionId)
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)

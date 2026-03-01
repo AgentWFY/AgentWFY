@@ -8,9 +8,11 @@ import { TlJson } from 'app/components/json_view'
 import { TlActivityBar } from 'app/components/activity_bar'
 import { TlStatusLine } from 'app/components/status_line'
 import { TlSelect } from 'app/components/select'
+import { TlTaskPanel } from 'app/components/task_panel'
 import { initBusBridge } from 'app/bus-bridge'
 import { initSessionManager } from 'app/agent/session_manager'
 import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
+import { initTaskRunner } from 'app/tasks/task_runner'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -27,6 +29,7 @@ async function init() {
   defineElement('tl-activity-bar', TlActivityBar)
   defineElement('tl-status-line', TlStatusLine)
   defineElement('tl-select', TlSelect)
+  defineElement('tl-task-panel', TlTaskPanel)
   defineElement('tl-app', TlApp)
 
   const authConfig = await loadAuthConfig()
@@ -34,6 +37,7 @@ async function init() {
     await initSessionManager(authConfig)
   }
 
+  initTaskRunner()
   initBusBridge()
 
   document.body.appendChild(document.createElement('tl-app'))

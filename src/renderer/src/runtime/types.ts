@@ -227,6 +227,26 @@ export interface WorkerHostMethodMap {
     params: { prompt: string }
     result: { agentId: string }
   }
+  startTask: {
+    params: WorkerStartTaskRequest
+    result: WorkerStartTaskResult
+  }
+  stopTask: {
+    params: WorkerStopTaskRequest
+    result: void
+  }
+}
+
+export interface WorkerStartTaskRequest {
+  taskId: number
+}
+
+export interface WorkerStartTaskResult {
+  runId: string
+}
+
+export interface WorkerStopTaskRequest {
+  runId: string
 }
 
 export type WorkerHostMethod = keyof WorkerHostMethodMap

@@ -4,6 +4,10 @@ const CHAT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" s
   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
 </svg>`
 
+const TASKS_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="5 3 19 12 5 21 5 3"/>
+</svg>`
+
 const STYLES = `
   :host {
     display: flex;
@@ -85,6 +89,9 @@ export class TlActivityBar extends HTMLElement {
       <div class="items">
         <div class="item" data-panel="agent-chat" title="Agent Chat">
           ${CHAT_ICON}
+        </div>
+        <div class="item" data-panel="tasks" title="Tasks">
+          ${TASKS_ICON}
         </div>
       </div>
     `

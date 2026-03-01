@@ -8,8 +8,9 @@ import type {
   WorkerToHostMessage,
   WorkerTabConsoleLogEntry,
 } from './types'
-import { bus } from '../../event-bus'
-import { getSessionManager } from '../session_manager'
+import { bus } from '../event-bus'
+import { getSessionManager } from '../agent/session_manager'
+import { getTaskRunner } from '../tasks/task_runner'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
 
@@ -19,7 +20,7 @@ type PendingExecution = {
   cleanup?: () => void
 }
 
-type SessionWorkerEntry = {
+type WorkerEntry = {
   sessionId: string
   worker: Worker
   pendingExecutions: Map<string, PendingExecution>
@@ -67,20 +68,20 @@ function getElectronTools() {
   return window.agentwfy
 }
 
-export class SessionWorkerManager {
-  private readonly workers = new Map<string, SessionWorkerEntry>()
+export class JsRuntime {
+  private readonly workers = new Map<string, WorkerEntry>()
 
-  ensureSessionWorker(sessionId: string): void {
+  ensureWorker(sessionId: string): void {
     const normalizedSessionId = normalizeSessionId(sessionId)
     if (this.workers.has(normalizedSessionId)) {
       return
     }
 
-    const worker = new Worker(new URL('./session_exec_worker.ts', import.meta.url), {
+    const worker = new Worker(new URL('./exec_worker.ts', import.meta.url), {
       type: 'module',
     })
 
-    const entry: SessionWorkerEntry = {
+    const entry: WorkerEntry = {
       sessionId: normalizedSessionId,
       worker,
       pendingExecutions: new Map(),
@@ -111,7 +112,7 @@ export class SessionWorkerManager {
     this.workers.set(normalizedSessionId, entry)
   }
 
-  terminateSessionWorker(sessionId: string): void {
+  terminateWorker(sessionId: string): void {
     const normalizedSessionId = normalizeSessionId(sessionId)
     const entry = this.workers.get(normalizedSessionId)
     if (!entry) {
@@ -128,7 +129,7 @@ export class SessionWorkerManager {
     signal?: AbortSignal
   ): Promise<ExecJsDetails> {
     const normalizedSessionId = normalizeSessionId(sessionId)
-    this.ensureSessionWorker(normalizedSessionId)
+    this.ensureWorker(normalizedSessionId)
 
     const entry = this.workers.get(normalizedSessionId)
     if (!entry) {
@@ -190,7 +191,7 @@ export class SessionWorkerManager {
     }
   }
 
-  private handleWorkerMessage(entry: SessionWorkerEntry, message: WorkerToHostMessage): void {
+  private handleWorkerMessage(entry: WorkerEntry, message: WorkerToHostMessage): void {
     if (!message || typeof message !== 'object' || typeof (message as Record<string, unknown>).type !== 'string') {
       return
     }
@@ -216,7 +217,7 @@ export class SessionWorkerManager {
     }
   }
 
-  private async handleHostCall(entry: SessionWorkerEntry, message: WorkerHostCallMessage): Promise<void> {
+  private async handleHostCall(entry: WorkerEntry, message: WorkerHostCallMessage): Promise<void> {
     try {
       const value = await this.invokeHostMethod(message.method, message.params)
       entry.worker.postMessage({
@@ -560,12 +561,32 @@ export class SessionWorkerManager {
         const result = await mgr.spawnSession(request.prompt)
         return result as WorkerHostMethodMap[M]['result']
       }
+      case 'startTask': {
+        const request = params as WorkerHostMethodMap['startTask']['params']
+        if (!request || typeof request.taskId !== 'number') {
+          throw new Error('startTask requires a taskId number')
+        }
+        const taskRunner = getTaskRunner()
+        if (!taskRunner) throw new Error('TaskRunner not initialized')
+        const runId = await taskRunner.startTask(request.taskId)
+        return { runId } as WorkerHostMethodMap[M]['result']
+      }
+      case 'stopTask': {
+        const request = params as WorkerHostMethodMap['stopTask']['params']
+        if (!request || typeof request.runId !== 'string' || request.runId.trim().length === 0) {
+          throw new Error('stopTask requires a non-empty runId string')
+        }
+        const taskRunner = getTaskRunner()
+        if (!taskRunner) throw new Error('TaskRunner not initialized')
+        taskRunner.stopTask(request.runId)
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
       default:
         throw new Error(`Unsupported worker host method: ${String(method)}`)
     }
   }
 
-  private disposeEntry(entry: SessionWorkerEntry, error: Error): void {
+  private disposeEntry(entry: WorkerEntry, error: Error): void {
     if (!this.workers.has(entry.sessionId)) {
       return
     }
@@ -586,17 +607,16 @@ export class SessionWorkerManager {
   }
 }
 
-const sharedSessionWorkerManager = new SessionWorkerManager()
+const sharedJsRuntime = new JsRuntime()
 
-export function getSessionWorkerManager(): SessionWorkerManager {
-  return sharedSessionWorkerManager
+export function getJsRuntime(): JsRuntime {
+  return sharedJsRuntime
 }
 
-export function ensureSessionWorker(sessionId: string): void {
-  sharedSessionWorkerManager.ensureSessionWorker(sessionId)
+export function ensureWorker(sessionId: string): void {
+  sharedJsRuntime.ensureWorker(sessionId)
 }
 
-export function terminateSessionWorker(sessionId: string): void {
-  sharedSessionWorkerManager.terminateSessionWorker(sessionId)
+export function terminateWorker(sessionId: string): void {
+  sharedJsRuntime.terminateWorker(sessionId)
 }
-

@@ -2,8 +2,8 @@
 import type { AgentTool, AgentToolResult } from 'app/agent/types'
 import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
 import { Type } from '@sinclair/typebox'
-import { getSessionWorkerManager } from 'app/agent/worker/session_worker_manager'
-import type { ExecJsDetails } from 'app/agent/worker/types'
+import { getJsRuntime } from 'app/runtime/js_runtime'
+import type { ExecJsDetails } from 'app/runtime/types'
 import { stringifyUnknown } from 'app/agent/tool_utils'
 
 interface CreateExecJsToolArgs {
@@ -81,7 +81,7 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
 
       try {
         const sessionId = args.getSessionId()
-        const manager = getSessionWorkerManager()
+        const manager = getJsRuntime()
         const details = await manager.executeExecJs(sessionId, typedParams.code, timeoutMs, signal)
         return buildToolResult(details)
       } catch (error) {
