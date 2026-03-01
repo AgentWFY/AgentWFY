@@ -1,3 +1,5 @@
+import { getSessionManager } from 'app/agent/session_manager'
+
 const CHAT_ICON = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
 </svg>`
@@ -50,13 +52,13 @@ const STYLES = `
   }
   .badge {
     position: absolute;
-    top: 4px;
-    right: 3px;
+    top: 2px;
+    right: 1px;
     min-width: 16px;
     height: 16px;
     border-radius: 8px;
-    background: var(--color-badge-bg);
-    color: var(--color-badge-fg);
+    background: #4caf50;
+    color: #fff;
     font-size: 10px;
     font-weight: 600;
     display: flex;
@@ -66,9 +68,14 @@ const STYLES = `
     line-height: 1;
     pointer-events: none;
     box-sizing: border-box;
+    animation: badge-pulse 1.5s ease-in-out infinite;
   }
   .badge.hidden {
     display: none;
+  }
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 `
 
@@ -76,6 +83,7 @@ export class TlActivityBar extends HTMLElement {
   private _activePanel: string | null = null
   private _agentCount = 0
   private shadow: ShadowRoot
+  private managerUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -88,24 +96,41 @@ export class TlActivityBar extends HTMLElement {
     this.updateActiveState()
   }
 
-  get agentCount(): number { return this._agentCount }
-  set agentCount(val: number) {
-    this._agentCount = val
-    this.updateBadge()
-  }
-
   connectedCallback() {
     this.render()
-    window.addEventListener('agentwfy:agent-count', this.onAgentCount)
+    this.subscribeToManager()
   }
 
   disconnectedCallback() {
-    window.removeEventListener('agentwfy:agent-count', this.onAgentCount)
+    this.managerUnsub?.()
+    this.managerUnsub = null
   }
 
-  private onAgentCount = (e: Event) => {
-    const detail = (e as CustomEvent<{ count: number }>).detail
-    this.agentCount = detail.count
+  private subscribeToManager() {
+    const mgr = getSessionManager()
+    if (!mgr) {
+      // Manager not yet initialized — poll until available
+      const interval = setInterval(() => {
+        const m = getSessionManager()
+        if (m) {
+          clearInterval(interval)
+          this.managerUnsub = m.subscribe(() => this.syncAgentCount())
+          this.syncAgentCount()
+        }
+      }, 500)
+      return
+    }
+    this.managerUnsub = mgr.subscribe(() => this.syncAgentCount())
+    this.syncAgentCount()
+  }
+
+  private syncAgentCount() {
+    const mgr = getSessionManager()
+    const count = mgr ? mgr.streamingSessionsCount : 0
+    if (count !== this._agentCount) {
+      this._agentCount = count
+      this.updateBadge()
+    }
   }
 
   private render() {
