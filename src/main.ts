@@ -565,6 +565,7 @@ function ensureCommandPaletteWindow(): BrowserWindow {
   }
 
   commandPaletteWindow = new BrowserWindow({
+    parent: mainWindow,
     show: false,
     frame: false,
     transparent: false,
