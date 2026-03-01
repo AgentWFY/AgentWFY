@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
-import { parseRunSqlRequest, routeSqlRequest } from '../services/sql-router';
+import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router';
 
 // --- Constants ---
 
@@ -33,15 +33,7 @@ interface ExecTabJsRequest {
 }
 
 interface GetTabsResult {
-  tabs: Array<{
-    id: string
-    title: string
-    viewId: string | number | null
-    viewUpdatedAt: number | null
-    viewChanged: boolean
-    pinned: boolean
-    selected: boolean
-  }>
+  tabs: Array<Record<string, unknown>>
 }
 
 interface OpenTabRequest {
@@ -71,7 +63,7 @@ interface AgentTabTools {
   reloadTab: (request: ReloadTabRequest) => Promise<void>
   captureTab: (request: CaptureTabRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
   getTabConsoleLogs: (request: GetTabConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
-  execTabJs: (request: ExecTabJsRequest) => Promise<any>
+  execTabJs: (request: ExecTabJsRequest) => Promise<unknown>
 }
 
 // --- Channels ---

@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import type { ElectronAgentDbChange, ElectronAgentDbChangedEvent } from 'app/electron_agent_tools'
 
 export class TlApp extends HTMLElement {
@@ -109,7 +110,7 @@ export class TlApp extends HTMLElement {
     } else {
       this.sidebarEl.classList.add('tl-app-sidebar-hidden')
     }
-    ;(this.activityBarEl as any).activePanel = this.activeSidebarPanel
+    (this.activityBarEl as unknown as { activePanel: string | null }).activePanel = this.activeSidebarPanel
   }
 
   private subscribeToAgentDbChanges() {

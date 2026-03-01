@@ -30,7 +30,7 @@ export interface WorkerRunSqlRequest {
   target?: 'agent' | 'sqlite-file'
   path?: string
   sql: string
-  params?: any[]
+  params?: unknown[]
   description?: string
 }
 
@@ -85,6 +85,7 @@ export interface WorkerGrepRequest {
   options?: WorkerGrepOptions
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface WorkerGetTabsRequest {}
 
 export interface WorkerGetTabsResult {
@@ -148,7 +149,7 @@ export interface WorkerCaptureTabResult {
 export interface WorkerHostMethodMap {
   runSql: {
     params: WorkerRunSqlRequest
-    result: any
+    result: unknown
   }
   read: {
     params: WorkerReadRequest
@@ -212,7 +213,7 @@ export interface WorkerHostMethodMap {
   }
   execTabJs: {
     params: WorkerExecTabJsRequest
-    result: any
+    result: unknown
   }
   busPublish: {
     params: { topic: string; data: unknown }

@@ -1,4 +1,4 @@
-import { runAgentDbSql } from './agent-db';
+import { runAgentDbSql } from './sqlite';
 
 export interface ViewCatalogRecord {
   id: number;

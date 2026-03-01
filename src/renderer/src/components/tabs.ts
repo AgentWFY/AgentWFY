@@ -128,7 +128,7 @@ export class TlTabs extends HTMLElement {
     const tab = this.tabs.find(t => t.id === detail.tabId)
     if (!tab) return
     tab.viewChanged = false
-    const viewEl = this.viewMap.get(tab.id) as any
+    const viewEl = this.viewMap.get(tab.id) as (HTMLElement & { viewChanged?: boolean }) | undefined
     if (viewEl) {
       viewEl.viewChanged = false
     }
@@ -164,7 +164,7 @@ export class TlTabs extends HTMLElement {
       tab.viewChanged = true
       changed = true
 
-      const viewEl = this.viewMap.get(tab.id) as any
+      const viewEl = this.viewMap.get(tab.id) as (HTMLElement & { viewChanged?: boolean }) | undefined
       if (viewEl) {
         viewEl.viewChanged = true
       }
@@ -448,8 +448,8 @@ export class TlTabs extends HTMLElement {
         } else if (tab.type === 'url') {
           viewEl.setAttribute('view-url', String(tab.target))
         }
-        const tabViewEl = viewEl as any
-        tabViewEl.viewChanged = tab.viewChanged
+        const tabViewEl1 = viewEl as HTMLElement & { viewChanged?: boolean }
+        tabViewEl1.viewChanged = tab.viewChanged
         this.viewMap.set(tab.id, viewEl)
       }
 
@@ -465,8 +465,8 @@ export class TlTabs extends HTMLElement {
         }
       }
 
-      const tabViewEl = viewEl as any
-      tabViewEl.viewChanged = tab.viewChanged
+      const tabViewEl2 = viewEl as HTMLElement & { viewChanged?: boolean }
+      tabViewEl2.viewChanged = tab.viewChanged
       if (panel.firstElementChild !== viewEl || panel.childElementCount !== 1) {
         panel.replaceChildren(viewEl)
       }
@@ -518,7 +518,7 @@ export class TlTabs extends HTMLElement {
     const tab = this.tabs.find(t => t.id === id)
     if (!tab) return
     tab.viewChanged = false
-    const viewEl = this.viewMap.get(id) as any
+    const viewEl = this.viewMap.get(id) as (HTMLElement & { viewChanged?: boolean }) | undefined
     if (viewEl) {
       viewEl.viewChanged = false
     }

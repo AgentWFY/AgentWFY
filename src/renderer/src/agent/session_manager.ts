@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'
@@ -365,7 +366,7 @@ function getTextContent(content: unknown): string {
 
   let text = ''
   for (const block of content) {
-    const item = block as any
+    const item = block as Record<string, unknown>
     if (item?.type === 'text' && typeof item.text === 'string') {
       text += item.text
     }
@@ -377,7 +378,7 @@ export function extractFirstUserMessage(messages: unknown, maxLen: number): stri
   if (!Array.isArray(messages)) return null
 
   for (const msg of messages) {
-    const m = msg as any
+    const m = msg as Record<string, unknown>
     if (m?.role !== 'user') continue
     const trimmed = getTextContent(m.content).trim()
     if (trimmed) return trimmed.slice(0, maxLen)

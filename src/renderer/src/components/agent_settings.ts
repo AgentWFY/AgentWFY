@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import { getModels, getProviders } from '@mariozechner/pi-ai'
 import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 import type { AgentAuthConfig, AuthMethod } from 'app/agent/agent_auth'
@@ -150,13 +151,13 @@ const authMethods: { id: AuthMethod; label: string }[] = [
   { id: 'api-key', label: 'API Key' },
   ...oauthProviders.map(p => ({ id: p.id, label: p.name })),
 ]
-const thinkingLevels: ThinkingLevel[] = ['off' as any, 'minimal', 'low', 'medium', 'high', 'xhigh']
+const thinkingLevels: ThinkingLevel[] = ['off' as ThinkingLevel, 'minimal', 'low', 'medium', 'high', 'xhigh']
 
 function safeGetModels(provider: string) {
   try {
-    const models = getModels(provider as any)
+    const models = getModels(provider as never)
     if (provider === 'openai-codex') {
-      return [...models].sort((a: any, b: any) =>
+      return [...models].sort((a: { id?: string }, b: { id?: string }) =>
         String(b?.id ?? '').localeCompare(String(a?.id ?? ''), undefined, { numeric: true, sensitivity: 'base' })
       )
     }
@@ -168,7 +169,7 @@ function safeGetModels(provider: string) {
 
 function getModelIdForProvider(provider: string, currentModelId: string): string {
   const models = safeGetModels(provider)
-  if (models.some((model: any) => model.id === currentModelId)) {
+  if (models.some((model) => model.id === currentModelId)) {
     return currentModelId
   }
   return models.length > 0 ? models[0].id : ''
@@ -258,7 +259,7 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   private async handleAuthMethodChange(e: Event) {
-    const value = (e.target as any).value as AuthMethod
+    const value = (e.target as HTMLSelectElement).value as AuthMethod
     const providerOverride = getProviderForAuthMethod(value)
     const partial: Partial<AgentAuthConfig> = { authMethod: value }
     if (providerOverride) {
@@ -359,7 +360,7 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   private async handleProviderChange(e: Event) {
-    const value = (e.target as any).value
+    const value = (e.target as HTMLSelectElement).value
     const models = safeGetModels(value)
     const firstModelId = models.length > 0 ? models[0].id : ''
     await this.update({ provider: value, modelId: firstModelId })
@@ -368,13 +369,13 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   private async handleModelChange(e: Event) {
-    const value = (e.target as any).value
+    const value = (e.target as HTMLSelectElement).value
     await this.update({ modelId: value })
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
   }
 
   private async handleThinkingChange(e: Event) {
-    const value = (e.target as any).value
+    const value = (e.target as HTMLSelectElement).value
     await this.update({ thinkingLevel: value })
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
   }
@@ -492,7 +493,7 @@ export class TlAgentSettings extends HTMLElement {
         config.provider,
       )
       const modelOpts = this.buildOptions(
-        this.availableModels.map((m: any) => ({ value: m.id, label: m.name || m.id })),
+        this.availableModels.map((m: { id: string; name?: string }) => ({ value: m.id, label: m.name || m.id })),
         config.modelId,
       )
       const thinkingOpts = this.buildOptions(
@@ -517,7 +518,7 @@ export class TlAgentSettings extends HTMLElement {
         </div>`
     } else {
       const modelOpts = this.buildOptions(
-        this.availableModels.map((m: any) => ({ value: m.id, label: m.name || m.id })),
+        this.availableModels.map((m: { id: string; name?: string }) => ({ value: m.id, label: m.name || m.id })),
         config.modelId,
       )
       const thinkingOpts = this.buildOptions(

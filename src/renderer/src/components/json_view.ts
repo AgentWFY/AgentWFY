@@ -1,5 +1,5 @@
 export class TlJson extends HTMLElement {
-  private _json: any = {}
+  private _json: unknown = {}
   private _isOpen = false
   private _placeholder = '{..}'
   private preEl: HTMLPreElement
@@ -19,7 +19,7 @@ export class TlJson extends HTMLElement {
     this.updateDisplay()
   }
 
-  set json(value: any) {
+  set json(value: unknown) {
     this._json = value
     this.updateDisplay()
   }

@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import { marked } from 'marked'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
@@ -13,8 +14,8 @@ import type { TlJson } from 'app/components/json_view'
 interface ToolPair {
   name: string
   id: string
-  arguments: any
-  result: any | null
+  arguments: unknown
+  result: unknown
   isError: boolean
 }
 
@@ -23,7 +24,7 @@ interface DisplayBlock {
   text: string
   tools: ToolPair[]
   compactionBeforeCount?: number
-  raw: any
+  raw: Record<string, unknown>
 }
 
 const STYLES = `
@@ -534,27 +535,27 @@ export class TlAgentChat extends HTMLElement {
     return this.openToolSet.has(id)
   }
 
-  private getTextFromContent(content: any): string {
+  private getTextFromContent(content: unknown): string {
     if (typeof content === 'string') return content
     if (Array.isArray(content)) {
       return content
-        .filter((block: any) => block?.type === 'text')
-        .map((block: any) => block.text)
+        .filter((block: Record<string, unknown>) => block?.type === 'text')
+        .map((block: Record<string, unknown>) => block.text as string)
         .join('')
     }
     return ''
   }
 
-  private getToolCalls(content: any): any[] {
+  private getToolCalls(content: unknown): Record<string, unknown>[] {
     if (!Array.isArray(content)) return []
-    return content.filter((block: any) => block?.type === 'toolCall')
+    return content.filter((block: Record<string, unknown>) => block?.type === 'toolCall')
   }
 
   private buildDisplayBlocks(msgs: AgentMessage[]): DisplayBlock[] {
     const blocks: DisplayBlock[] = []
     let i = 0
     while (i < msgs.length) {
-      const msg = msgs[i] as any
+      const msg = msgs[i] as unknown as Record<string, unknown>
       if (msg.role === 'user') {
         blocks.push({ type: 'user', text: this.getTextFromContent(msg.content), tools: [], raw: msg })
         i++
@@ -564,11 +565,11 @@ export class TlAgentChat extends HTMLElement {
         const tools: ToolPair[] = []
         let j = i + 1
         for (const tc of toolCalls) {
-          const pair: ToolPair = { name: tc.name, id: tc.id, arguments: tc.arguments, result: null, isError: false }
-          if (j < msgs.length && (msgs[j] as any).role === 'toolResult' && (msgs[j] as any).toolCallId === tc.id) {
-            const tr = msgs[j] as any
-            pair.result = tr.content
-            pair.isError = tr.isError
+          const pair: ToolPair = { name: tc.name as string, id: tc.id as string, arguments: tc.arguments, result: null, isError: false }
+          const nextMsg = j < msgs.length ? (msgs[j] as unknown as Record<string, unknown>) : null
+          if (nextMsg && nextMsg.role === 'toolResult' && nextMsg.toolCallId === tc.id) {
+            pair.result = nextMsg.content
+            pair.isError = nextMsg.isError as boolean
             j++
           }
           tools.push(pair)
@@ -603,11 +604,11 @@ export class TlAgentChat extends HTMLElement {
     return marked(text) as string
   }
 
-  private extractImagesFromResult(result: any): { images: Array<{ data: string; mimeType: string }>; filteredResult: any } {
+  private extractImagesFromResult(result: unknown): { images: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
     const images: Array<{ data: string; mimeType: string }> = []
     if (!Array.isArray(result)) return { images, filteredResult: result }
 
-    const filtered = result.filter((item: any) => {
+    const filtered = result.filter((item: Record<string, unknown>) => {
       if (item?.type === 'image' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
         images.push({ data: item.data, mimeType: item.mimeType })
         return false
@@ -618,12 +619,13 @@ export class TlAgentChat extends HTMLElement {
     return { images, filteredResult: filtered }
   }
 
-  private summarizeArgs(args: any): string {
+  private summarizeArgs(args: unknown): string {
     if (!args || typeof args !== 'object') return ''
-    const keys = Object.keys(args)
+    const argsObj = args as Record<string, unknown>
+    const keys = Object.keys(argsObj)
     if (keys.length === 0) return ''
     const parts = keys.slice(0, 3).map(k => {
-      const v = args[k]
+      const v = argsObj[k]
       const s = typeof v === 'string' ? v : JSON.stringify(v)
       return s.length > 40 ? s.slice(0, 40) + '...' : s
     })
@@ -999,9 +1001,9 @@ export class TlAgentChat extends HTMLElement {
     if (!this._settingsPanel) return
     if (this.showSettings && this.authConfig) {
       this._settingsPanel.style.display = ''
-      let settingsEl = this._settingsPanel.querySelector('tl-agent-settings') as any
+      let settingsEl = this._settingsPanel.querySelector('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; showTools?: boolean; disabled?: boolean } | null
       if (!settingsEl) {
-        settingsEl = document.createElement('tl-agent-settings')
+        settingsEl = document.createElement('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; showTools?: boolean; disabled?: boolean }
         settingsEl.id = 'inline-settings'
         settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))
         settingsEl.addEventListener('reconnect', () => this.handleReconnect())
@@ -1011,7 +1013,7 @@ export class TlAgentChat extends HTMLElement {
         })
         this._settingsPanel.appendChild(settingsEl)
       }
-      settingsEl.authConfig = this.authConfig
+      settingsEl.authConfig = this.authConfig!
       settingsEl.showTools = this.showTools
       settingsEl.disabled = this.isStreaming
     } else {
@@ -1020,7 +1022,7 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private attachSetupSettingsListeners() {
-    const settingsEl = this.containerEl.querySelector('#setup-settings') as any
+    const settingsEl = this.containerEl.querySelector('#setup-settings') as HTMLElement & { authConfig?: AgentAuthConfig } | null
     if (settingsEl && this.authConfig) {
       settingsEl.authConfig = this.authConfig
       settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))

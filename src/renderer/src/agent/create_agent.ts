@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import {
   Agent,
   type AgentEvent,
@@ -100,7 +101,7 @@ export interface HookMessage {
 }
 
 export interface ModelCycleResult {
-  model: Model<any>
+  model: Model<unknown>
   thinkingLevel: ThinkingLevel
   isScoped: boolean
 }
@@ -191,7 +192,7 @@ function normalizeSessionFileName(sessionFile: string): string {
   const fileName = normalizedPath.split('/').filter(Boolean).pop() ?? normalizedPath
 
   if (!/^[A-Za-z0-9._-]+\.json$/.test(fileName)) {
-    throw new Error(`Invalid session file name \"${sessionFile}\"`)
+    throw new Error(`Invalid session file name "${sessionFile}"`)
   }
 
   return fileName
@@ -201,7 +202,7 @@ function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === 'string' && THINKING_LEVELS_WITH_XHIGH.includes(value as ThinkingLevel)
 }
 
-function normalizeThinkingLevel(level: unknown, model?: Model<any>): ThinkingLevel {
+function normalizeThinkingLevel(level: unknown, model?: Model<unknown>): ThinkingLevel {
   const fallback: ThinkingLevel = model?.reasoning ? 'minimal' : 'off'
   if (!isThinkingLevel(level)) {
     return fallback
@@ -218,23 +219,23 @@ function normalizeThinkingLevel(level: unknown, model?: Model<any>): ThinkingLev
   return level
 }
 
-function resolveModel(provider: string, modelId: string): Model<any> {
-  const model = getModel(provider as any, modelId as any)
+function resolveModel(provider: string, modelId: string): Model<unknown> {
+  const model = getModel(provider as never, modelId as never)
   if (model) {
     return model
   }
 
-  const availableModels = getModels(provider as any)
+  const availableModels = getModels(provider as never)
   if (availableModels.length === 0) {
     const availableProviders = getProviders()
     throw new Error(
-      `Unknown provider \"${provider}\". Configure one of ${availableProviders.join(', ')} or pass a valid provider supported by pi-ai.`
+      `Unknown provider "${provider}". Configure one of ${availableProviders.join(', ')} or pass a valid provider supported by pi-ai.`
     )
   }
 
-  const modelIds = availableModels.slice(0, 20).map((entry: any) => entry.id)
+  const modelIds = availableModels.slice(0, 20).map((entry: { id?: string }) => entry.id)
   throw new Error(
-    `Model \"${modelId}\" was not found for provider \"${provider}\". Example available models: ${modelIds.join(', ')}`
+    `Model "${modelId}" was not found for provider "${provider}". Example available models: ${modelIds.join(', ')}`
   )
 }
 
@@ -302,20 +303,21 @@ async function loadSystemPrompt(): Promise<string> {
 }
 
 function extractAssistantText(message: AgentMessage | undefined): string {
-  if (!message || (message as any).role !== 'assistant') return ''
+  const msg = message as Record<string, unknown> | undefined
+  if (!msg || msg.role !== 'assistant') return ''
 
-  const content = (message as any).content
+  const content = msg.content
   if (!Array.isArray(content)) return typeof content === 'string' ? content : ''
 
   return content
-    .filter((item: any) => item?.type === 'text')
-    .map((item: any) => item.text)
+    .filter((item: Record<string, unknown>) => item?.type === 'text')
+    .map((item: Record<string, unknown>) => item.text as string)
     .join('')
 }
 
 function getLastAssistantMessage(messages: AgentMessage[]): AgentMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if ((messages[i] as any).role === 'assistant') {
+    if ((messages[i] as unknown as { role: string }).role === 'assistant') {
       return messages[i]
     }
   }
@@ -338,7 +340,7 @@ function extractTextContent(content: unknown): string {
 
   if (Array.isArray(content)) {
     return content
-      .map((item: any) => {
+      .map((item: Record<string, unknown>) => {
         if (item?.type === 'text' && typeof item.text === 'string') {
           return item.text
         }
@@ -375,7 +377,7 @@ function toCompactionSummaryMessage(summary: string, beforeCount: number): Agent
     display: true,
     details: { beforeCount },
     timestamp: Date.now()
-  } as any
+  } as unknown as AgentMessage
 }
 
 function toHookAgentMessage(message: HookMessage): AgentMessage {
@@ -386,14 +388,14 @@ function toHookAgentMessage(message: HookMessage): AgentMessage {
     display: message.display,
     details: message.details,
     timestamp: Date.now()
-  } as any
+  } as unknown as AgentMessage
 }
 
 function convertAgentMessagesToLlm(messages: AgentMessage[]): Message[] {
   const llmMessages: Message[] = []
 
   for (const message of messages) {
-    const unknownMessage = message as any
+    const unknownMessage = message as unknown as Record<string, unknown>
     const role = unknownMessage?.role
 
     if (role === 'user' || role === 'assistant' || role === 'toolResult') {
@@ -419,7 +421,7 @@ function convertAgentMessagesToLlm(messages: AgentMessage[]): Message[] {
 }
 
 function messageToSummaryLine(message: AgentMessage): string {
-  const unknownMessage = message as any
+  const unknownMessage = message as unknown as Record<string, unknown>
   const role = typeof unknownMessage?.role === 'string' ? unknownMessage.role : 'unknown'
   const content = unknownMessage?.content
 
@@ -472,23 +474,23 @@ function buildCompactionSummary(messages: AgentMessage[], customInstructions?: s
 
 function extractTextFromAssistant(message: AssistantMessage): string {
   return message.content
-    .filter((item: any) => item?.type === 'text' && typeof item.text === 'string')
-    .map((item: any) => item.text)
+    .filter((item: { type: string; text?: string }) => item?.type === 'text' && typeof item.text === 'string')
+    .map((item: { type: string; text?: string }) => item.text as string)
     .join('\n')
 }
 
 function parseStoredSession(raw: string, sessionFile: string): StoredSession {
-  let parsed: any
+  let parsed: Record<string, unknown>
 
   try {
     parsed = JSON.parse(raw)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to parse session file \"${sessionFile}\": ${message}`)
+    throw new Error(`Failed to parse session file "${sessionFile}": ${message}`)
   }
 
   if (!parsed || typeof parsed !== 'object') {
-    throw new Error(`Session file \"${sessionFile}\" does not contain a JSON object`)
+    throw new Error(`Session file "${sessionFile}" does not contain a JSON object`)
   }
 
   const messages = Array.isArray(parsed.messages) ? parsed.messages : []
@@ -497,10 +499,10 @@ function parseStoredSession(raw: string, sessionFile: string): StoredSession {
     version: typeof parsed.version === 'number' ? parsed.version : 0,
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
     parentSession: typeof parsed.parentSession === 'string' ? parsed.parentSession : undefined,
-    model: parsed.model && typeof parsed.model === 'object' && typeof parsed.model.provider === 'string' && typeof parsed.model.id === 'string'
+    model: parsed.model && typeof parsed.model === 'object' && typeof (parsed.model as Record<string, unknown>).provider === 'string' && typeof (parsed.model as Record<string, unknown>).id === 'string'
       ? {
-        provider: parsed.model.provider,
-        id: parsed.model.id
+        provider: (parsed.model as Record<string, unknown>).provider as string,
+        id: (parsed.model as Record<string, unknown>).id as string
       }
       : undefined,
     thinkingLevel: isThinkingLevel(parsed.thinkingLevel) ? parsed.thinkingLevel : 'off',
@@ -634,7 +636,7 @@ export class AgentWFYAgent {
     return this.persistSessionsToDisk
   }
 
-  get model(): Model<any> | undefined {
+  get model(): Model<unknown> | undefined {
     return this.agent.state.model
   }
 
@@ -725,7 +727,7 @@ export class AgentWFYAgent {
     return this.subscribe(listener)
   }
 
-  async setModel(model: Model<any>): Promise<void> {
+  async setModel(model: Model<unknown>): Promise<void> {
     this.agent.setModel(model)
 
     if (!model.reasoning) {
@@ -748,7 +750,7 @@ export class AgentWFYAgent {
       return undefined
     }
 
-    const models = getModels(currentModel.provider as any)
+    const models = getModels(currentModel.provider as never)
     if (models.length === 0) {
       return undefined
     }

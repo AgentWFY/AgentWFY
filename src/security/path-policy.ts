@@ -33,8 +33,8 @@ async function pathExists(candidate: string): Promise<boolean> {
   try {
     await fs.lstat(candidate);
     return true;
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') return false;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
     throw error;
   }
 }
@@ -55,8 +55,8 @@ async function resolveRootRealPath(root: string): Promise<string> {
   const normalizedRoot = path.resolve(root);
   try {
     return await fs.realpath(normalizedRoot);
-  } catch (error: any) {
-    if (error?.code === 'ENOENT') {
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
       return normalizedRoot;
     }
     throw error;

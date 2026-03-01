@@ -17,16 +17,16 @@ declare global {
     // For target="sqlite-file", this path must resolve inside DATA_DIR and outside DATA_DIR/.agentwfy.
     path?: string;
     sql: string;
-    params?: any[];
+    params?: unknown[];
     description?: string;
   }
 
   interface Window {
     electronClientTools?: {
-      openDialog(options: any): Promise<string[]>;
+      openDialog(options: Record<string, unknown>): Promise<string[]>;
       openUrlInDefaultBrowser(url: string): Promise<void>;
-      getStoreItem<T = any>(key: string): Promise<T>;
-      setStoreItem<T = any>(key: string, value: T): Promise<void>;
+      getStoreItem<T = unknown>(key: string): Promise<T>;
+      setStoreItem<T = unknown>(key: string, value: T): Promise<void>;
       removeStoreItem(key: string): Promise<void>;
       listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>;
       readSession(sessionFileName: string): Promise<string>;
@@ -49,7 +49,7 @@ declare global {
       remove(path: string, recursive?: boolean): Promise<void>;
       find(pattern: string, path?: string, limit?: number): Promise<string>;
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
-      runSql(request: ElectronRunSqlRequest): Promise<any>;
+      runSql(request: ElectronRunSqlRequest): Promise<unknown>;
       getTabs(): Promise<{ tabs: Array<{ id: string; title: string; type: 'view' | 'file' | 'url'; target: string | number; viewUpdatedAt: number | null; viewChanged: boolean; pinned: boolean; selected: boolean }> }>;
       openTab(request: { viewId?: string | number; filePath?: string; url?: string; title?: string }): Promise<void>;
       closeTab(request: { tabId: string }): Promise<void>;
@@ -57,7 +57,7 @@ declare global {
       reloadTab(request: { tabId: string }): Promise<void>;
       captureTab(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }>;
       getTabConsoleLogs(request: { tabId: string; since?: number; limit?: number }): Promise<Array<{ level: string; message: string; timestamp: number }>>;
-      execTabJs(request: { tabId: string; code: string; timeoutMs?: number }): Promise<any>;
+      execTabJs(request: { tabId: string; code: string; timeoutMs?: number }): Promise<unknown>;
       publish(topic: string, data: unknown): Promise<void>;
       waitFor(topic: string, timeoutMs?: number): Promise<unknown>;
       spawnAgent(prompt: string): Promise<{ agentId: string }>;

@@ -1,5 +1,5 @@
-import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest } from './agent-db';
-import { resolveSqliteFilePath } from './path-policy';
+import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest } from './sqlite';
+import { resolveSqliteFilePath } from './paths';
 
 export type SqlTarget = 'agent' | 'sqlite-file';
 
