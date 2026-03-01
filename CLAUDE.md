@@ -47,10 +47,9 @@ Channel prefixes: `agentwfy:*` (agent tools), `app:*` (app-level), `bus:*` (even
 ### UI Framework
 
 Custom Web Components (no React/Vue). Components are in `src/renderer/src/components/` with `tl-` prefix:
-- `tl-app` — Root shell: activity bar + sidebar + main tab area
+- `tl-app` — Root shell: header (sidebar buttons + tab bar) + sidebar + main tab area
 - `tl-tabs` — Tab management with external BrowserWindow views
 - `tl-agent-chat` — Chat interface for the AI agent
-- `tl-activity-bar` — Left sidebar icons
 
 Components use direct DOM manipulation (no virtual DOM), class properties for local state, and CustomEvents for communication.
 

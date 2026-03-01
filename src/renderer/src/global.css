@@ -8,8 +8,6 @@
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
 
   /* Layout constants */
-  --activity-bar-width: 48px;
-  --sidebar-width: 380px;
   --status-line-height: 24px;
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -35,13 +33,7 @@
   --color-text4: #1a1a1a;
   --color-placeholder: #b0b0b0;
 
-  --color-activity-bar-bg: #e0e0e0;
-  --color-activity-bar-fg: #656565;
-  --color-activity-bar-fg-active: #1a1a1a;
-
   --color-sidebar-bg: #f6f6f6;
-
-  --color-status-line-bg: #d0d0d0;
 
   --color-accent: #1a6fb5;
   --color-accent-hover: #2080cc;
@@ -59,6 +51,7 @@
   --color-selection-bg: #1a6fb5;
   --color-selection-fg: #ffffff;
   --color-item-hover: rgba(0, 0, 0, 0.05);
+  --color-item-active: rgba(0, 0, 0, 0.10);
 
   --color-selection-inactive-bg: #e0e0e0;
   --color-selection-inactive-fg: #333333;
@@ -94,13 +87,7 @@
     --color-text4: #e0e0e0;
     --color-placeholder: #666666;
 
-    --color-activity-bar-bg: #181818;
-    --color-activity-bar-fg: #7a7a7a;
-    --color-activity-bar-fg-active: #e0e0e0;
-
     --color-sidebar-bg: #252526;
-
-    --color-status-line-bg: #252526;
 
     --color-accent: #2b7ab5;
     --color-accent-hover: #3994d4;
@@ -116,6 +103,7 @@
     --color-yellow-fg: #ffb74d;
 
     --color-item-hover: rgba(255, 255, 255, 0.05);
+    --color-item-active: rgba(255, 255, 255, 0.10);
     --color-selection-inactive-bg: #3a3a3a;
     --color-selection-inactive-fg: #cccccc;
 

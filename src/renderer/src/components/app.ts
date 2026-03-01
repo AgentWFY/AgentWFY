@@ -1,13 +1,29 @@
 /* eslint-disable import/no-unresolved */
 import type { ElectronAgentDbChange } from 'app/electron_agent_tools'
 
+const CHAT_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+</svg>`
+
+const TASKS_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="5 3 19 12 5 21 5 3"/>
+</svg>`
+
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
   private sidebarEl!: HTMLDivElement
-  private activityBarEl!: HTMLElement
+  private sidebarButtonsEl!: HTMLDivElement
+  private sidebarHeaderEl!: HTMLDivElement
+  private headerSpacerEl!: HTMLDivElement
+  private headerResizeSpacerEl!: HTMLDivElement
+  private headerEl!: HTMLDivElement
+  private resizeHandleEl!: HTMLDivElement
   private agentChatEl!: HTMLElement
   private taskPanelEl!: HTMLElement
+  private tabsEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
+  private sidebarWidth = 380
+  private isResizing = false
 
   private onPanelToggle = (e: Event) => {
     const detail = (e as CustomEvent<{ panel: string }>).detail
@@ -28,12 +44,39 @@ export class TlApp extends HTMLElement {
     this.updateSidebar()
   }
 
+  private onResizeMouseDown = (e: MouseEvent) => {
+    e.preventDefault()
+    this.isResizing = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', this.onResizeMouseMove)
+    document.addEventListener('mouseup', this.onResizeMouseUp)
+  }
+
+  private onResizeMouseMove = (e: MouseEvent) => {
+    if (!this.isResizing) return
+    const newWidth = Math.min(Math.max(e.clientX, 200), 800)
+    this.sidebarWidth = newWidth
+    this.sidebarEl.style.width = `${newWidth}px`
+    this.updateHeaderSpacer()
+  }
+
+  private onResizeMouseUp = () => {
+    this.isResizing = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', this.onResizeMouseMove)
+    document.removeEventListener('mouseup', this.onResizeMouseUp)
+  }
+
   connectedCallback() {
     this.style.display = 'block'
     this.style.width = '100%'
     this.style.height = '100%'
     this.style.minHeight = '0'
     this.style.minWidth = '0'
+
+    const isMac = navigator.platform.includes('Mac')
 
     const style = document.createElement('style')
     style.textContent = `
@@ -43,13 +86,80 @@ export class TlApp extends HTMLElement {
         width: 100vw;
         height: 100vh;
       }
+      .tl-app-header {
+        display: flex;
+        flex-shrink: 0;
+        background: var(--color-bg3);
+        -webkit-app-region: drag;
+      }
+      .tl-app-header > .tab-bar {
+        flex: 1;
+        min-width: 0;
+      }
+      .tl-app-sidebar-header {
+        display: flex;
+        flex-shrink: 0;
+      }
+      .tl-app-sidebar-header.open {
+        background: var(--color-sidebar-bg);
+        border-right: 1px solid var(--color-border);
+      }
+      .tl-app-sidebar-buttons {
+        display: flex;
+        align-items: flex-end;
+        flex-shrink: 0;
+        height: 36px;
+        gap: 2px;
+        padding: 0 4px 2px;
+        -webkit-app-region: no-drag;
+        ${isMac ? 'padding-left: 78px;' : ''}
+      }
+      .tl-app-sidebar-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text2);
+        cursor: pointer;
+        padding: 0;
+        transition: color var(--transition-fast), background var(--transition-fast);
+      }
+      .tl-app-sidebar-btn:hover {
+        color: var(--color-text4);
+        background: var(--color-item-hover);
+      }
+      .tl-app-sidebar-btn.active {
+        color: var(--color-text4);
+        background: var(--color-item-active);
+      }
+      .tl-app-header-spacer {
+        flex-shrink: 0;
+      }
+      .tl-app-header-resize-spacer {
+        width: 4px;
+        flex-shrink: 0;
+        margin-left: -4px;
+        position: relative;
+        z-index: 1;
+        cursor: col-resize;
+        background: transparent;
+        transition: background var(--transition-fast);
+        -webkit-app-region: no-drag;
+      }
+      .tl-app-resize-handle.resize-hover,
+      .tl-app-header-resize-spacer.resize-hover {
+        background: var(--color-accent);
+      }
       .tl-app-container {
         display: flex;
         flex: 1;
         min-height: 0;
       }
       .tl-app-sidebar {
-        width: var(--sidebar-width);
         display: flex;
         flex-direction: column;
         flex-shrink: 0;
@@ -70,6 +180,19 @@ export class TlApp extends HTMLElement {
       .tl-app-sidebar-hidden {
         display: none;
       }
+      .tl-app-resize-handle {
+        width: 4px;
+        cursor: col-resize;
+        flex-shrink: 0;
+        margin-left: -4px;
+        position: relative;
+        z-index: 1;
+        background: transparent;
+        transition: background var(--transition-fast);
+      }
+      .tl-app-resize-handle-hidden {
+        display: none;
+      }
       .tl-app-main-area {
         flex: 1;
         overflow: hidden;
@@ -83,16 +206,55 @@ export class TlApp extends HTMLElement {
     const outer = document.createElement('div')
     outer.className = 'tl-app-outer'
 
+    // Header row: sidebar-header (buttons + spacer) + resize spacer + tab bar
+    this.headerEl = document.createElement('div')
+    this.headerEl.className = 'tl-app-header'
+
+    this.sidebarHeaderEl = document.createElement('div')
+    this.sidebarHeaderEl.className = 'tl-app-sidebar-header'
+
+    this.sidebarButtonsEl = document.createElement('div')
+    this.sidebarButtonsEl.className = 'tl-app-sidebar-buttons'
+    this.sidebarButtonsEl.innerHTML = `
+      <button class="tl-app-sidebar-btn" data-panel="agent-chat" title="Agent Chat">${CHAT_ICON}</button>
+      <button class="tl-app-sidebar-btn" data-panel="tasks" title="Tasks">${TASKS_ICON}</button>
+    `
+    this.sidebarButtonsEl.querySelectorAll('.tl-app-sidebar-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const panel = (btn as HTMLElement).dataset.panel!
+        this.dispatchEvent(new CustomEvent('panel-toggle', {
+          detail: { panel },
+          bubbles: true,
+          composed: true,
+        }))
+      })
+    })
+    this.sidebarHeaderEl.appendChild(this.sidebarButtonsEl)
+
+    this.headerSpacerEl = document.createElement('div')
+    this.headerSpacerEl.className = 'tl-app-header-spacer'
+    this.headerSpacerEl.style.display = 'none'
+    this.sidebarHeaderEl.appendChild(this.headerSpacerEl)
+
+    this.headerEl.appendChild(this.sidebarHeaderEl)
+
+    this.headerResizeSpacerEl = document.createElement('div')
+    this.headerResizeSpacerEl.className = 'tl-app-header-resize-spacer'
+    this.headerResizeSpacerEl.style.display = 'none'
+    this.headerResizeSpacerEl.addEventListener('mousedown', this.onResizeMouseDown)
+    this.headerEl.appendChild(this.headerResizeSpacerEl)
+
+    outer.appendChild(this.headerEl)
+
+    // Content row
     const container = document.createElement('div')
     container.className = 'tl-app-container'
-
-    // Activity bar
-    this.activityBarEl = document.createElement('tl-activity-bar')
-    container.appendChild(this.activityBarEl)
 
     // Sidebar
     this.sidebarEl = document.createElement('div')
     this.sidebarEl.className = 'tl-app-sidebar tl-app-sidebar-hidden'
+    this.sidebarEl.style.width = `${this.sidebarWidth}px`
     this.agentChatEl = document.createElement('tl-agent-chat')
     this.agentChatEl.classList.add('panel-hidden')
     this.sidebarEl.appendChild(this.agentChatEl)
@@ -101,12 +263,32 @@ export class TlApp extends HTMLElement {
     this.sidebarEl.appendChild(this.taskPanelEl)
     container.appendChild(this.sidebarEl)
 
+    // Resize handle
+    this.resizeHandleEl = document.createElement('div')
+    this.resizeHandleEl.className = 'tl-app-resize-handle tl-app-resize-handle-hidden'
+    this.resizeHandleEl.addEventListener('mousedown', this.onResizeMouseDown)
+    container.appendChild(this.resizeHandleEl)
+
     // Main area
     const mainArea = document.createElement('div')
     mainArea.className = 'tl-app-main-area'
-    const tabs = document.createElement('tl-tabs')
-    mainArea.appendChild(tabs)
+    this.tabsEl = document.createElement('tl-tabs')
+    mainArea.appendChild(this.tabsEl)
     container.appendChild(mainArea)
+
+    // Sync hover on both resize elements
+    const addResizeHover = () => {
+      this.resizeHandleEl.classList.add('resize-hover')
+      this.headerResizeSpacerEl.classList.add('resize-hover')
+    }
+    const removeResizeHover = () => {
+      this.resizeHandleEl.classList.remove('resize-hover')
+      this.headerResizeSpacerEl.classList.remove('resize-hover')
+    }
+    this.resizeHandleEl.addEventListener('mouseenter', addResizeHover)
+    this.resizeHandleEl.addEventListener('mouseleave', removeResizeHover)
+    this.headerResizeSpacerEl.addEventListener('mouseenter', addResizeHover)
+    this.headerResizeSpacerEl.addEventListener('mouseleave', removeResizeHover)
 
     outer.appendChild(container)
 
@@ -115,6 +297,12 @@ export class TlApp extends HTMLElement {
     outer.appendChild(statusLine)
 
     this.appendChild(outer)
+
+    // Reparent tab bar from tl-tabs into the header
+    const tabsComponent = this.tabsEl as HTMLElement & { tabBarEl?: HTMLDivElement }
+    if (tabsComponent.tabBarEl) {
+      this.headerEl.appendChild(tabsComponent.tabBarEl)
+    }
 
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
@@ -125,21 +313,41 @@ export class TlApp extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    document.removeEventListener('mousemove', this.onResizeMouseMove)
+    document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
     this.unlistenAgentDbChanged = null
   }
 
-  private updateSidebar() {
+  private updateHeaderSpacer() {
     if (this.activeSidebarPanel) {
-      this.sidebarEl.classList.remove('tl-app-sidebar-hidden')
+      const buttonsWidth = this.sidebarButtonsEl.offsetWidth
+      const spacerWidth = Math.max(0, this.sidebarWidth - buttonsWidth)
+      this.headerSpacerEl.style.display = ''
+      this.headerSpacerEl.style.width = `${spacerWidth}px`
+      this.sidebarHeaderEl.classList.add('open')
+      this.headerResizeSpacerEl.style.display = ''
     } else {
-      this.sidebarEl.classList.add('tl-app-sidebar-hidden')
+      this.headerSpacerEl.style.display = 'none'
+      this.sidebarHeaderEl.classList.remove('open')
+      this.headerResizeSpacerEl.style.display = 'none'
     }
+  }
+
+  private updateSidebar() {
+    const isOpen = !!this.activeSidebarPanel
+    this.sidebarEl.classList.toggle('tl-app-sidebar-hidden', !isOpen)
+    this.resizeHandleEl.classList.toggle('tl-app-resize-handle-hidden', !isOpen)
 
     this.agentChatEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'agent-chat')
     this.taskPanelEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'tasks')
 
-    ;(this.activityBarEl as unknown as { activePanel: string | null }).activePanel = this.activeSidebarPanel
+    this.sidebarButtonsEl.querySelectorAll('.tl-app-sidebar-btn').forEach(btn => {
+      const panel = (btn as HTMLElement).dataset.panel
+      btn.classList.toggle('active', panel === this.activeSidebarPanel)
+    })
+
+    this.updateHeaderSpacer()
   }
 
   private subscribeToAgentDbChanges() {

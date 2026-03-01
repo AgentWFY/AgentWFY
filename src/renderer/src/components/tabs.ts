@@ -32,7 +32,7 @@ export class TlTabs extends HTMLElement {
   private dragFromIndex: number | null = null
   private dragOverIndex: number | null = null
   private containerEl!: HTMLDivElement
-  private tabBarEl!: HTMLDivElement
+  tabBarEl!: HTMLDivElement
   private panelContainerEl!: HTMLDivElement
   private emptyStateEl!: HTMLDivElement
   private viewMap: Map<string, HTMLElement> = new Map()
@@ -293,15 +293,16 @@ export class TlTabs extends HTMLElement {
   private render() {
     if (!this.containerEl) return
     const hasTabs = this.tabs.length > 0
-    this.tabBarEl.style.display = hasTabs ? 'flex' : 'none'
     this.panelContainerEl.style.display = hasTabs ? 'flex' : 'none'
     this.emptyStateEl.style.display = hasTabs ? 'none' : 'flex'
+
+    const oldTabItems = this.tabBarEl.querySelectorAll('.tab-item, .pinned-separator')
+    oldTabItems.forEach(el => el.remove())
 
     if (!hasTabs) {
       return
     }
 
-    this.tabBarEl.innerHTML = ''
     const tabBar = this.tabBarEl
     const pinnedEnd = this.pinnedCount()
 
@@ -540,7 +541,6 @@ export class TlTabs extends HTMLElement {
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        border-left: 1px solid var(--color-border);
         height: 100%;
         min-height: 0;
         min-width: 0;
@@ -555,7 +555,6 @@ export class TlTabs extends HTMLElement {
         padding: 0 4px;
         gap: 2px;
         -webkit-app-region: drag;
-        ${isMac ? 'padding-left: 30px;' : ''}
         ${isWindows ? 'padding-right: 138px;' : ''}
       }
       .tab-bar::-webkit-scrollbar { display: none; }
