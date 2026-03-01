@@ -13,6 +13,12 @@ interface TabData {
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
+const TAB_TYPE_ICONS: Record<TabDataType, string> = {
+  view: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
+  file: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  url: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+}
+
 function generateId(len = 8): string {
   const arr = new Uint8Array((len || 40) / 2)
   window.crypto.getRandomValues(arr)
@@ -393,6 +399,11 @@ export class TlTabs extends HTMLElement {
           tabItem.appendChild(dot)
         }
       } else {
+        const icon = document.createElement('span')
+        icon.className = 'tab-type-icon'
+        icon.innerHTML = TAB_TYPE_ICONS[tab.type]
+        tabItem.appendChild(icon)
+
         const title = document.createElement('span')
         title.className = 'tab-title'
         title.textContent = tab.title
@@ -529,6 +540,8 @@ export class TlTabs extends HTMLElement {
   }
 
   private getStyles(): string {
+    const isMac = navigator.platform.includes('Mac')
+    const isWindows = navigator.platform.includes('Win')
     return `
       .tabs-container {
         display: flex;
@@ -542,24 +555,32 @@ export class TlTabs extends HTMLElement {
       .tab-bar {
         display: flex;
         overflow-x: auto;
-        border-bottom: 1px solid var(--color-border);
-        background: var(--color-bg1);
+        background: var(--color-bg3);
         flex-shrink: 0;
-        min-height: 31px;
+        min-height: 36px;
+        align-items: flex-end;
+        padding: 0 4px;
+        gap: 2px;
+        -webkit-app-region: drag;
+        ${isMac ? 'padding-left: 30px;' : ''}
+        ${isWindows ? 'padding-right: 138px;' : ''}
       }
       .tab-bar::-webkit-scrollbar { display: none; }
       .tab-item {
         display: flex;
         align-items: center;
-        padding: 6px 8px 6px 12px;
+        padding: 6px 10px 6px 10px;
         cursor: pointer;
         color: var(--color-text2);
-        font-size: 13px;
+        font-size: 12px;
         white-space: nowrap;
-        max-width: 180px;
-        border-right: 1px solid var(--color-border);
+        max-width: 200px;
         flex-shrink: 0;
-        gap: 4px;
+        gap: 6px;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        position: relative;
+        transition: color var(--transition-fast), background var(--transition-fast);
+        -webkit-app-region: no-drag;
       }
       .tab-item.pinned {
         max-width: none;
@@ -567,16 +588,30 @@ export class TlTabs extends HTMLElement {
         justify-content: center;
       }
       .tab-item:hover {
-        color: var(--color-text4);
-        background: var(--color-item-hover);
+        color: var(--color-text3);
+        background: var(--color-bg2);
       }
       .tab-item.dragging { opacity: 0.4; }
       .tab-item.drag-over-left { box-shadow: inset 2px 0 0 var(--color-accent); }
       .tab-item.drag-over-right { box-shadow: inset -2px 0 0 var(--color-accent); }
       .tab-item.active {
         color: var(--color-text4);
-        border-bottom: 2px solid var(--color-accent);
-        margin-bottom: -1px;
+        background: var(--color-bg1);
+      }
+      .tab-type-icon {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+        width: 14px;
+        height: 14px;
+        opacity: 0.5;
+        transition: opacity var(--transition-fast);
+      }
+      .tab-item.active .tab-type-icon {
+        opacity: 0.8;
+      }
+      .tab-item:hover .tab-type-icon {
+        opacity: 0.7;
       }
       .tab-title {
         overflow: hidden;
@@ -588,13 +623,14 @@ export class TlTabs extends HTMLElement {
         justify-content: center;
         width: 16px;
         height: 16px;
-        border-radius: 3px;
-        font-size: 12px;
+        border-radius: var(--radius-sm);
+        font-size: 14px;
         line-height: 1;
         color: var(--color-text2);
         opacity: 0;
         flex-shrink: 0;
         cursor: pointer;
+        transition: opacity var(--transition-fast), background var(--transition-fast);
       }
       .tab-close:hover {
         background: var(--color-item-hover);
@@ -606,7 +642,10 @@ export class TlTabs extends HTMLElement {
         flex-shrink: 0;
         width: 14px;
         height: 14px;
-        color: var(--color-text2);
+        opacity: 0.5;
+      }
+      .tab-item.active .tab-pin-icon {
+        opacity: 0.8;
       }
       .tab-changed-dot {
         width: 8px;
@@ -617,10 +656,10 @@ export class TlTabs extends HTMLElement {
       }
       .pinned-separator {
         width: 1px;
-        background: var(--color-accent);
-        margin: 4px 0;
+        background: var(--color-divider);
+        margin: 6px 2px;
         flex-shrink: 0;
-        opacity: 0.5;
+        align-self: stretch;
       }
       .tab-panel-container {
         flex: 1;
@@ -628,6 +667,7 @@ export class TlTabs extends HTMLElement {
         min-height: 0;
         min-width: 0;
         display: flex;
+        background: var(--color-bg1);
       }
       .tab-panel {
         flex: 1;
@@ -649,6 +689,7 @@ export class TlTabs extends HTMLElement {
         height: 100%;
         color: var(--color-text2);
         font-size: 14px;
+        -webkit-app-region: drag;
       }
     `
   }

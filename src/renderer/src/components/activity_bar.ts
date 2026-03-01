@@ -24,6 +24,9 @@ const STYLES = `
     padding-top: 4px;
     gap: 2px;
   }
+  :host(.platform-darwin) .items {
+    padding-top: 28px;
+  }
   .item {
     position: relative;
     display: flex;
@@ -133,6 +136,9 @@ export class TlActivityBar extends HTMLElement {
   }
 
   connectedCallback() {
+    if (navigator.platform.includes('Mac')) {
+      this.classList.add('platform-darwin')
+    }
     this.render()
     this.subscribeToManager()
   }

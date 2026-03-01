@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol, net } from 'electron';
+import { app, BrowserWindow, Menu, nativeTheme, protocol, net } from 'electron';
 import createVaultWindow from './vault_window';
 import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
@@ -139,6 +139,16 @@ async function createAppWindow(dataDir: string) {
   mainWindow = new BrowserWindow({
     show: false,
     title: dataDir,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 13, y: 12 } }
+      : {
+          titleBarOverlay: {
+            color: nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#f0f0f0',
+            symbolColor: nativeTheme.shouldUseDarkColors ? '#808080' : '#999999',
+            height: 36,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webSecurity: false,
