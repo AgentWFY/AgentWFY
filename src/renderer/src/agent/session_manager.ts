@@ -1,6 +1,6 @@
 import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
-import { getEffectiveApiKey } from 'app/agent/agent_auth'
+import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'
 import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
 import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
 
@@ -18,6 +18,15 @@ export interface SessionHistoryItem {
   firstUserMessage: string
 }
 
+export interface SessionListItem {
+  label: string
+  updatedAt: number
+  isActive: boolean
+  isStreaming: boolean
+  file: string | null
+  sessionId: string | null
+}
+
 export class AgentSessionManager {
   private sessions = new Map<string, SessionEntry>()
   private _activeSessionId: string | null = null
@@ -30,6 +39,10 @@ export class AgentSessionManager {
 
   get activeSessionId(): string | null {
     return this._activeSessionId
+  }
+
+  get currentAuthConfig(): AgentAuthConfig {
+    return this.authConfig
   }
 
   get activeSession(): SessionEntry | null {
@@ -49,6 +62,14 @@ export class AgentSessionManager {
       }
     }
     return result
+  }
+
+  get streamingSessionsCount(): number {
+    let count = 0
+    for (const [, entry] of this.sessions) {
+      if (entry.agent.isStreaming) count++
+    }
+    return count
   }
 
   async createSession(opts?: { label?: string; prompt?: string; background?: boolean; persistSessions?: boolean }): Promise<string> {
@@ -219,6 +240,55 @@ export class AgentSessionManager {
     }
   }
 
+  async getSessionList(): Promise<SessionListItem[]> {
+    let history: SessionHistoryItem[] = []
+    try {
+      history = await listSessionHistory()
+    } catch {
+      history = []
+    }
+
+    const activeFile = this.activeSession?.agent.sessionFile
+    const bgSessions = this.backgroundStreamingSessions
+    const bgFileMap = new Map<string, string>()
+    for (const [id, entry] of bgSessions) {
+      if (entry.agent.sessionFile) bgFileMap.set(entry.agent.sessionFile, id)
+    }
+
+    const items: SessionListItem[] = []
+
+    for (const h of history) {
+      const bgId = bgFileMap.get(h.file)
+      const isAct = h.file === activeFile
+      items.push({
+        label: h.firstUserMessage,
+        updatedAt: h.updatedAt,
+        isActive: isAct,
+        isStreaming: isAct ? (this.activeSession?.agent.isStreaming ?? false) : !!bgId,
+        file: isAct ? null : (bgId ? null : h.file),
+        sessionId: bgId ?? null,
+      })
+    }
+
+    // Background sessions not yet saved to disk
+    for (const [id, entry] of bgSessions) {
+      const file = entry.agent.sessionFile
+      if (!file || !history.some(h => h.file === file)) {
+        items.push({
+          label: entry.label || 'New session',
+          updatedAt: Date.now(),
+          isActive: false,
+          isStreaming: true,
+          file: null,
+          sessionId: id,
+        })
+      }
+    }
+
+    items.sort((a, b) => b.updatedAt - a.updatedAt)
+    return items
+  }
+
   private handleStreamingFinished(sessionId: string, entry: SessionEntry): void {
     if (entry.notifyOnFinish) {
       try {
@@ -264,6 +334,20 @@ export async function initSessionManager(config: AgentAuthConfig): Promise<Agent
     await instance.disposeAll()
   }
   instance = new AgentSessionManager(config)
+  await instance.createSession()
+  return instance
+}
+
+export async function reconnectManager(config: AgentAuthConfig): Promise<AgentSessionManager | null> {
+  if (instance) {
+    await instance.disposeAll()
+    instance = null
+  }
+  if (!hasValidAuth(config)) {
+    return null
+  }
+  instance = new AgentSessionManager(config)
+  await instance.createSession()
   return instance
 }
 
