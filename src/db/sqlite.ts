@@ -1,4 +1,4 @@
-import { resolveAgentDbPath } from './path-policy';
+import { resolveAgentDbPath } from './paths';
 
 interface StatementSyncLike {
   all(...params: unknown[]): unknown[];
@@ -12,6 +12,7 @@ interface DatabaseSyncLike {
 
 type DatabaseSyncCtor = new (location: string) => DatabaseSyncLike;
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: DatabaseSyncCtor };
 
 

@@ -191,7 +191,7 @@ export class SessionWorkerManager {
   }
 
   private handleWorkerMessage(entry: SessionWorkerEntry, message: WorkerToHostMessage): void {
-    if (!message || typeof message !== 'object' || typeof (message as any).type !== 'string') {
+    if (!message || typeof message !== 'object' || typeof (message as Record<string, unknown>).type !== 'string') {
       return
     }
 

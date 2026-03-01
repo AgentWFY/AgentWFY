@@ -31,8 +31,11 @@ import { githubCopilotOAuthProvider, refreshGitHubCopilotToken, loginGitHubCopil
 import { generatePKCE } from '@mariozechner/pi-ai/dist/utils/oauth/pkce.js'
 import type { OAuthCredentials, OAuthProviderInterface, OAuthLoginCallbacks } from '@mariozechner/pi-ai/dist/utils/oauth/types.js'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyModel = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyContext = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOptions = any
 
 const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
@@ -77,7 +80,7 @@ function createRandomHex(bytes: number): string {
   return Array.from(data, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function decodeJwt(token: string): Record<string, any> | null {
+function decodeJwt(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split('.')
     if (parts.length !== 3 || !parts[1]) return null
@@ -95,12 +98,13 @@ function getOpenAICodexAccountId(token: string): string | null {
   return typeof accountId === 'string' && accountId.length > 0 ? accountId : null
 }
 
-function toOpenAICodexCredentials(payload: any): OAuthCredentials {
-  if (!payload?.access_token || !payload?.refresh_token || typeof payload.expires_in !== 'number') {
+function toOpenAICodexCredentials(payload: unknown): OAuthCredentials {
+  const p = payload as Record<string, unknown> | null
+  if (!p?.access_token || !p?.refresh_token || typeof p.expires_in !== 'number') {
     throw new Error('OpenAI Codex token response missing required fields')
   }
 
-  const access = payload.access_token
+  const access = p.access_token as string
   const accountId = getOpenAICodexAccountId(access)
   if (!accountId) {
     throw new Error('Failed to extract account ID from OpenAI Codex token')
@@ -108,8 +112,8 @@ function toOpenAICodexCredentials(payload: any): OAuthCredentials {
 
   return {
     access,
-    refresh: payload.refresh_token,
-    expires: Date.now() + payload.expires_in * 1000,
+    refresh: p.refresh_token as string,
+    expires: Date.now() + (p.expires_in as number) * 1000,
     accountId,
   }
 }

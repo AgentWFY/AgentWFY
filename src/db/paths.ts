@@ -22,8 +22,8 @@ export async function resolveSqliteFilePath(dataDir: string, requestedPath: stri
     if (!stats.isFile()) {
       throw new Error(`SQLite target must be a file: "${requestedPath}"`);
     }
-  } catch (error: any) {
-    if (error?.code !== 'ENOENT') {
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       throw error;
     }
   }

@@ -77,7 +77,7 @@ export interface ElectronAgentTools {
   remove(path: string, recursive?: boolean): Promise<void>
   find(pattern: string, path?: string, limit?: number): Promise<string>
   grep(pattern: string, path?: string, options?: WorkerGrepOptions): Promise<string>
-  runSql(request: WorkerRunSqlRequest): Promise<any>
+  runSql(request: WorkerRunSqlRequest): Promise<unknown>
   getTabs(): Promise<WorkerGetTabsResult>
   openTab(request: WorkerOpenTabRequest): Promise<void>
   closeTab(request: WorkerCloseTabRequest): Promise<void>
@@ -85,17 +85,17 @@ export interface ElectronAgentTools {
   reloadTab(request: WorkerReloadTabRequest): Promise<void>
   captureTab(request: WorkerCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
   getTabConsoleLogs(request: WorkerGetTabConsoleLogsRequest): Promise<WorkerTabConsoleLogEntry[]>
-  execTabJs(request: WorkerExecTabJsRequest): Promise<any>
+  execTabJs(request: WorkerExecTabJsRequest): Promise<unknown>
   busPublish(topic: string, data: unknown): Promise<void>
   busWaitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>
 }
 
 export interface ElectronClientTools {
-  openDialog(options: any): Promise<string[]>
+  openDialog(options: unknown): Promise<string[]>
   openUrlInDefaultBrowser(url: string): Promise<void>
-  getStoreItem<T = any>(key: string): Promise<T>
-  setStoreItem<T = any>(key: string, value: T): Promise<void>
+  getStoreItem<T = unknown>(key: string): Promise<T>
+  setStoreItem<T = unknown>(key: string, value: T): Promise<void>
   removeStoreItem(key: string): Promise<void>
   listSessions(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>
   readSession(sessionFileName: string): Promise<string>
@@ -125,7 +125,7 @@ export interface AgentWFYViewApi {
   remove(path: string, recursive?: boolean): Promise<void>
   find(pattern: string, path?: string, limit?: number): Promise<string>
   grep(pattern: string, path?: string, options?: WorkerGrepOptions): Promise<string>
-  runSql(request: WorkerRunSqlRequest): Promise<any>
+  runSql(request: WorkerRunSqlRequest): Promise<unknown>
   getTabs(): Promise<WorkerGetTabsResult>
   openTab(request: WorkerOpenTabRequest): Promise<void>
   closeTab(request: WorkerCloseTabRequest): Promise<void>
@@ -133,7 +133,7 @@ export interface AgentWFYViewApi {
   reloadTab(request: WorkerReloadTabRequest): Promise<void>
   captureTab(request: WorkerCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
   getTabConsoleLogs(request: WorkerGetTabConsoleLogsRequest): Promise<WorkerTabConsoleLogEntry[]>
-  execTabJs(request: WorkerExecTabJsRequest): Promise<any>
+  execTabJs(request: WorkerExecTabJsRequest): Promise<unknown>
   publish(topic: string, data: unknown): Promise<void>
   waitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>

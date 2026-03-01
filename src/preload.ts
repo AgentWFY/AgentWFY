@@ -1,12 +1,12 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, type OpenDialogOptions } from 'electron';
 
 interface RunSqlRequest {
   target?: 'agent' | 'sqlite-file';
   path?: string;
   sql: string;
-  params?: any[];
+  params?: unknown[];
   description?: string;
 }
 
@@ -148,7 +148,7 @@ function normalizeRunSqlRequest(request: RunSqlRequest): Required<Pick<RunSqlReq
   };
 }
 
-function invokeRunSql(request: RunSqlRequest): Promise<any> {
+function invokeRunSql(request: RunSqlRequest): Promise<unknown[]> {
   const normalized = normalizeRunSqlRequest(request);
   return ipcRenderer.invoke(RUN_SQL_CHANNEL, normalized);
 }
@@ -186,12 +186,12 @@ if (isApp) {
       target?: 'agent' | 'sqlite-file';
       path?: string;
       sql: string;
-      params?: any[];
+      params?: unknown[];
       description?: string;
-    }): Promise<any> {
+    }): Promise<unknown[]> {
       return invokeRunSql(request);
     },
-    getTabs(): Promise<any> {
+    getTabs(): Promise<unknown> {
       return ipcRenderer.invoke(GET_TABS_CHANNEL);
     },
     openTab(request: OpenTabRequest): Promise<void> {
@@ -212,7 +212,7 @@ if (isApp) {
     getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
       return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
     },
-    execTabJs(request: ExecTabJsRequest): Promise<any> {
+    execTabJs(request: ExecTabJsRequest): Promise<unknown> {
       return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
     },
     busPublish(topic: string, data: unknown): Promise<void> {
@@ -229,16 +229,16 @@ if (isApp) {
 
 if (!isAgentView) {
   contextBridge.exposeInMainWorld('electronClientTools', {
-    openDialog(options: any): Promise<string[]> {
+    openDialog(options: OpenDialogOptions): Promise<string[]> {
       return ipcRenderer.invoke(DIALOG_OPEN_CHANNEL, options);
     },
     openUrlInDefaultBrowser(url: string): Promise<void> {
       return ipcRenderer.invoke(OPEN_URL_IN_DEFAULT_BROWSER_CHANNEL, url);
     },
-    getStoreItem(key: string): Promise<any> {
+    getStoreItem(key: string): Promise<unknown> {
       return ipcRenderer.invoke(STORE_GET_CHANNEL, key);
     },
-    setStoreItem(key: string, value: any): Promise<void> {
+    setStoreItem(key: string, value: unknown): Promise<void> {
       setTimeout(() => {
         ipcRenderer.invoke(STORE_SET_CHANNEL, key, value);
       }, 0);
@@ -344,12 +344,12 @@ if (isAgentView) {
       target?: 'agent' | 'sqlite-file';
       path?: string;
       sql: string;
-      params?: any[];
+      params?: unknown[];
       description?: string;
-    }): Promise<any> {
+    }): Promise<unknown[]> {
       return invokeRunSql(request);
     },
-    getTabs(): Promise<any> {
+    getTabs(): Promise<unknown> {
       return ipcRenderer.invoke(GET_TABS_CHANNEL);
     },
     openTab(request: OpenTabRequest): Promise<void> {
@@ -370,7 +370,7 @@ if (isAgentView) {
     getTabConsoleLogs(request: GetTabConsoleLogsRequest): Promise<Array<{ level: string; message: string; timestamp: number }>> {
       return ipcRenderer.invoke(GET_TAB_CONSOLE_LOGS_CHANNEL, request);
     },
-    execTabJs(request: ExecTabJsRequest): Promise<any> {
+    execTabJs(request: ExecTabJsRequest): Promise<unknown> {
       return ipcRenderer.invoke(EXEC_TAB_JS_CHANNEL, request);
     },
     publish(topic: string, data: unknown): Promise<void> {

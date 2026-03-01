@@ -10,7 +10,7 @@ export enum StoreChannel {
 
 const storePath = path.join(app.getPath('userData'), 'config.json');
 
-function readStore(): Record<string, any> {
+function readStore(): Record<string, unknown> {
   try {
     return JSON.parse(fs.readFileSync(storePath, 'utf-8'));
   } catch {
@@ -18,15 +18,15 @@ function readStore(): Record<string, any> {
   }
 }
 
-function writeStore(data: Record<string, any>): void {
+function writeStore(data: Record<string, unknown>): void {
   fs.writeFileSync(storePath, JSON.stringify(data, null, 2));
 }
 
-export function storeGet(key: string): any {
+export function storeGet(key: string): unknown {
   return readStore()[key];
 }
 
-export function storeSet(key: string, value: any): void {
+export function storeSet(key: string, value: unknown): void {
   const data = readStore();
   data[key] = value;
   writeStore(data);
@@ -38,7 +38,7 @@ export function storeRemove(key: string): void {
   writeStore(data);
 }
 
-type ChangeListener = (newValue: any, oldValue: any) => void;
+type ChangeListener = (newValue: unknown, oldValue: unknown) => void;
 const changeListeners: Map<string, ChangeListener[]> = new Map();
 
 export function onDidChange(key: string, listener: ChangeListener): void {

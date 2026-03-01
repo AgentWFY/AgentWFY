@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import {
   anthropicOAuthProvider,
   getModels,
@@ -39,7 +40,7 @@ function isAuthMethod(value: unknown): value is AuthMethod {
   return typeof value === 'string' && AUTH_METHODS.includes(value as AuthMethod)
 }
 
-function sortModelsForProvider(provider: string, models: any[]) {
+function sortModelsForProvider(provider: string, models: Array<{ id?: string }>) {
   if (provider === 'openai-codex') {
     return [...models].sort((a, b) =>
       String(b?.id ?? '').localeCompare(String(a?.id ?? ''), undefined, { numeric: true, sensitivity: 'base' })
@@ -49,9 +50,9 @@ function sortModelsForProvider(provider: string, models: any[]) {
   return models
 }
 
-function safeGetModels(provider: string): any[] {
+function safeGetModels(provider: string): Array<{ id?: string }> {
   try {
-    return sortModelsForProvider(provider, getModels(provider as any) as any[])
+    return sortModelsForProvider(provider, getModels(provider as never) as Array<{ id?: string }>)
   } catch {
     return []
   }
@@ -59,7 +60,7 @@ function safeGetModels(provider: string): any[] {
 
 function getModelIdForProvider(provider: string, currentModelId: string): string {
   const models = safeGetModels(provider)
-  if (models.some((model: any) => model.id === currentModelId)) {
+  if (models.some((model) => model.id === currentModelId)) {
     return currentModelId
   }
   return models.length > 0 ? String(models[0].id ?? '') : currentModelId

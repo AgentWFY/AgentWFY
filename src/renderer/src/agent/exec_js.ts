@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
 import { Type } from '@sinclair/typebox'
@@ -74,13 +75,14 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
         description: 'Execution timeout in milliseconds (default 5000).',
       })),
     }, { additionalProperties: false }),
-    execute: async (_toolCallId, params: any, signal) => {
-      const timeoutMs = params.timeoutMs ?? 5000
+    execute: async (_toolCallId, params: unknown, signal) => {
+      const typedParams = params as { code: string; timeoutMs?: number }
+      const timeoutMs = typedParams.timeoutMs ?? 5000
 
       try {
         const sessionId = args.getSessionId()
         const manager = getSessionWorkerManager()
-        const details = await manager.executeExecJs(sessionId, params.code, timeoutMs, signal)
+        const details = await manager.executeExecJs(sessionId, typedParams.code, timeoutMs, signal)
         return buildToolResult(details)
       } catch (error) {
         const details = toFailureDetails(error, timeoutMs)

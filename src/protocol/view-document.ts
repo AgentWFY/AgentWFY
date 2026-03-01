@@ -142,6 +142,7 @@ function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
 
   return `<!doctype html><html><head><meta charset="utf-8">${bootstrap}</head><body>${source}</body></html>`;
 }
+
 export function parseViewId(url: URL): string {
   if (url.hostname !== 'view') {
     throw new Error(`Unsupported view route: ${url.hostname}`);
@@ -159,4 +160,31 @@ export function parseViewId(url: URL): string {
 export function buildViewDocument(content: string): string {
   const bootstrap = buildSharedBootstrapScript();
   return injectBootstrapIntoHtml(content, bootstrap);
+}
+
+export function normalizeViewPathname(pathname: string): string {
+  const decoded = decodeURIComponent(pathname || '');
+  return decoded.replace(/^\/+/, '').trim();
+}
+
+export function isViewDocumentRequest(url: URL): boolean {
+  if (url.hostname !== 'view') {
+    return false;
+  }
+
+  const normalizedPath = normalizeViewPathname(url.pathname);
+  if (!normalizedPath) {
+    return false;
+  }
+
+  if (url.searchParams.has('tabId') || url.searchParams.has('rev') || url.searchParams.has('t')) {
+    return true;
+  }
+
+  // Treat paths that look like files (contains "/" or extension) as data-dir assets.
+  if (normalizedPath.includes('/') || normalizedPath.includes('.')) {
+    return false;
+  }
+
+  return true;
 }

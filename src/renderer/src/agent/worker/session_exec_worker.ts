@@ -370,7 +370,7 @@ function cancelRequest(requestId: string): void {
 
 workerScope.addEventListener('message', (event: MessageEvent<HostToWorkerMessage>) => {
   const message = event.data
-  if (!message || typeof message !== 'object' || typeof (message as any).type !== 'string') {
+  if (!message || typeof message !== 'object' || typeof (message as Record<string, unknown>).type !== 'string') {
     return
   }
 
