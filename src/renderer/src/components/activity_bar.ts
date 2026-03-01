@@ -52,26 +52,69 @@ const STYLES = `
     border-radius: 0 2px 2px 0;
     background: var(--color-accent);
   }
-  .running-indicator {
+  .running-wrapper {
     display: none;
+    position: relative;
+    margin-bottom: 10px;
+  }
+  .running-wrapper.visible {
+    display: flex;
     align-items: center;
     justify-content: center;
+  }
+  .running-indicator {
+    position: relative;
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    margin-bottom: 10px;
     font-size: 11px;
     font-weight: 600;
-    color: #4caf50;
-    background: rgba(76, 175, 80, 0.1);
-    animation: orb-pulse 2s ease-in-out infinite;
-  }
-  .running-indicator.visible {
+    color: #fff;
     display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa, #6366f1);
+    background-size: 300% 300%;
+    animation: gradient-rotate 3s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
   }
-  @keyframes orb-pulse {
-    0%, 100% { box-shadow: 0 0 4px rgba(76, 175, 80, 0.3); }
-    50% { box-shadow: 0 0 12px rgba(76, 175, 80, 0.5); }
+  @keyframes gradient-rotate {
+    0% { background-position: 0% 50%; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
+    50% { background-position: 100% 50%; box-shadow: 0 0 14px rgba(139, 92, 246, 0.5); }
+    100% { background-position: 0% 50%; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
+  }
+  .running-tooltip {
+    display: none;
+    position: absolute;
+    left: calc(100% + 8px);
+    bottom: 0;
+    min-width: 140px;
+    max-width: 220px;
+    background: var(--color-bg-elevated, #1e1e2e);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    z-index: 1000;
+    pointer-events: none;
+  }
+  .running-wrapper:hover .running-tooltip {
+    display: block;
+  }
+  .tooltip-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-fg, #cdd6f4);
+    margin-bottom: 4px;
+  }
+  .tooltip-session {
+    font-size: 10px;
+    color: var(--color-fg-muted, #a6adc8);
+    padding: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 `
 
@@ -137,7 +180,12 @@ export class TlActivityBar extends HTMLElement {
           ${CHAT_ICON}
         </div>
       </div>
-      <div class="running-indicator" id="running-indicator" title="Running agents">0</div>
+      <div class="running-wrapper" id="running-wrapper">
+        <div class="running-indicator" id="running-indicator">0</div>
+        <div class="running-tooltip" id="running-tooltip">
+          <div class="tooltip-title">Running agents</div>
+        </div>
+      </div>
     `
     this.attachListeners()
     this.updateActiveState()
@@ -167,13 +215,29 @@ export class TlActivityBar extends HTMLElement {
   }
 
   private updateBadge() {
+    const wrapper = this.shadow.querySelector('#running-wrapper')
     const indicator = this.shadow.querySelector('#running-indicator')
-    if (!indicator) return
+    const tooltip = this.shadow.querySelector('#running-tooltip')
+    if (!wrapper || !indicator || !tooltip) return
+
     if (this._agentCount > 0) {
       indicator.textContent = String(this._agentCount)
-      indicator.classList.add('visible')
+      wrapper.classList.add('visible')
+
+      const mgr = getSessionManager()
+      const labels = mgr ? mgr.streamingSessionLabels : []
+      const sessionListHtml = labels.length > 0
+        ? labels.map(l => `<div class="tooltip-session">${this.escapeHtml(l)}</div>`).join('')
+        : ''
+      tooltip.innerHTML = `<div class="tooltip-title">Running agents</div>${sessionListHtml}`
     } else {
-      indicator.classList.remove('visible')
+      wrapper.classList.remove('visible')
     }
+  }
+
+  private escapeHtml(text: string): string {
+    const el = document.createElement('span')
+    el.textContent = text
+    return el.innerHTML
   }
 }
