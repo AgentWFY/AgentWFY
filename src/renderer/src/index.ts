@@ -5,7 +5,6 @@ import { TlTabView } from 'app/components/tab_view'
 import { TlAgentChat } from 'app/components/agent_chat'
 import { TlAgentSettings } from 'app/components/agent_settings'
 import { TlJson } from 'app/components/json_view'
-import { TlActivityBar } from 'app/components/activity_bar'
 import { TlStatusLine } from 'app/components/status_line'
 import { TlSelect } from 'app/components/select'
 import { TlTaskPanel } from 'app/components/task_panel'
@@ -26,7 +25,6 @@ async function init() {
   defineElement('tl-tab-view', TlTabView)
   defineElement('tl-tabs', TlTabs)
   defineElement('tl-agent-chat', TlAgentChat)
-  defineElement('tl-activity-bar', TlActivityBar)
   defineElement('tl-status-line', TlStatusLine)
   defineElement('tl-select', TlSelect)
   defineElement('tl-task-panel', TlTaskPanel)

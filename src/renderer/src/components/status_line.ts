@@ -10,7 +10,7 @@ const STYLES = `
     width: 100%;
     height: var(--status-line-height, 24px);
     flex-shrink: 0;
-    background: var(--color-status-line-bg);
+    background: var(--color-border);
     border-top: 1px solid var(--color-border);
     padding: 0 10px;
     box-sizing: border-box;
