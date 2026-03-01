@@ -10,6 +10,7 @@
   /* Layout constants */
   --activity-bar-width: 48px;
   --sidebar-width: 380px;
+  --status-line-height: 24px;
   --radius-sm: 4px;
   --radius-md: 6px;
 
@@ -39,6 +40,8 @@
   --color-activity-bar-fg-active: #1a1a1a;
 
   --color-sidebar-bg: #f6f6f6;
+
+  --color-status-line-bg: #d0d0d0;
 
   --color-accent: #1a6fb5;
   --color-accent-hover: #2080cc;
@@ -96,6 +99,8 @@
     --color-activity-bar-fg-active: #e0e0e0;
 
     --color-sidebar-bg: #252526;
+
+    --color-status-line-bg: #252526;
 
     --color-accent: #2b7ab5;
     --color-accent-hover: #3994d4;

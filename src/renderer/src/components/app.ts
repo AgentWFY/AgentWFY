@@ -35,10 +35,16 @@ export class TlApp extends HTMLElement {
 
     const style = document.createElement('style')
     style.textContent = `
-      .tl-app-container {
+      .tl-app-outer {
         display: flex;
+        flex-direction: column;
         width: 100vw;
         height: 100vh;
+      }
+      .tl-app-container {
+        display: flex;
+        flex: 1;
+        min-height: 0;
       }
       .tl-app-sidebar {
         width: var(--sidebar-width);
@@ -68,6 +74,9 @@ export class TlApp extends HTMLElement {
     `
     this.appendChild(style)
 
+    const outer = document.createElement('div')
+    outer.className = 'tl-app-outer'
+
     const container = document.createElement('div')
     container.className = 'tl-app-container'
 
@@ -89,7 +98,13 @@ export class TlApp extends HTMLElement {
     mainArea.appendChild(tabs)
     container.appendChild(mainArea)
 
-    this.appendChild(container)
+    outer.appendChild(container)
+
+    // Status line
+    const statusLine = document.createElement('tl-status-line')
+    outer.appendChild(statusLine)
+
+    this.appendChild(outer)
 
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
