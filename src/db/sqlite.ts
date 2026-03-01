@@ -33,60 +33,59 @@ CREATE TABLE IF NOT EXISTS docs (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
-CREATE TABLE IF NOT EXISTS db_changes (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+DROP TABLE IF EXISTS db_changes;
+DROP TRIGGER IF EXISTS views_db_changes_insert;
+DROP TRIGGER IF EXISTS views_db_changes_update;
+DROP TRIGGER IF EXISTS views_db_changes_delete;
+DROP TRIGGER IF EXISTS docs_db_changes_insert;
+DROP TRIGGER IF EXISTS docs_db_changes_update;
+DROP TRIGGER IF EXISTS docs_db_changes_delete;
+`;
+
+const CHANGE_TRACKING_SQL = `
+CREATE TEMP TABLE IF NOT EXISTS _changes (
   table_name TEXT NOT NULL,
   row_id INTEGER NOT NULL,
-  op TEXT NOT NULL CHECK (op IN ('insert', 'update', 'delete')),
-  changed_at INTEGER NOT NULL DEFAULT (unixepoch())
+  op TEXT NOT NULL
 );
 
-CREATE TRIGGER IF NOT EXISTS views_db_changes_insert
-AFTER INSERT ON views
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('views', NEW.id, 'insert', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _views_insert AFTER INSERT ON views BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.id, 'insert');
 END;
-
-CREATE TRIGGER IF NOT EXISTS views_db_changes_update
-AFTER UPDATE ON views
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('views', NEW.id, 'update', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _views_update AFTER UPDATE ON views BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.id, 'update');
 END;
-
-CREATE TRIGGER IF NOT EXISTS views_db_changes_delete
-AFTER DELETE ON views
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('views', OLD.id, 'delete', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.id, 'delete');
 END;
-
-CREATE TRIGGER IF NOT EXISTS docs_db_changes_insert
-AFTER INSERT ON docs
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('docs', NEW.id, 'insert', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'insert');
 END;
-
-CREATE TRIGGER IF NOT EXISTS docs_db_changes_update
-AFTER UPDATE ON docs
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('docs', NEW.id, 'update', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'update');
 END;
-
-CREATE TRIGGER IF NOT EXISTS docs_db_changes_delete
-AFTER DELETE ON docs
-BEGIN
-  INSERT INTO db_changes (table_name, row_id, op, changed_at)
-  VALUES ('docs', OLD.id, 'delete', unixepoch());
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.id, 'delete');
 END;
 `;
 
 export interface SqlExecutionRequest {
   sql: string;
   params?: unknown[];
+}
+
+export interface AgentDbChange {
+  table: string;
+  rowId: number;
+  op: 'insert' | 'update' | 'delete';
+}
+
+export type OnDbChange = (change: AgentDbChange) => void;
+
+const WRITE_RE = /^\s*(INSERT|UPDATE|DELETE)\b/i;
+
+function isWriteStatement(sql: string): boolean {
+  return WRITE_RE.test(sql);
 }
 
 
@@ -127,26 +126,44 @@ function normalizeParams(params: unknown[] | undefined): unknown[] {
   return params;
 }
 
-function runSqliteQuery(dbPath: string, request: SqlExecutionRequest, initSql?: string): unknown[] {
+function runSqliteQuery(dbPath: string, request: SqlExecutionRequest, initSql?: string, onDbChange?: OnDbChange): unknown[] {
   const params = normalizeParams(request.params);
   const db = new DatabaseSync(dbPath);
+  const trackChanges = onDbChange && isWriteStatement(request.sql);
 
   try {
     if (initSql) {
       db.exec(initSql);
     }
 
+    if (trackChanges) {
+      db.exec(CHANGE_TRACKING_SQL);
+    }
+
     const statement = db.prepare(request.sql);
     const rows = statement.all(...params);
+
+    if (trackChanges) {
+      const changes = db.prepare('SELECT table_name, row_id, op FROM _changes').all();
+      for (const raw of changes) {
+        const change = raw as Record<string, unknown>;
+        onDbChange({
+          table: change.table_name as string,
+          rowId: Number(change.row_id),
+          op: change.op as 'insert' | 'update' | 'delete',
+        });
+      }
+    }
+
     return normalizeSqlRows(rows);
   } finally {
     db.close();
   }
 }
 
-export async function runAgentDbSql(dataDir: string, request: SqlExecutionRequest): Promise<unknown[]> {
+export async function runAgentDbSql(dataDir: string, request: SqlExecutionRequest, onDbChange?: OnDbChange): Promise<unknown[]> {
   const dbPath = await resolveAgentDbPath(dataDir);
-  return runSqliteQuery(dbPath, request, AGENT_DB_SCHEMA_SQL);
+  return runSqliteQuery(dbPath, request, AGENT_DB_SCHEMA_SQL, onDbChange);
 }
 
 export async function runSqliteFileSql(sqlitePath: string, request: SqlExecutionRequest): Promise<unknown[]> {

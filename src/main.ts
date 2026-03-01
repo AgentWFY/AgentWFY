@@ -6,7 +6,7 @@ import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerBusHandlers } from './ipc/bus';
 import { registerTabViewHandlers } from './tab-views/ipc';
 import { registerCommandPaletteHandlers } from './command-palette/ipc';
-import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './db/changes';
+import type { AgentDbChange } from './db/sqlite';
 import { RendererBridge } from './renderer-bridge';
 import { TabViewManager } from './tab-views/manager';
 import { CommandPaletteManager } from './command-palette/manager';
@@ -50,7 +50,6 @@ protocol.registerSchemesAsPrivileged([
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
-let agentDbChangesPublisher: AgentDbChangesPublisher | null = null;
 
 const clientPath = path.join(__dirname, 'client', 'index.html');
 
@@ -79,6 +78,11 @@ const commandPalette = new CommandPaletteManager({
 registerStoreHandlers();
 registerDialogSubscribers();
 
+function onDbChange(change: AgentDbChange): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('app:agent-db-changed', change);
+}
+
 registerAgentToolsHandlers(getDataDir, {
   getTabs: () => tabViewManager.getTabsHandler(),
   openTab: (req) => tabViewManager.openTabHandler(req),
@@ -88,45 +92,21 @@ registerAgentToolsHandlers(getDataDir, {
   captureTab: (req) => tabViewManager.captureTabById(req),
   getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
   execTabJs: (req) => tabViewManager.execTabJsById(req),
-});
+}, onDbChange);
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
-
-// --- DB changes publisher ---
-
-function publishAgentDbChanges(event: AgentDbChangedEvent): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  mainWindow.webContents.send('app:agent-db-changed', event);
-}
-
-async function restartAgentDbChangesPublisher(): Promise<void> {
-  agentDbChangesPublisher?.stop();
-  agentDbChangesPublisher = new AgentDbChangesPublisher({
-    getDataDir,
-    onChanges: publishAgentDbChanges,
-    onError: (error) => {
-      console.error('[agent-runtime] failed to publish agent DB changes', error);
-    },
-  });
-  await agentDbChangesPublisher.start();
-}
 
 // --- Data directory change listener ---
 
 onDidChange('dataDir', async (newValue: unknown, oldValue: unknown) => {
   if (oldValue !== newValue) {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
-    agentDbChangesPublisher?.stop();
     commandPalette.destroy();
     tabViewManager.destroyAllTabViews();
     tabViewManager.clearTrackedViewWebContents();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
-    await restartAgentDbChangesPublisher();
     mainWindow?.reload();
   }
 });
@@ -236,7 +216,6 @@ const createWindow = () => {
 
 app.on('ready', async () => {
   await ensureAgentRuntimeBootstrap(getDataDir());
-  await restartAgentDbChangesPublisher();
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
@@ -350,15 +329,11 @@ app.on('window-all-closed', () => {
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
-    agentDbChangesPublisher?.stop();
-    agentDbChangesPublisher = null;
     app.quit();
   }
 });
 
 app.on('before-quit', () => {
-  agentDbChangesPublisher?.stop();
-  agentDbChangesPublisher = null;
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
