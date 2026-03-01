@@ -3,7 +3,7 @@ import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'
 import { ensureSessionWorker, terminateSessionWorker } from 'app/agent/worker/session_worker_manager'
-import type { ThinkingLevel } from '@mariozechner/pi-agent-core'
+import type { ThinkingLevel } from 'app/agent/types'
 
 export interface SessionEntry {
   agent: AgentWFYAgent

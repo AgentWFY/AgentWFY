@@ -2,7 +2,6 @@
  * Browser-only shim for `@mariozechner/pi-ai`.
  *
  * Why this exists:
- * - `@mariozechner/pi-agent-core` imports `@mariozechner/pi-ai` top-level.
  * - The top-level `pi-ai` entry re-exports all built-in providers, including
  *   Bedrock/AWS providers that pull Node-only dependencies.
  * - In this Vite renderer build, that causes production build failures such as:
