@@ -5,13 +5,13 @@ import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerBusHandlers } from './ipc/bus';
 import { ensureViewsSchema, getViewById, listViews } from './services/views-repo';
-import { buildViewDocument, parseAgentViewId } from './services/agentview-runtime';
+import { buildViewDocument, parseViewId } from './services/view-runtime';
 import { AgentDbChangesPublisher, type AgentDbChangedEvent } from './services/agent-db-changes';
 import { assertPathAllowed } from './security/path-policy';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { createReadStream } from 'fs';
-import { stat, mkdir } from 'fs/promises';
+import { stat, mkdir, readFile } from 'fs/promises';
 
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
@@ -176,7 +176,7 @@ function isPathInsideBase(basePath: string, targetPath: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-function resolveAgentViewAssetPath(relativePath: string): string | null {
+function resolveViewAssetPath(relativePath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
     return null;
   }
@@ -200,17 +200,17 @@ function resolveAgentViewAssetPath(relativePath: string): string | null {
   return absolutePath;
 }
 
-function normalizeAgentViewPathname(pathname: string): string {
+function normalizeViewPathname(pathname: string): string {
   const decoded = decodeURIComponent(pathname || '');
   return decoded.replace(/^\/+/, '').trim();
 }
 
-function isAgentViewDocumentRequest(url: URL): boolean {
+function isViewDocumentRequest(url: URL): boolean {
   if (url.hostname !== 'view') {
     return false;
   }
 
-  const normalizedPath = normalizeAgentViewPathname(url.pathname);
+  const normalizedPath = normalizeViewPathname(url.pathname);
   if (!normalizedPath) {
     return false;
   }
@@ -227,8 +227,8 @@ function isAgentViewDocumentRequest(url: URL): boolean {
   return true;
 }
 
-async function resolveAgentViewDataPath(url: URL): Promise<string> {
-  const normalizedPath = normalizeAgentViewPathname(url.pathname);
+async function resolveViewDataPath(url: URL): Promise<string> {
+  const normalizedPath = normalizeViewPathname(url.pathname);
   if (!normalizedPath) {
     throw new Error('Missing file path');
   }
@@ -287,7 +287,8 @@ const GET_TABS_QUERY = `(() => {
     tabs: tabList.map((tab) => ({
       id: tab.id,
       title: tab.title || '',
-      viewId: tab.viewId ?? null,
+      type: tab.type || 'view',
+      target: tab.target ?? null,
       viewUpdatedAt: tab.viewUpdatedAt ?? null,
       viewChanged: Boolean(tab.viewChanged),
       pinned: Boolean(tab.pinned),
@@ -314,13 +315,13 @@ interface ViewRuntimeEntry {
 }
 
 const viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
-const externalViewsByTabId = new Map<string, ExternalViewState>();
+const tabViewsByTabId = new Map<string, TabViewState>();
 
-const EXTERNAL_VIEW_CHANNEL = {
-  MOUNT: 'electronExternalView:mount',
-  SET_BOUNDS: 'electronExternalView:setBounds',
-  DESTROY: 'electronExternalView:destroy',
-  EVENT: 'app:external-view-event',
+const TAB_VIEW_CHANNEL = {
+  MOUNT: 'tabView:mount',
+  SET_BOUNDS: 'tabView:setBounds',
+  DESTROY: 'tabView:destroy',
+  EVENT: 'app:tab-view-event',
 } as const;
 
 const TAB_CONTEXT_MENU_CHANNEL = 'app:tabs:context-menu';
@@ -332,28 +333,31 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED: 'app:command-palette:opened',
 } as const;
 
-interface ExternalViewBoundsPayload {
+interface TabViewBoundsPayload {
   x: number
   y: number
   width: number
   height: number
 }
 
-interface ExternalViewMountPayload {
+type TabType = 'view' | 'file' | 'url'
+
+interface TabViewMountPayload {
   tabId: string
   viewId: string
   src: string
-  bounds: ExternalViewBoundsPayload
+  bounds: TabViewBoundsPayload
   visible: boolean
+  tabType?: TabType
 }
 
-interface ExternalViewSetBoundsPayload {
+interface TabViewSetBoundsPayload {
   tabId: string
-  bounds: ExternalViewBoundsPayload
+  bounds: TabViewBoundsPayload
   visible: boolean
 }
 
-interface ExternalViewDestroyPayload {
+interface TabViewDestroyPayload {
   tabId: string
 }
 
@@ -367,7 +371,7 @@ interface TabContextMenuPayload {
 
 type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
 
-interface ExternalViewState {
+interface TabViewState {
   tabId: string
   viewId: string
   currentSrc: string | null
@@ -399,7 +403,7 @@ interface CommandPaletteItem {
   action: CommandPaletteAction
 }
 
-function normalizeExternalViewNumber(value: unknown): number {
+function normalizeTabViewNumber(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
     return 0;
@@ -426,13 +430,13 @@ function normalizeTabContextMenuPayload(raw: unknown): TabContextMenuPayload {
   };
 }
 
-function normalizeExternalViewBounds(raw: unknown): Rectangle {
-  const input = (raw && typeof raw === 'object') ? raw as Partial<ExternalViewBoundsPayload> : {};
+function normalizeTabViewBounds(raw: unknown): Rectangle {
+  const input = (raw && typeof raw === 'object') ? raw as Partial<TabViewBoundsPayload> : {};
   return {
-    x: normalizeExternalViewNumber(input.x),
-    y: normalizeExternalViewNumber(input.y),
-    width: normalizeExternalViewNumber(input.width),
-    height: normalizeExternalViewNumber(input.height),
+    x: normalizeTabViewNumber(input.x),
+    y: normalizeTabViewNumber(input.y),
+    width: normalizeTabViewNumber(input.width),
+    height: normalizeTabViewNumber(input.height),
   };
 }
 
@@ -449,7 +453,7 @@ function toNonEmptyString(value: unknown): string {
   return normalized;
 }
 
-function emitExternalViewEvent(
+function emitTabViewEvent(
   tabId: string,
   type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load',
   detail?: { errorCode?: number; errorDescription?: string }
@@ -458,7 +462,7 @@ function emitExternalViewEvent(
     return;
   }
 
-  mainWindow.webContents.send(EXTERNAL_VIEW_CHANNEL.EVENT, {
+  mainWindow.webContents.send(TAB_VIEW_CHANNEL.EVENT, {
     tabId,
     type,
     ...(detail || {}),
@@ -747,7 +751,7 @@ async function runCommandPaletteAction(payload: unknown): Promise<void> {
           viewUpdatedAt: row.updated_at ?? null,
         })),
       });
-      reloadAllExternalViews();
+      reloadAllTabViews();
       break;
     }
 
@@ -758,22 +762,24 @@ async function runCommandPaletteAction(payload: unknown): Promise<void> {
   hideNativeCommandPalette({ focusMain: true });
 }
 
-function createExternalViewState(tabId: string, viewId: string): ExternalViewState {
+function createTabViewState(tabId: string, viewId: string, options?: { tabType?: TabType }): TabViewState {
   if (!mainWindow || mainWindow.isDestroyed()) {
     throw new Error('Main window is unavailable');
   }
+
+  const isUrlTab = options?.tabType === 'url';
 
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,
+      webSecurity: isUrlTab,
       backgroundThrottling: false,
     },
   });
 
-  const state: ExternalViewState = {
+  const state: TabViewState = {
     tabId,
     viewId,
     currentSrc: null,
@@ -802,11 +808,11 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
   });
 
   viewWebContents.on('did-start-loading', () => {
-    emitExternalViewEvent(tabId, 'did-start-loading');
+    emitTabViewEvent(tabId, 'did-start-loading');
   });
 
   viewWebContents.on('did-stop-loading', () => {
-    emitExternalViewEvent(tabId, 'did-stop-loading');
+    emitTabViewEvent(tabId, 'did-stop-loading');
   });
 
   viewWebContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
@@ -814,7 +820,7 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
       return;
     }
 
-    emitExternalViewEvent(tabId, 'did-fail-load', {
+    emitTabViewEvent(tabId, 'did-fail-load', {
       errorCode,
       errorDescription,
     });
@@ -851,7 +857,7 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
 
     if (key === 'r') {
       event.preventDefault();
-      reloadExternalView(tabId);
+      reloadTabView(tabId);
     }
   });
 
@@ -883,27 +889,27 @@ function createExternalViewState(tabId: string, viewId: string): ExternalViewSta
 
   viewWebContents.once('destroyed', () => {
     removeTrackedViewWebContents(viewWebContents.id);
-    const existing = externalViewsByTabId.get(tabId);
+    const existing = tabViewsByTabId.get(tabId);
     if (existing?.view === view) {
-      externalViewsByTabId.delete(tabId);
+      tabViewsByTabId.delete(tabId);
     }
   });
 
-  externalViewsByTabId.set(tabId, state);
+  tabViewsByTabId.set(tabId, state);
   return state;
 }
 
-function ensureExternalViewState(tabId: string, viewId: string): ExternalViewState {
-  const existing = externalViewsByTabId.get(tabId);
+function ensureTabViewState(tabId: string, viewId: string, options?: { tabType?: TabType }): TabViewState {
+  const existing = tabViewsByTabId.get(tabId);
   if (existing) {
     existing.viewId = viewId;
     return existing;
   }
 
-  return createExternalViewState(tabId, viewId);
+  return createTabViewState(tabId, viewId, options);
 }
 
-function attachExternalViewToWindow(state: ExternalViewState): void {
+function attachTabViewToWindow(state: TabViewState): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -915,8 +921,8 @@ function attachExternalViewToWindow(state: ExternalViewState): void {
   }
 }
 
-function applyExternalViewPlacement(state: ExternalViewState, bounds: Rectangle, visible: boolean): void {
-  attachExternalViewToWindow(state);
+function applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
+  attachTabViewToWindow(state);
 
   const effectiveBounds = visible
     ? bounds
@@ -926,16 +932,17 @@ function applyExternalViewPlacement(state: ExternalViewState, bounds: Rectangle,
   state.view.setVisible(visible);
 }
 
-async function mountExternalView(payload: unknown): Promise<void> {
-  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewMountPayload> : {};
+async function mountTabView(payload: unknown): Promise<void> {
+  const input = payload && typeof payload === 'object' ? payload as Partial<TabViewMountPayload> : {};
   const tabId = toNonEmptyString(input.tabId);
   const viewId = toNonEmptyString(input.viewId);
   const src = toNonEmptyString(input.src);
   const visible = Boolean(input.visible);
-  const bounds = normalizeExternalViewBounds(input.bounds);
-  const state = ensureExternalViewState(tabId, viewId);
+  const bounds = normalizeTabViewBounds(input.bounds);
+  const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
+  const state = ensureTabViewState(tabId, viewId, { tabType });
 
-  applyExternalViewPlacement(state, bounds, visible);
+  applyTabViewPlacement(state, bounds, visible);
 
   if (state.currentSrc === src) {
     return;
@@ -952,26 +959,26 @@ async function mountExternalView(payload: unknown): Promise<void> {
   }
 }
 
-function setExternalViewBounds(payload: unknown): void {
-  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewSetBoundsPayload> : {};
+function setTabViewBounds(payload: unknown): void {
+  const input = payload && typeof payload === 'object' ? payload as Partial<TabViewSetBoundsPayload> : {};
   const tabId = toNonEmptyString(input.tabId);
-  const state = externalViewsByTabId.get(tabId);
+  const state = tabViewsByTabId.get(tabId);
   if (!state) {
     return;
   }
 
   const visible = Boolean(input.visible);
-  const bounds = normalizeExternalViewBounds(input.bounds);
-  applyExternalViewPlacement(state, bounds, visible);
+  const bounds = normalizeTabViewBounds(input.bounds);
+  applyTabViewPlacement(state, bounds, visible);
 }
 
-function destroyExternalView(tabId: string): void {
-  const state = externalViewsByTabId.get(tabId);
+function destroyTabView(tabId: string): void {
+  const state = tabViewsByTabId.get(tabId);
   if (!state) {
     return;
   }
 
-  externalViewsByTabId.delete(tabId);
+  tabViewsByTabId.delete(tabId);
   removeTrackedViewWebContents(state.view.webContents.id);
 
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -992,15 +999,15 @@ function destroyExternalView(tabId: string): void {
   }
 }
 
-function destroyAllExternalViews(): void {
-  const tabIds = Array.from(externalViewsByTabId.keys());
+function destroyAllTabViews(): void {
+  const tabIds = Array.from(tabViewsByTabId.keys());
   for (const tabId of tabIds) {
-    destroyExternalView(tabId);
+    destroyTabView(tabId);
   }
 }
 
-function reloadExternalView(tabId: string): void {
-  const state = externalViewsByTabId.get(tabId);
+function reloadTabView(tabId: string): void {
+  const state = tabViewsByTabId.get(tabId);
   if (!state) {
     return;
   }
@@ -1011,17 +1018,17 @@ function reloadExternalView(tabId: string): void {
   }
 }
 
-function reloadAllExternalViews(): void {
-  for (const [tabId] of externalViewsByTabId) {
-    reloadExternalView(tabId);
+function reloadAllTabViews(): void {
+  for (const [tabId] of tabViewsByTabId) {
+    reloadTabView(tabId);
   }
 }
 
-function reloadVisibleExternalView(): void {
-  for (const [tabId, state] of externalViewsByTabId) {
+function reloadVisibleTabView(): void {
+  for (const [tabId, state] of tabViewsByTabId) {
     const bounds = state.view.getBounds();
     if (bounds.width > 0 && bounds.height > 0) {
-      reloadExternalView(tabId);
+      reloadTabView(tabId);
       return;
     }
   }
@@ -1084,13 +1091,13 @@ function parseTrackedViewFromUrl(urlString: string): { viewId: string; tabId: st
     return null;
   }
 
-  if (!isAgentViewDocumentRequest(parsedUrl)) {
+  if (!isViewDocumentRequest(parsedUrl)) {
     return null;
   }
 
   let viewId: string;
   try {
-    viewId = parseAgentViewId(parsedUrl);
+    viewId = parseViewId(parsedUrl);
   } catch {
     return null;
   }
@@ -1208,7 +1215,7 @@ app.on('web-contents-created', (_event, webContents) => {
 });
 
 function resolveViewRuntimeEntryByTabId(tabId: string): ViewRuntimeEntry {
-  const state = externalViewsByTabId.get(tabId);
+  const state = tabViewsByTabId.get(tabId);
   if (!state) {
     throw new Error(`No open tab found for tabId "${tabId}"`);
   }
@@ -1243,9 +1250,13 @@ async function getTabsHandler(): Promise<{ tabs: Array<any> }> {
   }
 }
 
-async function openTabHandler(request: { viewId: string | number; title?: string }): Promise<void> {
+async function openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string }): Promise<void> {
+  const type = request.url ? 'url' : request.filePath ? 'file' : 'view';
   dispatchRendererCustomEvent('agentwfy:agent-open-tab', {
+    type,
     viewId: request.viewId,
+    filePath: request.filePath,
+    url: request.url,
     title: request.title,
   });
 }
@@ -1263,7 +1274,7 @@ async function selectTabHandler(request: { tabId: string }): Promise<void> {
 }
 
 async function reloadTabHandler(request: { tabId: string }): Promise<void> {
-  reloadExternalView(request.tabId);
+  reloadTabView(request.tabId);
   dispatchRendererCustomEvent('agentwfy:agent-clear-view-changed', {
     tabId: request.tabId,
   });
@@ -1358,10 +1369,10 @@ function toHtmlResponse(status: number, html: string): Response {
   });
 }
 
-async function handleAgentViewRequest(request: Request): Promise<Response> {
+async function handleViewProtocolRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (url.hostname === 'asset') {
-    const assetPath = resolveAgentViewAssetPath(decodeURIComponent(url.pathname || ''));
+    const assetPath = resolveViewAssetPath(decodeURIComponent(url.pathname || ''));
     if (!assetPath) {
       return new Response('Asset not found', {
         status: 404,
@@ -1374,9 +1385,9 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
     return net.fetch(pathToFileURL(assetPath).toString());
   }
 
-  if (url.hostname === 'file' || (url.hostname === 'view' && !isAgentViewDocumentRequest(url))) {
+  if (url.hostname === 'file' || (url.hostname === 'view' && !isViewDocumentRequest(url))) {
     try {
-      const absolutePath = await resolveAgentViewDataPath(url);
+      const absolutePath = await resolveViewDataPath(url);
       return serveFile(request, absolutePath);
     } catch {
       return new Response('Asset not found', {
@@ -1399,12 +1410,26 @@ async function handleAgentViewRequest(request: Request): Promise<Response> {
 
   let viewId: string;
   try {
-    viewId = parseAgentViewId(url);
+    viewId = parseViewId(url);
   } catch (error: any) {
     return toHtmlResponse(400, `<pre>${escapeHtml(error?.message || 'Invalid agent view URL')}</pre>`);
   }
 
   const dataDir = getDataDir();
+
+  // File-sourced view: read from filesystem instead of DB
+  if (url.searchParams.get('source') === 'file') {
+    try {
+      const absolutePath = await assertPathAllowed(dataDir, viewId, { allowMissing: false });
+      const content = await readFile(absolutePath, 'utf-8');
+      const html = buildViewDocument(content);
+      return toHtmlResponse(200, html);
+    } catch (error: any) {
+      console.error('[agentview] failed to read file view', error);
+      return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(viewId)}</pre>`);
+    }
+  }
+
   let record;
   try {
     record = await getViewById(dataDir, viewId);
@@ -1452,18 +1477,18 @@ registerAgentToolsHandlers(getDataDir, {
   execTabJs: execTabJsById,
 });
 
-ipcMain.handle(EXTERNAL_VIEW_CHANNEL.MOUNT, async (_event, payload: unknown) => {
-  await mountExternalView(payload);
+ipcMain.handle(TAB_VIEW_CHANNEL.MOUNT, async (_event, payload: unknown) => {
+  await mountTabView(payload);
 });
 
-ipcMain.handle(EXTERNAL_VIEW_CHANNEL.SET_BOUNDS, async (_event, payload: unknown) => {
-  setExternalViewBounds(payload);
+ipcMain.handle(TAB_VIEW_CHANNEL.SET_BOUNDS, async (_event, payload: unknown) => {
+  setTabViewBounds(payload);
 });
 
-ipcMain.handle(EXTERNAL_VIEW_CHANNEL.DESTROY, async (_event, payload: unknown) => {
-  const input = payload && typeof payload === 'object' ? payload as Partial<ExternalViewDestroyPayload> : {};
+ipcMain.handle(TAB_VIEW_CHANNEL.DESTROY, async (_event, payload: unknown) => {
+  const input = payload && typeof payload === 'object' ? payload as Partial<TabViewDestroyPayload> : {};
   const tabId = toNonEmptyString(input.tabId);
-  destroyExternalView(tabId);
+  destroyTabView(tabId);
 });
 
 ipcMain.handle(TAB_CONTEXT_MENU_CHANNEL, async (event, payload: unknown) => {
@@ -1487,7 +1512,7 @@ onDidChange('dataDir', async (newValue: any, oldValue: any) => {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     agentDbChangesPublisher?.stop();
     destroyNativeCommandPalette();
-    destroyAllExternalViews();
+    destroyAllTabViews();
     clearTrackedViewWebContents();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
@@ -1515,7 +1540,7 @@ async function createAppWindow(dataDir: string) {
 
   mainWindow.on('closed', () => {
     destroyNativeCommandPalette();
-    destroyAllExternalViews();
+    destroyAllTabViews();
   });
 
   mainWindow.on('move', () => {
@@ -1532,7 +1557,7 @@ async function createAppWindow(dataDir: string) {
 
   mainWindow.webContents.on('did-start-loading', () => {
     destroyNativeCommandPalette();
-    destroyAllExternalViews();
+    destroyAllTabViews();
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -1575,7 +1600,7 @@ async function createAppWindow(dataDir: string) {
 
     if (!input.shift && key === 'r') {
       event.preventDefault();
-      reloadVisibleExternalView();
+      reloadVisibleTabView();
     }
   });
 }
@@ -1686,7 +1711,7 @@ app.on('ready', async () => {
   });
 
   protocol.handle('agentview', (request) => {
-    return handleAgentViewRequest(request);
+    return handleViewProtocolRequest(request);
   });
 
   createWindow()
@@ -1694,7 +1719,7 @@ app.on('ready', async () => {
 
 app.on('window-all-closed', () => {
   destroyNativeCommandPalette();
-  destroyAllExternalViews();
+  destroyAllTabViews();
   clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
     agentDbChangesPublisher?.stop();
@@ -1707,7 +1732,7 @@ app.on('before-quit', () => {
   agentDbChangesPublisher?.stop();
   agentDbChangesPublisher = null;
   destroyNativeCommandPalette();
-  destroyAllExternalViews();
+  destroyAllTabViews();
   clearTrackedViewWebContents();
 });
 

@@ -45,7 +45,9 @@ interface GetTabsResult {
 }
 
 interface OpenTabRequest {
-  viewId: string | number
+  viewId?: string | number
+  filePath?: string
+  url?: string
   title?: string
 }
 
@@ -494,15 +496,26 @@ export function registerAgentToolsHandlers(
     return tabTools.getTabs();
   });
 
-  // openTab({ viewId, title? })
+  // openTab({ viewId?, filePath?, url?, title? }) — exactly one of viewId, filePath, url required
   ipcMain.handle(Channel.OPEN_TAB, async (_event, payload: unknown) => {
     const input = payload as OpenTabRequest | undefined;
-    if (!input || (typeof input.viewId !== 'string' && typeof input.viewId !== 'number')) {
-      throw new Error('openTab requires a viewId');
+    if (!input) {
+      throw new Error('openTab requires a request object');
+    }
+
+    const hasViewId = typeof input.viewId === 'string' || typeof input.viewId === 'number';
+    const hasFilePath = typeof input.filePath === 'string' && input.filePath.length > 0;
+    const hasUrl = typeof input.url === 'string' && input.url.length > 0;
+    const sourceCount = (hasViewId ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0);
+
+    if (sourceCount !== 1) {
+      throw new Error('openTab requires exactly one of viewId, filePath, or url');
     }
 
     return tabTools.openTab({
-      viewId: input.viewId,
+      viewId: hasViewId ? input.viewId : undefined,
+      filePath: hasFilePath ? input.filePath : undefined,
+      url: hasUrl ? input.url : undefined,
       title: typeof input.title === 'string' ? input.title : undefined,
     });
   });

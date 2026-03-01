@@ -418,15 +418,29 @@ export class SessionWorkerManager {
       }
       case 'openTab': {
         const request = params as WorkerHostMethodMap['openTab']['params']
-        if (!request || (typeof request.viewId !== 'string' && typeof request.viewId !== 'number')) {
-          throw new Error('openTab requires a viewId')
+        if (!request) {
+          throw new Error('openTab requires a request object')
+        }
+
+        const hasViewId = typeof request.viewId === 'string' || typeof request.viewId === 'number'
+        const hasFilePath = typeof request.filePath === 'string' && request.filePath.length > 0
+        const hasUrl = typeof request.url === 'string' && request.url.length > 0
+        const sourceCount = (hasViewId ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0)
+
+        if (sourceCount !== 1) {
+          throw new Error('openTab requires exactly one of viewId, filePath, or url')
         }
 
         if (typeof tools.openTab !== 'function') {
           throw new Error('window.agentwfy.openTab is not available')
         }
 
-        await tools.openTab({ viewId: request.viewId, title: request.title })
+        await tools.openTab({
+          viewId: hasViewId ? request.viewId : undefined,
+          filePath: hasFilePath ? request.filePath : undefined,
+          url: hasUrl ? request.url : undefined,
+          title: request.title,
+        })
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'closeTab': {
