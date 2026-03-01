@@ -8,6 +8,8 @@ const STYLES = `
   :host {
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
     width: var(--activity-bar-width);
     flex-shrink: 0;
     background: var(--color-activity-bar-bg);
@@ -50,32 +52,26 @@ const STYLES = `
     border-radius: 0 2px 2px 0;
     background: var(--color-accent);
   }
-  .badge {
-    position: absolute;
-    top: 2px;
-    right: 1px;
-    min-width: 16px;
-    height: 16px;
-    border-radius: 8px;
-    background: #4caf50;
-    color: #fff;
-    font-size: 10px;
-    font-weight: 600;
-    display: flex;
+  .running-indicator {
+    display: none;
     align-items: center;
     justify-content: center;
-    padding: 0 4px;
-    line-height: 1;
-    pointer-events: none;
-    box-sizing: border-box;
-    animation: badge-pulse 1.5s ease-in-out infinite;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    margin-bottom: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+    animation: orb-pulse 2s ease-in-out infinite;
   }
-  .badge.hidden {
-    display: none;
+  .running-indicator.visible {
+    display: flex;
   }
-  @keyframes badge-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+  @keyframes orb-pulse {
+    0%, 100% { box-shadow: 0 0 4px rgba(76, 175, 80, 0.3); }
+    50% { box-shadow: 0 0 12px rgba(76, 175, 80, 0.5); }
   }
 `
 
@@ -139,9 +135,9 @@ export class TlActivityBar extends HTMLElement {
       <div class="items">
         <div class="item" data-panel="agent-chat" title="Agent Chat">
           ${CHAT_ICON}
-          <span class="badge hidden" id="agent-badge">0</span>
         </div>
       </div>
+      <div class="running-indicator" id="running-indicator" title="Running agents">0</div>
     `
     this.attachListeners()
     this.updateActiveState()
@@ -171,13 +167,13 @@ export class TlActivityBar extends HTMLElement {
   }
 
   private updateBadge() {
-    const badge = this.shadow.querySelector('#agent-badge')
-    if (!badge) return
+    const indicator = this.shadow.querySelector('#running-indicator')
+    if (!indicator) return
     if (this._agentCount > 0) {
-      badge.textContent = String(this._agentCount)
-      badge.classList.remove('hidden')
+      indicator.textContent = String(this._agentCount)
+      indicator.classList.add('visible')
     } else {
-      badge.classList.add('hidden')
+      indicator.classList.remove('visible')
     }
   }
 }
