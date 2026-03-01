@@ -13,9 +13,9 @@
     "build-renderer": "cd src/renderer && npx vite build",
     "build": "npm run clean-dist && npm run build-main && npm run build-renderer",
     "make": "conveyor make app",
-    "start": "electron ./dist",
+    "start": "electron --no-warnings ./dist",
     "dev-renderer": "cd src/renderer && npx vite",
-    "dev": "concurrently \"npm run dev-renderer\" \"wait-on http://localhost:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron ./dist\""
+    "dev": "concurrently \"npm run dev-renderer\" \"wait-on http://localhost:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electron --no-warnings ./dist\""
   },
   "devDependencies": {
     "@hydraulic/conveyor": "^21.0.0",
@@ -40,7 +40,6 @@
     "@mariozechner/pi-ai": "^0.55.1",
     "@sinclair/typebox": "^0.34.48",
     "electron": "npm:electron-nightly@^41.0.0-nightly.20251219",
-    "electron-log": "^5.2.0",
     "electron-store": "^8.2.0",
     "marked": "^4.3.0"
   }
