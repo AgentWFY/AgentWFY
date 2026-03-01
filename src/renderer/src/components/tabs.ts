@@ -1,12 +1,13 @@
-type TabDataTypes = 'external-view'
+type TabDataType = 'view' | 'file' | 'url'
 
 interface TabData {
   id: string
-  dataType: TabDataTypes
+  type: TabDataType
   title: string
-  viewId: string | number | null
-  viewUpdatedAt?: number | null
-  viewChanged: boolean
+  // view: numeric/string view ID, file: relative path, url: full URL
+  target: string | number
+  viewUpdatedAt?: number | null    // only for view
+  viewChanged: boolean             // only for view
   pinned: boolean
 }
 
@@ -33,15 +34,17 @@ export class TlTabs extends HTMLElement {
 
   private styleEl!: HTMLStyleElement
 
+  // Command palette / UI opens a view
   private onOpenView = (e: Event) => {
     const detail = (e as CustomEvent).detail
     const tabId = generateId()
     const viewId = typeof detail?.viewId !== 'undefined' ? detail.viewId : (detail?.path ?? null)
+    if (viewId == null) return
     const tab: TabData = {
       id: tabId,
-      dataType: 'external-view',
+      type: 'view',
       title: detail.title || 'Agent View',
-      viewId,
+      target: viewId,
       viewUpdatedAt: detail.viewUpdatedAt ?? null,
       viewChanged: false,
       pinned: false,
@@ -61,22 +64,38 @@ export class TlTabs extends HTMLElement {
 
   private onRefreshCurrentView = () => {
     if (!this.selectedTabId) return
-    const tab = this.tabs.find(t => t.id === this.selectedTabId)
-    if (tab?.dataType !== 'external-view') return
     window.dispatchEvent(new CustomEvent('agentwfy:refresh-view', {
-      detail: { viewId: tab.id }
+      detail: { viewId: this.selectedTabId }
     }))
   }
 
+  // Agent opens a tab (view, file, or url)
   private onAgentOpenTab = (e: Event) => {
     const detail = (e as CustomEvent).detail
-    if (!detail || (typeof detail.viewId !== 'string' && typeof detail.viewId !== 'number')) return
+    if (!detail) return
+
+    let type: TabDataType
+    let target: string | number
+
+    if (detail.type === 'url' && typeof detail.url === 'string') {
+      type = 'url'
+      target = detail.url
+    } else if (detail.type === 'file' && typeof detail.filePath === 'string') {
+      type = 'file'
+      target = detail.filePath
+    } else if (typeof detail.viewId === 'string' || typeof detail.viewId === 'number') {
+      type = 'view'
+      target = detail.viewId
+    } else {
+      return
+    }
+
     const tabId = generateId()
     const tab: TabData = {
       id: tabId,
-      dataType: 'external-view',
-      title: detail.title || 'Agent View',
-      viewId: detail.viewId,
+      type,
+      title: detail.title || (type === 'url' ? 'Web Page' : type === 'file' ? 'File View' : 'Agent View'),
+      target,
       viewUpdatedAt: null,
       viewChanged: false,
       pinned: false,
@@ -116,6 +135,7 @@ export class TlTabs extends HTMLElement {
     this.render()
   }
 
+  // Only view tabs track DB changes
   private onViewsDbChanged = (e: Event) => {
     const detail = (e as CustomEvent).detail as { changes?: Array<{ rowId?: unknown; op?: unknown }> } | undefined
     const changes = Array.isArray(detail?.changes) ? detail.changes : []
@@ -124,7 +144,7 @@ export class TlTabs extends HTMLElement {
     for (const change of changes) {
       if (!change || (change.op !== 'update' && change.op !== 'delete')) continue
       if (typeof change.rowId !== 'string' && typeof change.rowId !== 'number') continue
-      if (this.markExternalViewChanged(change.rowId)) {
+      if (this.markDbViewChanged(change.rowId)) {
         hasChanges = true
       }
     }
@@ -134,10 +154,10 @@ export class TlTabs extends HTMLElement {
     }
   }
 
-  private markExternalViewChanged(viewId: string | number): boolean {
+  private markDbViewChanged(viewId: string | number): boolean {
     let changed = false
     for (const tab of this.tabs) {
-      if (tab.dataType !== 'external-view' || tab.viewId == null || tab.viewId != viewId) {
+      if (tab.type !== 'view' || tab.target != viewId) {
         continue
       }
 
@@ -414,31 +434,41 @@ export class TlTabs extends HTMLElement {
       }
       panel.style.display = tab.id === this.selectedTabId ? '' : 'none'
 
-      if (tab.dataType === 'external-view') {
-        // Reuse existing view element or create new
-        let viewEl = this.viewMap.get(tab.id)
-        if (!viewEl) {
-          viewEl = document.createElement('tl-external-view')
-          viewEl.setAttribute('tab-id', tab.id)
-          viewEl.setAttribute('view-id', tab.viewId == null ? '' : String(tab.viewId))
+      // All tab types use <tl-tab-view> with different attributes
+      let viewEl = this.viewMap.get(tab.id)
+      if (!viewEl) {
+        viewEl = document.createElement('tl-tab-view')
+        viewEl.setAttribute('tab-id', tab.id)
+        viewEl.setAttribute('tab-type', tab.type)
+        if (tab.type === 'view') {
+          viewEl.setAttribute('view-id', String(tab.target))
           viewEl.setAttribute('view-updated-at', tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))
-          const externalViewEl = viewEl as any
-          externalViewEl.viewChanged = tab.viewChanged
-          this.viewMap.set(tab.id, viewEl)
+        } else if (tab.type === 'file') {
+          viewEl.setAttribute('view-path', String(tab.target))
+        } else if (tab.type === 'url') {
+          viewEl.setAttribute('view-url', String(tab.target))
         }
-        if (viewEl.getAttribute('view-id') !== (tab.viewId == null ? '' : String(tab.viewId))) {
-          viewEl.setAttribute('view-id', tab.viewId == null ? '' : String(tab.viewId))
+        const tabViewEl = viewEl as any
+        tabViewEl.viewChanged = tab.viewChanged
+        this.viewMap.set(tab.id, viewEl)
+      }
+
+      // Sync attributes for view tabs
+      if (tab.type === 'view') {
+        const targetStr = String(tab.target)
+        if (viewEl.getAttribute('view-id') !== targetStr) {
+          viewEl.setAttribute('view-id', targetStr)
         }
-        if (viewEl.getAttribute('view-updated-at') !== (tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))) {
-          viewEl.setAttribute('view-updated-at', tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))
+        const updatedAtStr = tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt)
+        if (viewEl.getAttribute('view-updated-at') !== updatedAtStr) {
+          viewEl.setAttribute('view-updated-at', updatedAtStr)
         }
-        const externalViewEl = viewEl as any
-        externalViewEl.viewChanged = tab.viewChanged
-        if (panel.firstElementChild !== viewEl || panel.childElementCount !== 1) {
-          panel.replaceChildren(viewEl)
-        }
-      } else {
-        panel.textContent = `Unknown tab type: ${tab.dataType}`
+      }
+
+      const tabViewEl = viewEl as any
+      tabViewEl.viewChanged = tab.viewChanged
+      if (panel.firstElementChild !== viewEl || panel.childElementCount !== 1) {
+        panel.replaceChildren(viewEl)
       }
 
       const panelAtIndex = this.panelContainerEl.children[index]
@@ -486,7 +516,7 @@ export class TlTabs extends HTMLElement {
 
   private reloadTab(id: string) {
     const tab = this.tabs.find(t => t.id === id)
-    if (!tab || tab.dataType !== 'external-view') return
+    if (!tab) return
     tab.viewChanged = false
     const viewEl = this.viewMap.get(id) as any
     if (viewEl) {
@@ -606,7 +636,7 @@ export class TlTabs extends HTMLElement {
         min-height: 0;
         min-width: 0;
       }
-      .tab-panel > tl-external-view {
+      .tab-panel > tl-tab-view {
         display: block;
         width: 100%;
         height: 100%;

@@ -100,7 +100,9 @@ export interface WorkerGetTabsResult {
 }
 
 export interface WorkerOpenTabRequest {
-  viewId: string | number
+  viewId?: string | number
+  filePath?: string
+  url?: string
   title?: string
 }
 

@@ -1,12 +1,15 @@
 import type {
-  ElectronExternalViewBounds,
-  ElectronExternalViewEvent,
-  ElectronMountExternalViewRequest,
+  ElectronTabViewBounds,
+  ElectronTabViewEvent,
+  ElectronMountTabViewRequest,
 } from '../electron_agent_tools'
 
-export class TlExternalView extends HTMLElement {
+type TabType = 'view' | 'file' | 'url'
+
+export class TlTabView extends HTMLElement {
   private _tabId = ''
-  private _viewId = ''
+  private _tabType: TabType = 'view'
+  private _source = ''  // viewId for view, filePath for file, url for url
   private _viewUpdatedAt: number | null = null
   private _viewChanged = false
   private loadRequestId = 0
@@ -18,12 +21,12 @@ export class TlExternalView extends HTMLElement {
   private containerEl: HTMLDivElement | null = null
   private viewRevision = 0
   private mounted = false
-  private pendingLoadViewId: string | null = null
+  private pendingLoadSource: string | null = null
   private pendingLoadAnimationFrame: number | null = null
   private pendingBoundsAnimationFrame: number | null = null
   private wrapperResizeObserver: ResizeObserver | null = null
   private parentVisibilityObserver: MutationObserver | null = null
-  private unsubscribeExternalViewEvents: (() => void) | null = null
+  private unsubscribeTabViewEvents: (() => void) | null = null
   private onRefreshView = (e: Event) => {
     const detail = (e as CustomEvent).detail
     if (detail.viewId === this._tabId) {
@@ -34,48 +37,50 @@ export class TlExternalView extends HTMLElement {
   private onWindowOrVisibilityChanged = () => {
     this.scheduleBoundsSync()
 
-    if (!this.mounted && this._viewId) {
-      this.scheduleLoadExternalView(this._viewId)
+    if (!this.mounted && this._source) {
+      this.scheduleLoad(this._source)
     }
   }
 
   static get observedAttributes() {
-    return ['tab-id', 'view-id', 'view-path', 'view-updated-at']
+    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at']
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
     const nextValue = value || ''
     if (name === 'tab-id') this._tabId = nextValue
-    if (name === 'view-id') this._viewId = nextValue
-    if (name === 'view-path' && !this.hasAttribute('view-id')) this._viewId = nextValue
+    if (name === 'tab-type') this._tabType = (nextValue as TabType) || 'view'
+    if (name === 'view-id') this._source = nextValue
+    if (name === 'view-path' && !this.hasAttribute('view-id')) this._source = nextValue
+    if (name === 'view-url' && !this.hasAttribute('view-id') && !this.hasAttribute('view-path')) this._source = nextValue
     if (name === 'view-updated-at') this._viewUpdatedAt = parseOptionalNumber(value)
 
     if (!this.isConnected || oldValue === nextValue) return
 
-    if (name === 'view-id' || name === 'view-path' || name === 'view-updated-at') {
+    if (name === 'view-id' || name === 'view-path' || name === 'view-url' || name === 'view-updated-at') {
       this._viewChanged = false
       this.mounted = false
 
-      if (this._viewId) {
-        this.scheduleLoadExternalView(this._viewId)
+      if (this._source) {
+        this.scheduleLoad(this._source)
         this.scheduleBoundsSync()
       } else {
         this.loadRequestId += 1
         this.loading = false
         this.error = null
-        this.pendingLoadViewId = null
+        this.pendingLoadSource = null
         if (this.pendingLoadAnimationFrame !== null) {
           cancelAnimationFrame(this.pendingLoadAnimationFrame)
           this.pendingLoadAnimationFrame = null
         }
-        this.destroyExternalViewHost()
+        this.destroyTabViewHost()
         this.render()
       }
     }
   }
 
   get tabId() { return this._tabId }
-  get viewId() { return this._viewId }
+  get viewId() { return this._source }
 
   get viewChanged() { return this._viewChanged }
   set viewChanged(value: boolean) {
@@ -85,7 +90,8 @@ export class TlExternalView extends HTMLElement {
 
   connectedCallback() {
     this._tabId = this.getAttribute('tab-id') || ''
-    this._viewId = this.getAttribute('view-id') || this.getAttribute('view-path') || ''
+    this._tabType = (this.getAttribute('tab-type') as TabType) || 'view'
+    this._source = this.getAttribute('view-id') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
     this._viewUpdatedAt = parseOptionalNumber(this.getAttribute('view-updated-at'))
 
     this.style.display = 'block'
@@ -103,7 +109,7 @@ export class TlExternalView extends HTMLElement {
     }
 
     this.attachParentVisibilityObserver()
-    this.subscribeToExternalViewEvents()
+    this.subscribeToTabViewEvents()
 
     window.addEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.addEventListener('resize', this.onWindowOrVisibilityChanged)
@@ -111,8 +117,8 @@ export class TlExternalView extends HTMLElement {
 
     this.render()
 
-    if (this._viewId) {
-      this.scheduleLoadExternalView(this._viewId)
+    if (this._source) {
+      this.scheduleLoad(this._source)
       this.scheduleBoundsSync()
     }
   }
@@ -120,7 +126,7 @@ export class TlExternalView extends HTMLElement {
   disconnectedCallback() {
     this.loadRequestId += 1
     this.loading = false
-    this.pendingLoadViewId = null
+    this.pendingLoadSource = null
 
     if (this.pendingLoadAnimationFrame !== null) {
       cancelAnimationFrame(this.pendingLoadAnimationFrame)
@@ -142,16 +148,16 @@ export class TlExternalView extends HTMLElement {
       this.parentVisibilityObserver = null
     }
 
-    if (this.unsubscribeExternalViewEvents) {
-      this.unsubscribeExternalViewEvents()
-      this.unsubscribeExternalViewEvents = null
+    if (this.unsubscribeTabViewEvents) {
+      this.unsubscribeTabViewEvents()
+      this.unsubscribeTabViewEvents = null
     }
 
     window.removeEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.removeEventListener('resize', this.onWindowOrVisibilityChanged)
     document.removeEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
 
-    this.destroyExternalViewHost()
+    this.destroyTabViewHost()
   }
 
   private initializeUi() {
@@ -183,8 +189,8 @@ export class TlExternalView extends HTMLElement {
     this.wrapperResizeObserver = new ResizeObserver(() => {
       this.scheduleBoundsSync()
 
-      if (!this.mounted && this._viewId) {
-        this.scheduleLoadExternalView(this._viewId)
+      if (!this.mounted && this._source) {
+        this.scheduleLoad(this._source)
       }
     })
     this.wrapperResizeObserver.observe(this.wrapperEl)
@@ -204,8 +210,8 @@ export class TlExternalView extends HTMLElement {
     this.parentVisibilityObserver = new MutationObserver(() => {
       this.scheduleBoundsSync()
 
-      if (!this.mounted && this._viewId) {
-        this.scheduleLoadExternalView(this._viewId)
+      if (!this.mounted && this._source) {
+        this.scheduleLoad(this._source)
       }
     })
 
@@ -215,18 +221,18 @@ export class TlExternalView extends HTMLElement {
     })
   }
 
-  private subscribeToExternalViewEvents() {
+  private subscribeToTabViewEvents() {
     const tools = window.electronClientTools
-    if (!tools || typeof tools.onExternalViewEvent !== 'function') {
+    if (!tools || typeof tools.onTabViewEvent !== 'function') {
       return
     }
 
-    if (this.unsubscribeExternalViewEvents) {
-      this.unsubscribeExternalViewEvents()
-      this.unsubscribeExternalViewEvents = null
+    if (this.unsubscribeTabViewEvents) {
+      this.unsubscribeTabViewEvents()
+      this.unsubscribeTabViewEvents = null
     }
 
-    this.unsubscribeExternalViewEvents = tools.onExternalViewEvent((detail: ElectronExternalViewEvent) => {
+    this.unsubscribeTabViewEvents = tools.onTabViewEvent((detail: ElectronTabViewEvent) => {
       if (!detail || detail.tabId !== this.getExternalTabId()) {
         return
       }
@@ -255,7 +261,7 @@ export class TlExternalView extends HTMLElement {
         this.loading = false
         this.mounted = false
         const description = detail.errorDescription ? String(detail.errorDescription) : 'Unknown external view load error'
-        this.error = `Failed to load view "${this._viewId}": ${description}`
+        this.error = `Failed to load view "${this._source}": ${description}`
         this.render()
       }
     })
@@ -267,11 +273,11 @@ export class TlExternalView extends HTMLElement {
       return normalized
     }
 
-    const fallbackViewId = this._viewId.trim()
-    return fallbackViewId.length > 0 ? `view-${fallbackViewId}` : ''
+    const fallbackSource = this._source.trim()
+    return fallbackSource.length > 0 ? `view-${fallbackSource}` : ''
   }
 
-  private getWrapperBounds(): ElectronExternalViewBounds {
+  private getWrapperBounds(): ElectronTabViewBounds {
     if (!this.wrapperEl) {
       return { x: 0, y: 0, width: 0, height: 0 }
     }
@@ -287,7 +293,7 @@ export class TlExternalView extends HTMLElement {
     }
   }
 
-  private isViewVisible(bounds?: ElectronExternalViewBounds): boolean {
+  private isViewVisible(bounds?: ElectronTabViewBounds): boolean {
     const nextBounds = bounds || this.getWrapperBounds()
     return (
       document.visibilityState === 'visible' &&
@@ -297,15 +303,15 @@ export class TlExternalView extends HTMLElement {
     )
   }
 
-  private destroyExternalViewHost() {
+  private destroyTabViewHost() {
     const tools = window.electronClientTools
     const tabId = this.getExternalTabId()
-    if (!tools || typeof tools.destroyExternalView !== 'function' || !tabId) {
+    if (!tools || typeof tools.destroyTabView !== 'function' || !tabId) {
       this.mounted = false
       return
     }
 
-    void tools.destroyExternalView({ tabId }).catch(() => {
+    void tools.destroyTabView({ tabId }).catch(() => {
       // Ignore teardown failures while switching tabs/views.
     })
     this.mounted = false
@@ -318,25 +324,25 @@ export class TlExternalView extends HTMLElement {
 
     this.pendingBoundsAnimationFrame = requestAnimationFrame(() => {
       this.pendingBoundsAnimationFrame = null
-      this.syncExternalViewBounds()
+      this.syncTabViewBounds()
     })
   }
 
-  private syncExternalViewBounds() {
-    if (!this._viewId) {
+  private syncTabViewBounds() {
+    if (!this._source) {
       return
     }
 
     const tools = window.electronClientTools
     const tabId = this.getExternalTabId()
-    if (!tools || typeof tools.updateExternalViewBounds !== 'function' || !tabId) {
+    if (!tools || typeof tools.updateTabViewBounds !== 'function' || !tabId) {
       return
     }
 
     const bounds = this.getWrapperBounds()
     const visible = this.isViewVisible(bounds)
 
-    void tools.updateExternalViewBounds({
+    void tools.updateTabViewBounds({
       tabId,
       bounds,
       visible,
@@ -345,25 +351,39 @@ export class TlExternalView extends HTMLElement {
     })
   }
 
-  private buildExternalViewSrc(viewId: string): string {
+  private buildSrc(source: string): string {
     this.viewRevision += 1
-    const revision = this._viewUpdatedAt ?? Date.now()
-    const encodedViewId = encodeURIComponent(viewId)
     const encodedTabId = encodeURIComponent(this.getExternalTabId())
+
+    if (this._tabType === 'url') {
+      // URL tabs load the URL directly
+      return source
+    }
+
+    if (this._tabType === 'file') {
+      // File tabs use agentview://view/ with source=file param
+      const encodedPath = encodeURIComponent(source)
+      const revision = Date.now()
+      return `agentview://view/${encodedPath}?source=file&rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
+    }
+
+    // Default: view
+    const encodedViewId = encodeURIComponent(source)
+    const revision = this._viewUpdatedAt ?? Date.now()
     return `agentview://view/${encodedViewId}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
   }
 
-  private async loadExternalView(viewId: string) {
+  private async loadView(source: string) {
     const requestId = ++this.loadRequestId
     this.error = null
     this.loading = true
     this.render()
 
     const tools = window.electronClientTools
-    if (!tools || typeof tools.mountExternalView !== 'function') {
+    if (!tools || typeof tools.mountTabView !== 'function') {
       if (requestId === this.loadRequestId) {
         this.loading = false
-        this.error = 'window.electronClientTools.mountExternalView is unavailable'
+        this.error = 'window.electronClientTools.mountTabView is unavailable'
         this.render()
       }
       return
@@ -381,16 +401,17 @@ export class TlExternalView extends HTMLElement {
 
     const bounds = this.getWrapperBounds()
     const visible = this.isViewVisible(bounds)
-    const request: ElectronMountExternalViewRequest = {
+    const request: ElectronMountTabViewRequest = {
       tabId,
-      viewId,
-      src: this.buildExternalViewSrc(viewId),
+      viewId: source,
+      src: this.buildSrc(source),
       bounds,
       visible,
+      tabType: this._tabType,
     }
 
     try {
-      await tools.mountExternalView(request)
+      await tools.mountTabView(request)
       if (requestId !== this.loadRequestId || !this.isConnected) {
         return
       }
@@ -408,13 +429,13 @@ export class TlExternalView extends HTMLElement {
       this.loading = false
       this.mounted = false
       const message = error instanceof Error ? error.message : String(error)
-      this.error = `Failed to load view "${viewId}": ${message}`
+      this.error = `Failed to load view "${source}": ${message}`
       this.render()
     }
   }
 
-  private scheduleLoadExternalView(viewId: string) {
-    this.pendingLoadViewId = viewId
+  private scheduleLoad(source: string) {
+    this.pendingLoadSource = source
     if (this.pendingLoadAnimationFrame !== null) {
       return
     }
@@ -425,8 +446,8 @@ export class TlExternalView extends HTMLElement {
         return
       }
 
-      const pendingViewId = this.pendingLoadViewId
-      if (!pendingViewId) {
+      const pendingSource = this.pendingLoadSource
+      if (!pendingSource) {
         return
       }
 
@@ -435,18 +456,18 @@ export class TlExternalView extends HTMLElement {
         return
       }
 
-      this.pendingLoadViewId = null
-      void this.loadExternalView(pendingViewId)
+      this.pendingLoadSource = null
+      void this.loadView(pendingSource)
     }
 
     this.pendingLoadAnimationFrame = requestAnimationFrame(tryLoad)
   }
 
   private handleReload() {
-    if (!this._viewId) return
+    if (!this._source) return
     this._viewChanged = false
     this.mounted = false
-    this.scheduleLoadExternalView(this._viewId)
+    this.scheduleLoad(this._source)
   }
 
   private render() {

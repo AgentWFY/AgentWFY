@@ -27,7 +27,9 @@ interface ExecTabJsRequest {
 }
 
 interface OpenTabRequest {
-  viewId: string | number;
+  viewId?: string | number;
+  filePath?: string;
+  url?: string;
   title?: string;
 }
 
@@ -43,28 +45,28 @@ interface ReloadTabRequest {
   tabId: string;
 }
 
-interface ExternalViewBounds {
+interface TabViewBounds {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-interface ExternalViewMountRequest {
+interface TabViewMountRequest {
   tabId: string;
   viewId: string;
   src: string;
-  bounds: ExternalViewBounds;
+  bounds: TabViewBounds;
   visible: boolean;
 }
 
-interface ExternalViewBoundsRequest {
+interface TabViewBoundsRequest {
   tabId: string;
-  bounds: ExternalViewBounds;
+  bounds: TabViewBounds;
   visible: boolean;
 }
 
-interface ExternalViewDestroyRequest {
+interface TabViewDestroyRequest {
   tabId: string;
 }
 
@@ -78,7 +80,7 @@ interface TabContextMenuRequest {
   tabId?: string;
 }
 
-interface ExternalViewEventDetail {
+interface TabViewEventDetail {
   tabId: string;
   type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load';
   errorCode?: number;
@@ -113,11 +115,11 @@ const RELOAD_TAB_CHANNEL = 'agentwfy:reloadTab';
 const CAPTURE_TAB_CHANNEL = 'agentwfy:captureTab';
 const GET_TAB_CONSOLE_LOGS_CHANNEL = 'agentwfy:getTabConsoleLogs';
 const EXEC_TAB_JS_CHANNEL = 'agentwfy:execTabJs';
-const EXTERNAL_VIEW_MOUNT_CHANNEL = 'electronExternalView:mount';
-const EXTERNAL_VIEW_BOUNDS_CHANNEL = 'electronExternalView:setBounds';
-const EXTERNAL_VIEW_DESTROY_CHANNEL = 'electronExternalView:destroy';
+const TAB_VIEW_MOUNT_CHANNEL = 'tabView:mount';
+const TAB_VIEW_BOUNDS_CHANNEL = 'tabView:setBounds';
+const TAB_VIEW_DESTROY_CHANNEL = 'tabView:destroy';
 const TAB_CONTEXT_MENU_CHANNEL = 'app:tabs:context-menu';
-const EXTERNAL_VIEW_EVENT_CHANNEL = 'app:external-view-event';
+const TAB_VIEW_EVENT_CHANNEL = 'app:tab-view-event';
 const AGENT_DB_CHANGED_CHANNEL = 'app:agent-db-changed';
 const DIALOG_OPEN_CHANNEL = 'dialog:open';
 const OPEN_URL_IN_DEFAULT_BROWSER_CHANNEL = 'shell:openUrlInDefaultBrowser';
@@ -152,8 +154,9 @@ function invokeRunSql(request: RunSqlRequest): Promise<any> {
 }
 
 const isAgentView = window.location.protocol === 'agentview:';
+const isApp = window.location.protocol === 'app:';
 
-if (!isAgentView) {
+if (isApp) {
   contextBridge.exposeInMainWorld('agentwfy', {
     read(path: string, offset?: number, limit?: number): Promise<string> {
       return ipcRenderer.invoke('agentwfy:read', path, offset, limit);
@@ -265,22 +268,22 @@ if (!isAgentView) {
     readLegacyApiKey(): Promise<string> {
       return ipcRenderer.invoke(READ_LEGACY_API_KEY_CHANNEL);
     },
-    mountExternalView(request: ExternalViewMountRequest): Promise<void> {
-      return ipcRenderer.invoke(EXTERNAL_VIEW_MOUNT_CHANNEL, request);
+    mountTabView(request: TabViewMountRequest): Promise<void> {
+      return ipcRenderer.invoke(TAB_VIEW_MOUNT_CHANNEL, request);
     },
-    updateExternalViewBounds(request: ExternalViewBoundsRequest): Promise<void> {
-      return ipcRenderer.invoke(EXTERNAL_VIEW_BOUNDS_CHANNEL, request);
+    updateTabViewBounds(request: TabViewBoundsRequest): Promise<void> {
+      return ipcRenderer.invoke(TAB_VIEW_BOUNDS_CHANNEL, request);
     },
-    destroyExternalView(request: ExternalViewDestroyRequest): Promise<void> {
-      return ipcRenderer.invoke(EXTERNAL_VIEW_DESTROY_CHANNEL, request);
+    destroyTabView(request: TabViewDestroyRequest): Promise<void> {
+      return ipcRenderer.invoke(TAB_VIEW_DESTROY_CHANNEL, request);
     },
     showTabContextMenu(request: TabContextMenuRequest): Promise<TabContextMenuAction> {
       return ipcRenderer.invoke(TAB_CONTEXT_MENU_CHANNEL, request);
     },
-    onExternalViewEvent(callback: (detail: ExternalViewEventDetail) => void): () => void {
-      const handler = (_event: unknown, detail: ExternalViewEventDetail) => callback(detail);
-      ipcRenderer.on(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
-      return () => ipcRenderer.removeListener(EXTERNAL_VIEW_EVENT_CHANNEL, handler);
+    onTabViewEvent(callback: (detail: TabViewEventDetail) => void): () => void {
+      const handler = (_event: unknown, detail: TabViewEventDetail) => callback(detail);
+      ipcRenderer.on(TAB_VIEW_EVENT_CHANNEL, handler);
+      return () => ipcRenderer.removeListener(TAB_VIEW_EVENT_CHANNEL, handler);
     },
     onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
       const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
