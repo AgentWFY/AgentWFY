@@ -1,40 +1,68 @@
-import { ipcRenderer, ipcMain } from 'electron';
-import ElectronStore from 'electron-store';
+import { ipcMain, app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 
-export enum ElectronStoreChannel {
+export enum StoreChannel {
   GET = 'electron-store:get',
   SET = 'electron-store:set',
   REMOVE = 'electron-store:remove',
 }
 
-export const Store = {
-  getItem<T = any>(key: string): Promise<T> {
-    return ipcRenderer.invoke(ElectronStoreChannel.GET, key);
-  },
-  setItem<T = any>(key: string, value: T): Promise<void> {
-    setTimeout(() => {
-      ipcRenderer.invoke(ElectronStoreChannel.SET, key, value);
-    }, 0);
+const storePath = path.join(app.getPath('userData'), 'config.json');
 
-    return Promise.resolve();
-  },
-  removeItem(key: string): Promise<void> {
-    setTimeout(() => {
-      ipcRenderer.invoke(ElectronStoreChannel.REMOVE, key);
-    }, 0);
+function readStore(): Record<string, any> {
+  try {
+    return JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
 
-    return Promise.resolve();
-  },
-};
+function writeStore(data: Record<string, any>): void {
+  fs.writeFileSync(storePath, JSON.stringify(data, null, 2));
+}
 
-export const registerElectronStoreSubscribers = (store: ElectronStore) => {
-  ipcMain.handle(ElectronStoreChannel.GET, async (_event, value) => store.get(value));
+export function storeGet(key: string): any {
+  return readStore()[key];
+}
 
-  ipcMain.handle(ElectronStoreChannel.SET, async (_event, key, value) => {
-    store.set(key, value);
+export function storeSet(key: string, value: any): void {
+  const data = readStore();
+  data[key] = value;
+  writeStore(data);
+}
+
+export function storeRemove(key: string): void {
+  const data = readStore();
+  delete data[key];
+  writeStore(data);
+}
+
+type ChangeListener = (newValue: any, oldValue: any) => void;
+const changeListeners: Map<string, ChangeListener[]> = new Map();
+
+export function onDidChange(key: string, listener: ChangeListener): void {
+  const listeners = changeListeners.get(key) ?? [];
+  listeners.push(listener);
+  changeListeners.set(key, listeners);
+}
+
+export const registerStoreHandlers = () => {
+  ipcMain.handle(StoreChannel.GET, async (_event, key) => storeGet(key));
+
+  ipcMain.handle(StoreChannel.SET, async (_event, key, value) => {
+    const oldValue = storeGet(key);
+    storeSet(key, value);
+    for (const listener of changeListeners.get(key) ?? []) {
+      listener(value, oldValue);
+    }
   });
 
-  ipcMain.handle(ElectronStoreChannel.REMOVE, async (_event, key) => {
-    store.reset(key);
+  ipcMain.handle(StoreChannel.REMOVE, async (_event, key) => {
+    const oldValue = storeGet(key);
+    storeRemove(key);
+    for (const listener of changeListeners.get(key) ?? []) {
+      listener(undefined, oldValue);
+    }
   });
 };
