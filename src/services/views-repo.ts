@@ -1,12 +1,12 @@
 import { runAgentDbSql } from './agent-db';
 
-export interface AgentViewCatalogRecord {
+export interface ViewCatalogRecord {
   id: number;
   name: string;
   updated_at: number;
 }
 
-export interface AgentViewRecord extends AgentViewCatalogRecord {
+export interface ViewRecord extends ViewCatalogRecord {
   content: string;
   created_at: number;
 }
@@ -41,7 +41,7 @@ function asNumber(value: unknown, fieldName: string): number {
   throw new Error(`Invalid "${fieldName}" in agent DB view row`);
 }
 
-function toCatalogRecord(row: unknown): AgentViewCatalogRecord {
+function toCatalogRecord(row: unknown): ViewCatalogRecord {
   const record = asObject(row);
   return {
     id: asNumber(record.id, 'id'),
@@ -50,7 +50,7 @@ function toCatalogRecord(row: unknown): AgentViewCatalogRecord {
   };
 }
 
-function toViewRecord(row: unknown): AgentViewRecord {
+function toViewRecord(row: unknown): ViewRecord {
   const record = asObject(row);
   return {
     id: asNumber(record.id, 'id'),
@@ -67,7 +67,7 @@ export async function ensureViewsSchema(dataDir: string): Promise<void> {
   });
 }
 
-export async function listViews(dataDir: string): Promise<AgentViewCatalogRecord[]> {
+export async function listViews(dataDir: string): Promise<ViewCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
     sql: 'SELECT id, name, updated_at FROM views ORDER BY updated_at DESC',
   });
@@ -78,7 +78,7 @@ export async function listViews(dataDir: string): Promise<AgentViewCatalogRecord
 export async function getViewById(
   dataDir: string,
   viewId: number | string
-): Promise<AgentViewRecord | null> {
+): Promise<ViewRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
     sql: 'SELECT id, name, content, created_at, updated_at FROM views WHERE id = ? LIMIT 1',
     params: [viewId],

@@ -1,6 +1,6 @@
 import { TlApp } from 'app/components/app'
 import { TlTabs } from 'app/components/tabs'
-import { TlExternalView } from 'app/components/external_view'
+import { TlTabView } from 'app/components/tab_view'
 import { TlAgentChat } from 'app/components/agent_chat'
 import { TlAgentSettings } from 'app/components/agent_settings'
 import { TlJson } from 'app/components/json_view'
@@ -19,7 +19,7 @@ function defineElement(tagName: string, ctor: CustomElementConstructor) {
 async function init() {
   defineElement('tl-json', TlJson)
   defineElement('tl-agent-settings', TlAgentSettings)
-  defineElement('tl-external-view', TlExternalView)
+  defineElement('tl-tab-view', TlTabView)
   defineElement('tl-tabs', TlTabs)
   defineElement('tl-agent-chat', TlAgentChat)
   defineElement('tl-activity-bar', TlActivityBar)
