@@ -4,6 +4,8 @@ type Waiter = {
   timer?: ReturnType<typeof setTimeout>
 }
 
+const MAX_QUEUE_SIZE = 1000
+
 export class EventBus {
   private queues = new Map<string, unknown[]>()
   private waiters = new Map<string, Waiter[]>()
@@ -34,11 +36,14 @@ export class EventBus {
       return
     }
 
-    // Otherwise queue the message
+    // Otherwise queue the message, dropping oldest if full
     let queue = this.queues.get(topic)
     if (!queue) {
       queue = []
       this.queues.set(topic, queue)
+    }
+    if (queue.length >= MAX_QUEUE_SIZE) {
+      queue.shift()
     }
     queue.push(data)
   }
