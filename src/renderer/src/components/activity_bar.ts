@@ -61,28 +61,24 @@ const STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 4px;
   }
-  .running-indicator {
-    position: relative;
-    width: 28px;
-    height: 28px;
+  .running-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
+    background: var(--color-accent);
+    animation: dot-pulse 2s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 3px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+    50% { opacity: 0.5; box-shadow: 0 0 6px color-mix(in srgb, var(--color-accent) 50%, transparent); }
+  }
+  .running-count {
     font-size: 11px;
     font-weight: 600;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: default;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa, #6366f1);
-    background-size: 300% 300%;
-    animation: gradient-rotate 3s ease-in-out infinite;
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
-  }
-  @keyframes gradient-rotate {
-    0% { background-position: 0% 50%; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
-    50% { background-position: 100% 50%; box-shadow: 0 0 14px rgba(139, 92, 246, 0.5); }
-    100% { background-position: 0% 50%; box-shadow: 0 0 8px rgba(99, 102, 241, 0.4); }
+    color: var(--color-activity-bar-fg);
   }
   .running-tooltip {
     display: none;
@@ -181,7 +177,8 @@ export class TlActivityBar extends HTMLElement {
         </div>
       </div>
       <div class="running-wrapper" id="running-wrapper">
-        <div class="running-indicator" id="running-indicator">0</div>
+        <div class="running-dot"></div>
+        <span class="running-count" id="running-indicator">0</span>
         <div class="running-tooltip" id="running-tooltip">
           <div class="tooltip-title">Running agents</div>
         </div>
