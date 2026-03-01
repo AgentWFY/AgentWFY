@@ -56,16 +56,9 @@ export interface ElectronTabViewEvent {
 }
 
 export interface ElectronAgentDbChange {
-  seq: number
   table: string
   rowId: number
   op: 'insert' | 'update' | 'delete'
-  changedAt: number
-}
-
-export interface ElectronAgentDbChangedEvent {
-  cursor: number
-  changes: ElectronAgentDbChange[]
 }
 
 export interface ElectronAgentTools {
@@ -108,7 +101,7 @@ export interface ElectronClientTools {
   destroyTabView(request: ElectronDestroyTabViewRequest): Promise<void>
   showTabContextMenu(request: ElectronTabContextMenuRequest): Promise<ElectronTabContextMenuAction>
   onTabViewEvent(callback: (detail: ElectronTabViewEvent) => void): () => void
-  onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void
+  onAgentDbChanged(callback: (detail: ElectronAgentDbChange) => void): () => void
   onBusForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void
   onBusForwardWaitFor(callback: (detail: { waiterId: string; topic: string; timeoutMs?: number }) => void): () => void
   busWaitForResolved(waiterId: string, data: unknown): void

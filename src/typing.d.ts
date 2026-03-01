@@ -1,15 +1,8 @@
 declare global {
   interface ElectronAgentDbChange {
-    seq: number;
     table: string;
     rowId: number;
     op: 'insert' | 'update' | 'delete';
-    changedAt: number;
-  }
-
-  interface ElectronAgentDbChangedEvent {
-    cursor: number;
-    changes: ElectronAgentDbChange[];
   }
 
   interface ElectronRunSqlRequest {
@@ -38,7 +31,7 @@ declare global {
       updateTabViewBounds(request: { tabId: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
       destroyTabView(request: { tabId: string }): Promise<void>;
       onTabViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
-      onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
+      onAgentDbChanged(callback: (detail: ElectronAgentDbChange) => void): () => void;
     };
     agentwfy?: {
       read(path: string, offset?: number, limit?: number): Promise<string>;

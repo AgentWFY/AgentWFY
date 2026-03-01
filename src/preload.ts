@@ -88,16 +88,9 @@ interface TabViewEventDetail {
  }
 
 interface AgentDbChangeDetail {
-  seq: number;
   table: string;
   rowId: number;
   op: 'insert' | 'update' | 'delete';
-  changedAt: number;
-}
-
-interface AgentDbChangedEventDetail {
-  cursor: number;
-  changes: AgentDbChangeDetail[];
 }
 
 const RUN_SQL_CHANNEL = 'agentwfy:runSql';
@@ -285,8 +278,8 @@ if (!isAgentView) {
       ipcRenderer.on(TAB_VIEW_EVENT_CHANNEL, handler);
       return () => ipcRenderer.removeListener(TAB_VIEW_EVENT_CHANNEL, handler);
     },
-    onAgentDbChanged(callback: (detail: AgentDbChangedEventDetail) => void): () => void {
-      const handler = (_event: unknown, detail: AgentDbChangedEventDetail) => callback(detail);
+    onAgentDbChanged(callback: (detail: AgentDbChangeDetail) => void): () => void {
+      const handler = (_event: unknown, detail: AgentDbChangeDetail) => callback(detail);
       ipcRenderer.on(AGENT_DB_CHANGED_CHANNEL, handler);
       return () => ipcRenderer.removeListener(AGENT_DB_CHANGED_CHANNEL, handler);
     },

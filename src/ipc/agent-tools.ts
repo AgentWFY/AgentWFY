@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router';
+import type { OnDbChange } from '../db/sqlite';
 
 // --- Constants ---
 
@@ -195,7 +196,8 @@ function normalizeSessionFileName(value: unknown): string {
 
 export function registerAgentToolsHandlers(
   getRoot: () => string,
-  tabTools: AgentTabTools
+  tabTools: AgentTabTools,
+  onDbChange?: OnDbChange
 ) {
   const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
     assertPathAllowed(getRoot(), relativePath, options);
@@ -480,7 +482,7 @@ export function registerAgentToolsHandlers(
   // runSql({ target, path?, sql, params?, description? }) → query result
   ipcMain.handle(Channel.RUN_SQL, async (_event, payload: unknown) => {
     const request = parseRunSqlRequest(payload);
-    return routeSqlRequest(getRoot(), request);
+    return routeSqlRequest(getRoot(), request, onDbChange);
   });
 
   // getTabs() → { tabs: [...] }

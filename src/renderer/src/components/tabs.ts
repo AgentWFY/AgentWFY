@@ -143,19 +143,12 @@ export class TlTabs extends HTMLElement {
 
   // Only view tabs track DB changes
   private onViewsDbChanged = (e: Event) => {
-    const detail = (e as CustomEvent).detail as { changes?: Array<{ rowId?: unknown; op?: unknown }> } | undefined
-    const changes = Array.isArray(detail?.changes) ? detail.changes : []
+    const detail = (e as CustomEvent).detail as { change?: { rowId?: unknown; op?: unknown } } | undefined
+    const change = detail?.change
+    if (!change || (change.op !== 'update' && change.op !== 'delete')) return
+    if (typeof change.rowId !== 'string' && typeof change.rowId !== 'number') return
 
-    let hasChanges = false
-    for (const change of changes) {
-      if (!change || (change.op !== 'update' && change.op !== 'delete')) continue
-      if (typeof change.rowId !== 'string' && typeof change.rowId !== 'number') continue
-      if (this.markDbViewChanged(change.rowId)) {
-        hasChanges = true
-      }
-    }
-
-    if (hasChanges) {
+    if (this.markDbViewChanged(change.rowId)) {
       this.render()
     }
   }

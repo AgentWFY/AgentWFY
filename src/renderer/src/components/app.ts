@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import type { ElectronAgentDbChange, ElectronAgentDbChangedEvent } from 'app/electron_agent_tools'
+import type { ElectronAgentDbChange } from 'app/electron_agent_tools'
 
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
@@ -135,31 +135,14 @@ export class TlApp extends HTMLElement {
     }
 
     this.unlistenAgentDbChanged?.()
-    this.unlistenAgentDbChanged = tools.onAgentDbChanged((detail: ElectronAgentDbChangedEvent) => {
-      const changes = this.normalizeViewChanges(detail)
-      if (!changes.length) {
-        return
-      }
+    this.unlistenAgentDbChanged = tools.onAgentDbChanged((change: ElectronAgentDbChange) => {
+      if (!change || change.table !== 'views') return
+      if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
+      if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) return
 
-      window.dispatchEvent(new CustomEvent<{ changes: ElectronAgentDbChange[] }>('agentwfy:views-db-changed', {
-        detail: { changes }
+      window.dispatchEvent(new CustomEvent<{ change: ElectronAgentDbChange }>('agentwfy:views-db-changed', {
+        detail: { change }
       }))
     })
-  }
-
-  private normalizeViewChanges(detail: ElectronAgentDbChangedEvent): ElectronAgentDbChange[] {
-    if (!detail || !Array.isArray(detail.changes)) {
-      return []
-    }
-
-    const viewChanges: ElectronAgentDbChange[] = []
-    for (const change of detail.changes) {
-      if (!change || change.table !== 'views') continue
-      if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') continue
-      if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) continue
-      viewChanges.push(change)
-    }
-
-    return viewChanges
   }
 }
