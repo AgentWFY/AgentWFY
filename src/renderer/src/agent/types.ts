@@ -59,6 +59,7 @@ export interface AgentState {
 export type AgentEvent =
   | { type: 'agent_start' }
   | { type: 'agent_end'; messages: AgentMessage[] }
+  | { type: 'agent_idle' }
   | { type: 'turn_start' }
   | { type: 'turn_end'; message: AgentMessage; toolResults: ToolResultMessage[] }
   | { type: 'message_start'; message: AgentMessage }
