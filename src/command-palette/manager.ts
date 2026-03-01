@@ -26,6 +26,7 @@ interface CommandPaletteItem {
   id: string
   title: string
   subtitle?: string
+  shortcut?: string
   group: 'Views' | 'Actions'
   action: CommandPaletteAction
 }
@@ -61,10 +62,10 @@ export class CommandPaletteManager {
     }
 
     const bounds = mainWindow.getBounds();
-    const width = Math.min(880, Math.max(540, Math.floor(bounds.width * 0.58)));
-    const height = Math.min(640, Math.max(360, Math.floor(bounds.height * 0.62)));
+    const width = Math.min(560, Math.max(420, Math.floor(bounds.width * 0.42)));
+    const height = Math.min(380, Math.max(260, Math.floor(bounds.height * 0.38)));
     const x = bounds.x + Math.floor((bounds.width - width) / 2);
-    const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.2));
+    const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.15));
     return { x, y, width, height };
   }
 
@@ -126,7 +127,7 @@ export class CommandPaletteManager {
       acceptFirstMouse: true,
       alwaysOnTop: true,
       roundedCorners: true,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1f1f1f' : '#f0f0f0',
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -233,22 +234,26 @@ export class CommandPaletteManager {
       },
     }));
 
+    const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
     const actionItems: CommandPaletteItem[] = [
       {
         id: 'action:toggle-agent-chat',
         title: 'Toggle AI Panel',
+        shortcut: `${mod}I`,
         group: 'Actions',
         action: { type: 'toggle-agent-chat' },
       },
       {
         id: 'action:close-current-tab',
         title: 'Close Current Tab',
+        shortcut: `${mod}W`,
         group: 'Actions',
         action: { type: 'close-current-tab' },
       },
       {
         id: 'action:reload-views',
         title: 'Reload Views Catalog',
+        shortcut: `${mod}R`,
         group: 'Actions',
         action: { type: 'reload-views' },
       },

@@ -7,26 +7,35 @@
   <style>
     :root {
       color-scheme: light dark;
+
       --bg: #f0f0f0;
-      --panel: #ffffff;
-      --border: #d4d4d4;
-      --text: #1a1a1a;
-      --muted: #6b6b6b;
-      --active: #1a6fb5;
-      --active-text: #ffffff;
-      --item-hover: #e8e8e8;
+      --surface: #ffffff;
+      --border: #e0e0e0;
+      --text: #444444;
+      --text-strong: #1a1a1a;
+      --muted: #999999;
+      --placeholder: #b0b0b0;
+      --accent: #1a6fb5;
+      --accent-text: #ffffff;
+      --item-hover: rgba(0, 0, 0, 0.05);
+      --kbd-bg: rgba(0, 0, 0, 0.06);
+      --kbd-border: rgba(0, 0, 0, 0.1);
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #1f1f1f;
-        --panel: #2a2a2a;
-        --border: #3a3a3a;
-        --text: #e8e8e8;
-        --muted: #9a9a9a;
-        --active: #2b7ab5;
-        --active-text: #ffffff;
-        --item-hover: #2f2f2f;
+        --bg: #1e1e1e;
+        --surface: #252526;
+        --border: #3d3d3d;
+        --text: #cccccc;
+        --text-strong: #e0e0e0;
+        --muted: #808080;
+        --placeholder: #666666;
+        --accent: #2b7ab5;
+        --accent-text: #ffffff;
+        --item-hover: rgba(255, 255, 255, 0.05);
+        --kbd-bg: rgba(255, 255, 255, 0.08);
+        --kbd-border: rgba(255, 255, 255, 0.1);
       }
     }
 
@@ -39,12 +48,12 @@
       width: 100%;
       height: 100%;
       background: transparent;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       color: var(--text);
     }
 
     body {
-      padding: 10px;
+      padding: 8px;
     }
 
     .palette {
@@ -52,36 +61,53 @@
       height: 100%;
       display: flex;
       flex-direction: column;
-      border-radius: 10px;
+      border-radius: 8px;
       border: 1px solid var(--border);
       background: var(--bg);
-      box-shadow: 0 12px 44px rgba(0, 0, 0, 0.55);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
       overflow: hidden;
     }
 
     .search {
       border: 0;
       border-bottom: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--text);
-      padding: 14px 16px;
-      font-size: 16px;
+      background: var(--surface);
+      color: var(--text-strong);
+      padding: 10px 14px;
+      font-size: 13px;
       outline: none;
       width: 100%;
+    }
+
+    .search::placeholder {
+      color: var(--placeholder);
     }
 
     .results {
       flex: 1;
       overflow: auto;
-      padding: 8px;
+      padding: 4px;
+    }
+
+    .results::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .results::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .results::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
     }
 
     .group-title {
-      margin: 8px 8px 4px;
+      margin: 6px 8px 2px;
       font-size: 11px;
       text-transform: uppercase;
       color: var(--muted);
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       font-weight: 600;
     }
 
@@ -91,12 +117,13 @@
       text-align: left;
       background: transparent;
       color: var(--text);
-      border-radius: 8px;
-      padding: 10px 12px;
+      border-radius: 4px;
+      padding: 6px 10px;
       cursor: pointer;
       display: flex;
-      flex-direction: column;
-      gap: 3px;
+      align-items: center;
+      gap: 8px;
+      font-family: inherit;
     }
 
     .item:hover {
@@ -104,45 +131,100 @@
     }
 
     .item.active {
-      background: var(--active);
-      color: var(--active-text);
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+
+    .item-content {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
     }
 
     .item-title {
-      font-size: 14px;
-      line-height: 1.25;
+      font-size: 13px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .item-subtitle {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--muted);
       line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .item.active .item-subtitle {
-      color: rgba(255, 255, 255, 0.8);
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .item-shortcut {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: inherit;
+      line-height: 1.4;
+    }
+
+    .item.active .item-shortcut {
+      color: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
     }
 
     .empty {
-      padding: 24px 12px;
+      padding: 20px 12px;
       color: var(--muted);
       text-align: center;
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .hint {
       border-top: 1px solid var(--border);
-      padding: 8px 12px;
+      padding: 6px 12px;
       color: var(--muted);
       font-size: 11px;
+      display: flex;
+      gap: 12px;
+    }
+
+    .hint-key {
+      color: var(--text);
+      font-size: 10px;
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      border-radius: 3px;
+      padding: 0 4px;
+      font-family: inherit;
+      line-height: 1.5;
+    }
+
+    .hint-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
   </style>
 </head>
 <body>
   <div class="palette">
-    <input id="searchInput" class="search" type="text" placeholder="Search views and actions..." autocomplete="off" spellcheck="false">
+    <input id="searchInput" class="search" type="text" placeholder="Search..." autocomplete="off" spellcheck="false">
     <div id="results" class="results"></div>
-    <div class="hint">Enter to run, Esc to close, Arrow keys to navigate</div>
+    <div class="hint">
+      <span class="hint-item"><span class="hint-key">Enter</span> run</span>
+      <span class="hint-item"><span class="hint-key">Esc</span> close</span>
+      <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
+    </div>
   </div>
   <script>
     (() => {
@@ -150,9 +232,9 @@
       const searchInput = document.getElementById('searchInput');
       const resultsEl = document.getElementById('results');
 
-      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any}>} */
+      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any}>} */
       let items = [];
-      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any}>} */
+      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any}>} */
       let filtered = [];
       let selectedIndex = 0;
       let actionInFlight = false;
@@ -216,16 +298,28 @@
           itemButton.className = 'item' + (index === selectedIndex ? ' active' : '');
           itemButton.dataset.index = String(index);
 
+          const contentEl = document.createElement('div');
+          contentEl.className = 'item-content';
+
           const titleEl = document.createElement('div');
           titleEl.className = 'item-title';
           titleEl.textContent = item.title || '';
-          itemButton.appendChild(titleEl);
+          contentEl.appendChild(titleEl);
 
           if (item.subtitle) {
             const subtitleEl = document.createElement('div');
             subtitleEl.className = 'item-subtitle';
             subtitleEl.textContent = item.subtitle;
-            itemButton.appendChild(subtitleEl);
+            contentEl.appendChild(subtitleEl);
+          }
+
+          itemButton.appendChild(contentEl);
+
+          if (item.shortcut) {
+            const shortcutEl = document.createElement('span');
+            shortcutEl.className = 'item-shortcut';
+            shortcutEl.textContent = item.shortcut;
+            itemButton.appendChild(shortcutEl);
           }
 
           resultsEl.appendChild(itemButton);

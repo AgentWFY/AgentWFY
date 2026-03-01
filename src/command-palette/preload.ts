@@ -21,6 +21,7 @@ interface CommandPaletteItem {
   id: string
   title: string
   subtitle?: string
+  shortcut?: string
   group: 'Views' | 'Actions'
   action: CommandPaletteAction
 }
