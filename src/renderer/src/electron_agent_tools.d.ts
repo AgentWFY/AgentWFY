@@ -10,7 +10,8 @@ import type {
   WorkerGetTabConsoleLogsRequest,
   WorkerExecTabJsRequest,
   WorkerTabConsoleLogEntry,
-} from './agent/worker/types'
+  WorkerStartTaskResult,
+} from './runtime/types'
 
 export interface ElectronTabViewBounds {
   x: number
@@ -82,6 +83,8 @@ export interface ElectronAgentTools {
   busPublish(topic: string, data: unknown): Promise<void>
   busWaitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>
+  startTask(taskId: number): Promise<WorkerStartTaskResult>
+  stopTask(runId: string): Promise<void>
 }
 
 export interface ElectronClientTools {
@@ -96,6 +99,9 @@ export interface ElectronClientTools {
   readAuthConfig(): Promise<string>
   writeAuthConfig(content: string): Promise<void>
   readLegacyApiKey(): Promise<string>
+  listTaskLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>
+  readTaskLog(logFileName: string): Promise<string>
+  writeTaskLog(logFileName: string, content: string): Promise<void>
   mountTabView(request: ElectronMountTabViewRequest): Promise<void>
   updateTabViewBounds(request: ElectronUpdateTabViewBoundsRequest): Promise<void>
   destroyTabView(request: ElectronDestroyTabViewRequest): Promise<void>
@@ -107,6 +113,8 @@ export interface ElectronClientTools {
   busWaitForResolved(waiterId: string, data: unknown): void
   onAgentForwardSpawnAgent(callback: (detail: { waiterId: string; prompt: string }) => void): () => void
   agentSpawnAgentResult(waiterId: string, result: unknown): void
+  onTaskForwardInvoke(callback: (detail: { waiterId: string; method: string; params: Record<string, unknown> }) => void): () => void
+  taskInvokeResult(waiterId: string, result: { ok: boolean; value?: unknown; error?: string }): void
 }
 
 export interface AgentWFYViewApi {
@@ -130,6 +138,8 @@ export interface AgentWFYViewApi {
   publish(topic: string, data: unknown): Promise<void>
   waitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>
+  startTask(taskId: number): Promise<WorkerStartTaskResult>
+  stopTask(runId: string): Promise<void>
 }
 
 declare global {

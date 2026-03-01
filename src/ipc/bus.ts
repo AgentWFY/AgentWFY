@@ -66,4 +66,30 @@ export function registerBusHandlers(mainWindow: BrowserWindow): void {
       pending.resolve(payload.result)
     }
   })
+
+  // task:invoke — view calls startTask/stopTask → forward to renderer
+  const pendingTaskCalls = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>()
+
+  ipcMain.handle('task:invoke', async (_event, payload: { method: string; params: Record<string, unknown> }) => {
+    const waiterId = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingTaskCalls.delete(waiterId)
+        reject(new Error('task:invoke timeout'))
+      }, 60_000)
+      pendingTaskCalls.set(waiterId, { resolve, timer })
+      mainWindow.webContents.send('task:forward-invoke', {
+        waiterId, method: payload.method, params: payload.params
+      })
+    })
+  })
+
+  ipcMain.on('task:invoke-result', (_event, payload: { waiterId: string; ok: boolean; value?: unknown; error?: string }) => {
+    const pending = pendingTaskCalls.get(payload.waiterId)
+    if (pending) {
+      pendingTaskCalls.delete(payload.waiterId)
+      clearTimeout(pending.timer)
+      pending.resolve(payload.ok ? payload.value : { error: payload.error })
+    }
+  })
 }

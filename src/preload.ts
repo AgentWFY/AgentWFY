@@ -108,6 +108,9 @@ const RELOAD_TAB_CHANNEL = 'agentwfy:reloadTab';
 const CAPTURE_TAB_CHANNEL = 'agentwfy:captureTab';
 const GET_TAB_CONSOLE_LOGS_CHANNEL = 'agentwfy:getTabConsoleLogs';
 const EXEC_TAB_JS_CHANNEL = 'agentwfy:execTabJs';
+const LIST_TASK_LOGS_CHANNEL = 'app:listTaskLogs';
+const READ_TASK_LOG_CHANNEL = 'app:readTaskLog';
+const WRITE_TASK_LOG_CHANNEL = 'app:writeTaskLog';
 const TAB_VIEW_MOUNT_CHANNEL = 'tabView:mount';
 const TAB_VIEW_BOUNDS_CHANNEL = 'tabView:setBounds';
 const TAB_VIEW_DESTROY_CHANNEL = 'tabView:destroy';
@@ -217,6 +220,12 @@ if (isApp) {
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
       return ipcRenderer.invoke('agentwfy:spawnAgent', prompt);
     },
+    startTask(taskId: number): Promise<{ runId: string }> {
+      return ipcRenderer.invoke('task:invoke', { method: 'startTask', params: { taskId } });
+    },
+    stopTask(runId: string): Promise<void> {
+      return ipcRenderer.invoke('task:invoke', { method: 'stopTask', params: { runId } });
+    },
   });
 }
 
@@ -261,6 +270,15 @@ if (!isAgentView) {
     readLegacyApiKey(): Promise<string> {
       return ipcRenderer.invoke(READ_LEGACY_API_KEY_CHANNEL);
     },
+    listTaskLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
+      return ipcRenderer.invoke(LIST_TASK_LOGS_CHANNEL, limit);
+    },
+    readTaskLog(logFileName: string): Promise<string> {
+      return ipcRenderer.invoke(READ_TASK_LOG_CHANNEL, logFileName);
+    },
+    writeTaskLog(logFileName: string, content: string): Promise<void> {
+      return ipcRenderer.invoke(WRITE_TASK_LOG_CHANNEL, logFileName, content);
+    },
     mountTabView(request: TabViewMountRequest): Promise<void> {
       return ipcRenderer.invoke(TAB_VIEW_MOUNT_CHANNEL, request);
     },
@@ -303,6 +321,14 @@ if (!isAgentView) {
     },
     agentSpawnAgentResult(waiterId: string, result: unknown): void {
       ipcRenderer.send('agent:spawnAgent-result', { waiterId, result });
+    },
+    onTaskForwardInvoke(callback: (detail: { waiterId: string; method: string; params: Record<string, unknown> }) => void): () => void {
+      const handler = (_event: unknown, detail: { waiterId: string; method: string; params: Record<string, unknown> }) => callback(detail);
+      ipcRenderer.on('task:forward-invoke', handler);
+      return () => ipcRenderer.removeListener('task:forward-invoke', handler);
+    },
+    taskInvokeResult(waiterId: string, result: { ok: boolean; value?: unknown; error?: string }): void {
+      ipcRenderer.send('task:invoke-result', { waiterId, ...result });
     },
   });
 }
@@ -374,6 +400,12 @@ if (isAgentView) {
     },
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
       return ipcRenderer.invoke('agentwfy:spawnAgent', prompt);
+    },
+    startTask(taskId: number): Promise<{ runId: string }> {
+      return ipcRenderer.invoke('task:invoke', { method: 'startTask', params: { taskId } });
+    },
+    stopTask(runId: string): Promise<void> {
+      return ipcRenderer.invoke('task:invoke', { method: 'stopTask', params: { runId } });
     },
   });
 }

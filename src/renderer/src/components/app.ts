@@ -5,6 +5,8 @@ export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
   private sidebarEl!: HTMLDivElement
   private activityBarEl!: HTMLElement
+  private agentChatEl!: HTMLElement
+  private taskPanelEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
 
   private onPanelToggle = (e: Event) => {
@@ -56,10 +58,14 @@ export class TlApp extends HTMLElement {
         background: var(--color-sidebar-bg);
         overflow: hidden;
       }
-      .tl-app-sidebar > tl-agent-chat {
+      .tl-app-sidebar > tl-agent-chat,
+      .tl-app-sidebar > tl-task-panel {
         display: block;
         flex: 1;
         min-height: 0;
+      }
+      .tl-app-sidebar > .panel-hidden {
+        display: none !important;
       }
       .tl-app-sidebar-hidden {
         display: none;
@@ -87,8 +93,12 @@ export class TlApp extends HTMLElement {
     // Sidebar
     this.sidebarEl = document.createElement('div')
     this.sidebarEl.className = 'tl-app-sidebar tl-app-sidebar-hidden'
-    const agentChat = document.createElement('tl-agent-chat')
-    this.sidebarEl.appendChild(agentChat)
+    this.agentChatEl = document.createElement('tl-agent-chat')
+    this.agentChatEl.classList.add('panel-hidden')
+    this.sidebarEl.appendChild(this.agentChatEl)
+    this.taskPanelEl = document.createElement('tl-task-panel')
+    this.taskPanelEl.classList.add('panel-hidden')
+    this.sidebarEl.appendChild(this.taskPanelEl)
     container.appendChild(this.sidebarEl)
 
     // Main area
@@ -125,7 +135,11 @@ export class TlApp extends HTMLElement {
     } else {
       this.sidebarEl.classList.add('tl-app-sidebar-hidden')
     }
-    (this.activityBarEl as unknown as { activePanel: string | null }).activePanel = this.activeSidebarPanel
+
+    this.agentChatEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'agent-chat')
+    this.taskPanelEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'tasks')
+
+    ;(this.activityBarEl as unknown as { activePanel: string | null }).activePanel = this.activeSidebarPanel
   }
 
   private subscribeToAgentDbChanges() {
@@ -136,13 +150,19 @@ export class TlApp extends HTMLElement {
 
     this.unlistenAgentDbChanged?.()
     this.unlistenAgentDbChanged = tools.onAgentDbChanged((change: ElectronAgentDbChange) => {
-      if (!change || change.table !== 'views') return
+      if (!change) return
       if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
       if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) return
 
-      window.dispatchEvent(new CustomEvent<{ change: ElectronAgentDbChange }>('agentwfy:views-db-changed', {
-        detail: { change }
-      }))
+      if (change.table === 'views') {
+        window.dispatchEvent(new CustomEvent<{ change: ElectronAgentDbChange }>('agentwfy:views-db-changed', {
+          detail: { change }
+        }))
+      }
+
+      if (change.table === 'tasks') {
+        window.dispatchEvent(new CustomEvent('agentwfy:tasks-db-changed'))
+      }
     })
   }
 }

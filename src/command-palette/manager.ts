@@ -2,6 +2,7 @@ import { BrowserWindow, nativeTheme } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews } from '../db/views';
+import { listTasks } from '../db/tasks';
 import type { RendererBridge } from '../renderer-bridge';
 import type { TabViewManager } from '../tab-views/manager';
 
@@ -20,6 +21,11 @@ type CommandPaletteAction =
   }
   | {
     type: 'reload-views'
+  }
+  | {
+    type: 'run-task'
+    taskId: number
+    taskName: string
   };
 
 interface CommandPaletteItem {
@@ -27,7 +33,7 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions'
+  group: 'Views' | 'Actions' | 'Tasks'
   action: CommandPaletteAction
 }
 
@@ -234,6 +240,24 @@ export class CommandPaletteManager {
       },
     }));
 
+    let taskItems: CommandPaletteItem[] = [];
+    try {
+      const tasks = await listTasks(this.deps.getDataDir());
+      taskItems = tasks.map((task) => ({
+        id: `task:${task.id}`,
+        title: task.name,
+        subtitle: 'Run task',
+        group: 'Tasks',
+        action: {
+          type: 'run-task',
+          taskId: task.id,
+          taskName: task.name,
+        },
+      }));
+    } catch {
+      // Tasks table might not exist yet
+    }
+
     const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
     const actionItems: CommandPaletteItem[] = [
       {
@@ -259,7 +283,7 @@ export class CommandPaletteManager {
       },
     ];
 
-    return [...actionItems, ...viewItems];
+    return [...actionItems, ...taskItems, ...viewItems];
   }
 
   async runAction(payload: unknown): Promise<void> {
@@ -302,6 +326,14 @@ export class CommandPaletteManager {
           })),
         });
         this.deps.getTabViewManager().reloadAllTabViews();
+        break;
+      }
+
+      case 'run-task': {
+        const taskAction = action as Extract<CommandPaletteAction, { type: 'run-task' }>;
+        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:run-task', {
+          taskId: taskAction.taskId,
+        });
         break;
       }
 
