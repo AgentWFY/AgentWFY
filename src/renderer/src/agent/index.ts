@@ -318,6 +318,7 @@ export class Agent {
       this._state.streamMessage = null
       this._state.pendingToolCalls = new Set()
       this.abortController = undefined
+      this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
       this.runningPrompt = undefined
       this.resolveRunningPrompt = undefined
