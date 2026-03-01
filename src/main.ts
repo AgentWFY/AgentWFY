@@ -1,7 +1,6 @@
 import { app, BrowserWindow, Menu, protocol, net, WebContents, WebContentsView, ipcMain, nativeTheme, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import createVaultWindow from './vault_window';
-import ElectronStore from 'electron-store';
-import { registerElectronStoreSubscribers } from './ipc/store';
+import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
 import { registerBusHandlers } from './ipc/bus';
@@ -238,12 +237,11 @@ async function resolveAgentViewDataPath(url: URL): Promise<string> {
 }
 
 
-const store = new ElectronStore();
-registerElectronStoreSubscribers(store);
+registerStoreHandlers();
 registerDialogSubscribers();
 
 function getDataDir(): string {
-  const dataDir = store.get('dataDir');
+  const dataDir = storeGet('dataDir');
   return typeof dataDir === 'string' ? dataDir : app.getPath('userData');
 }
 
@@ -1484,7 +1482,7 @@ ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unkno
   await runCommandPaletteAction(payload);
 });
 
-store.onDidChange('dataDir', async (newValue, oldValue) => {
+onDidChange('dataDir', async (newValue: any, oldValue: any) => {
   if (oldValue !== newValue) {
     const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
     agentDbChangesPublisher?.stop();
@@ -1583,7 +1581,7 @@ async function createAppWindow(dataDir: string) {
 }
 
 const createWindow = () => {
-  const dataDir = store.get('dataDir');
+  const dataDir = storeGet('dataDir');
   if (typeof dataDir === 'string') return createAppWindow(dataDir)
   createAppWindow(DEFAULT_DATA_DIR)
 }
