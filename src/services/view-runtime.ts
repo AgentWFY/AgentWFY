@@ -142,9 +142,9 @@ function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
 
   return `<!doctype html><html><head><meta charset="utf-8">${bootstrap}</head><body>${source}</body></html>`;
 }
-export function parseAgentViewId(url: URL): string {
+export function parseViewId(url: URL): string {
   if (url.hostname !== 'view') {
-    throw new Error(`Unsupported agentview route: ${url.hostname}`);
+    throw new Error(`Unsupported view route: ${url.hostname}`);
   }
 
   const rawPath = decodeURIComponent(url.pathname || '');

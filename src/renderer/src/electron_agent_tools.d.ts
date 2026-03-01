@@ -12,28 +12,29 @@ import type {
   WorkerTabConsoleLogEntry,
 } from './agent/worker/types'
 
-export interface ElectronExternalViewBounds {
+export interface ElectronTabViewBounds {
   x: number
   y: number
   width: number
   height: number
 }
 
-export interface ElectronMountExternalViewRequest {
+export interface ElectronMountTabViewRequest {
   tabId: string
   viewId: string
   src: string
-  bounds: ElectronExternalViewBounds
+  bounds: ElectronTabViewBounds
   visible: boolean
+  tabType?: 'view' | 'file' | 'url'
 }
 
-export interface ElectronUpdateExternalViewBoundsRequest {
+export interface ElectronUpdateTabViewBoundsRequest {
   tabId: string
-  bounds: ElectronExternalViewBounds
+  bounds: ElectronTabViewBounds
   visible: boolean
 }
 
-export interface ElectronDestroyExternalViewRequest {
+export interface ElectronDestroyTabViewRequest {
   tabId: string
 }
 
@@ -47,7 +48,7 @@ export interface ElectronTabContextMenuRequest {
   tabId?: string
 }
 
-export interface ElectronExternalViewEvent {
+export interface ElectronTabViewEvent {
   tabId: string
   type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'
   errorCode?: number
@@ -102,11 +103,11 @@ export interface ElectronClientTools {
   readAuthConfig(): Promise<string>
   writeAuthConfig(content: string): Promise<void>
   readLegacyApiKey(): Promise<string>
-  mountExternalView(request: ElectronMountExternalViewRequest): Promise<void>
-  updateExternalViewBounds(request: ElectronUpdateExternalViewBoundsRequest): Promise<void>
-  destroyExternalView(request: ElectronDestroyExternalViewRequest): Promise<void>
+  mountTabView(request: ElectronMountTabViewRequest): Promise<void>
+  updateTabViewBounds(request: ElectronUpdateTabViewBoundsRequest): Promise<void>
+  destroyTabView(request: ElectronDestroyTabViewRequest): Promise<void>
   showTabContextMenu(request: ElectronTabContextMenuRequest): Promise<ElectronTabContextMenuAction>
-  onExternalViewEvent(callback: (detail: ElectronExternalViewEvent) => void): () => void
+  onTabViewEvent(callback: (detail: ElectronTabViewEvent) => void): () => void
   onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void
   onBusForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void
   onBusForwardWaitFor(callback: (detail: { waiterId: string; topic: string; timeoutMs?: number }) => void): () => void

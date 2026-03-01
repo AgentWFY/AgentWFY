@@ -34,10 +34,10 @@ declare global {
       readAuthConfig(): Promise<string>;
       writeAuthConfig(content: string): Promise<void>;
       readLegacyApiKey(): Promise<string>;
-      mountExternalView(request: { tabId: string; viewId: string; src: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
-      updateExternalViewBounds(request: { tabId: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
-      destroyExternalView(request: { tabId: string }): Promise<void>;
-      onExternalViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
+      mountTabView(request: { tabId: string; viewId: string; src: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean; tabType?: 'view' | 'file' | 'url' }): Promise<void>;
+      updateTabViewBounds(request: { tabId: string; bounds: { x: number; y: number; width: number; height: number }; visible: boolean }): Promise<void>;
+      destroyTabView(request: { tabId: string }): Promise<void>;
+      onTabViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChangedEvent) => void): () => void;
     };
     agentwfy?: {
@@ -50,8 +50,8 @@ declare global {
       find(pattern: string, path?: string, limit?: number): Promise<string>;
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
       runSql(request: ElectronRunSqlRequest): Promise<any>;
-      getTabs(): Promise<{ tabs: Array<{ id: string; title: string; viewId: string | number | null; viewUpdatedAt: number | null; viewChanged: boolean; pinned: boolean; selected: boolean }> }>;
-      openTab(request: { viewId: string | number; title?: string }): Promise<void>;
+      getTabs(): Promise<{ tabs: Array<{ id: string; title: string; type: 'view' | 'file' | 'url'; target: string | number; viewUpdatedAt: number | null; viewChanged: boolean; pinned: boolean; selected: boolean }> }>;
+      openTab(request: { viewId?: string | number; filePath?: string; url?: string; title?: string }): Promise<void>;
       closeTab(request: { tabId: string }): Promise<void>;
       selectTab(request: { tabId: string }): Promise<void>;
       reloadTab(request: { tabId: string }): Promise<void>;
