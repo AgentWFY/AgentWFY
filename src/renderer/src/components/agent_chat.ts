@@ -1,6 +1,6 @@
 /* eslint-disable import/no-unresolved */
 import { marked } from 'marked'
-import type { AgentMessage } from '@mariozechner/pi-agent-core'
+import type { AgentMessage } from 'app/agent/types'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig } from 'app/agent/agent_auth'
 import { getSessionManager, reconnectManager } from 'app/agent/session_manager'

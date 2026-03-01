@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AgentWFY is an Electron desktop app with an AI agent that can interact with a local SQLite database and render views in tabs. The agent uses `@mariozechner/pi-agent-core` for LLM tool-calling and `@mariozechner/pi-ai` for model access.
+AgentWFY is an Electron desktop app with an AI agent that can interact with a local SQLite database and render views in tabs. The agent uses a custom `Agent` class (`src/renderer/src/agent/agent.ts`) for the LLM tool-calling loop and `@mariozechner/pi-ai` for model access and streaming.
 
 ## Commands
 

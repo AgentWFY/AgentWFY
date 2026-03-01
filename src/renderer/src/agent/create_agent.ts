@@ -1,11 +1,6 @@
 /* eslint-disable import/no-unresolved */
-import {
-  Agent,
-  type AgentEvent,
-  type AgentMessage,
-  type AgentState,
-  type ThinkingLevel
-} from '@mariozechner/pi-agent-core'
+import { Agent } from 'app/agent'
+import type { AgentEvent, AgentMessage, AgentState, ThinkingLevel } from 'app/agent/types'
 import {
   completeSimple,
   getModel,

@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
+import type { AgentTool, AgentToolResult } from 'app/agent/types'
 import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
 import { Type } from '@sinclair/typebox'
 import { getSessionWorkerManager } from 'app/agent/worker/session_worker_manager'
