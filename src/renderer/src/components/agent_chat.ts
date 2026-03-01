@@ -1,9 +1,9 @@
 import { marked } from 'marked'
 import type { AgentMessage } from '@mariozechner/pi-agent-core'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
-import { loadAuthConfig, hasValidAuth } from 'app/agent/agent_auth'
-import { getSessionManager, initSessionManager, listSessionHistory } from 'app/agent/session_manager'
-import type { AgentSessionManager, SessionHistoryItem } from 'app/agent/session_manager'
+import { loadAuthConfig } from 'app/agent/agent_auth'
+import { getSessionManager, reconnectManager } from 'app/agent/session_manager'
+import type { AgentSessionManager, SessionListItem } from 'app/agent/session_manager'
 import {
   COMPACTION_SUMMARY_CUSTOM_TYPE,
   type AgentWFYAgent
@@ -24,15 +24,6 @@ interface DisplayBlock {
   tools: ToolPair[]
   compactionBeforeCount?: number
   raw: any
-}
-
-type SessionListItem = {
-  label: string
-  updatedAt: number
-  isActive: boolean
-  isStreaming: boolean
-  file: string | null
-  sessionId: string | null
 }
 
 const STYLES = `
@@ -243,20 +234,6 @@ const STYLES = `
   }
   .gear-btn.active { color: var(--color-accent); }
   .gear-btn.active svg { fill: currentColor; }
-  .session-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 12px;
-    color: var(--color-text2);
-    cursor: pointer;
-    user-select: none;
-    flex-shrink: 0;
-  }
-  .session-indicator:hover { color: var(--color-text4); }
   .session-running-dot {
     width: 6px;
     height: 6px;
@@ -321,7 +298,6 @@ export class TlAgentChat extends HTMLElement {
   private authConfig: AgentAuthConfig | null = null
   private showSessionPanel = false
   private notifyOnFinish = false
-  private backgroundStreamingCount = 0
   private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
   private openToolSet = new Set<string>()
@@ -330,8 +306,6 @@ export class TlAgentChat extends HTMLElement {
   private userScrolledUp = false
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
-  private _sessionIndicator: HTMLElement | null = null
-  private _sessionIndicatorCount: HTMLElement | null = null
   private _errorBanner: HTMLElement | null = null
   private _sessionPanel: HTMLElement | null = null
   private _newSessionBtn: HTMLElement | null = null
@@ -371,7 +345,6 @@ export class TlAgentChat extends HTMLElement {
     this.agent = null
     this.messages = []
     this.isStreaming = false
-    this.backgroundStreamingCount = 0
     this.sessionListItems = []
     this.clearChatRefs()
     this._renderMode = null
@@ -380,16 +353,10 @@ export class TlAgentChat extends HTMLElement {
   private async init() {
     try {
       this.authConfig = await loadAuthConfig()
-      if (hasValidAuth(this.authConfig)) {
-        let mgr = getSessionManager()
-        if (!mgr) {
-          mgr = await initSessionManager(this.authConfig)
-        }
+      const mgr = getSessionManager()
+      if (mgr) {
         this.manager = mgr
         this.managerUnsub = mgr.subscribe(() => this.refreshState())
-        if (!mgr.activeSession) {
-          await mgr.createSession()
-        }
         this.refreshState()
       } else {
         this.showSettings = true
@@ -404,14 +371,12 @@ export class TlAgentChat extends HTMLElement {
 
   private refreshState() {
     if (!this.manager) {
-      this.backgroundStreamingCount = 0
       this.agent = null
       this.messages = []
       this.isStreaming = false
       this.render()
       return
     }
-    this.backgroundStreamingCount = this.manager.backgroundStreamingSessions.length
     const session = this.manager.activeSession
     this.agent = session?.agent ?? null
     this.notifyOnFinish = session?.notifyOnFinish ?? false
@@ -435,32 +400,26 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleReconnect() {
     this.error = null
-    if (!this.authConfig || !hasValidAuth(this.authConfig)) {
-      this.managerUnsub?.()
-      this.managerUnsub = null
-      this.manager = null
-      this.agent = null
-      this.messages = []
-      this.isStreaming = false
-      this.backgroundStreamingCount = 0
-      this.sessionListItems = []
-      this.showSettings = true
-      this.isInitializing = false
-      this.render()
-      return
-    }
     // Keep inline settings open when reconnecting from an already-active chat.
     const keepInlineSettingsOpen = !!this.manager && this.showSettings
     this.isInitializing = true
     this.render()
     try {
       this.managerUnsub?.()
-      const mgr = await initSessionManager(this.authConfig)
+      const mgr = await reconnectManager(this.authConfig!)
       this.manager = mgr
-      this.managerUnsub = mgr.subscribe(() => this.refreshState())
-      await mgr.createSession()
-      this.refreshState()
-      this.showSettings = keepInlineSettingsOpen
+      if (mgr) {
+        this.managerUnsub = mgr.subscribe(() => this.refreshState())
+        this.refreshState()
+        this.showSettings = keepInlineSettingsOpen
+      } else {
+        this.managerUnsub = null
+        this.agent = null
+        this.messages = []
+        this.isStreaming = false
+        this.sessionListItems = []
+        this.showSettings = true
+      }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -498,52 +457,7 @@ export class TlAgentChat extends HTMLElement {
     }
     if (!this.manager) return
 
-    let history: SessionHistoryItem[] = []
-    try {
-      history = await listSessionHistory()
-    } catch {
-      history = []
-    }
-
-    const activeFile = this.manager.activeSession?.agent.sessionFile
-    const bgSessions = this.manager.backgroundStreamingSessions
-    const bgFileMap = new Map<string, string>()
-    for (const [id, entry] of bgSessions) {
-      if (entry.agent.sessionFile) bgFileMap.set(entry.agent.sessionFile, id)
-    }
-
-    const items: SessionListItem[] = []
-
-    for (const h of history) {
-      const bgId = bgFileMap.get(h.file)
-      const isAct = h.file === activeFile
-      items.push({
-        label: h.firstUserMessage,
-        updatedAt: h.updatedAt,
-        isActive: isAct,
-        isStreaming: isAct ? this.isStreaming : !!bgId,
-        file: isAct ? null : (bgId ? null : h.file),
-        sessionId: bgId ?? null,
-      })
-    }
-
-    // Background sessions not yet saved to disk
-    for (const [id, entry] of bgSessions) {
-      const file = entry.agent.sessionFile
-      if (!file || !history.some(h => h.file === file)) {
-        items.push({
-          label: entry.label || 'New session',
-          updatedAt: Date.now(),
-          isActive: false,
-          isStreaming: true,
-          file: null,
-          sessionId: id,
-        })
-      }
-    }
-
-    items.sort((a, b) => b.updatedAt - a.updatedAt)
-    this.sessionListItems = items
+    this.sessionListItems = await this.manager.getSessionList()
     this.showSessionPanel = true
     this._sessionPanelDirty = true
     this.render()
@@ -779,8 +693,6 @@ export class TlAgentChat extends HTMLElement {
   private clearChatRefs() {
     this.messagesEl = null
     this._textarea = null
-    this._sessionIndicator = null
-    this._sessionIndicatorCount = null
     this._errorBanner = null
     this._sessionPanel = null
     this._newSessionBtn = null
@@ -798,21 +710,6 @@ export class TlAgentChat extends HTMLElement {
     const container = document.createElement('div')
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;'
-
-    // Session indicator (hidden by default)
-    this._sessionIndicator = document.createElement('div')
-    this._sessionIndicator.className = 'session-indicator'
-    this._sessionIndicator.style.display = 'none'
-    const dot = document.createElement('span')
-    dot.className = 'session-running-dot'
-    this._sessionIndicatorCount = document.createElement('span')
-    this._sessionIndicator.appendChild(dot)
-    this._sessionIndicator.appendChild(this._sessionIndicatorCount)
-    this._sessionIndicator.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.toggleSessionPanel()
-    })
-    container.appendChild(this._sessionIndicator)
 
     // Messages area
     this.messagesEl = document.createElement('div')
@@ -1025,17 +922,7 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 2. Session indicator
-    if (this._sessionIndicator && this._sessionIndicatorCount) {
-      if (this.backgroundStreamingCount > 0) {
-        this._sessionIndicator.style.display = ''
-        this._sessionIndicatorCount.textContent = `${this.backgroundStreamingCount} running`
-      } else {
-        this._sessionIndicator.style.display = 'none'
-      }
-    }
-
-    // 3. Error banner
+    // 2. Error banner
     if (this._errorBanner) {
       if (this.error) {
         this._errorBanner.style.display = ''
