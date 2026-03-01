@@ -80,7 +80,7 @@ SQL routing (`src/services/sql-router.ts`) supports two targets: `agent` (built-
 
 ### Design System
 
-Adobe Spectrum Web Components (`@spectrum-web-components`) plus custom CSS design tokens in `src/renderer/src/global.css`.
+Custom CSS design tokens in `src/renderer/src/global.css`.
 
 ## No Test Framework
 
