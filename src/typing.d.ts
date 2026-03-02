@@ -32,6 +32,12 @@ declare global {
       destroyTabView(request: { tabId: string }): Promise<void>;
       onTabViewEvent(callback: (detail: { tabId: string; type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'; errorCode?: number; errorDescription?: string }) => void): () => void;
       onAgentDbChanged(callback: (detail: ElectronAgentDbChange) => void): () => void;
+      taskStartTask(taskId: number): Promise<string>;
+      taskStopTask(runId: string): Promise<void>;
+      taskRunTask(taskId: number): Promise<string>;
+      taskGetRuns(): Promise<unknown[]>;
+      taskListLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>>;
+      onTaskStateChanged(callback: (runs: unknown[]) => void): () => void;
     };
     agentwfy?: {
       read(path: string, offset?: number, limit?: number): Promise<string>;
@@ -54,6 +60,8 @@ declare global {
       publish(topic: string, data: unknown): Promise<void>;
       waitFor(topic: string, timeoutMs?: number): Promise<unknown>;
       spawnAgent(prompt: string): Promise<{ agentId: string }>;
+      startTask(taskId: number): Promise<{ runId: string }>;
+      stopTask(runId: string): Promise<void>;
     };
   }
 }
