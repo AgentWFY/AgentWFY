@@ -21,8 +21,7 @@ export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
 const SESSION_VERSION = 1
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
-const THINKING_LEVELS_WITH_XHIGH: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const SESSION_SUMMARY_TAIL_MESSAGES = 20
 const SESSION_SUMMARY_MAX_CHARS = 6000
 const AUTO_COMPACTION_MAX_RETRIES = 1
@@ -88,42 +87,6 @@ export interface AgentWFYAgentPromptOptions {
   streamingBehavior?: 'steer' | 'followUp'
 }
 
-export interface HookMessage {
-  customType?: string
-  content: unknown
-  display?: string
-  details?: unknown
-}
-
-export interface ModelCycleResult {
-  model: Model<unknown>
-  thinkingLevel: ThinkingLevel
-  isScoped: boolean
-}
-
-export interface CompactionResult {
-  compacted: boolean
-  beforeCount: number
-  afterCount: number
-  summary: string
-}
-
-export interface AgentWFYAgentInfo {
-  provider: string
-  modelId: string
-  systemPromptChars: number
-  tools: string[]
-  sessionId: string
-  sessionFile?: string
-  sessionDir: string
-  persistSessions: boolean
-}
-
-export interface AgentWFYAgentRunResult {
-  assistantText: string
-  messageCount: number
-}
-
 export type AgentWFYAgentEvent = AgentEvent | {
   type: 'session_saved'
   sessionId: string
@@ -139,7 +102,6 @@ export type AgentWFYAgentEventListener = (event: AgentWFYAgentEvent) => void
 interface StoredSession {
   version: number
   sessionId: string
-  parentSession?: string
   model?: {
     provider: string
     id: string
@@ -194,7 +156,7 @@ function normalizeSessionFileName(sessionFile: string): string {
 }
 
 function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === 'string' && THINKING_LEVELS_WITH_XHIGH.includes(value as ThinkingLevel)
+  return typeof value === 'string' && THINKING_LEVELS.includes(value as ThinkingLevel)
 }
 
 function normalizeThinkingLevel(level: unknown, model?: Model<unknown>): ThinkingLevel {
@@ -297,19 +259,6 @@ async function loadSystemPrompt(): Promise<string> {
   }
 }
 
-function extractAssistantText(message: AgentMessage | undefined): string {
-  const msg = message as Record<string, unknown> | undefined
-  if (!msg || msg.role !== 'assistant') return ''
-
-  const content = msg.content
-  if (!Array.isArray(content)) return typeof content === 'string' ? content : ''
-
-  return content
-    .filter((item: Record<string, unknown>) => item?.type === 'text')
-    .map((item: Record<string, unknown>) => item.text as string)
-    .join('')
-}
-
 function getLastAssistantMessage(messages: AgentMessage[]): AgentMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     if ((messages[i] as unknown as { role: string }).role === 'assistant') {
@@ -371,17 +320,6 @@ function toCompactionSummaryMessage(summary: string, beforeCount: number): Agent
     content: summary,
     display: true,
     details: { beforeCount },
-    timestamp: Date.now()
-  } as unknown as AgentMessage
-}
-
-function toHookAgentMessage(message: HookMessage): AgentMessage {
-  return {
-    role: 'custom',
-    customType: message.customType ?? 'hookMessage',
-    content: message.content,
-    display: message.display,
-    details: message.details,
     timestamp: Date.now()
   } as unknown as AgentMessage
 }
@@ -493,7 +431,6 @@ function parseStoredSession(raw: string, sessionFile: string): StoredSession {
   return {
     version: typeof parsed.version === 'number' ? parsed.version : 0,
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
-    parentSession: typeof parsed.parentSession === 'string' ? parsed.parentSession : undefined,
     model: parsed.model && typeof parsed.model === 'object' && typeof (parsed.model as Record<string, unknown>).provider === 'string' && typeof (parsed.model as Record<string, unknown>).id === 'string'
       ? {
         provider: (parsed.model as Record<string, unknown>).provider as string,
@@ -523,12 +460,11 @@ export class AgentWFYAgent {
 
   private apiKey?: string
   private sessionWritePromise: Promise<void> = Promise.resolve()
-  private compactAbortController: AbortController | null = null
+  private isCompacting = false
   private disposed = false
 
   private _sessionId: string
   private _sessionFile?: string
-  private _parentSession?: string
 
   private constructor(args: AgentWFYAgentCreateArgs) {
     this.agent = args.agent
@@ -651,21 +587,6 @@ export class AgentWFYAgent {
     return this.agent.state
   }
 
-  info(): AgentWFYAgentInfo {
-    const model = this.model
-
-    return {
-      provider: model?.provider ?? this.infoData.provider,
-      modelId: model?.id ?? this.infoData.modelId,
-      systemPromptChars: this.infoData.systemPromptChars,
-      tools: this.agent.state.tools.map((tool) => tool.name),
-      sessionId: this._sessionId,
-      sessionFile: this._sessionFile,
-      sessionDir: this.sessionDirPath,
-      persistSessions: this.persistSessionsToDisk
-    }
-  }
-
   async prompt(text: string, options: AgentWFYAgentPromptOptions = {}): Promise<void> {
     if (!text || !text.trim()) {
       throw new Error('Prompt cannot be empty')
@@ -686,15 +607,6 @@ export class AgentWFYAgent {
 
     await this.promptWithAutoCompaction(toUserMessage(text, options.images))
     await this.persistSession()
-  }
-
-  async run(prompt: string): Promise<AgentWFYAgentRunResult> {
-    await this.prompt(prompt)
-
-    return {
-      assistantText: extractAssistantText(getLastAssistantMessage(this.messages)),
-      messageCount: this.messages.length
-    }
   }
 
   async steer(text: string): Promise<void> {
@@ -718,10 +630,6 @@ export class AgentWFYAgent {
     return () => this.listeners.delete(listener)
   }
 
-  onEvent(listener: AgentWFYAgentEventListener): () => void {
-    return this.subscribe(listener)
-  }
-
   async setModel(model: Model<unknown>): Promise<void> {
     this.agent.setModel(model)
 
@@ -739,60 +647,13 @@ export class AgentWFYAgent {
     void this.persistSession()
   }
 
-  async cycleModel(): Promise<ModelCycleResult | undefined> {
-    const currentModel = this.model
-    if (!currentModel) {
-      return undefined
-    }
-
-    const models = getModels(currentModel.provider as never)
-    if (models.length === 0) {
-      return undefined
-    }
-
-    const currentIndex = models.findIndex(
-      (model) => model.id === currentModel.id && model.provider === currentModel.provider
-    )
-
-    const nextIndex = currentIndex === -1
-      ? 0
-      : (currentIndex + 1) % models.length
-
-    const nextModel = models[nextIndex]
-    await this.setModel(nextModel)
-
-    return {
-      model: nextModel,
-      thinkingLevel: this.thinkingLevel,
-      isScoped: false
-    }
-  }
-
-  cycleThinkingLevel(): ThinkingLevel | undefined {
-    const model = this.model
-    if (!model) {
-      return undefined
-    }
-
-    const levels = supportsXhigh(model)
-      ? THINKING_LEVELS_WITH_XHIGH
-      : THINKING_LEVELS
-
-    const currentIndex = levels.indexOf(this.thinkingLevel)
-    const nextLevel = levels[(currentIndex + 1) % levels.length]
-    this.setThinkingLevel(nextLevel)
-
-    return this.thinkingLevel
-  }
-
-  async newSession(options?: { parentSession?: string }): Promise<boolean> {
+  async newSession(): Promise<boolean> {
     await this.abort()
     this.agent.reset()
 
     this._sessionId = createSessionId()
     this.agent.sessionId = this._sessionId
     this.sessionIdRef.current = this._sessionId
-    this._parentSession = options?.parentSession
 
     if (this.persistSessionsToDisk) {
       this._sessionFile = createSessionFileName()
@@ -838,7 +699,6 @@ export class AgentWFYAgent {
 
     this._sessionFile = sessionFileName
     this._sessionId = storedSession.sessionId || createSessionId()
-    this._parentSession = storedSession.parentSession
     this.agent.sessionId = this._sessionId
     this.sessionIdRef.current = this._sessionId
 
@@ -849,70 +709,6 @@ export class AgentWFYAgent {
     })
 
     return true
-  }
-
-  async sendHookMessage(message: HookMessage, triggerTurn = false): Promise<void> {
-    const hookMessage = toHookAgentMessage(message)
-
-    if (this.isStreaming) {
-      this.agent.steer(hookMessage)
-      return
-    }
-
-    if (triggerTurn) {
-      await this.agent.prompt(hookMessage)
-    } else {
-      this.agent.appendMessage(hookMessage)
-    }
-
-    await this.persistSession()
-  }
-
-  async compact(customInstructions?: string): Promise<CompactionResult> {
-    if (this.compactAbortController) {
-      throw new Error('Compaction is already running')
-    }
-
-    const beforeCount = this.messages.length
-    if (beforeCount <= SESSION_SUMMARY_TAIL_MESSAGES) {
-      return {
-        compacted: false,
-        beforeCount,
-        afterCount: beforeCount,
-        summary: ''
-      }
-    }
-
-    const abortController = new AbortController()
-    this.compactAbortController = abortController
-
-    try {
-      const summarySource = this.messages.slice(0, beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-      const keepMessages = this.messages.slice(beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-      const summary = await this.generateCompactionSummary(summarySource, customInstructions, abortController.signal)
-
-      if (abortController.signal.aborted) {
-        throw new Error('Compaction aborted')
-      }
-
-      const summaryMessage = toCompactionSummaryMessage(summary, beforeCount)
-
-      this.agent.replaceMessages([summaryMessage, ...keepMessages])
-      await this.persistSession()
-
-      return {
-        compacted: true,
-        beforeCount,
-        afterCount: this.messages.length,
-        summary
-      }
-    } finally {
-      this.compactAbortController = null
-    }
-  }
-
-  abortCompaction(): void {
-    this.compactAbortController?.abort()
   }
 
   async abort(): Promise<void> {
@@ -930,10 +726,6 @@ export class AgentWFYAgent {
     void this.persistSession()
   }
 
-  history(): AgentMessage[] {
-    return this.messages
-  }
-
   dispose(): void {
     if (this.disposed) {
       return
@@ -942,10 +734,6 @@ export class AgentWFYAgent {
     this.disposed = true
     this.listeners.clear()
     this.unsubscribeFromAgent()
-  }
-
-  destroy(): void {
-    this.dispose()
   }
 
   private emit(event: AgentWFYAgentEvent): void {
@@ -1029,10 +817,36 @@ export class AgentWFYAgent {
     return model.contextWindow
   }
 
+  private async compact(customInstructions?: string): Promise<{ compacted: boolean }> {
+    if (this.isCompacting) {
+      throw new Error('Compaction is already running')
+    }
+
+    const beforeCount = this.messages.length
+    if (beforeCount <= SESSION_SUMMARY_TAIL_MESSAGES) {
+      return { compacted: false }
+    }
+
+    this.isCompacting = true
+
+    try {
+      const summarySource = this.messages.slice(0, beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
+      const keepMessages = this.messages.slice(beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
+      const summary = await this.generateCompactionSummary(summarySource, customInstructions)
+      const summaryMessage = toCompactionSummaryMessage(summary, beforeCount)
+
+      this.agent.replaceMessages([summaryMessage, ...keepMessages])
+      await this.persistSession()
+
+      return { compacted: true }
+    } finally {
+      this.isCompacting = false
+    }
+  }
+
   private async generateCompactionSummary(
     messages: AgentMessage[],
-    customInstructions: string | undefined,
-    signal: AbortSignal
+    customInstructions: string | undefined
   ): Promise<string> {
     const model = this.model
     if (!model) {
@@ -1059,7 +873,6 @@ export class AgentWFYAgent {
         },
         {
           apiKey,
-          signal,
           maxTokens: Math.min(COMPACTION_SUMMARY_MAX_TOKENS, model.maxTokens || COMPACTION_SUMMARY_MAX_TOKENS),
           reasoning: model.reasoning ? 'high' : undefined
         }
@@ -1089,7 +902,6 @@ export class AgentWFYAgent {
     return {
       version: SESSION_VERSION,
       sessionId: this._sessionId,
-      parentSession: this._parentSession,
       model: this.model
         ? {
           provider: this.model.provider,
