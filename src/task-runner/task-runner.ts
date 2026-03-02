@@ -540,7 +540,11 @@ export class TaskRunner {
         if (!win || win.isDestroyed()) {
           throw new Error('Main window is not available');
         }
-        return deps.forwardSpawnAgent(win, prompt);
+        const result = await deps.forwardSpawnAgent(win, prompt);
+        if (result && typeof result === 'object' && 'error' in result) {
+          throw new Error(result.error as string);
+        }
+        return result;
       },
 
       startTask: async (taskId: number) => {
