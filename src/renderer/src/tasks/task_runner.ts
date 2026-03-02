@@ -42,6 +42,12 @@ export class TaskRunner {
     const tools = window.electronClientTools
     if (!tools) return
 
+    // Subscribe before fetching to avoid missing state changes between snapshot and subscription
+    this.stateChangedUnsub = tools.onTaskStateChanged((runs) => {
+      this._runs = (runs ?? []) as TaskRun[]
+      this.notify()
+    })
+
     // Fetch current state from main process
     try {
       const runs = await tools.taskGetRuns()
@@ -50,12 +56,6 @@ export class TaskRunner {
     } catch {
       // ignore — TaskRunner may not be ready yet
     }
-
-    // Subscribe to state changes from main process
-    this.stateChangedUnsub = tools.onTaskStateChanged((runs) => {
-      this._runs = (runs ?? []) as TaskRun[]
-      this.notify()
-    })
   }
 
   async startTask(taskId: number): Promise<string> {
