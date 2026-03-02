@@ -3,9 +3,11 @@ import createVaultWindow from './vault_window';
 import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
 import { registerAgentToolsHandlers } from './ipc/agent-tools';
-import { registerBusHandlers } from './ipc/bus';
+import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor, forwardSpawnAgent } from './ipc/bus';
 import { registerTabViewHandlers } from './tab-views/ipc';
 import { registerCommandPaletteHandlers } from './command-palette/ipc';
+import { registerTaskRunnerHandlers } from './task-runner/ipc';
+import { initTaskRunner, getTaskRunner } from './task-runner/task-runner';
 import type { AgentDbChange } from './db/sqlite';
 import { RendererBridge } from './renderer-bridge';
 import { TabViewManager } from './tab-views/manager';
@@ -96,6 +98,7 @@ registerAgentToolsHandlers(getDataDir, {
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
+registerTaskRunnerHandlers();
 
 // --- Data directory change listener ---
 
@@ -105,6 +108,7 @@ onDidChange('dataDir', async (newValue: unknown, oldValue: unknown) => {
     commandPalette.destroy();
     tabViewManager.destroyAllTabViews();
     tabViewManager.clearTrackedViewWebContents();
+    getTaskRunner()?.disposeAll();
 
     await ensureAgentRuntimeBootstrap(nextDataDir);
     mainWindow?.reload();
@@ -153,6 +157,25 @@ async function createAppWindow(dataDir: string) {
   });
 
   registerBusHandlers(mainWindow);
+
+  initTaskRunner({
+    getDataDir,
+    getMainWindow: () => mainWindow,
+    tabTools: {
+      getTabs: () => tabViewManager.getTabsHandler(),
+      openTab: (req) => tabViewManager.openTabHandler(req),
+      closeTab: (req) => tabViewManager.closeTabHandler(req),
+      selectTab: (req) => tabViewManager.selectTabHandler(req),
+      reloadTab: (req) => tabViewManager.reloadTabHandler(req),
+      captureTab: (req) => tabViewManager.captureTabById(req),
+      getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
+      execTabJs: (req) => tabViewManager.execTabJsById(req),
+    },
+    onDbChange,
+    forwardBusPublish,
+    forwardBusWaitFor,
+    forwardSpawnAgent,
+  });
 
   mainWindow.maximize();
 

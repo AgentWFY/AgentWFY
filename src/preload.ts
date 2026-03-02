@@ -322,13 +322,25 @@ if (!isAgentView) {
     agentSpawnAgentResult(waiterId: string, result: unknown): void {
       ipcRenderer.send('agent:spawnAgent-result', { waiterId, result });
     },
-    onTaskForwardInvoke(callback: (detail: { waiterId: string; method: string; params: Record<string, unknown> }) => void): () => void {
-      const handler = (_event: unknown, detail: { waiterId: string; method: string; params: Record<string, unknown> }) => callback(detail);
-      ipcRenderer.on('task:forward-invoke', handler);
-      return () => ipcRenderer.removeListener('task:forward-invoke', handler);
+    taskStartTask(taskId: number): Promise<string> {
+      return ipcRenderer.invoke('task:startTask', taskId);
     },
-    taskInvokeResult(waiterId: string, result: { ok: boolean; value?: unknown; error?: string }): void {
-      ipcRenderer.send('task:invoke-result', { waiterId, ...result });
+    taskStopTask(runId: string): Promise<void> {
+      return ipcRenderer.invoke('task:stopTask', runId);
+    },
+    taskRunTask(taskId: number): Promise<string> {
+      return ipcRenderer.invoke('task:runTask', taskId);
+    },
+    taskGetRuns(): Promise<unknown[]> {
+      return ipcRenderer.invoke('task:getRuns');
+    },
+    taskListLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
+      return ipcRenderer.invoke('task:listLogHistory');
+    },
+    onTaskStateChanged(callback: (runs: unknown[]) => void): () => void {
+      const handler = (_event: unknown, runs: unknown[]) => callback(runs);
+      ipcRenderer.on('task:state-changed', handler);
+      return () => ipcRenderer.removeListener('task:state-changed', handler);
     },
   });
 }
