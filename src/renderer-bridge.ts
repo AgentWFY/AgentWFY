@@ -21,7 +21,7 @@ export class RendererBridge {
       return;
     }
 
-    win.webContents.send('app:tab-view-event', {
+    win.webContents.send('tabs:viewEvent', {
       tabId,
       type,
       ...(detail || {}),
