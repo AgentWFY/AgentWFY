@@ -190,7 +190,9 @@ function buildBusAgentApi() {
 // --- Protocol detection ---
 
 const isAgentView = window.location.protocol === 'agentview:';
-const isApp = window.location.protocol === 'app:';
+const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+const isApp = window.location.protocol === 'app:'
+  || (devServerUrl != null && window.location.origin === devServerUrl);
 
 // --- app:// — expose window.ipc (domain-namespaced, all domains) ---
 
