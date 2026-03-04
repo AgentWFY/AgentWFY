@@ -30,7 +30,6 @@ import type {
   WorkerGetTabConsoleLogsRequest,
   WorkerExecTabJsRequest,
   WorkerTabConsoleLogEntry,
-  WorkerStartTaskResult,
 } from '../runtime/types'
 
 export interface AppIpc {
@@ -66,7 +65,7 @@ export interface AgentToolsApi {
   publish(topic: string, data: unknown): Promise<void>
   waitFor(topic: string, timeoutMs?: number): Promise<unknown>
   spawnAgent(prompt: string): Promise<{ agentId: string }>
-  startTask(taskId: number): Promise<WorkerStartTaskResult>
+  startTask(taskId: number): Promise<{ runId: string }>
   stopTask(runId: string): Promise<void>
 }
 

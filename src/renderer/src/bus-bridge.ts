@@ -1,5 +1,6 @@
 import { bus } from './event-bus'
 import { getSessionManager } from './agent/session_manager'
+import { getTaskRunner } from './tasks/task_runner'
 
 export function initBusBridge(): void {
   const ipc = window.ipc
@@ -29,6 +30,30 @@ export function initBusBridge(): void {
       ipc.bus.spawnAgentResult(detail.waiterId, result)
     } catch (err) {
       ipc.bus.spawnAgentResult(detail.waiterId, { error: String(err) })
+    }
+  })
+
+  // Forward startTask from agentview → task runner
+  ipc.tasks.onForwardStartTask(async (detail) => {
+    try {
+      const runner = getTaskRunner()
+      if (!runner) throw new Error('TaskRunner not initialized')
+      const runId = await runner.startTask(detail.taskId)
+      ipc.tasks.forwardStartTaskResult(detail.waiterId, { runId })
+    } catch (err) {
+      ipc.tasks.forwardStartTaskResult(detail.waiterId, { error: String(err) })
+    }
+  })
+
+  // Forward stopTask from agentview → task runner
+  ipc.tasks.onForwardStopTask(async (detail) => {
+    try {
+      const runner = getTaskRunner()
+      if (!runner) throw new Error('TaskRunner not initialized')
+      runner.stopTask(detail.runId)
+      ipc.tasks.forwardStopTaskResult(detail.waiterId, {})
+    } catch (err) {
+      ipc.tasks.forwardStopTaskResult(detail.waiterId, { error: String(err) })
     }
   })
 }

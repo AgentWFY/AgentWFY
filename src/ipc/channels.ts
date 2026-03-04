@@ -60,12 +60,13 @@ export const Channels = {
   tasks: {
     start: 'tasks:start',
     stop: 'tasks:stop',
-    run: 'tasks:run',
-    getRuns: 'tasks:getRuns',
     listLogHistory: 'tasks:listLogHistory',
-    stateChanged: 'tasks:stateChanged',
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
+    forwardStart: 'tasks:forwardStart',
+    forwardStartResult: 'tasks:forwardStartResult',
+    forwardStop: 'tasks:forwardStop',
+    forwardStopResult: 'tasks:forwardStopResult',
   },
 } as const;

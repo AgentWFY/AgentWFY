@@ -1,15 +1,12 @@
-import type { WorkerStartTaskResult } from '../runtime/types'
-
 export interface TasksApi {
-  // Agent tool operations
-  start(taskId: number): Promise<WorkerStartTaskResult>
-  stop(runId: string): Promise<void>
-  // App only
-  run(taskId: number): Promise<string>
-  getRuns(): Promise<unknown[]>
+  // Log persistence (IPC to main process)
   listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>>
-  onStateChanged(callback: (runs: unknown[]) => void): () => void
   listLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>
   readLog(logFileName: string): Promise<string>
   writeLog(logFileName: string, content: string): Promise<void>
+  // Forwarding handlers for agentview → renderer
+  onForwardStartTask(callback: (detail: { waiterId: string; taskId: number }) => void): () => void
+  forwardStartTaskResult(waiterId: string, result: unknown): void
+  onForwardStopTask(callback: (detail: { waiterId: string; runId: string }) => void): () => void
+  forwardStopTaskResult(waiterId: string, result: unknown): void
 }
