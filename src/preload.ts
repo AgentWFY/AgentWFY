@@ -62,13 +62,14 @@ const Channels = {
   tasks: {
     start: 'tasks:start',
     stop: 'tasks:stop',
-    run: 'tasks:run',
-    getRuns: 'tasks:getRuns',
     listLogHistory: 'tasks:listLogHistory',
-    stateChanged: 'tasks:stateChanged',
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
+    forwardStart: 'tasks:forwardStart',
+    forwardStartResult: 'tasks:forwardStartResult',
+    forwardStop: 'tasks:forwardStop',
+    forwardStopResult: 'tasks:forwardStopResult',
   },
 } as const;
 
@@ -305,25 +306,8 @@ if (isApp) {
       },
     },
     tasks: {
-      start(taskId: number): Promise<string> {
-        return ipcRenderer.invoke(Channels.tasks.start, taskId);
-      },
-      stop(runId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.tasks.stop, runId);
-      },
-      run(taskId: number): Promise<string> {
-        return ipcRenderer.invoke(Channels.tasks.run, taskId);
-      },
-      getRuns(): Promise<unknown[]> {
-        return ipcRenderer.invoke(Channels.tasks.getRuns);
-      },
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
-      },
-      onStateChanged(callback: (runs: unknown[]) => void): () => void {
-        const handler = (_event: unknown, runs: unknown[]) => callback(runs);
-        ipcRenderer.on(Channels.tasks.stateChanged, handler);
-        return () => ipcRenderer.removeListener(Channels.tasks.stateChanged, handler);
       },
       listLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogs, limit);
@@ -333,6 +317,22 @@ if (isApp) {
       },
       writeLog(logFileName: string, content: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
+      },
+      onForwardStartTask(callback: (detail: { waiterId: string; taskId: number }) => void): () => void {
+        const handler = (_event: unknown, detail: { waiterId: string; taskId: number }) => callback(detail);
+        ipcRenderer.on(Channels.tasks.forwardStart, handler);
+        return () => ipcRenderer.removeListener(Channels.tasks.forwardStart, handler);
+      },
+      forwardStartTaskResult(waiterId: string, result: unknown): void {
+        ipcRenderer.send(Channels.tasks.forwardStartResult, { waiterId, result });
+      },
+      onForwardStopTask(callback: (detail: { waiterId: string; runId: string }) => void): () => void {
+        const handler = (_event: unknown, detail: { waiterId: string; runId: string }) => callback(detail);
+        ipcRenderer.on(Channels.tasks.forwardStop, handler);
+        return () => ipcRenderer.removeListener(Channels.tasks.forwardStop, handler);
+      },
+      forwardStopTaskResult(waiterId: string, result: unknown): void {
+        ipcRenderer.send(Channels.tasks.forwardStopResult, { waiterId, result });
       },
     },
   });

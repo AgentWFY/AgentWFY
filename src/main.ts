@@ -7,11 +7,10 @@ import { registerSqlHandlers } from './ipc/sql';
 import { registerTabsHandlers } from './ipc/tabs';
 import { registerSessionsHandlers } from './ipc/sessions';
 import { registerAuthHandlers } from './ipc/auth';
-import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor, forwardSpawnAgent } from './ipc/bus';
+import { registerBusHandlers } from './ipc/bus';
 import { registerTabViewHandlers } from './tab-views/ipc';
 import { registerCommandPaletteHandlers } from './command-palette/ipc';
 import { registerTaskRunnerHandlers } from './task-runner/ipc';
-import { initTaskRunner, getTaskRunner } from './task-runner/task-runner';
 import type { AgentDbChange } from './db/sqlite';
 import { RendererBridge } from './renderer-bridge';
 import { TabViewManager } from './tab-views/manager';
@@ -112,7 +111,7 @@ registerAuthHandlers(getDataDir);
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
-registerTaskRunnerHandlers(getDataDir);
+registerTaskRunnerHandlers(getDataDir, () => mainWindow);
 
 // --- Data directory change listener ---
 
@@ -122,8 +121,6 @@ onDidChange('dataDir', async (newValue: unknown, oldValue: unknown) => {
     commandPalette.destroy();
     tabViewManager.destroyAllTabViews();
     tabViewManager.clearTrackedViewWebContents();
-    getTaskRunner()?.disposeAll();
-
     await ensureAgentRuntimeBootstrap(nextDataDir);
     mainWindow?.reload();
   }
@@ -171,16 +168,6 @@ async function createAppWindow(dataDir: string) {
   });
 
   registerBusHandlers(mainWindow);
-
-  initTaskRunner({
-    getDataDir,
-    getMainWindow: () => mainWindow,
-    tabTools,
-    onDbChange,
-    forwardBusPublish,
-    forwardBusWaitFor,
-    forwardSpawnAgent,
-  });
 
   mainWindow.maximize();
 

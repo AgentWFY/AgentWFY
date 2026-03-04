@@ -1,9 +1,9 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
+import crypto from 'crypto';
 import { assertPathAllowed } from '../security/path-policy';
 import { Channels } from '../ipc/channels';
-import { getTaskRunner } from './task-runner';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
 const MAX_TASK_LOG_LIST_LIMIT = 1000;
@@ -20,7 +20,42 @@ function normalizeTaskLogFileName(value: unknown): string {
   return normalized;
 }
 
-export function registerTaskRunnerHandlers(getRoot: () => string): void {
+// --- Forwarding state for agentview → renderer task operations ---
+
+type PendingTaskRequest = {
+  resolve: (value: unknown) => void
+  reject: (error: unknown) => void
+  timer: ReturnType<typeof setTimeout>
+}
+
+const pendingStartRequests = new Map<string, PendingTaskRequest>();
+const pendingStopRequests = new Map<string, PendingTaskRequest>();
+
+function forwardStartTask(win: BrowserWindow, taskId: number): Promise<{ runId: string }> {
+  const waiterId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingStartRequests.delete(waiterId);
+      reject(new Error('startTask forwarding timeout'));
+    }, 30_000);
+    pendingStartRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
+    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId });
+  });
+}
+
+function forwardStopTask(win: BrowserWindow, runId: string): Promise<void> {
+  const waiterId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingStopRequests.delete(waiterId);
+      reject(new Error('stopTask forwarding timeout'));
+    }, 30_000);
+    pendingStopRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
+    win.webContents.send(Channels.tasks.forwardStop, { waiterId, runId });
+  });
+}
+
+export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow: () => BrowserWindow | null): void {
   const resolvePrivatePath = (relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(), relativePath, { ...options, allowAgentPrivate: true });
   const ensureTaskLogsDir = async (): Promise<string> => {
@@ -31,35 +66,92 @@ export function registerTaskRunnerHandlers(getRoot: () => string): void {
   const resolveTaskLogPath = (logFileName: string, options?: { allowMissing?: boolean }) =>
     resolvePrivatePath(`.agentwfy/task_logs/${normalizeTaskLogFileName(logFileName)}`, options);
 
+  // --- Forwarding handlers for agentview callers ---
+
   ipcMain.handle(Channels.tasks.start, async (_event, taskId: number) => {
-    const runner = getTaskRunner();
-    if (!runner) throw new Error('TaskRunner not initialized');
-    const runId = await runner.startTask(taskId);
-    return runId;
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) throw new Error('Main window is not available');
+    return forwardStartTask(win, taskId);
   });
 
   ipcMain.handle(Channels.tasks.stop, async (_event, runId: string) => {
-    const runner = getTaskRunner();
-    if (!runner) throw new Error('TaskRunner not initialized');
-    runner.stopTask(runId);
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) throw new Error('Main window is not available');
+    return forwardStopTask(win, runId);
   });
 
-  ipcMain.handle(Channels.tasks.run, async (_event, taskId: number) => {
-    const runner = getTaskRunner();
-    if (!runner) throw new Error('TaskRunner not initialized');
-    return runner.runTask(taskId);
+  // Renderer resolved a forwarded startTask
+  ipcMain.on(Channels.tasks.forwardStartResult, (_event, payload: { waiterId: string; result: unknown }) => {
+    const pending = pendingStartRequests.get(payload.waiterId);
+    if (pending) {
+      pendingStartRequests.delete(payload.waiterId);
+      clearTimeout(pending.timer);
+      const result = payload.result as Record<string, unknown>;
+      if (result && typeof result === 'object' && 'error' in result) {
+        pending.reject(new Error(result.error as string));
+      } else {
+        pending.resolve(result);
+      }
+    }
   });
 
-  ipcMain.handle(Channels.tasks.getRuns, async () => {
-    const runner = getTaskRunner();
-    if (!runner) return [];
-    return runner.getSerializedRuns();
+  // Renderer resolved a forwarded stopTask
+  ipcMain.on(Channels.tasks.forwardStopResult, (_event, payload: { waiterId: string; result: unknown }) => {
+    const pending = pendingStopRequests.get(payload.waiterId);
+    if (pending) {
+      pendingStopRequests.delete(payload.waiterId);
+      clearTimeout(pending.timer);
+      const result = payload.result as Record<string, unknown>;
+      if (result && typeof result === 'object' && 'error' in result) {
+        pending.reject(new Error(result.error as string));
+      } else {
+        pending.resolve(undefined);
+      }
+    }
   });
 
+  // --- Log persistence handlers (unchanged) ---
+
+  // listLogHistory — inlined from TaskRunner class
   ipcMain.handle(Channels.tasks.listLogHistory, async () => {
-    const runner = getTaskRunner();
-    if (!runner) return [];
-    return runner.listLogHistory();
+    const dataDir = getRoot();
+    const taskLogsDir = path.join(dataDir, '.agentwfy', 'task_logs');
+
+    try {
+      await fs.mkdir(taskLogsDir, { recursive: true });
+    } catch {
+      return [];
+    }
+
+    try {
+      const entries = await fs.readdir(taskLogsDir, { withFileTypes: true });
+      const items: Array<{ file: string; updatedAt: number; taskName: string; status: string }> = [];
+
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (!TASK_LOG_FILE_NAME_RE.test(entry.name)) continue;
+
+        try {
+          const filePath = path.join(taskLogsDir, entry.name);
+          const raw = await fs.readFile(filePath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          const stats = await fs.stat(filePath);
+          items.push({
+            file: entry.name,
+            updatedAt: typeof parsed.finishedAt === 'number' ? parsed.finishedAt : Math.floor(stats.mtimeMs),
+            taskName: typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
+            status: typeof parsed.status === 'string' ? parsed.status : 'unknown',
+          });
+        } catch {
+          // Skip unparseable files
+        }
+      }
+
+      items.sort((a, b) => b.updatedAt - a.updatedAt);
+      return items.slice(0, 50);
+    } catch {
+      return [];
+    }
   });
 
   // listTaskLogs(limit?) → [{ name, updatedAt }]
