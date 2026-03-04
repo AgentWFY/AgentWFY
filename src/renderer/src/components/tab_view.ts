@@ -1,8 +1,8 @@
 import type {
-  ElectronTabViewBounds,
-  ElectronTabViewEvent,
-  ElectronMountTabViewRequest,
-} from '../electron_agent_tools'
+  TabViewBounds,
+  TabViewEvent,
+  MountTabViewRequest,
+} from '../ipc-types'
 
 type TabType = 'view' | 'file' | 'url'
 
@@ -222,8 +222,8 @@ export class TlTabView extends HTMLElement {
   }
 
   private subscribeToTabViewEvents() {
-    const tools = window.electronClientTools
-    if (!tools || typeof tools.onTabViewEvent !== 'function') {
+    const ipc = window.ipc
+    if (!ipc) {
       return
     }
 
@@ -232,7 +232,7 @@ export class TlTabView extends HTMLElement {
       this.unsubscribeTabViewEvents = null
     }
 
-    this.unsubscribeTabViewEvents = tools.onTabViewEvent((detail: ElectronTabViewEvent) => {
+    this.unsubscribeTabViewEvents = ipc.tabs.onViewEvent((detail: TabViewEvent) => {
       if (!detail || detail.tabId !== this.getExternalTabId()) {
         return
       }
@@ -277,7 +277,7 @@ export class TlTabView extends HTMLElement {
     return fallbackSource.length > 0 ? `view-${fallbackSource}` : ''
   }
 
-  private getWrapperBounds(): ElectronTabViewBounds {
+  private getWrapperBounds(): TabViewBounds {
     if (!this.wrapperEl) {
       return { x: 0, y: 0, width: 0, height: 0 }
     }
@@ -293,7 +293,7 @@ export class TlTabView extends HTMLElement {
     }
   }
 
-  private isViewVisible(bounds?: ElectronTabViewBounds): boolean {
+  private isViewVisible(bounds?: TabViewBounds): boolean {
     const nextBounds = bounds || this.getWrapperBounds()
     return (
       document.visibilityState === 'visible' &&
@@ -304,14 +304,14 @@ export class TlTabView extends HTMLElement {
   }
 
   private destroyTabViewHost() {
-    const tools = window.electronClientTools
+    const ipc = window.ipc
     const tabId = this.getExternalTabId()
-    if (!tools || typeof tools.destroyTabView !== 'function' || !tabId) {
+    if (!ipc || !tabId) {
       this.mounted = false
       return
     }
 
-    void tools.destroyTabView({ tabId }).catch(() => {
+    void ipc.tabs.destroyView({ tabId }).catch(() => {
       // Ignore teardown failures while switching tabs/views.
     })
     this.mounted = false
@@ -333,16 +333,16 @@ export class TlTabView extends HTMLElement {
       return
     }
 
-    const tools = window.electronClientTools
+    const ipc = window.ipc
     const tabId = this.getExternalTabId()
-    if (!tools || typeof tools.updateTabViewBounds !== 'function' || !tabId) {
+    if (!ipc || !tabId) {
       return
     }
 
     const bounds = this.getWrapperBounds()
     const visible = this.isViewVisible(bounds)
 
-    void tools.updateTabViewBounds({
+    void ipc.tabs.updateViewBounds({
       tabId,
       bounds,
       visible,
@@ -379,11 +379,11 @@ export class TlTabView extends HTMLElement {
     this.loading = true
     this.render()
 
-    const tools = window.electronClientTools
-    if (!tools || typeof tools.mountTabView !== 'function') {
+    const ipc = window.ipc
+    if (!ipc) {
       if (requestId === this.loadRequestId) {
         this.loading = false
-        this.error = 'window.electronClientTools.mountTabView is unavailable'
+        this.error = 'window.ipc is unavailable'
         this.render()
       }
       return
@@ -401,7 +401,7 @@ export class TlTabView extends HTMLElement {
 
     const bounds = this.getWrapperBounds()
     const visible = this.isViewVisible(bounds)
-    const request: ElectronMountTabViewRequest = {
+    const request: MountTabViewRequest = {
       tabId,
       viewId: source,
       src: this.buildSrc(source),
@@ -411,7 +411,7 @@ export class TlTabView extends HTMLElement {
     }
 
     try {
-      await tools.mountTabView(request)
+      await ipc.tabs.mountView(request)
       if (requestId !== this.loadRequestId || !this.isConnected) {
         return
       }

@@ -294,9 +294,9 @@ export class TlAgentSettings extends HTMLElement {
           this.oauthAuthUrl = info.url
           this.oauthInstructions = info.instructions ?? ''
           this.oauthStatus = 'Waiting for authorization...'
-          const tools = window.electronClientTools
-          if (tools && typeof tools.openUrlInDefaultBrowser === 'function') {
-            tools.openUrlInDefaultBrowser(info.url).catch((err) => {
+          const ipc = window.ipc
+          if (ipc) {
+            ipc.dialog.openExternal(info.url).catch((err) => {
               console.warn('[agent_settings] Failed to open external browser, falling back to window.open', err)
               window.open(info.url, '_blank', 'noopener')
             })

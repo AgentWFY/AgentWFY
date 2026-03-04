@@ -60,12 +60,12 @@ function normalizeSessionId(sessionId: string): string {
   return sessionId.trim()
 }
 
-function getElectronTools() {
-  if (!window.agentwfy) {
-    throw new Error('window.agentwfy is not available in this renderer context')
+function getIpc() {
+  if (!window.ipc) {
+    throw new Error('window.ipc is not available in this renderer context')
   }
 
-  return window.agentwfy
+  return window.ipc
 }
 
 export class JsRuntime {
@@ -242,7 +242,7 @@ export class JsRuntime {
     method: M,
     params: unknown
   ): Promise<WorkerHostMethodMap[M]['result']> {
-    const tools = getElectronTools()
+    const ipc = getIpc()
 
     switch (method) {
       case 'runSql': {
@@ -251,7 +251,7 @@ export class JsRuntime {
           throw new Error('runSql requires a non-empty sql string')
         }
 
-        const result = await tools.runSql({
+        const result = await ipc.sql.run({
           target: request.target ?? 'agent',
           path: request.path,
           sql: request.sql,
@@ -274,11 +274,7 @@ export class JsRuntime {
           throw new Error('read limit must be a number >= 1 when provided')
         }
 
-        if (typeof tools.read !== 'function') {
-          throw new Error('window.agentwfy.read is not available')
-        }
-
-        const result = await tools.read(request.path, request.offset, request.limit)
+        const result = await ipc.files.read(request.path, request.offset, request.limit)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'write': {
@@ -291,11 +287,7 @@ export class JsRuntime {
           throw new Error('write requires content as a string')
         }
 
-        if (typeof tools.write !== 'function') {
-          throw new Error('window.agentwfy.write is not available')
-        }
-
-        const result = await tools.write(request.path, request.content)
+        const result = await ipc.files.write(request.path, request.content)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'edit': {
@@ -310,11 +302,7 @@ export class JsRuntime {
           throw new Error('edit requires newText as a string')
         }
 
-        if (typeof tools.edit !== 'function') {
-          throw new Error('window.agentwfy.edit is not available')
-        }
-
-        const result = await tools.edit(request.path, request.oldText, request.newText)
+        const result = await ipc.files.edit(request.path, request.oldText, request.newText)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'ls': {
@@ -327,11 +315,7 @@ export class JsRuntime {
           throw new Error('ls limit must be a number >= 1 when provided')
         }
 
-        if (typeof tools.ls !== 'function') {
-          throw new Error('window.agentwfy.ls is not available')
-        }
-
-        const result = await tools.ls(request.path, request.limit)
+        const result = await ipc.files.ls(request.path, request.limit)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'mkdir': {
@@ -344,11 +328,7 @@ export class JsRuntime {
           throw new Error('mkdir recursive must be a boolean when provided')
         }
 
-        if (typeof tools.mkdir !== 'function') {
-          throw new Error('window.agentwfy.mkdir is not available')
-        }
-
-        await tools.mkdir(request.path, request.recursive)
+        await ipc.files.mkdir(request.path, request.recursive)
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'remove': {
@@ -361,11 +341,7 @@ export class JsRuntime {
           throw new Error('remove recursive must be a boolean when provided')
         }
 
-        if (typeof tools.remove !== 'function') {
-          throw new Error('window.agentwfy.remove is not available')
-        }
-
-        await tools.remove(request.path, request.recursive)
+        await ipc.files.remove(request.path, request.recursive)
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'find': {
@@ -382,11 +358,7 @@ export class JsRuntime {
           throw new Error('find limit must be a number >= 1 when provided')
         }
 
-        if (typeof tools.find !== 'function') {
-          throw new Error('window.agentwfy.find is not available')
-        }
-
-        const result = await tools.find(request.pattern, request.path, request.limit)
+        const result = await ipc.files.find(request.pattern, request.path, request.limit)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'grep': {
@@ -403,19 +375,11 @@ export class JsRuntime {
           throw new Error('grep options must be an object when provided')
         }
 
-        if (typeof tools.grep !== 'function') {
-          throw new Error('window.agentwfy.grep is not available')
-        }
-
-        const result = await tools.grep(request.pattern, request.path, request.options)
+        const result = await ipc.files.grep(request.pattern, request.path, request.options)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'getTabs': {
-        if (typeof tools.getTabs !== 'function') {
-          throw new Error('window.agentwfy.getTabs is not available')
-        }
-
-        return tools.getTabs() as Promise<WorkerHostMethodMap[M]['result']>
+        return ipc.tabs.getTabs() as Promise<WorkerHostMethodMap[M]['result']>
       }
       case 'openTab': {
         const request = params as WorkerHostMethodMap['openTab']['params']
@@ -432,11 +396,7 @@ export class JsRuntime {
           throw new Error('openTab requires exactly one of viewId, filePath, or url')
         }
 
-        if (typeof tools.openTab !== 'function') {
-          throw new Error('window.agentwfy.openTab is not available')
-        }
-
-        await tools.openTab({
+        await ipc.tabs.openTab({
           viewId: hasViewId ? request.viewId : undefined,
           filePath: hasFilePath ? request.filePath : undefined,
           url: hasUrl ? request.url : undefined,
@@ -450,11 +410,7 @@ export class JsRuntime {
           throw new Error('closeTab requires a tabId')
         }
 
-        if (typeof tools.closeTab !== 'function') {
-          throw new Error('window.agentwfy.closeTab is not available')
-        }
-
-        await tools.closeTab({ tabId: request.tabId })
+        await ipc.tabs.closeTab({ tabId: request.tabId })
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'selectTab': {
@@ -463,11 +419,7 @@ export class JsRuntime {
           throw new Error('selectTab requires a tabId')
         }
 
-        if (typeof tools.selectTab !== 'function') {
-          throw new Error('window.agentwfy.selectTab is not available')
-        }
-
-        await tools.selectTab({ tabId: request.tabId })
+        await ipc.tabs.selectTab({ tabId: request.tabId })
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'reloadTab': {
@@ -476,11 +428,7 @@ export class JsRuntime {
           throw new Error('reloadTab requires a tabId')
         }
 
-        if (typeof tools.reloadTab !== 'function') {
-          throw new Error('window.agentwfy.reloadTab is not available')
-        }
-
-        await tools.reloadTab({ tabId: request.tabId })
+        await ipc.tabs.reloadTab({ tabId: request.tabId })
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'captureTab': {
@@ -489,11 +437,7 @@ export class JsRuntime {
           throw new Error('captureTab requires a tabId')
         }
 
-        if (typeof tools.captureTab !== 'function') {
-          throw new Error('window.agentwfy.captureTab is not available')
-        }
-
-        return tools.captureTab({ tabId: request.tabId }) as Promise<WorkerHostMethodMap[M]['result']>
+        return ipc.tabs.captureTab({ tabId: request.tabId }) as Promise<WorkerHostMethodMap[M]['result']>
       }
       case 'getTabConsoleLogs': {
         const request = params as WorkerHostMethodMap['getTabConsoleLogs']['params']
@@ -501,11 +445,7 @@ export class JsRuntime {
           throw new Error('getTabConsoleLogs requires a tabId')
         }
 
-        if (typeof tools.getTabConsoleLogs !== 'function') {
-          throw new Error('window.agentwfy.getTabConsoleLogs is not available')
-        }
-
-        const logs = await tools.getTabConsoleLogs({
+        const logs = await ipc.tabs.getConsoleLogs({
           tabId: request.tabId,
           since: request.since,
           limit: request.limit,
@@ -521,11 +461,7 @@ export class JsRuntime {
           throw new Error('execTabJs requires JavaScript code as a string')
         }
 
-        if (typeof tools.execTabJs !== 'function') {
-          throw new Error('window.agentwfy.execTabJs is not available')
-        }
-
-        const result = await tools.execTabJs({
+        const result = await ipc.tabs.execJs({
           tabId: request.tabId,
           code: request.code,
           timeoutMs: request.timeoutMs,

@@ -2,7 +2,11 @@ import { app, BrowserWindow, Menu, nativeTheme, protocol, net } from 'electron';
 import createVaultWindow from './vault_window';
 import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store';
 import { registerDialogSubscribers } from './ipc/dialog';
-import { registerAgentToolsHandlers } from './ipc/agent-tools';
+import { registerFilesHandlers } from './ipc/files';
+import { registerSqlHandlers } from './ipc/sql';
+import { registerTabsHandlers } from './ipc/tabs';
+import { registerSessionsHandlers } from './ipc/sessions';
+import { registerAuthHandlers } from './ipc/auth';
 import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor, forwardSpawnAgent } from './ipc/bus';
 import { registerTabViewHandlers } from './tab-views/ipc';
 import { registerCommandPaletteHandlers } from './command-palette/ipc';
@@ -22,7 +26,9 @@ import { pathToFileURL } from 'url';
 // calls and are already propagated to the renderer as rejected promises.
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'agentwfy:')) return;
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'files:')) return;
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'sql:')) return;
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'tabs:')) return;
   if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'bus:')) return;
   originalConsoleError.apply(console, args);
 };
@@ -82,23 +88,29 @@ registerDialogSubscribers();
 
 function onDbChange(change: AgentDbChange): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('app:agent-db-changed', change);
+  mainWindow.webContents.send('bus:dbChanged', change);
 }
 
-registerAgentToolsHandlers(getDataDir, {
+const tabTools = {
   getTabs: () => tabViewManager.getTabsHandler(),
-  openTab: (req) => tabViewManager.openTabHandler(req),
-  closeTab: (req) => tabViewManager.closeTabHandler(req),
-  selectTab: (req) => tabViewManager.selectTabHandler(req),
-  reloadTab: (req) => tabViewManager.reloadTabHandler(req),
-  captureTab: (req) => tabViewManager.captureTabById(req),
-  getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
-  execTabJs: (req) => tabViewManager.execTabJsById(req),
-}, onDbChange);
+  openTab: (req: Parameters<typeof tabViewManager.openTabHandler>[0]) => tabViewManager.openTabHandler(req),
+  closeTab: (req: Parameters<typeof tabViewManager.closeTabHandler>[0]) => tabViewManager.closeTabHandler(req),
+  selectTab: (req: Parameters<typeof tabViewManager.selectTabHandler>[0]) => tabViewManager.selectTabHandler(req),
+  reloadTab: (req: Parameters<typeof tabViewManager.reloadTabHandler>[0]) => tabViewManager.reloadTabHandler(req),
+  captureTab: (req: Parameters<typeof tabViewManager.captureTabById>[0]) => tabViewManager.captureTabById(req),
+  getTabConsoleLogs: (req: Parameters<typeof tabViewManager.getTabConsoleLogsById>[0]) => tabViewManager.getTabConsoleLogsById(req),
+  execTabJs: (req: Parameters<typeof tabViewManager.execTabJsById>[0]) => tabViewManager.execTabJsById(req),
+};
+
+registerFilesHandlers(getDataDir);
+registerSqlHandlers(getDataDir, onDbChange);
+registerTabsHandlers(tabTools);
+registerSessionsHandlers(getDataDir);
+registerAuthHandlers(getDataDir);
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
-registerTaskRunnerHandlers();
+registerTaskRunnerHandlers(getDataDir);
 
 // --- Data directory change listener ---
 
@@ -161,16 +173,7 @@ async function createAppWindow(dataDir: string) {
   initTaskRunner({
     getDataDir,
     getMainWindow: () => mainWindow,
-    tabTools: {
-      getTabs: () => tabViewManager.getTabsHandler(),
-      openTab: (req) => tabViewManager.openTabHandler(req),
-      closeTab: (req) => tabViewManager.closeTabHandler(req),
-      selectTab: (req) => tabViewManager.selectTabHandler(req),
-      reloadTab: (req) => tabViewManager.reloadTabHandler(req),
-      captureTab: (req) => tabViewManager.captureTabById(req),
-      getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
-      execTabJs: (req) => tabViewManager.execTabJsById(req),
-    },
+    tabTools,
     onDbChange,
     forwardBusPublish,
     forwardBusWaitFor,

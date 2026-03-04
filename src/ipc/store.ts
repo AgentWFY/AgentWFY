@@ -1,12 +1,7 @@
 import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-
-export enum StoreChannel {
-  GET = 'electron-store:get',
-  SET = 'electron-store:set',
-  REMOVE = 'electron-store:remove',
-}
+import { Channels } from './channels';
 
 const storePath = path.join(app.getPath('userData'), 'config.json');
 
@@ -48,9 +43,9 @@ export function onDidChange(key: string, listener: ChangeListener): void {
 }
 
 export const registerStoreHandlers = () => {
-  ipcMain.handle(StoreChannel.GET, async (_event, key) => storeGet(key));
+  ipcMain.handle(Channels.store.get, async (_event, key) => storeGet(key));
 
-  ipcMain.handle(StoreChannel.SET, async (_event, key, value) => {
+  ipcMain.handle(Channels.store.set, async (_event, key, value) => {
     const oldValue = storeGet(key);
     storeSet(key, value);
     for (const listener of changeListeners.get(key) ?? []) {
@@ -58,7 +53,7 @@ export const registerStoreHandlers = () => {
     }
   });
 
-  ipcMain.handle(StoreChannel.REMOVE, async (_event, key) => {
+  ipcMain.handle(Channels.store.remove, async (_event, key) => {
     const oldValue = storeGet(key);
     storeRemove(key);
     for (const listener of changeListeners.get(key) ?? []) {

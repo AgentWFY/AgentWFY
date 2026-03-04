@@ -6,7 +6,7 @@ import {
   openaiCodexOAuthProvider,
 } from '@mariozechner/pi-ai'
 import type { OAuthCredentials, OAuthProviderInterface, OAuthLoginCallbacks } from '@mariozechner/pi-ai'
-import { requireClientTools } from 'app/agent/tool_utils'
+import { requireIpc } from 'app/agent/tool_utils'
 
 export type AuthMethod = 'api-key' | 'oauth-anthropic' | 'oauth-github-copilot' | 'oauth-openai-codex'
 
@@ -98,25 +98,15 @@ export function normalizeAuthConfig(config: AgentAuthConfig): AgentAuthConfig {
   return normalizePartialConfig(config)
 }
 
-function getClientTools() {
-  const tools = requireClientTools()
-
-  if (
-    typeof tools.readAuthConfig !== 'function'
-    || typeof tools.writeAuthConfig !== 'function'
-    || typeof tools.readLegacyApiKey !== 'function'
-  ) {
-    throw new Error('Electron auth storage methods are not available')
-  }
-
-  return tools
+function getAuthApi() {
+  return requireIpc().auth
 }
 
 export async function loadAuthConfig(): Promise<AgentAuthConfig> {
-  const tools = getClientTools()
+  const auth = getAuthApi()
 
   try {
-    const raw = await tools.readAuthConfig()
+    const raw = await auth.readConfig()
     const parsed = JSON.parse(raw)
     const merged = { ...DEFAULT_CONFIG, ...parsed }
     const normalized = normalizePartialConfig(merged)
@@ -129,7 +119,7 @@ export async function loadAuthConfig(): Promise<AgentAuthConfig> {
   }
 
   try {
-    const legacyKey = await tools.readLegacyApiKey()
+    const legacyKey = await auth.readLegacyKey()
     const trimmed = legacyKey?.trim()
     if (trimmed) {
       const config: AgentAuthConfig = {
@@ -148,9 +138,9 @@ export async function loadAuthConfig(): Promise<AgentAuthConfig> {
 }
 
 export async function saveAuthConfig(config: AgentAuthConfig): Promise<void> {
-  const tools = getClientTools()
+  const auth = getAuthApi()
   const normalized = normalizePartialConfig(config)
-  await tools.writeAuthConfig(JSON.stringify(normalized, null, 2))
+  await auth.writeConfig(JSON.stringify(normalized, null, 2))
 }
 
 export function getOAuthProvider(authMethod: AuthMethod): OAuthProviderInterface | undefined {

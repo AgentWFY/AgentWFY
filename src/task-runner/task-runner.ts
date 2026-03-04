@@ -285,7 +285,7 @@ export class TaskRunner {
   private notifyRenderer(): void {
     const win = this.deps.getMainWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send('task:state-changed', this._runs);
+      win.webContents.send('tasks:stateChanged', this._runs);
     }
   }
 

@@ -499,12 +499,12 @@ export class TlTabs extends HTMLElement {
   }
 
   private async showTabContextMenu(e: MouseEvent, tab: TabData) {
-    const tools = window.electronClientTools
-    if (!tools || typeof tools.showTabContextMenu !== 'function') {
+    const ipc = window.ipc
+    if (!ipc) {
       return
     }
 
-    const action = await tools.showTabContextMenu({
+    const action = await ipc.tabs.showContextMenu({
       x: e.clientX,
       y: e.clientY,
       pinned: Boolean(tab.pinned),
@@ -534,7 +534,6 @@ export class TlTabs extends HTMLElement {
   }
 
   private getStyles(): string {
-    const isMac = navigator.platform.includes('Mac')
     const isWindows = navigator.platform.includes('Win')
     return `
       .tabs-container {

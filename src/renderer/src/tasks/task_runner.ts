@@ -39,18 +39,18 @@ export class TaskRunner {
   }
 
   async init(): Promise<void> {
-    const tools = window.electronClientTools
-    if (!tools) return
+    const ipc = window.ipc
+    if (!ipc) return
 
     // Subscribe before fetching to avoid missing state changes between snapshot and subscription
-    this.stateChangedUnsub = tools.onTaskStateChanged((runs) => {
+    this.stateChangedUnsub = ipc.tasks.onStateChanged((runs) => {
       this._runs = (runs ?? []) as TaskRun[]
       this.notify()
     })
 
     // Fetch current state from main process
     try {
-      const runs = await tools.taskGetRuns()
+      const runs = await ipc.tasks.getRuns()
       this._runs = (runs ?? []) as TaskRun[]
       this.notify()
     } catch {
@@ -59,31 +59,31 @@ export class TaskRunner {
   }
 
   async startTask(taskId: number): Promise<string> {
-    const tools = window.electronClientTools
-    if (!tools) throw new Error('electronClientTools is not available')
-    return tools.taskStartTask(taskId)
+    const ipc = window.ipc
+    if (!ipc) throw new Error('window.ipc is not available')
+    return ipc.tasks.start(taskId)
   }
 
   async runTask(taskId: number): Promise<string> {
-    const tools = window.electronClientTools
-    if (!tools) throw new Error('electronClientTools is not available')
-    return tools.taskRunTask(taskId)
+    const ipc = window.ipc
+    if (!ipc) throw new Error('window.ipc is not available')
+    return ipc.tasks.run(taskId)
   }
 
   stopTask(runId: string): void {
-    const tools = window.electronClientTools
-    if (!tools) return
-    tools.taskStopTask(runId).catch(err => {
+    const ipc = window.ipc
+    if (!ipc) return
+    ipc.tasks.stop(runId).catch(err => {
       console.error('[TaskRunner proxy] stopTask failed', err)
     })
   }
 
   async listLogHistory(): Promise<TaskLogHistoryItem[]> {
-    const tools = window.electronClientTools
-    if (!tools) return []
+    const ipc = window.ipc
+    if (!ipc) return []
 
     try {
-      return await tools.taskListLogHistory()
+      return await ipc.tasks.listLogHistory()
     } catch {
       return []
     }
