@@ -21,4 +21,4 @@ until curl -s -o /dev/null http://localhost:5173; do
   sleep 0.3
 done
 
-VITE_DEV_SERVER_URL=http://localhost:5173 "$ELECTRON" --no-warnings "$ROOT_DIR/dist"
+NODE_OPTIONS="--disable-warning=ExperimentalWarning" VITE_DEV_SERVER_URL=http://localhost:5173 "$ELECTRON" "$ROOT_DIR/dist"

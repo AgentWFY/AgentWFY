@@ -13,7 +13,7 @@
     "build-renderer": "cd src/renderer && npx vite build",
     "build": "npm run clean-dist && npm run build-main && npm run build-renderer",
     "make": "conveyor make app",
-    "start": "electron --no-warnings ./dist",
+    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' electron ./dist",
     "dev-renderer": "cd src/renderer && npx vite",
     "dev": "bash scripts/dev.sh"
   },

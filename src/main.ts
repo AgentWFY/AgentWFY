@@ -21,6 +21,8 @@ import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './dat
 import path from 'path';
 import { pathToFileURL } from 'url';
 
+app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
+
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
 // calls and are already propagated to the renderer as rejected promises.
