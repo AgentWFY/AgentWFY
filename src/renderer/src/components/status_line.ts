@@ -287,7 +287,7 @@ export class TlStatusLine extends HTMLElement {
     const dirEl = this.shadow.querySelector('#data-dir')
     if (!dirEl) return
     try {
-      const dataDir = await window.electronClientTools.getStoreItem('dataDir') as string
+      const dataDir = await window.ipc?.store.get('dataDir') as string
       if (dataDir) {
         dirEl.textContent = this.shortenPath(dataDir)
         dirEl.setAttribute('title', dataDir)

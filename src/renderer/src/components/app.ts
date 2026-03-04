@@ -1,5 +1,5 @@
 /* eslint-disable import/no-unresolved */
-import type { ElectronAgentDbChange } from 'app/electron_agent_tools'
+import type { AgentDbChange } from 'app/ipc-types'
 
 const CHAT_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -351,19 +351,19 @@ export class TlApp extends HTMLElement {
   }
 
   private subscribeToAgentDbChanges() {
-    const tools = window.electronClientTools
-    if (!tools?.onAgentDbChanged) {
+    const ipc = window.ipc
+    if (!ipc) {
       return
     }
 
     this.unlistenAgentDbChanged?.()
-    this.unlistenAgentDbChanged = tools.onAgentDbChanged((change: ElectronAgentDbChange) => {
+    this.unlistenAgentDbChanged = ipc.bus.onDbChanged((change: AgentDbChange) => {
       if (!change) return
       if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
       if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) return
 
       if (change.table === 'views') {
-        window.dispatchEvent(new CustomEvent<{ change: ElectronAgentDbChange }>('agentwfy:views-db-changed', {
+        window.dispatchEvent(new CustomEvent<{ change: AgentDbChange }>('agentwfy:views-db-changed', {
           detail: { change }
         }))
       }

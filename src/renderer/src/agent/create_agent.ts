@@ -14,7 +14,7 @@ import {
   type Model
 } from '@mariozechner/pi-ai'
 import { createExecJsTool } from 'app/agent/exec_js'
-import { requireClientTools, requireElectronTools, stringifyUnknown } from 'app/agent/tool_utils'
+import { requireIpc, stringifyUnknown } from 'app/agent/tool_utils'
 
 export const DEFAULT_PROVIDER = 'openrouter'
 export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
@@ -224,22 +224,14 @@ function buildDocsPromptSection(rows: Array<{ name: string; content: string }>):
 }
 
 function requireSessionStorageTools() {
-  const tools = requireClientTools()
-  if (typeof tools.readSession !== 'function' || typeof tools.writeSession !== 'function') {
-    throw new Error('Session storage methods are not available in electronClientTools')
-  }
-
-  return tools
+  return requireIpc().sessions
 }
 
 async function loadSystemPrompt(): Promise<string> {
   try {
-    const tools = requireElectronTools()
-    if (typeof tools.runSql !== 'function') {
-      throw new Error('window.agentwfy.runSql is not available in this renderer context')
-    }
+    const ipc = requireIpc()
 
-    const rows = await tools.runSql({
+    const rows = await ipc.sql.run({
       target: 'agent',
       sql: 'SELECT name, content FROM docs WHERE preload = 1 ORDER BY name ASC',
       description: 'Load preload docs for agent system prompt'
@@ -674,7 +666,7 @@ export class AgentWFYAgent {
 
     const sessionFileName = normalizeSessionFileName(sessionPath)
     const tools = requireSessionStorageTools()
-    const rawSession = await tools.readSession(sessionFileName)
+    const rawSession = await tools.read(sessionFileName)
     const storedSession = parseStoredSession(rawSession, sessionFileName)
 
     if (storedSession.version !== SESSION_VERSION) {
@@ -927,7 +919,7 @@ export class AgentWFYAgent {
 
         const tools = requireSessionStorageTools()
         const payload = JSON.stringify(this.buildStoredSession(), null, 2)
-        await tools.writeSession(this._sessionFile, payload)
+        await tools.write(this._sessionFile, payload)
 
         this.emit({
           type: 'session_saved',

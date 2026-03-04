@@ -1,17 +1,11 @@
-export function requireElectronTools() {
-  if (!window.agentwfy) {
-    throw new Error('window.agentwfy is not available in this renderer context')
+import type { AppIpc } from '../ipc-types'
+
+export function requireIpc(): AppIpc {
+  if (!window.ipc) {
+    throw new Error('window.ipc is not available in this renderer context')
   }
 
-  return window.agentwfy
-}
-
-export function requireClientTools() {
-  if (!window.electronClientTools) {
-    throw new Error('window.electronClientTools is not available in this renderer context')
-  }
-
-  return window.electronClientTools
+  return window.ipc
 }
 
 export function stringifyUnknown(value: unknown): string {

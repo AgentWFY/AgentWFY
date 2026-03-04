@@ -388,11 +388,11 @@ export function extractFirstUserMessage(messages: unknown, maxLen: number): stri
 }
 
 export async function listSessionHistory(): Promise<SessionHistoryItem[]> {
-  const tools = window.electronClientTools
-  if (!tools || typeof tools.listSessions !== 'function' || typeof tools.readSession !== 'function') return []
+  const ipc = window.ipc
+  if (!ipc) return []
 
   try {
-    const sessions = await tools.listSessions(200)
+    const sessions = await ipc.sessions.list(200)
     if (!Array.isArray(sessions) || sessions.length === 0) return []
 
     const items: SessionHistoryItem[] = []
@@ -404,7 +404,7 @@ export async function listSessionHistory(): Promise<SessionHistoryItem[]> {
       const file = session.name
 
       try {
-        const raw = await tools.readSession(file)
+        const raw = await ipc.sessions.read(file)
         const parsed = JSON.parse(raw)
         const fallbackUpdatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0
         const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : fallbackUpdatedAt

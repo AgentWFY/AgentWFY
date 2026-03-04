@@ -304,11 +304,11 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private async loadTasks() {
-    const tools = window.agentwfy
-    if (!tools) return
+    const ipc = window.ipc
+    if (!ipc) return
 
     try {
-      const rows = await tools.runSql({
+      const rows = await ipc.sql.run({
         target: 'agent',
         sql: 'SELECT id, name, timeout_ms FROM tasks ORDER BY name ASC',
       }) as TaskItem[]
@@ -465,11 +465,11 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private async loadHistoryDetail(file: string) {
-    const tools = window.electronClientTools
-    if (!tools?.readTaskLog) return
+    const ipc = window.ipc
+    if (!ipc) return
 
     try {
-      const raw = await tools.readTaskLog(file)
+      const raw = await ipc.tasks.readLog(file)
       const parsed = JSON.parse(raw)
       let detail = `Status: ${parsed.status}\n`
       if (parsed.startedAt) detail += `Started: ${new Date(parsed.startedAt).toLocaleString()}\n`
