@@ -246,14 +246,14 @@ export class TabViewManager {
       this.deps.dispatchRendererCustomEvent('__tab-view-event', undefined);
       const win = this.deps.getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('app:tab-view-event', { tabId, type: 'did-start-loading' });
+        win.webContents.send('tabs:viewEvent', { tabId, type: 'did-start-loading' });
       }
     });
 
     viewWebContents.on('did-stop-loading', () => {
       const win = this.deps.getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('app:tab-view-event', { tabId, type: 'did-stop-loading' });
+        win.webContents.send('tabs:viewEvent', { tabId, type: 'did-stop-loading' });
       }
     });
 
@@ -264,7 +264,7 @@ export class TabViewManager {
 
       const win = this.deps.getMainWindow();
       if (win && !win.isDestroyed()) {
-        win.webContents.send('app:tab-view-event', {
+        win.webContents.send('tabs:viewEvent', {
           tabId,
           type: 'did-fail-load',
           errorCode,
