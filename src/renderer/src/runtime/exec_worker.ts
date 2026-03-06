@@ -28,6 +28,8 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
 
 const pendingHostCalls = new Map<string, PendingHostCall>()
 const activeRequests = new Map<string, AbortController>()
+const watchedRequests = new Set<string>()
+const requestLogs = new Map<string, ExecJsLogEntry[]>()
 const nativeFetch = workerScope.fetch.bind(workerScope)
 const NativeWebSocket = workerScope.WebSocket
 
@@ -100,9 +102,10 @@ function tagUrl(url: string, key: string, value: string): string {
   return parsed.toString()
 }
 
-function captureConsole(): { logs: ExecJsLogEntry[]; restore: () => void } {
+function captureConsole(requestId: string): { logs: ExecJsLogEntry[]; restore: () => void } {
   const methods: ConsoleMethod[] = ['debug', 'log', 'info', 'warn', 'error']
   const logs: ExecJsLogEntry[] = []
+  requestLogs.set(requestId, logs)
   const originals = new Map<ConsoleMethod, (...args: unknown[]) => void>()
 
   methods.forEach((method) => {
@@ -110,11 +113,15 @@ function captureConsole(): { logs: ExecJsLogEntry[]; restore: () => void } {
     originals.set(method, original)
 
     console[method] = (...args: unknown[]) => {
-      logs.push({
+      const entry: ExecJsLogEntry = {
         level: method,
         message: truncate(args.map((arg) => stringifyUnknown(arg)).join(' '), 5000),
         timestamp: Date.now(),
-      })
+      }
+      logs.push(entry)
+      if (watchedRequests.has(requestId)) {
+        postToHost({ type: 'exec:log', requestId, logEntry: entry })
+      }
       original(...args)
     }
   })
@@ -128,6 +135,8 @@ function captureConsole(): { logs: ExecJsLogEntry[]; restore: () => void } {
           console[method] = original
         }
       })
+      requestLogs.delete(requestId)
+      watchedRequests.delete(requestId)
     },
   }
 }
@@ -239,7 +248,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   const abortController = new AbortController()
   activeRequests.set(requestId, abortController)
 
-  const { logs, restore } = captureConsole()
+  const { logs, restore } = captureConsole(requestId)
   const capturedImages: ExecJsCapturedImage[] = []
 
   try {
@@ -602,6 +611,20 @@ workerScope.addEventListener('message', (event: MessageEvent<HostToWorkerMessage
       return
     case 'host:result':
       handleHostResult(message)
+      return
+    case 'exec:watch': {
+      const rid = message.requestId
+      watchedRequests.add(rid)
+      const existing = requestLogs.get(rid)
+      if (existing) {
+        for (const entry of existing) {
+          postToHost({ type: 'exec:log', requestId: rid, logEntry: entry })
+        }
+      }
+      return
+    }
+    case 'exec:unwatch':
+      watchedRequests.delete(message.requestId)
       return
     default:
       return

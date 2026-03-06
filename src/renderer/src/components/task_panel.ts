@@ -205,6 +205,10 @@ function escapeHtml(text: string): string {
   return el.innerHTML
 }
 
+function logLevelClass(level: string): string {
+  return level === 'warn' ? ' warn' : level === 'error' ? ' error' : ''
+}
+
 function formatElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const s = Math.floor(ms / 1000)
@@ -226,6 +230,7 @@ export class TlTaskPanel extends HTMLElement {
   private expandedRunIds = new Set<string>()
   private expandedHistoryFiles = new Set<string>()
   private historyDetails = new Map<string, string>()
+  private renderedLogCounts = new Map<string, number>()
   private runnerUnsub: (() => void) | null = null
   private elapsedTimer: ReturnType<typeof setInterval> | null = null
 
@@ -246,14 +251,21 @@ export class TlTaskPanel extends HTMLElement {
     this.elapsedTimer = setInterval(() => {
       const runner = getTaskRunner()
       if (runner && runner.runningCount > 0) {
-        this.updateContent()
+        this.updateRunningRuns()
       }
     }, 1000)
   }
 
   disconnectedCallback() {
+    const runner = getTaskRunner()
+    if (runner) {
+      for (const runId of this.expandedRunIds) {
+        runner.unwatchRun(runId)
+      }
+    }
     this.runnerUnsub?.()
     this.runnerUnsub = null
+    this.renderedLogCounts.clear()
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
     if (this.elapsedTimer) {
@@ -394,12 +406,54 @@ export class TlTaskPanel extends HTMLElement {
 
     el.innerHTML = html
     this.attachContentListeners()
+
+    // Track rendered log counts for expanded runs
+    for (const run of runs) {
+      if (this.expandedRunIds.has(run.runId)) {
+        this.renderedLogCounts.set(run.runId, run.logs.length)
+      }
+    }
+  }
+
+  private updateRunningRuns() {
+    const runner = getTaskRunner()
+    if (!runner) return
+
+    for (const run of runner.runs) {
+      if (run.status !== 'running') continue
+
+      // Update elapsed time
+      const header = this.shadow.querySelector(`.run-header[data-run-id="${run.runId}"]`)
+      if (!header) continue
+      const timeEl = header.querySelector('.run-time')
+      if (timeEl) {
+        timeEl.textContent = formatElapsed(Date.now() - run.startedAt)
+      }
+
+      // Append new log entries
+      if (!this.expandedRunIds.has(run.runId)) continue
+      const logsEl = header.nextElementSibling
+      if (!logsEl) continue
+
+      const rendered = this.renderedLogCounts.get(run.runId) ?? 0
+      if (run.logs.length > rendered) {
+        for (let i = rendered; i < run.logs.length; i++) {
+          const log = run.logs[i]
+          const cls = logLevelClass(log.level)
+          const div = document.createElement('div')
+          div.className = `log-entry${cls}`
+          div.textContent = log.message
+          logsEl.appendChild(div)
+        }
+        this.renderedLogCounts.set(run.runId, run.logs.length)
+      }
+    }
   }
 
   private renderRunLogs(run: TaskRun): string {
     let html = ''
     for (const log of run.logs) {
-      const cls = log.level === 'warn' ? ' warn' : log.level === 'error' ? ' error' : ''
+      const cls = logLevelClass(log.level)
       html += `<div class="log-entry${cls}">${escapeHtml(log.message)}</div>`
     }
     if (run.error) {
@@ -439,10 +493,13 @@ export class TlTaskPanel extends HTMLElement {
     this.shadow.querySelectorAll('.run-header[data-run-id]').forEach(el => {
       el.addEventListener('click', () => {
         const runId = (el as HTMLElement).dataset.runId!
+        const runner = getTaskRunner()
         if (this.expandedRunIds.has(runId)) {
           this.expandedRunIds.delete(runId)
+          if (runner) runner.unwatchRun(runId)
         } else {
           this.expandedRunIds.add(runId)
+          if (runner) runner.watchRun(runId)
         }
         this.updateContent()
       })

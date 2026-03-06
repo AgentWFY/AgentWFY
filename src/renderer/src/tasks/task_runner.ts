@@ -123,6 +123,22 @@ export class TaskRunner {
     }
   }
 
+  watchRun(runId: string): void {
+    const run = this._runs.find(r => r.runId === runId && r.status === 'running')
+    if (!run) return
+
+    run.logs = []
+    const runtime = getJsRuntime()
+    runtime.watchLogs(runId, (entry) => {
+      run.logs.push(entry)
+    })
+  }
+
+  unwatchRun(runId: string): void {
+    const runtime = getJsRuntime()
+    runtime.unwatchLogs(runId)
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
