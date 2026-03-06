@@ -38,20 +38,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   name TEXT NOT NULL,
   content TEXT NOT NULL,
   timeout_ms INTEGER DEFAULT NULL,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
-
-DROP TABLE IF EXISTS db_changes;
-DROP TRIGGER IF EXISTS views_db_changes_insert;
-DROP TRIGGER IF EXISTS views_db_changes_update;
-DROP TRIGGER IF EXISTS views_db_changes_delete;
-DROP TRIGGER IF EXISTS docs_db_changes_insert;
-DROP TRIGGER IF EXISTS docs_db_changes_update;
-DROP TRIGGER IF EXISTS docs_db_changes_delete;
-DROP TRIGGER IF EXISTS tasks_db_changes_insert;
-DROP TRIGGER IF EXISTS tasks_db_changes_update;
-DROP TRIGGER IF EXISTS tasks_db_changes_delete;
 `;
 
 const CHANGE_TRACKING_SQL = `

@@ -254,8 +254,8 @@ export class CommandPaletteManager {
           taskName: task.name,
         },
       }));
-    } catch {
-      // Tasks table might not exist yet
+    } catch (err) {
+      console.error('[command-palette] listTasks failed:', err);
     }
 
     const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
