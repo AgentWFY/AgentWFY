@@ -215,6 +215,10 @@ export interface WorkerHostMethodMap {
     params: WorkerExecTabJsRequest
     result: unknown
   }
+  setRequestHeaders: {
+    params: { tid: string; headers: Record<string, string> }
+    result: void
+  }
   busPublish: {
     params: { topic: string; data: unknown }
     result: void

@@ -8,6 +8,7 @@ import { registerTabsHandlers } from './ipc/tabs';
 import { registerSessionsHandlers } from './ipc/sessions';
 import { registerAuthHandlers } from './ipc/auth';
 import { registerBusHandlers } from './ipc/bus';
+import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers';
 import { registerTabViewHandlers } from './tab-views/ipc';
 import { registerCommandPaletteHandlers } from './command-palette/ipc';
 import { registerTaskRunnerHandlers } from './task-runner/ipc';
@@ -31,6 +32,7 @@ console.error = (...args: unknown[]) => {
   if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'sql:')) return;
   if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'tabs:')) return;
   if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'bus:')) return;
+  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'headers:')) return;
   originalConsoleError.apply(console, args);
 };
 
@@ -108,6 +110,7 @@ registerSqlHandlers(getDataDir, onDbChange);
 registerTabsHandlers(tabTools);
 registerSessionsHandlers(getDataDir);
 registerAuthHandlers(getDataDir);
+registerRequestHeadersHandlers();
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
@@ -230,6 +233,7 @@ const createWindow = () => {
 // --- App lifecycle ---
 
 app.on('ready', async () => {
+  installWebRequestHooks();
   await ensureAgentRuntimeBootstrap(getDataDir());
   const template: Electron.MenuItemConstructorOptions[] = [
     {

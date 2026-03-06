@@ -32,6 +32,12 @@ import type {
   WorkerTabConsoleLogEntry,
 } from '../runtime/types'
 
+export interface NetApi {
+  headers: {
+    set(request: { tid: string; headers: Record<string, string> }): Promise<void>
+  }
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
@@ -42,6 +48,7 @@ export interface AppIpc {
   dialog: DialogApi
   bus: BusApi
   tasks: TasksApi
+  net: NetApi
 }
 
 export interface AgentToolsApi {
