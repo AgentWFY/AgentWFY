@@ -57,6 +57,9 @@ export const Channels = {
     spawnAgent: 'bus:spawnAgent',
     dbChanged: 'bus:dbChanged',
   },
+  headers: {
+    set: 'headers:set',
+  },
   tasks: {
     start: 'tasks:start',
     stop: 'tasks:stop',

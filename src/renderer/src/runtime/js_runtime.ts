@@ -487,6 +487,14 @@ export class JsRuntime {
         const result = await bus.waitFor(request.topic, timeoutMs)
         return result as WorkerHostMethodMap[M]['result']
       }
+      case 'setRequestHeaders': {
+        const request = params as WorkerHostMethodMap['setRequestHeaders']['params']
+        if (!request || typeof request.tid !== 'string' || !request.headers) {
+          throw new Error('setRequestHeaders requires tid and headers')
+        }
+        await ipc.net.headers.set(request)
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
       case 'spawnAgent': {
         const request = params as WorkerHostMethodMap['spawnAgent']['params']
         if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
@@ -539,6 +547,7 @@ export class JsRuntime {
     }
 
     entry.pendingExecutions.clear()
+
     entry.worker.terminate()
   }
 }

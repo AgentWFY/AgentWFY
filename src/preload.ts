@@ -59,6 +59,9 @@ const Channels = {
     spawnAgent: 'bus:spawnAgent',
     dbChanged: 'bus:dbChanged',
   },
+  headers: {
+    set: 'headers:set',
+  },
   tasks: {
     start: 'tasks:start',
     stop: 'tasks:stop',
@@ -271,6 +274,13 @@ if (isApp) {
       },
       openExternal(url: string): Promise<void> {
         return ipcRenderer.invoke(Channels.dialog.openExternal, url);
+      },
+    },
+    net: {
+      headers: {
+        set(request: { tid: string; headers: Record<string, string> }): Promise<void> {
+          return ipcRenderer.invoke(Channels.headers.set, request);
+        },
       },
     },
     bus: {
