@@ -276,10 +276,22 @@ export interface WorkerHostResultMessage {
   error?: ExecJsSerializedError
 }
 
+export interface WorkerWatchLogsMessage {
+  type: 'exec:watch'
+  requestId: string
+}
+
+export interface WorkerUnwatchLogsMessage {
+  type: 'exec:unwatch'
+  requestId: string
+}
+
 export type HostToWorkerMessage =
   | WorkerExecuteRequestMessage
   | WorkerCancelRequestMessage
   | WorkerHostResultMessage
+  | WorkerWatchLogsMessage
+  | WorkerUnwatchLogsMessage
 
 export interface WorkerHostCallMessage {
   type: 'host:call'
@@ -295,6 +307,13 @@ export interface WorkerExecutionResultMessage {
   details: ExecJsDetails
 }
 
+export interface WorkerLogStreamMessage {
+  type: 'exec:log'
+  requestId: string
+  logEntry: ExecJsLogEntry
+}
+
 export type WorkerToHostMessage =
   | WorkerHostCallMessage
   | WorkerExecutionResultMessage
+  | WorkerLogStreamMessage
