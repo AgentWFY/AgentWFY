@@ -1,5 +1,4 @@
-/* eslint-disable import/no-unresolved */
-import { marked } from 'marked'
+import { renderMarkdown } from 'app/markdown'
 import type { AgentMessage } from 'app/agent/types'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { loadAuthConfig } from 'app/agent/agent_auth'
@@ -56,11 +55,124 @@ const STYLES = `
     user-select: text;
     word-break: break-word;
   }
-  .block pre { white-space: pre-wrap; word-break: break-all; }
-  .block code { white-space: pre-wrap; word-break: break-all; }
   .block p { margin: 0.4em 0; }
   .block p:last-child { margin-bottom: 0; }
   .block p:first-child { margin-top: 0; }
+
+  /* Inline code */
+  .block code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--color-code-bg);
+    word-break: break-all;
+  }
+
+  /* Code blocks */
+  .block pre {
+    margin: 6px 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-code-bg);
+    overflow-x: auto;
+    line-height: 1.45;
+  }
+  .block pre code {
+    padding: 0;
+    background: none;
+    font-size: 12px;
+    white-space: pre;
+    word-break: normal;
+  }
+
+  /* Headings */
+  .block h1, .block h2, .block h3,
+  .block h4, .block h5, .block h6 {
+    margin: 0.6em 0 0.3em;
+    line-height: 1.3;
+    color: var(--color-text4);
+  }
+  .block h1 { font-size: 1.3em; }
+  .block h2 { font-size: 1.15em; }
+  .block h3 { font-size: 1.05em; }
+  .block h4, .block h5, .block h6 { font-size: 1em; }
+  .block h1:first-child, .block h2:first-child, .block h3:first-child { margin-top: 0; }
+
+  /* Lists */
+  .block ul, .block ol {
+    margin: 0.3em 0;
+    padding-left: 1.5em;
+  }
+  .block li { margin: 2px 0; }
+  .block li > ul, .block li > ol { margin: 2px 0; }
+  .block li input[type="checkbox"] {
+    margin: 0 4px 0 0;
+    vertical-align: middle;
+    pointer-events: none;
+  }
+
+  /* Blockquotes */
+  .block blockquote {
+    margin: 0.4em 0;
+    padding: 2px 0 2px 10px;
+    border-left: 3px solid var(--color-divider);
+    color: var(--color-text1);
+  }
+  .block blockquote p:first-child { margin-top: 0; }
+  .block blockquote p:last-child { margin-bottom: 0; }
+
+  /* Tables */
+  .block table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 12px;
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+  }
+  .block th, .block td {
+    padding: 5px 10px;
+    border: 1px solid var(--color-border);
+    text-align: left;
+  }
+  .block th {
+    background: var(--color-bg3);
+    font-weight: 600;
+    color: var(--color-text4);
+    white-space: nowrap;
+  }
+  .block tr:nth-child(even) td {
+    background: var(--color-bg2);
+  }
+
+  /* Horizontal rule */
+  .block hr {
+    border: none;
+    border-top: 1px solid var(--color-divider);
+    margin: 0.6em 0;
+  }
+
+  /* Links */
+  .block a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .block a:hover {
+    text-decoration: underline;
+  }
+
+  /* Images */
+  .block img {
+    max-width: 100%;
+    border-radius: var(--radius-sm);
+    margin: 4px 0;
+  }
+
+  /* Strikethrough */
+  .block del {
+    color: var(--color-text2);
+  }
   .block-user {
     background: var(--color-bg3);
     padding: 6px 10px;
@@ -649,7 +761,7 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private renderMarkdown(text: string): string {
-    return marked(text) as string
+    return renderMarkdown(text)
   }
 
   private extractImagesFromResult(result: unknown): { images: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
