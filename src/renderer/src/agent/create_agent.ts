@@ -1,17 +1,23 @@
 import { Agent } from 'app/agent'
-import type { AgentEvent, AgentMessage, AgentState, ThinkingLevel } from 'app/agent/types'
+import type {
+  AgentEvent,
+  AgentMessage,
+  AgentState,
+  AssistantMessage,
+  ImageContent,
+  Message,
+  Model,
+  ThinkingLevel,
+} from 'app/agent/types'
 import {
-  completeSimple,
   getModel,
   getModels,
-  getProviders,
-  isContextOverflow,
-  supportsXhigh,
-  type AssistantMessage,
-  type ImageContent,
-  type Message,
-  type Model
-} from '@mariozechner/pi-ai'
+  getModelsConfigSync,
+  getProviderIds,
+  loadModelsConfig,
+  supportsThinking,
+} from 'app/agent/models'
+import { createStream } from 'app/agent/streaming/types'
 import { createExecJsTool } from 'app/agent/exec_js'
 import { requireIpc, stringifyUnknown } from 'app/agent/tool_utils'
 
@@ -158,7 +164,7 @@ function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === 'string' && THINKING_LEVELS.includes(value as ThinkingLevel)
 }
 
-function normalizeThinkingLevel(level: unknown, model?: Model<unknown>): ThinkingLevel {
+function normalizeThinkingLevel(level: unknown, model?: Model): ThinkingLevel {
   const fallback: ThinkingLevel = model?.reasoning ? 'minimal' : 'off'
   if (!isThinkingLevel(level)) {
     return fallback
@@ -168,30 +174,27 @@ function normalizeThinkingLevel(level: unknown, model?: Model<unknown>): Thinkin
     return 'off'
   }
 
-  if (level === 'xhigh' && !supportsXhigh(model)) {
-    return 'high'
-  }
-
   return level
 }
 
-function resolveModel(provider: string, modelId: string): Model<unknown> {
-  const model = getModel(provider as never, modelId as never)
+function resolveModel(provider: string, modelId: string): Model {
+  const config = getModelsConfigSync()
+  const model = getModel(config, provider, modelId)
   if (model) {
     return model
   }
 
-  const availableModels = getModels(provider as never)
+  const availableModels = getModels(config, provider)
   if (availableModels.length === 0) {
-    const availableProviders = getProviders()
+    const availableProviders = getProviderIds(config)
     throw new Error(
-      `Unknown provider "${provider}". Configure one of ${availableProviders.join(', ')} or pass a valid provider supported by pi-ai.`
+      `Unknown provider "${provider}". Configure one of ${availableProviders.join(', ')} or add a provider to .agentwfy/models.json.`
     )
   }
 
-  const modelIds = availableModels.slice(0, 20).map((entry: { id?: string }) => entry.id)
+  const modelIds = availableModels.slice(0, 20).map((entry) => entry.id)
   throw new Error(
-    `Model "${modelId}" was not found for provider "${provider}". Example available models: ${modelIds.join(', ')}`
+    `Model "${modelId}" was not found for provider "${provider}". Available models: ${modelIds.join(', ')}`
   )
 }
 
@@ -365,6 +368,9 @@ function messageToSummaryLine(message: AgentMessage): string {
         if (item?.type === 'thinking' && typeof item.thinking === 'string') {
           return `[thinking] ${item.thinking}`
         }
+        if (item?.type === 'redacted_thinking') {
+          return '[redacted thinking]'
+        }
         if (item?.type === 'image') {
           return '[image]'
         }
@@ -398,9 +404,20 @@ function buildCompactionSummary(messages: AgentMessage[], customInstructions?: s
 
 function extractTextFromAssistant(message: AssistantMessage): string {
   return message.content
-    .filter((item: { type: string; text?: string }) => item?.type === 'text' && typeof item.text === 'string')
-    .map((item: { type: string; text?: string }) => item.text as string)
+    .filter((item) => item?.type === 'text' && typeof (item as { text?: string }).text === 'string')
+    .map((item) => (item as { type: 'text'; text: string }).text)
     .join('\n')
+}
+
+function isContextOverflow(message: AssistantMessage): boolean {
+  if (message.stopReason === 'error' && message.errorMessage) {
+    const msg = message.errorMessage.toLowerCase()
+    return msg.includes('context') && (msg.includes('overflow') || msg.includes('too long') || msg.includes('exceed') || msg.includes('maximum'))
+  }
+  if (message.stopReason === 'maxTokens') {
+    return true
+  }
+  return false
 }
 
 function parseStoredSession(raw: string, sessionFile: string): StoredSession {
@@ -452,6 +469,7 @@ export class AgentWFYAgent {
   private apiKey?: string
   private sessionWritePromise: Promise<void> = Promise.resolve()
   private isCompacting = false
+  private compactionAbort?: AbortController
   private disposed = false
 
   private _sessionId: string
@@ -488,6 +506,9 @@ export class AgentWFYAgent {
   }
 
   static async create(options: AgentWFYAgentOptions = {}): Promise<AgentWFYAgent> {
+    // Ensure models config is loaded
+    await loadModelsConfig()
+
     const provider = options.provider ?? DEFAULT_PROVIDER
     const modelId = options.modelId ?? DEFAULT_MODEL_ID
     const sessionDir = DEFAULT_SESSION_DIR
@@ -558,7 +579,7 @@ export class AgentWFYAgent {
     return this.persistSessionsToDisk
   }
 
-  get model(): Model<unknown> | undefined {
+  get model(): Model | undefined {
     return this.agent.state.model
   }
 
@@ -621,13 +642,11 @@ export class AgentWFYAgent {
     return () => this.listeners.delete(listener)
   }
 
-  async setModel(model: Model<unknown>): Promise<void> {
+  async setModel(model: Model): Promise<void> {
     this.agent.setModel(model)
 
     if (!model.reasoning) {
       this.agent.setThinkingLevel('off')
-    } else if (this.thinkingLevel === 'xhigh' && !supportsXhigh(model)) {
-      this.agent.setThinkingLevel('high')
     }
 
     await this.persistSession()
@@ -703,6 +722,7 @@ export class AgentWFYAgent {
   }
 
   async abort(): Promise<void> {
+    this.compactionAbort?.abort()
     this.agent.abort()
     await this.agent.waitForIdle()
   }
@@ -723,6 +743,7 @@ export class AgentWFYAgent {
     }
 
     this.disposed = true
+    this.compactionAbort?.abort()
     this.listeners.clear()
     this.unsubscribeFromAgent()
   }
@@ -772,8 +793,7 @@ export class AgentWFYAgent {
       return undefined
     }
 
-    const contextWindow = this.getModelContextWindow()
-    if (!isContextOverflow(lastAssistant, contextWindow)) {
+    if (!isContextOverflow(lastAssistant)) {
       return undefined
     }
 
@@ -791,21 +811,11 @@ export class AgentWFYAgent {
       return
     }
 
-    const contextWindow = this.getModelContextWindow()
-    if (!isContextOverflow(lastMessage, contextWindow)) {
+    if (!isContextOverflow(lastMessage)) {
       return
     }
 
     this.agent.replaceMessages(messages.slice(0, -1))
-  }
-
-  private getModelContextWindow(): number | undefined {
-    const model = this.model as { contextWindow?: unknown } | undefined
-    if (typeof model?.contextWindow !== 'number' || !Number.isFinite(model.contextWindow) || model.contextWindow <= 0) {
-      return undefined
-    }
-
-    return model.contextWindow
   }
 
   private async compact(customInstructions?: string): Promise<{ compacted: boolean }> {
@@ -845,9 +855,8 @@ export class AgentWFYAgent {
     }
 
     try {
-      const provider = model.provider
       const apiKey = this.agent.getApiKey
-        ? await this.agent.getApiKey(provider)
+        ? await this.agent.getApiKey(model.provider.id)
         : this.apiKey
 
       const conversationText = messages.map((message) => messageToSummaryLine(message)).join('\n')
@@ -856,24 +865,29 @@ export class AgentWFYAgent {
         : ''
       const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${COMPACTION_SUMMARY_PROMPT}${additionalFocus}`
 
-      const response = await completeSimple(
+      this.compactionAbort = new AbortController()
+      const summaryStream = createStream(
         model,
         {
           systemPrompt: COMPACTION_SUMMARY_SYSTEM_PROMPT,
-          messages: [toUserMessage(promptText)]
+          messages: [toUserMessage(promptText)] as Message[],
+          tools: [],
         },
         {
           apiKey,
-          maxTokens: Math.min(COMPACTION_SUMMARY_MAX_TOKENS, model.maxTokens || COMPACTION_SUMMARY_MAX_TOKENS),
-          reasoning: model.reasoning ? 'high' : undefined
+          maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
+          reasoning: model.reasoning ? 'high' : undefined,
+          signal: this.compactionAbort.signal,
         }
       )
+
+      const response = await summaryStream.result()
 
       if (response.stopReason === 'error') {
         throw new Error(response.errorMessage || 'Unknown summarization error')
       }
 
-      const text = extractTextFromAssistant(response as AssistantMessage).trim()
+      const text = extractTextFromAssistant(response).trim()
       if (!text) {
         throw new Error('Summarization model returned empty text')
       }
@@ -895,7 +909,7 @@ export class AgentWFYAgent {
       sessionId: this._sessionId,
       model: this.model
         ? {
-          provider: this.model.provider,
+          provider: this.model.provider.id,
           id: this.model.id
         }
         : undefined,

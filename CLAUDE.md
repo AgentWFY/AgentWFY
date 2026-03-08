@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AgentWFY is an Electron desktop app with an AI agent that can interact with a local SQLite database and render views in tabs. The agent uses a custom `Agent` class (`src/renderer/src/agent/agent.ts`) for the LLM tool-calling loop and `@mariozechner/pi-ai` for model access and streaming.
+AgentWFY is an Electron desktop app with an AI agent that can interact with a local SQLite database and render views in tabs. The agent uses a custom `Agent` class (`src/renderer/src/agent/index.ts`) for the LLM tool-calling loop with zero external LLM dependencies — streaming, OAuth, and model config are all implemented in-house.
 
 ## Commands
 
@@ -30,9 +30,8 @@ The main process must be rebuilt (`npm run build-main`) after changes to `src/` 
 - Root `tsconfig.json`: Main process — target ESNext, module CommonJS, `noImplicitAny: true`, compiles `src/**/*` excluding `src/renderer/`
 - `src/renderer/tsconfig.json`: Renderer — target ESNext, module ESNext, `strict: false`, path alias `app/*` → `./src/*`
 
-### Vite Configuration (`src/renderer/vite.config.js`)
+### Vite Configuration (`src/renderer/vite.config.mts`)
 
-- `@mariozechner/pi-ai` is aliased to a browser shim at `src/renderer/src/agent/pi_ai_browser.ts`
 - `app` resolves to `src/renderer/src/`
 - Output goes to `dist/client/`
 
@@ -59,10 +58,15 @@ Components use direct DOM manipulation (no virtual DOM), class properties for lo
 
 ### Agent System
 
-- `AgentWFYAgent` (`src/renderer/src/agent/create_agent.ts`): Wraps pi-agent-core `Agent`, handles session persistence (`.agentwfy/sessions/`), auto-compaction on context overflow, model/thinking-level cycling
+- `Agent` (`src/renderer/src/agent/index.ts`): Core LLM tool-calling loop with streaming, steering, and follow-up message support
+- `AgentWFYAgent` (`src/renderer/src/agent/create_agent.ts`): Higher-level wrapper with session persistence (`.agentwfy/sessions/`), auto-compaction on context overflow, model/thinking-level management
 - `AgentSessionManager` (`src/renderer/src/agent/session_manager.ts`): Manages concurrent agent sessions
+- Streaming (`src/renderer/src/agent/streaming/`): Own SSE parser and provider-specific streaming for OpenAI-compatible, Anthropic Messages, and OpenAI Codex Responses APIs
+- OAuth (`src/renderer/src/agent/oauth/`): Own PKCE implementation, Anthropic OAuth, OpenAI Codex OAuth
+- Models (`src/renderer/src/agent/models.ts`): Config-driven model/provider registry loaded from `.agentwfy/models.json` (user-editable)
 - System prompt is loaded from SQLite `docs` table (rows with `preload = 1`)
 - Default provider: `openrouter`, default model: `moonshotai/kimi-k2.5`
+- 3 provider types: Anthropic (OAuth), OpenAI Codex (OAuth), OpenAI-compatible (API key — OpenRouter, DeepSeek, etc.)
 
 ### Database
 

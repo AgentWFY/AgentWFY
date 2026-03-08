@@ -1,16 +1,51 @@
-import {
-  streamSimple,
-  validateToolArguments,
-  type AssistantMessage,
-  type AssistantMessageEventStream,
-  type Context,
-  type ImageContent,
-  type Message,
-  type Model,
-  type ToolCall,
-  type ToolResultMessage,
-} from '@mariozechner/pi-ai'
-import type { AgentEvent, AgentMessage, AgentState, ThinkingLevel } from './types'
+import type {
+  AgentEvent,
+  AgentMessage,
+  AgentState,
+  AgentTool,
+  AssistantMessage,
+  ImageContent,
+  JsonSchema,
+  Message,
+  Model,
+  ThinkingLevel,
+  ToolCall,
+  ToolResultMessage,
+} from './types'
+import { createStream } from './streaming/types'
+
+/**
+ * Lightweight tool argument validation against JSON Schema.
+ * Checks required fields and basic type constraints without a full validator like AJV.
+ */
+function validateToolArguments(tool: AgentTool, args: Record<string, unknown>): string | null {
+  const schema = tool.parameters as Record<string, unknown>
+  const required = schema.required as string[] | undefined
+  if (required) {
+    const missing = required.filter((key) => !(key in args))
+    if (missing.length > 0) {
+      return `Missing required arguments: ${missing.join(', ')}`
+    }
+  }
+
+  const properties = schema.properties as Record<string, JsonSchema> | undefined
+  if (properties) {
+    for (const [key, propSchema] of Object.entries(properties)) {
+      if (!(key in args)) continue
+      const value = args[key]
+      const expectedType = propSchema.type as string | undefined
+      if (!expectedType || value === null || value === undefined) continue
+
+      const actualType = Array.isArray(value) ? 'array' : typeof value
+      if (expectedType === 'integer' && typeof value === 'number') continue
+      if (actualType !== expectedType) {
+        return `Argument "${key}" expected type "${expectedType}" but got "${actualType}"`
+      }
+    }
+  }
+
+  return null
+}
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
   return messages.filter(
@@ -28,7 +63,7 @@ export interface AgentOptions {
 export class Agent {
   private _state: AgentState = {
     systemPrompt: '',
-    model: undefined as unknown as Model<unknown>,
+    model: undefined as unknown as Model,
     thinkingLevel: 'off',
     tools: [],
     messages: [],
@@ -67,7 +102,7 @@ export class Agent {
     return () => this.listeners.delete(fn)
   }
 
-  setModel(m: Model<unknown>): void {
+  setModel(m: Model): void {
     this._state.model = m
   }
 
@@ -293,8 +328,7 @@ export class Agent {
       const errorMsg: AssistantMessage = {
         role: 'assistant',
         content: [{ type: 'text', text: '' }],
-        api: model?.api ?? '',
-        provider: model?.provider ?? '',
+        provider: model?.provider?.id ?? '',
         model: model?.id ?? '',
         usage: {
           input: 0,
@@ -302,7 +336,6 @@ export class Agent {
           cacheRead: 0,
           cacheWrite: 0,
           totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
         stopReason: this.abortController?.signal.aborted ? 'aborted' : 'error',
         errorMessage: (err as Error)?.message || String(err),
@@ -328,18 +361,17 @@ export class Agent {
     signal: AbortSignal,
   ): Promise<AssistantMessage> {
     const llmMessages = await this.convertToLlm(contextMessages)
-    const llmContext: Context = {
-      systemPrompt: this._state.systemPrompt,
-      messages: llmMessages,
-      tools: this._state.tools,
-    }
 
     const reasoning = this._state.thinkingLevel === 'off' ? undefined : this._state.thinkingLevel
     const resolvedApiKey = this.getApiKey
-      ? await this.getApiKey(this._state.model.provider)
+      ? await this.getApiKey(this._state.model.provider.id)
       : undefined
 
-    const response: AssistantMessageEventStream = streamSimple(this._state.model, llmContext, {
+    const response = createStream(this._state.model, {
+      systemPrompt: this._state.systemPrompt,
+      messages: llmMessages,
+      tools: this._state.tools,
+    }, {
       reasoning,
       sessionId: this.sessionId,
       apiKey: resolvedApiKey,
@@ -360,12 +392,8 @@ export class Agent {
           this.emit({ type: 'message_start', message: { ...partialMessage } })
           break
 
-        case 'text_start':
         case 'text_delta':
-        case 'text_end':
-        case 'thinking_start':
         case 'thinking_delta':
-        case 'thinking_end':
         case 'toolcall_start':
         case 'toolcall_delta':
         case 'toolcall_end':
@@ -376,7 +404,7 @@ export class Agent {
             this._state.messages = contextMessages.slice()
             this.emit({
               type: 'message_update',
-              assistantMessageEvent: event,
+              streamEvent: event,
               message: { ...partialMessage },
             })
           }
@@ -434,8 +462,9 @@ export class Agent {
 
       try {
         if (!tool) throw new Error(`Tool ${toolCall.name} not found`)
-        const validatedArgs = validateToolArguments(tool, toolCall)
-        result = await tool.execute(toolCall.id, validatedArgs, signal, (partialResult) => {
+        const validationError = validateToolArguments(tool, toolCall.arguments)
+        if (validationError) throw new Error(`Invalid arguments for tool "${toolCall.name}": ${validationError}`)
+        result = await tool.execute(toolCall.id, toolCall.arguments, signal, (partialResult) => {
           this.emit({
             type: 'tool_execution_update',
             toolCallId: toolCall.id,

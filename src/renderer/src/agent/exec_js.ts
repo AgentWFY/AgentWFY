@@ -1,6 +1,4 @@
-import type { AgentTool, AgentToolResult } from 'app/agent/types'
-import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
-import { Type } from '@sinclair/typebox'
+import type { AgentTool, AgentToolResult, ImageContent, TextContent } from 'app/agent/types'
 import { getJsRuntime } from 'app/runtime/js_runtime'
 import type { ExecJsDetails } from 'app/runtime/types'
 import { stringifyUnknown } from 'app/agent/tool_utils'
@@ -66,16 +64,28 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
     name: 'execJs',
     label: 'Execute JavaScript',
     description: EXECJS_TOOL_DESCRIPTION,
-    parameters: Type.Object({
-      description: Type.String({ description: 'Short human-readable description of what this code does (shown to the user).' }),
-      code: Type.String({ description: 'JavaScript code to execute. Use explicit return for result values.' }),
-      timeoutMs: Type.Optional(Type.Integer({
-        minimum: 1,
-        maximum: 120000,
-        description: 'Execution timeout in milliseconds (default 5000).',
-      })),
-    }, { additionalProperties: false }),
-    execute: async (_toolCallId, params: unknown, signal) => {
+    parameters: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description: 'Short human-readable description of what this code does (shown to the user).',
+        },
+        code: {
+          type: 'string',
+          description: 'JavaScript code to execute. Use explicit return for result values.',
+        },
+        timeoutMs: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 120000,
+          description: 'Execution timeout in milliseconds (default 5000).',
+        },
+      },
+      required: ['description', 'code'],
+      additionalProperties: false,
+    },
+    execute: async (_toolCallId, params, signal) => {
       const typedParams = params as { code: string; timeoutMs?: number }
       const timeoutMs = typedParams.timeoutMs ?? 5000
 

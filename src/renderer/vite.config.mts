@@ -13,10 +13,6 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: /^@mariozechner\/pi-ai$/,
-        replacement: path.resolve(__dirname, './src/agent/pi_ai_browser.ts')
-      },
-      {
         find: 'app',
         replacement: path.resolve(__dirname, './src')
       }
