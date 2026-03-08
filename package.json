@@ -34,7 +34,6 @@
   "dependencies": {
     "@mariozechner/pi-ai": "^0.55.1",
     "@sinclair/typebox": "^0.34.48",
-    "electron": "npm:electron-nightly@^41.0.0-nightly.20251219",
-    "marked": "^4.3.0"
+    "electron": "npm:electron-nightly@^41.0.0-nightly.20251219"
   }
 }
