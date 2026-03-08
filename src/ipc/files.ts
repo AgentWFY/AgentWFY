@@ -1,8 +1,8 @@
 import { ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
-import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy';
-import { Channels } from './channels';
+import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy.js';
+import { Channels } from './channels.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_READ_BYTES = 50 * 1024;

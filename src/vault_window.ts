@@ -8,12 +8,12 @@ export default function(parentWindow: BrowserWindow): BrowserWindow {
     height: 150,
     width: 200,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: false,
     },
   });
 
-  window.loadFile(path.join(__dirname, `vault_window.html`));
+  window.loadFile(path.join(import.meta.dirname, `vault_window.html`));
 
   window.show();
 

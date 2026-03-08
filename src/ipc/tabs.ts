@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { Channels } from './channels';
+import { Channels } from './channels.js';
 
 interface CaptureTabRequest {
   tabId: string

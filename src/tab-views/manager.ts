@@ -1,6 +1,6 @@
 import { BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import path from 'path';
-import { isViewDocumentRequest, parseViewId } from '../protocol/view-document';
+import { isViewDocumentRequest, parseViewId } from '../protocol/view-document.js';
 
 // --- Types & Constants ---
 
@@ -205,7 +205,7 @@ export class TabViewManager {
 
     const view = new WebContentsView({
       webPreferences: {
-        preload: path.join(__dirname, '..', 'preload.js'),
+        preload: path.join(import.meta.dirname, '..', 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: isUrlTab,

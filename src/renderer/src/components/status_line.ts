@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import { getSessionManager } from 'app/agent/session_manager'
 import { getTaskRunner } from 'app/tasks/task_runner'
 

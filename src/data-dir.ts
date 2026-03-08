@@ -1,8 +1,8 @@
 import { app } from 'electron';
 import path from 'path';
 import { mkdir } from 'fs/promises';
-import { storeGet } from './ipc/store';
-import { ensureViewsSchema } from './db/views';
+import { storeGet } from './ipc/store.js';
+import { ensureViewsSchema } from './db/views.js';
 
 export const DEFAULT_DATA_DIR = app.getPath('userData');
 const AGENT_DIR_NAME = '.agentwfy';

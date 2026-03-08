@@ -1,8 +1,8 @@
 import { ipcMain } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import { assertPathAllowed } from '../security/path-policy';
-import { Channels } from './channels';
+import { assertPathAllowed } from '../security/path-policy.js';
+import { Channels } from './channels.js';
 
 export function registerAuthHandlers(getRoot: () => string) {
   const resolvePrivatePath = (relativePath: string, options?: { allowMissing?: boolean }) =>

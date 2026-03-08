@@ -1,5 +1,5 @@
-import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest, type OnDbChange } from './sqlite';
-import { resolveSqliteFilePath } from './paths';
+import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest, type OnDbChange } from './sqlite.js';
+import { resolveSqliteFilePath } from './paths.js';
 
 export type SqlTarget = 'agent' | 'sqlite-file';
 

@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import { AgentWFYAgent } from 'app/agent/create_agent'
 import type { AgentAuthConfig } from 'app/agent/agent_auth'
 import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'

@@ -2,8 +2,8 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { assertPathAllowed } from '../security/path-policy';
-import { Channels } from '../ipc/channels';
+import { assertPathAllowed } from '../security/path-policy.js';
+import { Channels } from '../ipc/channels.js';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
 const MAX_TASK_LOG_LIST_LIMIT = 1000;

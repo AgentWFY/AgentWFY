@@ -1,8 +1,8 @@
 import { ipcMain } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import { assertPathAllowed } from '../security/path-policy';
-import { Channels } from './channels';
+import { assertPathAllowed } from '../security/path-policy.js';
+import { Channels } from './channels.js';
 
 const DEFAULT_SESSION_LIST_LIMIT = 200;
 const MAX_SESSION_LIST_LIMIT = 1000;

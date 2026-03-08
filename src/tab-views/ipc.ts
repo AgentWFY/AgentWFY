@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
-import { TabViewManager, toNonEmptyString, type TabViewDestroyPayload } from './manager';
-import { Channels } from '../ipc/channels';
+import { TabViewManager, toNonEmptyString, type TabViewDestroyPayload } from './manager.js';
+import { Channels } from '../ipc/channels.js';
 
 export function registerTabViewHandlers(tabViewManager: TabViewManager): void {
   ipcMain.handle(Channels.tabs.mountView, async (_event, payload: unknown) => {

@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import { getTaskRunner } from 'app/tasks/task_runner'
 import type { TaskRun, TaskLogHistoryItem } from 'app/tasks/task_runner'
 

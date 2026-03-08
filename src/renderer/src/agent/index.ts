@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import {
   streamSimple,
   validateToolArguments,
@@ -216,7 +215,6 @@ export class Agent {
       skipInitialSteeringPoll = false
 
       // Outer loop: continues when follow-up messages arrive
-      // eslint-disable-next-line no-constant-condition
       outer: while (true) {
         let hasMoreToolCalls = true
         let steeringAfterTools: AgentMessage[] | null = null
