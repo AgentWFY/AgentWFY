@@ -1,25 +1,32 @@
 {
   "name": "agentwfy-app",
-  "productName": "agentwfy-app",
+  "productName": "AgentWFY",
   "version": "1.0.0",
-  "description": "My Electron application description",
+  "description": "AI agent desktop app with local SQLite database",
   "type": "module",
-  "main": "./main.js",
-  "updateSite": "http://localhost:3000",
+  "main": "dist/main.js",
+  "config": {
+    "forge": "./forge.config.cjs"
+  },
   "scripts": {
     "lint": "tsc --noEmit",
     "clean-dist": "rm -rf dist",
-    "copy-main-modules": "cp package*.json dist && find src -maxdepth 1 -name \"*.html\" -exec cp {} dist/ \\; && find src -maxdepth 1 -name \"*.css\" -exec cp {} dist/ \\; && cd dist && npm ci --omit=dev",
-    "build-main": "tsc --build && npm run copy-main-modules",
+    "copy-main-assets": "find src -maxdepth 1 \\( -name '*.html' -o -name '*.css' \\) -exec cp {} dist/ \\;",
+    "build-main": "tsc --build && npm run copy-main-assets",
     "build-renderer": "cd src/renderer && npx vite build",
     "build": "npm run clean-dist && npm run build-main && npm run build-renderer",
-    "make": "conveyor make app",
-    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' electron ./dist",
+    "start": "NODE_OPTIONS='--disable-warning=ExperimentalWarning' electron .",
     "dev-renderer": "cd src/renderer && npx vite",
-    "dev": "bash scripts/dev.sh"
+    "dev": "bash scripts/dev.sh",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "devDependencies": {
-    "@hydraulic/conveyor": "^21.0.0",
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-dmg": "^7.6.0",
+    "@electron-forge/maker-squirrel": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
+    "electron": "npm:electron-nightly@^41.0.0-nightly.20251219",
     "typescript": "^5.6.3",
     "vite": "^6.0.0"
   },
@@ -31,7 +38,6 @@
   "license": "MIT",
   "dependencies": {
     "@mariozechner/pi-ai": "^0.55.1",
-    "@sinclair/typebox": "^0.34.48",
-    "electron": "npm:electron-nightly@^41.0.0-nightly.20251219"
+    "@sinclair/typebox": "^0.34.48"
   }
 }
