@@ -68,6 +68,7 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
     label: 'Execute JavaScript',
     description: EXECJS_TOOL_DESCRIPTION,
     parameters: Type.Object({
+      description: Type.String({ description: 'Short human-readable description of what this code does (shown to the user).' }),
       code: Type.String({ description: 'JavaScript code to execute. Use explicit return for result values.' }),
       timeoutMs: Type.Optional(Type.Integer({
         minimum: 1,

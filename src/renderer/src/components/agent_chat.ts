@@ -69,52 +69,58 @@ const STYLES = `
   .assistant-text { padding: 2px 0; }
   .tools-group {
     margin-top: 2px;
-    font-size: 12px;
-    color: var(--color-text2);
   }
-  .tool-line {
+  .tool-header {
     display: flex;
     align-items: baseline;
-    gap: 6px;
+    gap: 5px;
     padding: 1px 0;
     cursor: pointer;
     user-select: none;
+    font-size: 12px;
+    color: var(--color-text2);
   }
-  .tool-line:hover { color: var(--color-text4); }
-  .tool-line-name {
-    white-space: nowrap;
-    flex-shrink: 0;
+  .tool-header:hover { color: var(--color-text3); }
+  .tool-header.open .tool-description {
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
-  .tool-line-name::before {
-    content: '>';
-    margin-right: 4px;
-    opacity: 0.5;
-  }
-  .tool-line-summary {
+  .tool-description {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
     min-width: 0;
   }
-  .tool-error-label {
+  .tool-error-badge {
+    font-size: 10px;
     color: var(--color-red-fg);
+    flex-shrink: 0;
+  }
+  .tool-body {
+    padding: 4px 0 4px 0;
     font-size: 11px;
   }
-  .tool-detail {
-    padding: 2px 0 2px 16px;
-    font-size: 11px;
-  }
-  .tool-detail pre {
+  .tool-body pre {
     margin: 0;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
     max-height: 200px;
     overflow: auto;
-    color: var(--color-text1);
+    background: var(--color-bg3);
+    border-radius: var(--radius-sm);
+    color: var(--color-text3);
   }
-  .tool-detail img {
+  .tool-body pre + pre { margin-top: 4px; }
+  .tool-body pre.tool-result-error { color: var(--color-red-fg); }
+  .tool-body img {
     max-width: 100%;
     border-radius: var(--radius-sm);
-    margin: 4px 0;
+    margin-top: 4px;
   }
   .block-custom {
     font-size: 12px;
@@ -144,12 +150,49 @@ const STYLES = `
     margin-top: 10px;
     flex-shrink: 0;
   }
-  .input-area textarea {
+  .input-container {
+    position: relative;
+    border: 1px solid var(--color-input-border);
+    border-radius: var(--radius-md);
+    background: var(--color-input-bg);
+    transition: border-color var(--transition-fast);
+  }
+  .input-container:focus-within {
+    border-color: var(--color-focus-border);
+  }
+  .input-container textarea {
+    display: block;
+    width: 100%;
     resize: none;
     min-height: 36px;
     max-height: 120px;
     line-height: 1.4;
     overflow-y: auto;
+    border: none;
+    background: transparent;
+    padding: 8px 40px 8px 10px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .stop-btn {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-text3);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: var(--color-bg1);
+    padding: 0;
+    transition: background var(--transition-fast);
+  }
+  .stop-btn:hover {
+    background: var(--color-red-fg);
   }
   .tools-row {
     margin-top: 6px;
@@ -172,21 +215,25 @@ const STYLES = `
     height: 100%;
     color: var(--color-text2);
   }
-  .streaming-indicator {
-    color: var(--color-text2);
-    font-size: 12px;
-    padding: 2px 0;
+  .thinking-dots {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 2px;
   }
-  .stop-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-red-fg);
-    font-size: 12px;
-    padding: 0 4px;
-    text-decoration: underline;
+  .thinking-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-text2);
+    animation: thinking 1.4s ease-in-out infinite;
   }
-  .stop-btn:hover { opacity: 0.8; }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes thinking {
+    0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
   .model-info {
     font-size: 11px;
     color: var(--color-text2);
@@ -315,6 +362,7 @@ export class TlAgentChat extends HTMLElement {
   private _settingsBtn: HTMLElement | null = null
   private _settingsPanel: HTMLElement | null = null
   private _modelInfo: HTMLElement | null = null
+  private _stopBtn: HTMLElement | null = null
   private _sessionPanelDirty = false
 
   connectedCallback() {
@@ -619,18 +667,31 @@ export class TlAgentChat extends HTMLElement {
     return { images, filteredResult: filtered }
   }
 
-  private summarizeArgs(args: unknown): string {
+  private getToolDescription(args: unknown): string {
+    if (!args || typeof args !== 'object') return 'Executing code'
+    const argsObj = args as Record<string, unknown>
+    if (typeof argsObj.description === 'string' && argsObj.description.trim()) {
+      return argsObj.description.trim()
+    }
+    return 'Executing code'
+  }
+
+  private getToolCode(args: unknown): string {
     if (!args || typeof args !== 'object') return ''
     const argsObj = args as Record<string, unknown>
-    const keys = Object.keys(argsObj)
-    if (keys.length === 0) return ''
-    const parts = keys.slice(0, 3).map(k => {
-      const v = argsObj[k]
-      const s = typeof v === 'string' ? v : JSON.stringify(v)
-      return s.length > 40 ? s.slice(0, 40) + '...' : s
-    })
-    if (keys.length > 3) parts.push('...')
-    return parts.join(', ')
+    return typeof argsObj.code === 'string' ? argsObj.code : ''
+  }
+
+  private formatToolResult(result: unknown): { text: string; images: Array<{ data: string; mimeType: string }> } {
+    const { images, filteredResult } = this.extractImagesFromResult(result)
+    if (!Array.isArray(filteredResult)) {
+      return { text: typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2), images }
+    }
+    const textParts = filteredResult
+      .filter((item: Record<string, unknown>) => item?.type === 'text')
+      .map((item: Record<string, unknown>) => item.text as string)
+    const text = textParts.length > 0 ? textParts.join('\n') : JSON.stringify(filteredResult, null, 2)
+    return { text, images }
   }
 
   private formatDate(ts: number): string {
@@ -703,6 +764,7 @@ export class TlAgentChat extends HTMLElement {
     this._settingsBtn = null
     this._settingsPanel = null
     this._modelInfo = null
+    this._stopBtn = null
   }
 
   private buildChatLayout() {
@@ -718,19 +780,13 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.className = 'messages'
     this.messagesEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;'
     this.messagesEl.addEventListener('scroll', this.handleMessagesScroll)
-    // Event delegation for tool lines and stop button
+    // Event delegation for tool headers
     this.messagesEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
-      const stopBtn = target.closest('.stop-btn') as HTMLElement | null
-      if (stopBtn) {
+      const toolHeader = target.closest('.tool-header[data-tool-id]') as HTMLElement | null
+      if (toolHeader) {
         e.preventDefault()
-        this.handleStop()
-        return
-      }
-      const toolLine = target.closest('.tool-line[data-tool-id]') as HTMLElement | null
-      if (toolLine) {
-        e.preventDefault()
-        const toolId = toolLine.dataset.toolId
+        const toolId = toolHeader.dataset.toolId
         if (toolId) this.toggleTool(toolId)
       }
     })
@@ -770,6 +826,9 @@ export class TlAgentChat extends HTMLElement {
     inputArea.className = 'input-area'
     inputArea.style.cssText = 'margin-top:10px;flex-shrink:0;'
 
+    const inputContainer = document.createElement('div')
+    inputContainer.className = 'input-container'
+
     this._textarea = document.createElement('textarea')
     this._textarea.id = 'msg-input'
     this._textarea.rows = 1
@@ -777,7 +836,20 @@ export class TlAgentChat extends HTMLElement {
     this._textarea.value = this.inputValue
     this._textarea.addEventListener('keydown', (e) => this.handleKeydown(e))
     this._textarea.addEventListener('input', (e) => this.handleInput(e))
-    inputArea.appendChild(this._textarea)
+    inputContainer.appendChild(this._textarea)
+
+    this._stopBtn = document.createElement('button')
+    this._stopBtn.className = 'stop-btn'
+    this._stopBtn.title = 'Stop'
+    this._stopBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>'
+    this._stopBtn.style.display = 'none'
+    this._stopBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this.handleStop()
+    })
+    inputContainer.appendChild(this._stopBtn)
+
+    inputArea.appendChild(inputContainer)
 
     const toolsRow = document.createElement('div')
     toolsRow.className = 'tools-row'
@@ -868,17 +940,20 @@ export class TlAgentChat extends HTMLElement {
             if (this.showTools && block.tools.length > 0) {
               html += '<div class="tools-group">'
               for (const tool of block.tools) {
-                html += `<div class="tool-line" data-tool-id="${this.escapeHtml(tool.id)}">
-                  <span class="tool-line-name">${this.escapeHtml(tool.name)}</span>
-                  <span class="tool-line-summary">${this.escapeHtml(this.summarizeArgs(tool.arguments))}</span>
-                  ${tool.isError ? '<span class="tool-error-label">error</span>' : ''}
+                const isOpen = this.isToolOpen(tool.id)
+                const description = this.getToolDescription(tool.arguments)
+                html += `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${this.escapeHtml(tool.id)}">
+                  <span class="tool-description">${this.escapeHtml(description)}</span>
+                  ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
                 </div>`
-                if (this.isToolOpen(tool.id)) {
-                  const { images, filteredResult } = this.extractImagesFromResult(tool.result)
-                  html += `<div class="tool-detail">
-                    <pre>${this.escapeHtml(JSON.stringify({ args: tool.arguments, result: filteredResult }, null, 2))}</pre>
-                    ${images.map(img => `<img src="data:${this.escapeHtml(img.mimeType)};base64,${img.data}">`).join('')}
-                  </div>`
+                if (isOpen) {
+                  const code = this.getToolCode(tool.arguments)
+                  const { text: resultText, images } = this.formatToolResult(tool.result)
+                  html += '<div class="tool-body">'
+                  if (code) html += `<pre>${this.escapeHtml(code)}</pre>`
+                  if (resultText) html += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${this.escapeHtml(resultText)}</pre>`
+                  if (images.length > 0) html += images.map(img => `<img src="data:${this.escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
+                  html += '</div>'
                 }
               }
               html += '</div>'
@@ -900,9 +975,7 @@ export class TlAgentChat extends HTMLElement {
         }
       }
       if (this.isStreaming) {
-        html += `<div class="streaming-indicator">
-          Agent is responding... <button class="stop-btn">Stop</button>
-        </div>`
+        html += '<div class="thinking-dots"><span></span><span></span><span></span></div>'
       }
       html += '<div id="anchor"></div>'
       this.messagesEl.innerHTML = html
@@ -924,7 +997,12 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 2. Error banner
+    // 2. Stop button
+    if (this._stopBtn) {
+      this._stopBtn.style.display = this.isStreaming ? '' : 'none'
+    }
+
+    // 3. Error banner
     if (this._errorBanner) {
       if (this.error) {
         this._errorBanner.style.display = ''
