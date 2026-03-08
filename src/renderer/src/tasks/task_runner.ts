@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import type { ExecJsLogEntry } from 'app/runtime/types'
 import { getJsRuntime } from 'app/runtime/js_runtime'
 import { bus } from 'app/event-bus'

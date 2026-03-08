@@ -1,10 +1,10 @@
 import { BrowserWindow, nativeTheme } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { listViews } from '../db/views';
-import { listTasks } from '../db/tasks';
-import type { RendererBridge } from '../renderer-bridge';
-import type { TabViewManager } from '../tab-views/manager';
+import { listViews } from '../db/views.js';
+import { listTasks } from '../db/tasks.js';
+import type { RendererBridge } from '../renderer-bridge.js';
+import type { TabViewManager } from '../tab-views/manager.js';
 
 type CommandPaletteAction =
   | {
@@ -135,7 +135,7 @@ export class CommandPaletteManager {
       roundedCorners: true,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: false,
@@ -164,7 +164,7 @@ export class CommandPaletteManager {
       this.commandPaletteWindow = null;
     });
 
-    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(__dirname, '..', 'command_palette.html')).toString())
+    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'command_palette.html')).toString())
       .catch((error) => {
         console.error('[command-palette] failed to load native command palette window', error);
       });

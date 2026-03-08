@@ -464,14 +464,14 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         if (_onerror) _onerror.call(wrapper, errEv)
         for (const [type, listener] of pendingListeners) {
           if (type === 'error') {
-            typeof listener === 'function' ? listener(errEv) : listener.handleEvent(errEv)
+            if (typeof listener === 'function') { listener(errEv) } else { listener.handleEvent(errEv) }
           }
         }
         const closeEv = new CloseEvent('close', { code: 1006, reason: 'Header registration failed', wasClean: false })
         if (_onclose) _onclose.call(wrapper, closeEv)
         for (const [type, listener] of pendingListeners) {
           if (type === 'close') {
-            typeof listener === 'function' ? listener(closeEv) : listener.handleEvent(closeEv)
+            if (typeof listener === 'function') { listener(closeEv) } else { listener.handleEvent(closeEv) }
           }
         }
         pendingListeners.length = 0

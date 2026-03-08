@@ -1,19 +1,5 @@
-import { resolveAgentDbPath } from './paths';
-
-interface StatementSyncLike {
-  all(...params: unknown[]): unknown[];
-}
-
-interface DatabaseSyncLike {
-  exec(sql: string): void;
-  prepare(sql: string): StatementSyncLike;
-  close(): void;
-}
-
-type DatabaseSyncCtor = new (location: string) => DatabaseSyncLike;
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: DatabaseSyncCtor };
+import { DatabaseSync } from 'node:sqlite';
+import { resolveAgentDbPath } from './paths.js';
 
 
 const AGENT_DB_SCHEMA_SQL = `
@@ -151,7 +137,7 @@ function runSqliteQuery(dbPath: string, request: SqlExecutionRequest, initSql?: 
     }
 
     const statement = db.prepare(request.sql);
-    const rows = statement.all(...params);
+    const rows = statement.all(...params as (null | number | bigint | string)[]);
 
     if (trackChanges) {
       const changes = db.prepare('SELECT table_name, row_id, op FROM _changes').all();

@@ -1,5 +1,5 @@
 import { ipcMain, session } from 'electron';
-import { Channels } from './channels';
+import { Channels } from './channels.js';
 
 interface SetHeadersRequest {
   tid: string;

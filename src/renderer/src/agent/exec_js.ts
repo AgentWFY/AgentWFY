@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import type { AgentTool, AgentToolResult } from 'app/agent/types'
 import type { ImageContent, TextContent } from '@mariozechner/pi-ai'
 import { Type } from '@sinclair/typebox'

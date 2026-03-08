@@ -1,7 +1,7 @@
 import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Channels } from './channels';
+import { Channels } from './channels.js';
 
 const storePath = path.join(app.getPath('userData'), 'config.json');
 

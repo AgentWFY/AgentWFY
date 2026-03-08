@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import { TlApp } from 'app/components/app'
 import { TlTabs } from 'app/components/tabs'
 import { TlTabView } from 'app/components/tab_view'

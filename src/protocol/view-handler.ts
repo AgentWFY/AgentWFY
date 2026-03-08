@@ -2,10 +2,10 @@ import { net } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { readFile } from 'fs/promises';
-import { isInsideDir, assertPathAllowed } from '../security/path-policy';
-import { serveFile } from './file-server';
-import { buildViewDocument, parseViewId, normalizeViewPathname, isViewDocumentRequest } from './view-document';
-import { getViewById } from '../db/views';
+import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
+import { serveFile } from './file-server.js';
+import { buildViewDocument, parseViewId, normalizeViewPathname, isViewDocumentRequest } from './view-document.js';
+import { getViewById } from '../db/views.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './manager';
+import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './manager.js';
 
 export function registerCommandPaletteHandlers(commandPalette: CommandPaletteManager): void {
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {

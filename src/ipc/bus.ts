@@ -1,6 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import crypto from 'crypto'
-import { Channels } from './channels'
+import { Channels } from './channels.js'
 
 type PendingWaiter = {
   resolve: (value: unknown) => void

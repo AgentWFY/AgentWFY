@@ -1,23 +1,23 @@
 import { app, BrowserWindow, Menu, nativeTheme, protocol, net } from 'electron';
-import createVaultWindow from './vault_window';
-import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store';
-import { registerDialogSubscribers } from './ipc/dialog';
-import { registerFilesHandlers } from './ipc/files';
-import { registerSqlHandlers } from './ipc/sql';
-import { registerTabsHandlers } from './ipc/tabs';
-import { registerSessionsHandlers } from './ipc/sessions';
-import { registerAuthHandlers } from './ipc/auth';
-import { registerBusHandlers } from './ipc/bus';
-import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers';
-import { registerTabViewHandlers } from './tab-views/ipc';
-import { registerCommandPaletteHandlers } from './command-palette/ipc';
-import { registerTaskRunnerHandlers } from './task-runner/ipc';
-import type { AgentDbChange } from './db/sqlite';
-import { RendererBridge } from './renderer-bridge';
-import { TabViewManager } from './tab-views/manager';
-import { CommandPaletteManager } from './command-palette/manager';
-import { createViewProtocolHandler } from './protocol/view-handler';
-import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './data-dir';
+import createVaultWindow from './vault_window.js';
+import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store.js';
+import { registerDialogSubscribers } from './ipc/dialog.js';
+import { registerFilesHandlers } from './ipc/files.js';
+import { registerSqlHandlers } from './ipc/sql.js';
+import { registerTabsHandlers } from './ipc/tabs.js';
+import { registerSessionsHandlers } from './ipc/sessions.js';
+import { registerAuthHandlers } from './ipc/auth.js';
+import { registerBusHandlers } from './ipc/bus.js';
+import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
+import { registerTabViewHandlers } from './tab-views/ipc.js';
+import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
+import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
+import type { AgentDbChange } from './db/sqlite.js';
+import { RendererBridge } from './renderer-bridge.js';
+import { TabViewManager } from './tab-views/manager.js';
+import { CommandPaletteManager } from './command-palette/manager.js';
+import { createViewProtocolHandler } from './protocol/view-handler.js';
+import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './data-dir.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -62,7 +62,7 @@ protocol.registerSchemesAsPrivileged([
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
 
-const clientPath = path.join(__dirname, 'client', 'index.html');
+const clientPath = path.join(import.meta.dirname, 'client', 'index.html');
 
 // --- Module instantiation + dependency wiring ---
 
@@ -148,7 +148,7 @@ async function createAppWindow(dataDir: string) {
           },
         }),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
       webSecurity: false,
     },
   });

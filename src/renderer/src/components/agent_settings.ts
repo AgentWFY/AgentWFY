@@ -1,4 +1,3 @@
-/* eslint-disable import/no-unresolved */
 import { getModels, getProviders } from '@mariozechner/pi-ai'
 import type { ThinkingLevel } from 'app/agent/types'
 import type { AgentAuthConfig, AuthMethod } from 'app/agent/agent_auth'
