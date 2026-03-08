@@ -1,7 +1,8 @@
-import { getModels, getProviders } from '@mariozechner/pi-ai'
+import { getProviderIds } from 'app/agent/models'
 import type { ThinkingLevel } from 'app/agent/types'
 import type { AgentAuthConfig, AuthMethod } from 'app/agent/agent_auth'
 import {
+  safeGetModels,
   saveAuthConfig,
   getAvailableOAuthProviders,
   performOAuthLogin,
@@ -152,20 +153,6 @@ const authMethods: { id: AuthMethod; label: string }[] = [
 ]
 const thinkingLevels: ThinkingLevel[] = ['off' as ThinkingLevel, 'minimal', 'low', 'medium', 'high', 'xhigh']
 
-function safeGetModels(provider: string) {
-  try {
-    const models = getModels(provider as never)
-    if (provider === 'openai-codex') {
-      return [...models].sort((a: { id?: string }, b: { id?: string }) =>
-        String(b?.id ?? '').localeCompare(String(a?.id ?? ''), undefined, { numeric: true, sensitivity: 'base' })
-      )
-    }
-    return models
-  } catch {
-    return []
-  }
-}
-
 function getModelIdForProvider(provider: string, currentModelId: string): string {
   const models = safeGetModels(provider)
   if (models.some((model) => model.id === currentModelId)) {
@@ -240,7 +227,7 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   private get availableProviders() {
-    return getProviders() as string[]
+    return getProviderIds()
   }
 
   private get availableModels() {

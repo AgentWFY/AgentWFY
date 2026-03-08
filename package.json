@@ -35,9 +35,5 @@
     "name": "endenwer",
     "email": "endenwer@gmail.com"
   },
-  "license": "MIT",
-  "dependencies": {
-    "@mariozechner/pi-ai": "^0.55.1",
-    "@sinclair/typebox": "^0.34.48"
-  }
+  "license": "MIT"
 }

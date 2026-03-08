@@ -1,13 +1,10 @@
-import {
-  anthropicOAuthProvider,
-  getModels,
-  githubCopilotOAuthProvider,
-  openaiCodexOAuthProvider,
-} from '@mariozechner/pi-ai'
-import type { OAuthCredentials, OAuthProviderInterface, OAuthLoginCallbacks } from '@mariozechner/pi-ai'
+import type { OAuthCredentials, OAuthCallbacks, OAuthProvider } from 'app/agent/oauth/types'
+import { anthropicOAuthProvider } from 'app/agent/oauth/anthropic'
+import { codexOAuthProvider } from 'app/agent/oauth/codex'
+import { getModels as getModelsFromConfig, getModelsConfigSync } from 'app/agent/models'
 import { requireIpc } from 'app/agent/tool_utils'
 
-export type AuthMethod = 'api-key' | 'oauth-anthropic' | 'oauth-github-copilot' | 'oauth-openai-codex'
+export type AuthMethod = 'api-key' | 'oauth-anthropic' | 'oauth-openai-codex'
 
 export interface AgentAuthConfig {
   authMethod: AuthMethod
@@ -27,19 +24,18 @@ const DEFAULT_CONFIG: AgentAuthConfig = {
   thinkingLevel: 'off',
 }
 
-const OAUTH_PROVIDERS: Record<string, OAuthProviderInterface> = {
+const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
   'oauth-anthropic': anthropicOAuthProvider,
-  'oauth-github-copilot': githubCopilotOAuthProvider,
-  'oauth-openai-codex': openaiCodexOAuthProvider,
+  'oauth-openai-codex': codexOAuthProvider,
 }
 
-const AUTH_METHODS: AuthMethod[] = ['api-key', 'oauth-anthropic', 'oauth-github-copilot', 'oauth-openai-codex']
+const AUTH_METHODS: AuthMethod[] = ['api-key', 'oauth-anthropic', 'oauth-openai-codex']
 
 function isAuthMethod(value: unknown): value is AuthMethod {
   return typeof value === 'string' && AUTH_METHODS.includes(value as AuthMethod)
 }
 
-function sortModelsForProvider(provider: string, models: Array<{ id?: string }>) {
+function sortModelsForProvider<T extends { id: string }>(provider: string, models: T[]): T[] {
   if (provider === 'openai-codex') {
     return [...models].sort((a, b) =>
       String(b?.id ?? '').localeCompare(String(a?.id ?? ''), undefined, { numeric: true, sensitivity: 'base' })
@@ -49,9 +45,10 @@ function sortModelsForProvider(provider: string, models: Array<{ id?: string }>)
   return models
 }
 
-function safeGetModels(provider: string): Array<{ id?: string }> {
+export function safeGetModels(provider: string): Array<{ id: string; name: string }> {
   try {
-    return sortModelsForProvider(provider, getModels(provider as never) as Array<{ id?: string }>)
+    const config = getModelsConfigSync()
+    return sortModelsForProvider(provider, getModelsFromConfig(config, provider))
   } catch {
     return []
   }
@@ -142,9 +139,11 @@ export async function saveAuthConfig(config: AgentAuthConfig): Promise<void> {
   await auth.writeConfig(JSON.stringify(normalized, null, 2))
 }
 
-export function getOAuthProvider(authMethod: AuthMethod): OAuthProviderInterface | undefined {
+export function getOAuthProvider(authMethod: AuthMethod): OAuthProvider | undefined {
   return OAUTH_PROVIDERS[authMethod]
 }
+
+let refreshLock: Promise<void> | null = null
 
 export async function getEffectiveApiKey(config: AgentAuthConfig): Promise<string | undefined> {
   if (config.authMethod === 'api-key') {
@@ -159,6 +158,19 @@ export async function getEffectiveApiKey(config: AgentAuthConfig): Promise<strin
 
   // Refresh if expired (with 60s buffer)
   if (Date.now() >= creds.expires - 60_000) {
+    // Serialize concurrent refresh attempts to avoid race conditions
+    if (refreshLock) {
+      await refreshLock
+      // After waiting, re-check — another caller may have refreshed already
+      const updatedCreds = config.oauthCredentials[config.authMethod]
+      if (updatedCreds && Date.now() < updatedCreds.expires - 60_000) {
+        return provider.getApiKey(updatedCreds)
+      }
+    }
+
+    let resolveRefresh: () => void
+    refreshLock = new Promise((resolve) => { resolveRefresh = resolve })
+
     try {
       const refreshed = await provider.refreshToken(creds)
       config.oauthCredentials[config.authMethod] = refreshed
@@ -167,6 +179,9 @@ export async function getEffectiveApiKey(config: AgentAuthConfig): Promise<strin
     } catch (err) {
       console.error('[agent_auth] Token refresh failed:', err)
       return undefined
+    } finally {
+      resolveRefresh!()
+      refreshLock = null
     }
   }
 
@@ -189,7 +204,6 @@ export function hasValidAuth(config: AgentAuthConfig): boolean {
 export function getProviderForAuthMethod(authMethod: AuthMethod): string {
   switch (authMethod) {
     case 'oauth-anthropic': return 'anthropic'
-    case 'oauth-github-copilot': return 'github-copilot'
     case 'oauth-openai-codex': return 'openai-codex'
     default: return ''
   }
@@ -198,14 +212,13 @@ export function getProviderForAuthMethod(authMethod: AuthMethod): string {
 export function getAvailableOAuthProviders(): { id: AuthMethod; name: string }[] {
   return [
     { id: 'oauth-anthropic', name: 'Anthropic (Claude Pro/Max)' },
-    { id: 'oauth-github-copilot', name: 'GitHub Copilot' },
     { id: 'oauth-openai-codex', name: 'ChatGPT Plus/Pro (Codex Subscription)' },
   ]
 }
 
 export async function performOAuthLogin(
   authMethod: AuthMethod,
-  callbacks: OAuthLoginCallbacks
+  callbacks: OAuthCallbacks
 ): Promise<OAuthCredentials> {
   const provider = OAUTH_PROVIDERS[authMethod]
   if (!provider) {
