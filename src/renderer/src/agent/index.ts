@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   AgentState,
   AgentTool,
+  AgentToolResult,
   AssistantMessage,
   ImageContent,
   JsonSchema,
@@ -11,8 +12,8 @@ import type {
   ThinkingLevel,
   ToolCall,
   ToolResultMessage,
-} from './types'
-import { createStream } from './streaming/types'
+} from './types.js'
+import { createStream } from './streaming/types.js'
 
 /**
  * Lightweight tool argument validation against JSON Schema.
@@ -457,7 +458,7 @@ export class Agent {
       pendingSet.add(toolCall.id)
       this._state.pendingToolCalls = pendingSet
 
-      let result: { content: { type: string; text: string }[]; details: unknown }
+      let result: AgentToolResult
       let isError = false
 
       try {

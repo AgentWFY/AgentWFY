@@ -1,4 +1,4 @@
-import type { ApiType, AuthType, Model, Provider } from './types'
+import type { ApiType, AuthType, Model, Provider } from './types.js'
 
 // ── Config schema (matches .agentwfy/models.json) ──
 
@@ -87,7 +87,7 @@ export async function loadModelsConfig(): Promise<ModelsConfig> {
   try {
     const ipc = window.ipc
     if (ipc) {
-      const raw = await ipc.file.read('.agentwfy/models.json')
+      const raw = await ipc.files.read('.agentwfy/models.json')
       cachedConfig = JSON.parse(raw) as ModelsConfig
       return cachedConfig
     }

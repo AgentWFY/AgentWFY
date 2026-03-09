@@ -1,6 +1,6 @@
-import { bus } from './event-bus'
-import { getSessionManager } from './agent/session_manager'
-import { getTaskRunner } from './tasks/task_runner'
+import { bus } from './event-bus.js'
+import { getSessionManager } from './agent/session_manager.js'
+import { getTaskRunner } from './tasks/task_runner.js'
 
 export function initBusBridge(): void {
   const ipc = window.ipc

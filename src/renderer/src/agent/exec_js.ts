@@ -1,7 +1,7 @@
-import type { AgentTool, AgentToolResult, ImageContent, TextContent } from './types'
-import { getJsRuntime } from '../runtime/js_runtime'
-import type { ExecJsDetails } from '../runtime/types'
-import { stringifyUnknown } from './tool_utils'
+import type { AgentTool, AgentToolResult, ImageContent, TextContent } from './types.js'
+import { getJsRuntime } from '../runtime/js_runtime.js'
+import type { ExecJsDetails } from '../runtime/types.js'
+import { stringifyUnknown } from './tool_utils.js'
 
 interface CreateExecJsToolArgs {
   getSessionId: () => string

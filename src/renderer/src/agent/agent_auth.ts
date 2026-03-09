@@ -1,8 +1,8 @@
-import type { OAuthCredentials, OAuthCallbacks, OAuthProvider } from './oauth/types'
-import { anthropicOAuthProvider } from './oauth/anthropic'
-import { codexOAuthProvider } from './oauth/codex'
-import { getModels as getModelsFromConfig, getModelsConfigSync, loadModelsConfig } from './models'
-import { requireIpc } from './tool_utils'
+import type { OAuthCredentials, OAuthCallbacks, OAuthProvider } from './oauth/types.js'
+import { anthropicOAuthProvider } from './oauth/anthropic.js'
+import { codexOAuthProvider } from './oauth/codex.js'
+import { getModels as getModelsFromConfig, getModelsConfigSync, loadModelsConfig } from './models.js'
+import { requireIpc } from './tool_utils.js'
 
 export type AuthMethod = 'api-key' | 'oauth-anthropic' | 'oauth-openai-codex'
 

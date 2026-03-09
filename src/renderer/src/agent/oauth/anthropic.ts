@@ -2,9 +2,9 @@
  * Anthropic OAuth flow (Claude Pro/Max subscription).
  * Matches the flow from @mariozechner/pi-ai.
  */
-import type { OAuthCallbacks, OAuthCredentials, OAuthProvider } from './types'
-import { generatePKCE } from './pkce'
-import { parseAuthorizationInput } from './utils'
+import type { OAuthCallbacks, OAuthCredentials, OAuthProvider } from './types.js'
+import { generatePKCE } from './pkce.js'
+import { parseAuthorizationInput } from './utils.js'
 
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const AUTHORIZE_URL = 'https://claude.ai/oauth/authorize'

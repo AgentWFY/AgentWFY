@@ -1,6 +1,6 @@
-import { getProviderIds } from '../agent/models'
-import type { ThinkingLevel } from '../agent/types'
-import type { AgentAuthConfig, AuthMethod } from '../agent/agent_auth'
+import { getProviderIds } from '../agent/models.js'
+import type { ThinkingLevel } from '../agent/types.js'
+import type { AgentAuthConfig, AuthMethod } from '../agent/agent_auth.js'
 import {
   safeGetModels,
   saveAuthConfig,
@@ -10,7 +10,7 @@ import {
   getProviderForAuthMethod,
   normalizeAuthConfig,
   logoutOAuth,
-} from '../agent/agent_auth'
+} from '../agent/agent_auth.js'
 
 const STYLES = `
   .settings {

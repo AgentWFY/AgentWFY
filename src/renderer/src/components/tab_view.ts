@@ -2,7 +2,7 @@ import type {
   TabViewBounds,
   TabViewEvent,
   MountTabViewRequest,
-} from '../ipc-types'
+} from '../ipc-types/index.js'
 
 type TabType = 'view' | 'file' | 'url'
 

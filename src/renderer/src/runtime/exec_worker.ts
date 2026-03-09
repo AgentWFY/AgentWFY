@@ -11,7 +11,7 @@ import type {
   WorkerToHostMessage,
   WorkerExecuteRequestMessage,
   WorkerHostResultMessage,
-} from './types'
+} from './types.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -31,7 +31,7 @@ const activeRequests = new Map<string, AbortController>()
 const watchedRequests = new Set<string>()
 const requestLogs = new Map<string, ExecJsLogEntry[]>()
 const nativeFetch = workerScope.fetch.bind(workerScope)
-const NativeWebSocket = workerScope.WebSocket
+const NativeWebSocket = (workerScope as unknown as { WebSocket: typeof WebSocket }).WebSocket
 
 function createId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -598,7 +598,7 @@ function cancelRequest(requestId: string): void {
 
 workerScope.addEventListener('message', (event: MessageEvent<HostToWorkerMessage>) => {
   const message = event.data
-  if (!message || typeof message !== 'object' || typeof (message as Record<string, unknown>).type !== 'string') {
+  if (!message || typeof message !== 'object' || typeof (message as unknown as Record<string, unknown>).type !== 'string') {
     return
   }
 
