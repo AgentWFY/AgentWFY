@@ -1,8 +1,8 @@
-import { AgentWFYAgent } from 'app/agent/create_agent'
-import type { AgentAuthConfig } from 'app/agent/agent_auth'
-import { getEffectiveApiKey, hasValidAuth } from 'app/agent/agent_auth'
-import { ensureWorker, terminateWorker } from 'app/runtime/js_runtime'
-import type { ThinkingLevel } from 'app/agent/types'
+import { AgentWFYAgent } from './create_agent'
+import type { AgentAuthConfig } from './agent_auth'
+import { getEffectiveApiKey, hasValidAuth } from './agent_auth'
+import { ensureWorker, terminateWorker } from '../runtime/js_runtime'
+import type { ThinkingLevel } from './types'
 
 export interface SessionEntry {
   agent: AgentWFYAgent

@@ -1,14 +1,14 @@
-import { renderMarkdown } from 'app/markdown'
-import type { AgentMessage } from 'app/agent/types'
-import type { AgentAuthConfig } from 'app/agent/agent_auth'
-import { loadAuthConfig } from 'app/agent/agent_auth'
-import { getSessionManager, reconnectManager } from 'app/agent/session_manager'
-import type { AgentSessionManager, SessionListItem } from 'app/agent/session_manager'
+import { renderMarkdown } from '../markdown'
+import type { AgentMessage } from '../agent/types'
+import type { AgentAuthConfig } from '../agent/agent_auth'
+import { loadAuthConfig } from '../agent/agent_auth'
+import { getSessionManager, reconnectManager } from '../agent/session_manager'
+import type { AgentSessionManager, SessionListItem } from '../agent/session_manager'
 import {
   COMPACTION_SUMMARY_CUSTOM_TYPE,
   type AgentWFYAgent
-} from 'app/agent/create_agent'
-import type { TlJson } from 'app/components/json_view'
+} from '../agent/create_agent'
+import type { TlJson } from './json_view'
 
 interface ToolPair {
   name: string
