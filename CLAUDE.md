@@ -8,36 +8,33 @@ AgentWFY is an Electron desktop app with an AI agent that can interact with a lo
 
 ## Commands
 
-- `npm run dev` — Start dev mode (Vite dev server + Electron with HMR)
-- `npm run build` — Full production build (TypeScript + Vite)
-- `npm run build-main` — Compile main process only (TypeScript → dist/)
-- `npm run build-renderer` — Build renderer only (Vite → dist/client/)
-- `npm run lint` — Run ESLint on all TypeScript files
+- `npm run dev` — Start dev mode (esbuild watch + Electron, reload with Cmd+R)
+- `npm run build` — Full production build (esbuild bundles everything)
+- `npm run lint` — Type-check all TypeScript files (tsc --noEmit)
 - `npm start` — Launch Electron from dist/
-
-The main process must be rebuilt (`npm run build-main`) after changes to `src/` files outside `src/renderer/`. The renderer hot-reloads during `npm run dev`.
 
 ## Architecture
 
 ### Process Model
 
 - **Main process** (`src/main.ts`): Electron window management, IPC handlers, SQLite, custom protocols (`app://`, `agentview://`), file I/O, security enforcement
-- **Renderer process** (`src/renderer/`): UI built with vanilla Web Components, agent session management, Vite-bundled
-- **Web Workers** (`src/renderer/src/agent/worker/`): Agent sessions run in dedicated workers
+- **Renderer process** (`src/renderer/`): UI built with vanilla Web Components, agent session management, esbuild-bundled
+- **Web Workers** (`src/renderer/src/runtime/exec_worker.ts`): Agent JS runtime runs in a dedicated worker
 
-### Two TypeScript Configs
+### Build System
 
-- Root `tsconfig.json`: Main process — target ESNext, module CommonJS, `noImplicitAny: true`, compiles `src/**/*` excluding `src/renderer/`
-- `src/renderer/tsconfig.json`: Renderer — target ESNext, module ESNext, `strict: false`, path alias `app/*` → `./src/*`
+Single unified esbuild script (`scripts/build.mjs`) bundles all 5 entry points:
+- `src/main.ts` → `dist/main.js` (Node/ESM, electron external)
+- `src/preload.cts` → `dist/preload.cjs` (Node/CJS, electron external)
+- `src/command-palette/preload.cts` → `dist/command-palette/preload.cjs` (Node/CJS)
+- `src/renderer/src/index.ts` → `dist/client/index.js` (browser/ESM)
+- `src/renderer/src/runtime/exec_worker.ts` → `dist/client/exec_worker.js` (browser/ESM)
 
-### Vite Configuration (`src/renderer/vite.config.mts`)
-
-- `app` resolves to `src/renderer/src/`
-- Output goes to `dist/client/`
+Static assets (HTML, CSS) are copied to dist/. One `tsconfig.json` for type checking only (`noEmit: true`, module NodeNext).
 
 ### IPC Channels
 
-All IPC flows through `src/preload.ts` which exposes two global APIs:
+All IPC flows through `src/preload.cts` which exposes two global APIs:
 - `window.agentwfy` — Agent tool operations: file ops (read/write/edit/ls/mkdir/remove/find/grep), SQL queries, tab management, event bus, agent spawning
 - `window.electronClientTools` — App operations: dialogs, store, sessions, auth, external views
 
@@ -70,12 +67,12 @@ Components use direct DOM manipulation (no virtual DOM), class properties for lo
 
 ### Database
 
-Node.js built-in `sqlite` module (not better-sqlite3). Schema in `src/services/agent-db.ts`:
+Node.js built-in `sqlite` module (not better-sqlite3). Schema in `src/db/sqlite.ts`:
 - `views`: id, name, content, created_at, updated_at
 - `docs`: id, name, content, preload, updated_at
 - `db_changes`: auto-populated change tracking via triggers
 
-SQL routing (`src/services/sql-router.ts`) supports two targets: `agent` (built-in agent.db) and `sqlite-file` (arbitrary .sqlite files).
+SQL routing (`src/db/sql-router.ts`) supports two targets: `agent` (built-in agent.db) and `sqlite-file` (arbitrary .sqlite files).
 
 ### Security
 
