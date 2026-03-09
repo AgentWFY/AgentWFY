@@ -13,4 +13,16 @@ export function registerCommandPaletteHandlers(commandPalette: CommandPaletteMan
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unknown) => {
     await commandPalette.runAction(payload);
   });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS, async () => {
+    return commandPalette.buildSettingsItems();
+  });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (_event, key: string, value: unknown) => {
+    return commandPalette.updateSetting(key, value);
+  });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async () => {
+    commandPalette.openSettingsFile();
+  });
 }

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, nativeTheme, protocol, net } from 'electron';
 import createVaultWindow from './vault_window.js';
-import { registerStoreHandlers, storeGet, onDidChange } from './ipc/store.js';
+import { registerStoreHandlers, storeGet, onDidChange, startFileWatcher, stopFileWatcher, getStorePath, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
@@ -15,7 +15,7 @@ import { registerTaskRunnerHandlers, forwardStartTask } from './task-runner/ipc.
 import type { AgentDbChange } from './db/sqlite.js';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
-import { CommandPaletteManager } from './command-palette/manager.js';
+import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './data-dir.js';
 import { startHttpApi } from './http-api/server.js';
@@ -84,12 +84,20 @@ const commandPalette = new CommandPaletteManager({
   getDataDir,
   rendererBridge,
   getTabViewManager: () => tabViewManager,
+  getStorePath,
 });
 
 // --- IPC registration ---
 
 registerStoreHandlers();
 registerDialogSubscribers();
+
+onAnyChange((key, newValue) => {
+  const cpWindow = commandPalette.getWindow();
+  if (cpWindow && !cpWindow.isDestroyed()) {
+    cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value: newValue });
+  }
+});
 
 function onDbChange(change: AgentDbChange): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -231,6 +239,7 @@ const createWindow = () => {
 
 app.on('ready', async () => {
   installWebRequestHooks();
+  startFileWatcher();
   await ensureAgentRuntimeBootstrap(getDataDir());
 
   httpServer = startHttpApi({
@@ -364,6 +373,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  stopFileWatcher();
   httpServer?.close();
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
