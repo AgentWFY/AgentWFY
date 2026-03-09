@@ -1,7 +1,7 @@
 import type { OAuthCredentials, OAuthCallbacks, OAuthProvider } from './oauth/types'
 import { anthropicOAuthProvider } from './oauth/anthropic'
 import { codexOAuthProvider } from './oauth/codex'
-import { getModels as getModelsFromConfig, getModelsConfigSync } from './models'
+import { getModels as getModelsFromConfig, getModelsConfigSync, loadModelsConfig } from './models'
 import { requireIpc } from './tool_utils'
 
 export type AuthMethod = 'api-key' | 'oauth-anthropic' | 'oauth-openai-codex'
@@ -100,6 +100,10 @@ function getAuthApi() {
 
 export async function loadAuthConfig(): Promise<AgentAuthConfig> {
   const auth = getAuthApi()
+
+  // Ensure models config is loaded before normalizing, so custom models
+  // are visible and don't get treated as invalid during normalization.
+  await loadModelsConfig()
 
   try {
     const raw = await auth.readConfig()
