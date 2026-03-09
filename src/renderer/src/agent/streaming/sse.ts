@@ -30,7 +30,11 @@ export async function* parseSSE(response: Response): AsyncGenerator<SSEEvent> {
       // Keep the last incomplete line in the buffer
       buffer = lines.pop() ?? ''
 
-      for (const line of lines) {
+      for (let line of lines) {
+        // Strip trailing \r to handle CRLF line endings
+        if (line.endsWith('\r')) {
+          line = line.slice(0, -1)
+        }
         if (line === '') {
           // Empty line = end of event
           if (dataLines.length > 0) {

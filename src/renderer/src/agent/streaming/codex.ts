@@ -71,6 +71,21 @@ function convertTools(tools: AgentTool[]): unknown[] {
   }))
 }
 
+function mapReasoningEffort(level: string | undefined): string | undefined {
+  switch (level) {
+    case 'minimal':
+    case 'low':
+      return 'low'
+    case 'medium':
+      return 'medium'
+    case 'high':
+    case 'xhigh':
+      return 'high'
+    default:
+      return undefined
+  }
+}
+
 function getAccountId(apiKey: string): string | undefined {
   const payload = decodeJwt(apiKey)
   const authClaims = payload?.['https://api.openai.com/auth'] as Record<string, unknown> | undefined
@@ -105,6 +120,13 @@ export async function streamCodex(
 
   if (context.tools.length > 0) {
     body.tools = convertTools(context.tools)
+  }
+
+  if (options.reasoning && options.reasoning !== 'off' && model.reasoning) {
+    const effort = mapReasoningEffort(options.reasoning)
+    if (effort) {
+      body.reasoning = { effort }
+    }
   }
 
   if (options.maxTokens) {
