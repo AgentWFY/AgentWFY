@@ -1,8 +1,11 @@
-import { BrowserWindow, nativeTheme } from 'electron';
+import { BrowserWindow, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
+import { SETTINGS } from '../settings/registry.js';
+import { storeGet, storeSet } from '../ipc/store.js';
+import type { SettingType } from '../settings/registry.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
 
@@ -26,6 +29,17 @@ type CommandPaletteAction =
     type: 'run-task'
     taskId: number
     taskName: string
+  }
+  | {
+    type: 'enter-settings'
+  }
+  | {
+    type: 'open-settings-file'
+  }
+  | {
+    type: 'edit-setting'
+    settingKey: string
+    settingLabel: string
   };
 
 interface CommandPaletteItem {
@@ -33,8 +47,10 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings'
   action: CommandPaletteAction
+  settingValue?: string
+  settingType?: SettingType
 }
 
 const COMMAND_PALETTE_CHANNEL = {
@@ -42,6 +58,10 @@ const COMMAND_PALETTE_CHANNEL = {
   LIST_ITEMS: 'app:command-palette:list-items',
   RUN_ACTION: 'app:command-palette:run-action',
   OPENED: 'app:command-palette:opened',
+  LIST_SETTINGS: 'app:command-palette:list-settings',
+  UPDATE_SETTING: 'app:command-palette:update-setting',
+  OPEN_SETTINGS_FILE: 'app:command-palette:open-settings-file',
+  SETTING_CHANGED: 'app:command-palette:setting-changed',
 } as const;
 
 export { COMMAND_PALETTE_CHANNEL };
@@ -51,6 +71,7 @@ export interface CommandPaletteManagerDeps {
   getDataDir: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
+  getStorePath: () => string;
 }
 
 export class CommandPaletteManager {
@@ -59,6 +80,10 @@ export class CommandPaletteManager {
 
   constructor(deps: CommandPaletteManagerDeps) {
     this.deps = deps;
+  }
+
+  getWindow(): BrowserWindow | null {
+    return this.commandPaletteWindow;
   }
 
   private resolveCommandPaletteBounds(): Electron.Rectangle {
@@ -135,7 +160,7 @@ export class CommandPaletteManager {
       roundedCorners: true,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
       webPreferences: {
-        preload: path.join(import.meta.dirname, 'preload.cjs'),
+        preload: path.join(import.meta.dirname, 'command-palette', 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: false,
@@ -164,7 +189,7 @@ export class CommandPaletteManager {
       this.commandPaletteWindow = null;
     });
 
-    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'command_palette.html')).toString())
+    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, 'command_palette.html')).toString())
       .catch((error) => {
         console.error('[command-palette] failed to load native command palette window', error);
       });
@@ -281,9 +306,68 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'reload-views' },
       },
+      {
+        id: 'action:enter-settings',
+        title: 'Settings...',
+        group: 'Actions',
+        action: { type: 'enter-settings' },
+      },
+      {
+        id: 'action:open-settings-file',
+        title: 'Open Settings File',
+        group: 'Actions',
+        action: { type: 'open-settings-file' },
+      },
     ];
 
     return [...actionItems, ...taskItems, ...viewItems];
+  }
+
+  buildSettingsItems(): CommandPaletteItem[] {
+    return SETTINGS.map((def) => {
+      const value = storeGet(def.key);
+      const displayValue = value !== undefined ? String(value) : String(def.defaultValue);
+      return {
+        id: `setting:${def.key}`,
+        title: def.label,
+        subtitle: def.description,
+        group: 'Settings',
+        settingValue: displayValue,
+        settingType: def.type,
+        action: {
+          type: 'edit-setting',
+          settingKey: def.key,
+          settingLabel: def.label,
+        },
+      };
+    });
+  }
+
+  updateSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
+    const def = SETTINGS.find((s) => s.key === key);
+    if (!def) return { success: false, error: 'Unknown setting' };
+
+    let coerced: unknown = rawValue;
+    if (def.type === 'number') {
+      coerced = Number(rawValue);
+      if (!isFinite(coerced as number)) {
+        return { success: false, error: 'Must be a valid number' };
+      }
+    } else if (def.type === 'boolean') {
+      coerced = rawValue === true || rawValue === 'true';
+    }
+
+    if (def.validate) {
+      const error = def.validate(coerced);
+      if (error) return { success: false, error };
+    }
+
+    storeSet(key, coerced);
+    return { success: true };
+  }
+
+  openSettingsFile(): void {
+    shell.openPath(this.deps.getStorePath());
   }
 
   async runAction(payload: unknown): Promise<void> {
@@ -336,6 +420,18 @@ export class CommandPaletteManager {
         });
         break;
       }
+
+      case 'open-settings-file':
+        this.openSettingsFile();
+        break;
+
+      case 'enter-settings':
+        // Handled entirely in the palette UI
+        return;
+
+      case 'edit-setting':
+        // Handled entirely in the palette UI
+        return;
 
       default:
         throw new Error(`Unsupported command palette action type: ${type}`);

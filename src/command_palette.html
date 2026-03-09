@@ -20,6 +20,7 @@
       --item-hover: rgba(0, 0, 0, 0.05);
       --kbd-bg: rgba(0, 0, 0, 0.06);
       --kbd-border: rgba(0, 0, 0, 0.1);
+      --error: #e55;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -36,6 +37,7 @@
         --item-hover: rgba(255, 255, 255, 0.05);
         --kbd-bg: rgba(255, 255, 255, 0.08);
         --kbd-border: rgba(255, 255, 255, 0.1);
+        --error: #e55;
       }
     }
 
@@ -66,6 +68,13 @@
       background: var(--bg);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
       overflow: hidden;
+    }
+
+    .breadcrumb {
+      padding: 6px 14px 0;
+      font-size: 11px;
+      color: var(--muted);
+      display: none;
     }
 
     .search {
@@ -182,6 +191,40 @@
       border-color: rgba(255, 255, 255, 0.2);
     }
 
+    .setting-value {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+      line-height: 1.4;
+      max-width: 140px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .item.active .setting-value {
+      color: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .edit-description {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .edit-error {
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--error);
+    }
+
     .empty {
       padding: 20px 12px;
       color: var(--muted);
@@ -218,9 +261,10 @@
 </head>
 <body>
   <div class="palette">
+    <div id="breadcrumb" class="breadcrumb"></div>
     <input id="searchInput" class="search" type="text" placeholder="Search..." autocomplete="off" spellcheck="false">
     <div id="results" class="results"></div>
-    <div class="hint">
+    <div id="hintBar" class="hint">
       <span class="hint-item"><span class="hint-key">Enter</span> run</span>
       <span class="hint-item"><span class="hint-key">Esc</span> close</span>
       <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
@@ -231,13 +275,25 @@
       const bridge = window.commandPaletteBridge;
       const searchInput = document.getElementById('searchInput');
       const resultsEl = document.getElementById('results');
+      const breadcrumbEl = document.getElementById('breadcrumb');
+      const hintBar = document.getElementById('hintBar');
 
-      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any}>} */
+      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any,settingValue?:string,settingType?:string}>} */
       let items = [];
-      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any}>} */
+      /** @type {Array<{id:string,title:string,subtitle?:string,shortcut?:string,group:string,action:any,settingValue?:string,settingType?:string}>} */
       let filtered = [];
       let selectedIndex = 0;
       let actionInFlight = false;
+
+      // --- Mode state ---
+      /** @type {'normal' | 'settings' | 'editing'} */
+      let mode = 'normal';
+      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any,settingValue?:string,settingType?:string}>} */
+      let settingsItems = [];
+      /** @type {{ key: string, label: string, type: string, currentValue: string, description: string } | null} */
+      let editingSetting = null;
+      /** @type {string} */
+      let editError = '';
 
       const clampSelectedIndex = () => {
         if (filtered.length === 0) {
@@ -256,7 +312,7 @@
 
       const updateActiveItem = () => {
         const items = resultsEl.querySelectorAll('.item');
-        items.forEach((el, i) => {
+        items.forEach((el) => {
           const idx = Number(/** @type {HTMLElement} */ (el).dataset.index);
           if (idx === selectedIndex) {
             el.classList.add('active');
@@ -273,12 +329,52 @@
         }
       };
 
-      const render = () => {
+      // --- Breadcrumb ---
+
+      const updateBreadcrumb = () => {
+        if (mode === 'normal') {
+          breadcrumbEl.style.display = 'none';
+          breadcrumbEl.textContent = '';
+        } else if (mode === 'settings') {
+          breadcrumbEl.style.display = 'block';
+          breadcrumbEl.textContent = 'Settings';
+        } else if (mode === 'editing' && editingSetting) {
+          breadcrumbEl.style.display = 'block';
+          breadcrumbEl.textContent = `Settings \u203A ${editingSetting.label}`;
+        }
+      };
+
+      // --- Hint bar ---
+
+      const updateHintBar = () => {
+        if (mode === 'normal') {
+          hintBar.innerHTML = `
+            <span class="hint-item"><span class="hint-key">Enter</span> run</span>
+            <span class="hint-item"><span class="hint-key">Esc</span> close</span>
+            <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
+          `;
+        } else if (mode === 'settings') {
+          hintBar.innerHTML = `
+            <span class="hint-item"><span class="hint-key">Enter</span> edit</span>
+            <span class="hint-item"><span class="hint-key">Esc</span> back</span>
+            <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
+          `;
+        } else if (mode === 'editing') {
+          hintBar.innerHTML = `
+            <span class="hint-item"><span class="hint-key">Enter</span> save</span>
+            <span class="hint-item"><span class="hint-key">Esc</span> back</span>
+          `;
+        }
+      };
+
+      // --- Render functions ---
+
+      const renderItemList = (emptyText) => {
         resultsEl.innerHTML = '';
         if (filtered.length === 0) {
           const emptyEl = document.createElement('div');
           emptyEl.className = 'empty';
-          emptyEl.textContent = 'No matches';
+          emptyEl.textContent = emptyText;
           resultsEl.appendChild(emptyEl);
           return;
         }
@@ -322,35 +418,218 @@
             itemButton.appendChild(shortcutEl);
           }
 
+          if (item.settingValue !== undefined) {
+            const valueEl = document.createElement('span');
+            valueEl.className = 'setting-value';
+            valueEl.textContent = item.settingValue || '(empty)';
+            itemButton.appendChild(valueEl);
+          }
+
           resultsEl.appendChild(itemButton);
         });
       };
 
+      const renderEditing = () => {
+        resultsEl.innerHTML = '';
+        if (!editingSetting) return;
+
+        if (editingSetting.type === 'boolean') {
+          const trueItem = document.createElement('button');
+          trueItem.type = 'button';
+          trueItem.className = 'item' + (selectedIndex === 0 ? ' active' : '');
+          trueItem.dataset.index = '0';
+          const trueContent = document.createElement('div');
+          trueContent.className = 'item-content';
+          const trueTitle = document.createElement('div');
+          trueTitle.className = 'item-title';
+          trueTitle.textContent = 'true';
+          trueContent.appendChild(trueTitle);
+          trueItem.appendChild(trueContent);
+          if (editingSetting.currentValue === 'true') {
+            const badge = document.createElement('span');
+            badge.className = 'setting-value';
+            badge.textContent = 'current';
+            trueItem.appendChild(badge);
+          }
+          resultsEl.appendChild(trueItem);
+
+          const falseItem = document.createElement('button');
+          falseItem.type = 'button';
+          falseItem.className = 'item' + (selectedIndex === 1 ? ' active' : '');
+          falseItem.dataset.index = '1';
+          const falseContent = document.createElement('div');
+          falseContent.className = 'item-content';
+          const falseTitle = document.createElement('div');
+          falseTitle.className = 'item-title';
+          falseTitle.textContent = 'false';
+          falseContent.appendChild(falseTitle);
+          falseItem.appendChild(falseContent);
+          if (editingSetting.currentValue === 'false') {
+            const badge = document.createElement('span');
+            badge.className = 'setting-value';
+            badge.textContent = 'current';
+            falseItem.appendChild(badge);
+          }
+          resultsEl.appendChild(falseItem);
+        } else {
+          // Show description
+          const descEl = document.createElement('div');
+          descEl.className = 'edit-description';
+          descEl.textContent = editingSetting.description;
+          resultsEl.appendChild(descEl);
+        }
+
+        if (editError) {
+          const errorEl = document.createElement('div');
+          errorEl.className = 'edit-error';
+          errorEl.textContent = editError;
+          resultsEl.appendChild(errorEl);
+        }
+      };
+
+      const render = () => {
+        if (mode === 'normal') renderItemList('No matches');
+        else if (mode === 'settings') renderItemList('No settings found');
+        else if (mode === 'editing') renderEditing();
+      };
+
       const applyFilter = () => {
         const query = searchInput.value.trim();
-        filtered = items.filter((item) => scoreMatches(item, query));
+        if (mode === 'normal') {
+          filtered = items.filter((item) => scoreMatches(item, query));
+        } else if (mode === 'settings') {
+          filtered = settingsItems.filter((item) => scoreMatches(item, query));
+        }
         clampSelectedIndex();
         render();
       };
 
       const selectNext = () => {
-        if (filtered.length === 0) return;
-        selectedIndex = (selectedIndex + 1) % filtered.length;
+        const count = mode === 'editing' && editingSetting?.type === 'boolean' ? 2 : filtered.length;
+        if (count === 0) return;
+        selectedIndex = (selectedIndex + 1) % count;
         updateActiveItem();
         scrollActiveIntoView();
       };
 
       const selectPrev = () => {
-        if (filtered.length === 0) return;
-        selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
+        const count = mode === 'editing' && editingSetting?.type === 'boolean' ? 2 : filtered.length;
+        if (count === 0) return;
+        selectedIndex = (selectedIndex - 1 + count) % count;
         updateActiveItem();
         scrollActiveIntoView();
       };
+
+      // --- Mode transitions ---
+
+      const enterNormalMode = () => {
+        mode = 'normal';
+        editingSetting = null;
+        editError = '';
+        searchInput.value = '';
+        searchInput.placeholder = 'Search...';
+        updateBreadcrumb();
+        updateHintBar();
+        applyFilter();
+        searchInput.focus();
+      };
+
+      const enterSettingsMode = async () => {
+        mode = 'settings';
+        editingSetting = null;
+        editError = '';
+        searchInput.value = '';
+        searchInput.placeholder = 'Search settings...';
+        selectedIndex = 0;
+        updateBreadcrumb();
+        updateHintBar();
+
+        try {
+          settingsItems = await bridge.listSettings();
+        } catch (error) {
+          console.error('Failed to list settings:', error);
+          settingsItems = [];
+        }
+        applyFilter();
+        searchInput.focus();
+      };
+
+      const enterEditingMode = (item) => {
+        if (!item || !item.action || item.action.type !== 'edit-setting') return;
+        mode = 'editing';
+        editError = '';
+        editingSetting = {
+          key: item.action.settingKey,
+          label: item.action.settingLabel,
+          type: item.settingType || 'string',
+          currentValue: item.settingValue || '',
+          description: item.subtitle || '',
+        };
+        selectedIndex = 0;
+        updateBreadcrumb();
+        updateHintBar();
+
+        if (editingSetting.type === 'boolean') {
+          searchInput.value = '';
+          searchInput.placeholder = 'Select value...';
+          selectedIndex = editingSetting.currentValue === 'true' ? 0 : 1;
+        } else {
+          searchInput.value = editingSetting.currentValue;
+          searchInput.placeholder = editingSetting.label;
+        }
+
+        render();
+        searchInput.focus();
+        if (editingSetting.type !== 'boolean') {
+          searchInput.select();
+        }
+      };
+
+      const saveEditingValue = async (value) => {
+        if (!editingSetting) return;
+        editError = '';
+
+        try {
+          const result = await bridge.updateSetting(editingSetting.key, value);
+          if (result.success) {
+            await enterSettingsMode();
+          } else {
+            editError = result.error || 'Failed to save';
+            render();
+          }
+        } catch (error) {
+          editError = 'Failed to save setting';
+          render();
+        }
+      };
+
+      // --- Action handling ---
 
       const runActionForIndex = async (index) => {
         if (actionInFlight) return;
         const item = filtered[index];
         if (!item) return;
+
+        // Handle enter-settings locally
+        if (item.action && item.action.type === 'enter-settings') {
+          await enterSettingsMode();
+          return;
+        }
+
+        // Handle open-settings-file locally then close
+        if (item.action && item.action.type === 'open-settings-file') {
+          actionInFlight = true;
+          try {
+            await bridge.openSettingsFile();
+            await bridge.close();
+          } catch (error) {
+            console.error('Failed to open settings file:', error);
+          } finally {
+            actionInFlight = false;
+          }
+          return;
+        }
+
         actionInFlight = true;
         try {
           await bridge.runAction(item.action);
@@ -361,9 +640,22 @@
         }
       };
 
-      const runSelected = async () => {
-        if (filtered.length === 0) return;
-        await runActionForIndex(selectedIndex);
+      const handleEnterKey = async () => {
+        if (mode === 'normal') {
+          if (filtered.length === 0) return;
+          await runActionForIndex(selectedIndex);
+        } else if (mode === 'settings') {
+          if (filtered.length === 0) return;
+          const item = filtered[selectedIndex];
+          enterEditingMode(item);
+        } else if (mode === 'editing') {
+          if (!editingSetting) return;
+          if (editingSetting.type === 'boolean') {
+            await saveEditingValue(selectedIndex === 0);
+          } else {
+            await saveEditingValue(searchInput.value);
+          }
+        }
       };
 
       const reloadItems = async () => {
@@ -376,6 +668,8 @@
         applyFilter();
       };
 
+      // --- Keyboard handling ---
+
       const handleKeyDown = async (event) => {
         if (event.defaultPrevented) {
           return;
@@ -383,6 +677,14 @@
 
         if (event.key === 'Escape') {
           event.preventDefault();
+          if (mode === 'editing') {
+            await enterSettingsMode();
+            return;
+          }
+          if (mode === 'settings') {
+            enterNormalMode();
+            return;
+          }
           await bridge.close();
           return;
         }
@@ -401,7 +703,7 @@
 
         if (event.key === 'Enter') {
           event.preventDefault();
-          await runSelected();
+          await handleEnterKey();
         }
       };
 
@@ -446,10 +748,23 @@
         if (!Number.isFinite(index)) return;
         selectedIndex = index;
         updateActiveItem();
-        void runActionForIndex(index);
+
+        if (mode === 'editing' && editingSetting?.type === 'boolean') {
+          void saveEditingValue(index === 0);
+        } else if (mode === 'settings') {
+          const item = filtered[index];
+          enterEditingMode(item);
+        } else {
+          void runActionForIndex(index);
+        }
       });
 
       searchInput.addEventListener('input', () => {
+        if (mode === 'editing') {
+          editError = '';
+          render();
+          return;
+        }
         selectedIndex = 0;
         applyFilter();
       });
@@ -461,9 +776,39 @@
         });
       };
 
+      // --- Live updates from external config changes ---
+
+      const unsubSettingChanged = bridge.onSettingChanged((detail) => {
+        // Update settingsItems in memory
+        for (const item of settingsItems) {
+          if (item.action && item.action.type === 'edit-setting' && item.action.settingKey === detail.key) {
+            item.settingValue = detail.value !== undefined ? String(detail.value) : '';
+          }
+        }
+
+        if (mode === 'settings') {
+          applyFilter();
+        } else if (mode === 'editing' && editingSetting && editingSetting.key === detail.key) {
+          editingSetting.currentValue = detail.value !== undefined ? String(detail.value) : '';
+          render();
+        }
+      });
+
+      window.addEventListener('beforeunload', () => {
+        unsubSettingChanged();
+      });
+
+      // --- Lifecycle ---
+
       bridge.onOpened(async () => {
+        mode = 'normal';
+        editingSetting = null;
+        editError = '';
         searchInput.value = '';
+        searchInput.placeholder = 'Search...';
         selectedIndex = 0;
+        updateBreadcrumb();
+        updateHintBar();
         await reloadItems();
         focusSearchInput();
       });
