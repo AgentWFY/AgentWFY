@@ -6,15 +6,11 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "noImplicitAny": true,
-    "sourceMap": true,
-    "outDir": "dist",
+    "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true
   },
   "include": [
     "src/**/*"
-  ],
-  "exclude": [
-    "src/renderer"
   ]
 }

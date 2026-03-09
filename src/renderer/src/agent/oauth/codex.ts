@@ -2,9 +2,9 @@
  * OpenAI Codex OAuth flow (ChatGPT Plus/Pro subscription).
  * Moved from pi_ai_browser.ts with PKCE updated to own implementation.
  */
-import type { OAuthCallbacks, OAuthCredentials, OAuthProvider } from './types'
-import { generatePKCE } from './pkce'
-import { createRandomHex, decodeJwt, parseAuthorizationInput } from './utils'
+import type { OAuthCallbacks, OAuthCredentials, OAuthProvider } from './types.js'
+import { generatePKCE } from './pkce.js'
+import { createRandomHex, decodeJwt, parseAuthorizationInput } from './utils.js'
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize'

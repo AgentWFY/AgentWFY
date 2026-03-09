@@ -8,10 +8,10 @@ import type {
   WorkerHostMethodMap,
   WorkerToHostMessage,
   WorkerTabConsoleLogEntry,
-} from './types'
-import { bus } from '../event-bus'
-import { getSessionManager } from '../agent/session_manager'
-import { getTaskRunner } from '../tasks/task_runner'
+} from './types.js'
+import { bus } from '../event-bus.js'
+import { getSessionManager } from '../agent/session_manager.js'
+import { getTaskRunner } from '../tasks/task_runner.js'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
 
@@ -80,7 +80,7 @@ export class JsRuntime {
       return
     }
 
-    const worker = new Worker(new URL('./exec_worker.ts', import.meta.url), {
+    const worker = new Worker('/exec_worker.js', {
       type: 'module',
     })
 
@@ -151,6 +151,7 @@ export class JsRuntime {
           message: 'JavaScript execution aborted',
         },
         logs: [],
+        images: [],
         timeoutMs: timeout,
       }
     }
@@ -219,7 +220,7 @@ export class JsRuntime {
   }
 
   private handleWorkerMessage(entry: WorkerEntry, message: WorkerToHostMessage): void {
-    if (!message || typeof message !== 'object' || typeof (message as Record<string, unknown>).type !== 'string') {
+    if (!message || typeof message !== 'object' || typeof (message as unknown as Record<string, unknown>).type !== 'string') {
       return
     }
 

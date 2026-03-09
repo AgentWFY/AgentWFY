@@ -10,10 +10,10 @@ import type {
   Model,
   AgentTool,
   Message,
-} from '../types'
-import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types'
-import { parseSSE } from './sse'
-import { decodeJwt } from '../oauth/utils'
+} from '../types.js'
+import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import { parseSSE } from './sse.js'
+import { decodeJwt } from '../oauth/utils.js'
 
 function convertToInput(messages: Message[]): unknown[] {
   const result: unknown[] = []

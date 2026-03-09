@@ -1,22 +1,22 @@
-export type { FilesApi } from './files'
-export type { SqlApi } from './sql'
-export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent } from './tabs'
-export type { SessionsApi } from './sessions'
-export type { AuthApi } from './auth'
-export type { StoreApi } from './store'
-export type { DialogApi } from './dialog'
-export type { BusApi, AgentDbChange } from './bus'
-export type { TasksApi } from './tasks'
+export type { FilesApi } from './files.js'
+export type { SqlApi } from './sql.js'
+export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent } from './tabs.js'
+export type { SessionsApi } from './sessions.js'
+export type { AuthApi } from './auth.js'
+export type { StoreApi } from './store.js'
+export type { DialogApi } from './dialog.js'
+export type { BusApi, AgentDbChange } from './bus.js'
+export type { TasksApi } from './tasks.js'
 
-import type { FilesApi } from './files'
-import type { SqlApi } from './sql'
-import type { TabsApi } from './tabs'
-import type { SessionsApi } from './sessions'
-import type { AuthApi } from './auth'
-import type { StoreApi } from './store'
-import type { DialogApi } from './dialog'
-import type { BusApi } from './bus'
-import type { TasksApi } from './tasks'
+import type { FilesApi } from './files.js'
+import type { SqlApi } from './sql.js'
+import type { TabsApi } from './tabs.js'
+import type { SessionsApi } from './sessions.js'
+import type { AuthApi } from './auth.js'
+import type { StoreApi } from './store.js'
+import type { DialogApi } from './dialog.js'
+import type { BusApi } from './bus.js'
+import type { TasksApi } from './tasks.js'
 
 import type {
   WorkerRunSqlRequest,
@@ -30,7 +30,7 @@ import type {
   WorkerGetTabConsoleLogsRequest,
   WorkerExecTabJsRequest,
   WorkerTabConsoleLogEntry,
-} from '../runtime/types'
+} from '../runtime/types.js'
 
 export interface NetApi {
   headers: {
@@ -79,8 +79,5 @@ export interface AgentToolsApi {
 declare global {
   interface Window {
     ipc?: AppIpc
-    agentwfy?: AgentToolsApi
   }
 }
-
-export {}

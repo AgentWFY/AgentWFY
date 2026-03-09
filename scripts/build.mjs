@@ -1,0 +1,92 @@
+import * as esbuild from 'esbuild'
+import { cpSync, mkdirSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+const src = join(root, 'src')
+const dist = join(root, 'dist')
+const clientDist = join(dist, 'client')
+
+const watch = process.argv.includes('--watch')
+
+// ── Static assets ──
+
+mkdirSync(clientDist, { recursive: true })
+mkdirSync(join(dist, 'command-palette'), { recursive: true })
+
+cpSync(join(src, 'renderer', 'index.html'), join(clientDist, 'index.html'))
+cpSync(join(src, 'renderer', 'src', 'global.css'), join(clientDist, 'global.css'))
+cpSync(join(src, 'vault_window.html'), join(dist, 'vault_window.html'))
+cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
+cpSync(join(src, 'index.css'), join(dist, 'index.css'))
+
+// ── Build configs ──
+
+const builds = [
+  // Main process
+  {
+    entryPoints: [join(src, 'main.ts')],
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outdir: dist,
+    external: ['electron'],
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Preload (main)
+  {
+    entryPoints: [join(src, 'preload.cts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outExtension: { '.js': '.cjs' },
+    outdir: dist,
+    external: ['electron'],
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Preload (command palette)
+  {
+    entryPoints: [join(src, 'command-palette', 'preload.cts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outExtension: { '.js': '.cjs' },
+    outdir: join(dist, 'command-palette'),
+    external: ['electron'],
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Renderer
+  {
+    entryPoints: [join(src, 'renderer', 'src', 'index.ts')],
+    bundle: true,
+    format: 'esm',
+    outdir: clientDist,
+    define: { 'process.env': '{}', 'process.versions': '{}' },
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Web Worker
+  {
+    entryPoints: [join(src, 'renderer', 'src', 'runtime', 'exec_worker.ts')],
+    bundle: true,
+    format: 'esm',
+    outdir: clientDist,
+    define: { 'process.env': '{}', 'process.versions': '{}' },
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+]
+
+// ── Execute ──
+
+if (watch) {
+  const contexts = await Promise.all(builds.map((b) => esbuild.context(b)))
+  await Promise.all(contexts.map((ctx) => ctx.watch()))
+} else {
+  await Promise.all(builds.map((b) => esbuild.build(b)))
+}

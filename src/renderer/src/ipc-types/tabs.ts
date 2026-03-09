@@ -8,7 +8,7 @@ import type {
   WorkerGetTabConsoleLogsRequest,
   WorkerExecTabJsRequest,
   WorkerTabConsoleLogEntry,
-} from '../runtime/types'
+} from '../runtime/types.js'
 
 export interface TabViewBounds {
   x: number

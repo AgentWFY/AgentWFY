@@ -1,4 +1,4 @@
-import type { AppIpc } from '../ipc-types'
+import type { AppIpc } from '../ipc-types/index.js'
 
 export function requireIpc(): AppIpc {
   if (!window.ipc) {

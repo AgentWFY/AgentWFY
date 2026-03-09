@@ -12,9 +12,9 @@ import type {
   Model,
   AgentTool,
   Message,
-} from '../types'
-import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types'
-import { parseSSE } from './sse'
+} from '../types.js'
+import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import { parseSSE } from './sse.js'
 
 interface OpenAIDelta {
   content?: string | null

@@ -179,12 +179,7 @@ async function createAppWindow(dataDir: string) {
     tabViewManager.destroyAllTabViews();
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    mainWindow.loadURL(devServerUrl);
-  } else {
-    mainWindow.loadURL('app://index.html');
-  }
+  mainWindow.loadURL('app://index.html');
 
   mainWindow.show();
 

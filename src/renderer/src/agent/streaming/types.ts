@@ -1,4 +1,4 @@
-import type { AgentTool, AssistantMessage, Message, Model, StopReason, StreamEvent, ThinkingLevel } from '../types'
+import type { AgentTool, AssistantMessage, Message, Model, StopReason, StreamEvent, ThinkingLevel } from '../types.js'
 
 export type { StreamEvent }
 
@@ -98,17 +98,17 @@ export function createStream(model: Model, context: StreamContext, options: Stre
 
   switch (model.provider.api) {
     case 'openai-completions': {
-      import('./openai').then((mod) => mod.streamOpenAI(stream, model, context, options))
+      import('./openai.js').then((mod) => mod.streamOpenAI(stream, model, context, options))
         .catch((err) => emitError(stream, model, err instanceof Error ? err.message : String(err)))
       break
     }
     case 'anthropic-messages': {
-      import('./anthropic').then((mod) => mod.streamAnthropic(stream, model, context, options))
+      import('./anthropic.js').then((mod) => mod.streamAnthropic(stream, model, context, options))
         .catch((err) => emitError(stream, model, err instanceof Error ? err.message : String(err)))
       break
     }
     case 'openai-codex-responses': {
-      import('./codex').then((mod) => mod.streamCodex(stream, model, context, options))
+      import('./codex.js').then((mod) => mod.streamCodex(stream, model, context, options))
         .catch((err) => emitError(stream, model, err instanceof Error ? err.message : String(err)))
       break
     }

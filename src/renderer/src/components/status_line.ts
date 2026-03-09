@@ -1,5 +1,5 @@
-import { getSessionManager } from '../agent/session_manager'
-import { getTaskRunner } from '../tasks/task_runner'
+import { getSessionManager } from '../agent/session_manager.js'
+import { getTaskRunner } from '../tasks/task_runner.js'
 
 const STYLES = `
   :host {

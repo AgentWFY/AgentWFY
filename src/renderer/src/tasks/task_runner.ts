@@ -1,6 +1,6 @@
-import type { ExecJsLogEntry } from '../runtime/types'
-import { getJsRuntime } from '../runtime/js_runtime'
-import { bus } from '../event-bus'
+import type { ExecJsLogEntry } from '../runtime/types.js'
+import { getJsRuntime } from '../runtime/js_runtime.js'
+import { bus } from '../event-bus.js'
 
 export interface TaskRun {
   runId: string
