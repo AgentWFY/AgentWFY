@@ -1,5 +1,5 @@
-import { getTaskRunner } from 'app/tasks/task_runner'
-import type { TaskRun, TaskLogHistoryItem } from 'app/tasks/task_runner'
+import { getTaskRunner } from '../tasks/task_runner'
+import type { TaskRun, TaskLogHistoryItem } from '../tasks/task_runner'
 
 interface TaskItem {
   id: number

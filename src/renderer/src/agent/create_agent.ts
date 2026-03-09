@@ -1,4 +1,4 @@
-import { Agent } from 'app/agent'
+import { Agent } from './index'
 import type {
   AgentEvent,
   AgentMessage,
@@ -8,7 +8,7 @@ import type {
   Message,
   Model,
   ThinkingLevel,
-} from 'app/agent/types'
+} from './types'
 import {
   getModel,
   getModels,
@@ -16,10 +16,10 @@ import {
   getProviderIds,
   loadModelsConfig,
   supportsThinking,
-} from 'app/agent/models'
-import { createStream } from 'app/agent/streaming/types'
-import { createExecJsTool } from 'app/agent/exec_js'
-import { requireIpc, stringifyUnknown } from 'app/agent/tool_utils'
+} from './models'
+import { createStream } from './streaming/types'
+import { createExecJsTool } from './exec_js'
+import { requireIpc, stringifyUnknown } from './tool_utils'
 
 export const DEFAULT_PROVIDER = 'openrouter'
 export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'

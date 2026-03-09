@@ -1,8 +1,5 @@
 {
   "compilerOptions": {
-    "paths": {
-      "app/*": ["./src/*"]
-    },
     "target": "ESNext",
     "useDefineForClassFields": true,
     "module": "preserve",
@@ -12,8 +9,7 @@
     "strict": false,
     "allowJs": true,
     "checkJs": true,
-    "isolatedModules": true,
-    "baseUrl": "."
+    "isolatedModules": true
   },
   "include": [
     "src/**/*.d.ts",
