@@ -31,7 +31,7 @@ type PendingTaskRequest = {
 const pendingStartRequests = new Map<string, PendingTaskRequest>();
 const pendingStopRequests = new Map<string, PendingTaskRequest>();
 
-function forwardStartTask(win: BrowserWindow, taskId: number): Promise<{ runId: string }> {
+export function forwardStartTask(win: BrowserWindow, taskId: number): Promise<{ runId: string }> {
   const waiterId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

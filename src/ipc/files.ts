@@ -6,10 +6,10 @@ import { Channels } from './channels.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_READ_BYTES = 50 * 1024;
-const GREP_MAX_LINE_LENGTH = 500;
-const DEFAULT_GREP_LIMIT = 100;
-const DEFAULT_FIND_LIMIT = 1000;
-const DEFAULT_LS_LIMIT = 500;
+export const GREP_MAX_LINE_LENGTH = 500;
+export const DEFAULT_GREP_LIMIT = 100;
+export const DEFAULT_FIND_LIMIT = 1000;
+export const DEFAULT_LS_LIMIT = 500;
 
 function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
   const lines = text.split('\n');
@@ -36,12 +36,12 @@ function truncateText(text: string, maxLines: number, maxBytes: number): { conte
   };
 }
 
-function truncateLine(line: string, maxLen: number): string {
+export function truncateLine(line: string, maxLen: number): string {
   if (line.length <= maxLen) return line;
   return line.slice(0, maxLen) + '…';
 }
 
-async function walkDir(dir: string, root: string): Promise<string[]> {
+export async function walkDir(dir: string, root: string): Promise<string[]> {
   const results: string[] = [];
   let entries;
   try {
@@ -63,7 +63,7 @@ async function walkDir(dir: string, root: string): Promise<string[]> {
   return results;
 }
 
-function matchesGlob(filename: string, pattern: string): boolean {
+export function matchesGlob(filename: string, pattern: string): boolean {
   const regex = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '\0')
