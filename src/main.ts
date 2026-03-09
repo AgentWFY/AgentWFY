@@ -7,17 +7,18 @@ import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerAuthHandlers } from './ipc/auth.js';
-import { registerBusHandlers } from './ipc/bus.js';
+import { registerBusHandlers, forwardBusPublish } from './ipc/bus.js';
 import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
-import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
+import { registerTaskRunnerHandlers, forwardStartTask } from './task-runner/ipc.js';
 import type { AgentDbChange } from './db/sqlite.js';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager } from './command-palette/manager.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './data-dir.js';
+import { startHttpApi } from './http-api/server.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -61,6 +62,7 @@ protocol.registerSchemesAsPrivileged([
 
 let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
+let httpServer: import('http').Server | null = null;
 
 const clientPath = path.join(import.meta.dirname, 'client', 'index.html');
 
@@ -230,6 +232,20 @@ const createWindow = () => {
 app.on('ready', async () => {
   installWebRequestHooks();
   await ensureAgentRuntimeBootstrap(getDataDir());
+
+  httpServer = startHttpApi({
+    getDataDir,
+    onDbChange,
+    startTask: (taskId) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      return forwardStartTask(mainWindow, taskId);
+    },
+    busPublish: (topic, data) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      forwardBusPublish(mainWindow, topic, data);
+    },
+  });
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
@@ -348,6 +364,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  httpServer?.close();
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
