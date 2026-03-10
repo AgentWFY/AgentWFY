@@ -143,6 +143,28 @@ const STYLES = `
     background: var(--color-item-hover);
     color: var(--color-text3);
   }
+  .backup-info {
+    font-size: 11px;
+    color: var(--color-text2);
+    white-space: nowrap;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    padding: 0 4px;
+    border-radius: 2px;
+    line-height: inherit;
+    font-family: inherit;
+    user-select: none;
+  }
+  .backup-info:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text3);
+  }
+  .separator {
+    color: var(--color-text1);
+    opacity: 0.3;
+    padding: 0 2px;
+  }
 `
 
 export class TlStatusLine extends HTMLElement {
@@ -157,11 +179,29 @@ export class TlStatusLine extends HTMLElement {
     this.shadow = this.attachShadow({ mode: 'open' })
   }
 
+  private flashTimeout: ReturnType<typeof setTimeout> | null = null
+
+  private onBackupChanged = (event: Event) => {
+    const detail = (event as CustomEvent)?.detail
+    if (detail?.version != null) {
+      this.showBackupFlash(`Backed up v${detail.version}`)
+    } else if (detail?.skipped) {
+      this.showBackupFlash('No changes to back up')
+    } else if (detail?.restored != null) {
+      this.showBackupFlash(`Restored v${detail.restored}`)
+    } else {
+      this.loadBackupInfo()
+    }
+  }
+
   connectedCallback() {
     this.render()
+    this.bindBackupClick()
     this.subscribeToManager()
     this.subscribeToTaskRunner()
     this.loadDataDir()
+    this.loadBackupInfo()
+    window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
   }
 
   disconnectedCallback() {
@@ -169,6 +209,8 @@ export class TlStatusLine extends HTMLElement {
     this.managerUnsub = null
     this.taskRunnerUnsub?.()
     this.taskRunnerUnsub = null
+    window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
+    if (this.flashTimeout) clearTimeout(this.flashTimeout)
   }
 
   private render() {
@@ -191,6 +233,8 @@ export class TlStatusLine extends HTMLElement {
         </div>
       </div>
       <div class="right">
+        <button class="backup-info" id="backup-info" type="button"></button>
+        <span class="separator" id="backup-sep"></span>
         <button class="data-dir" id="data-dir" type="button"></button>
       </div>
     `
@@ -307,6 +351,57 @@ export class TlStatusLine extends HTMLElement {
     } catch {
       // ignore — IPC not available
     }
+  }
+
+  private bindBackupClick() {
+    const infoEl = this.shadow.querySelector('#backup-info') as HTMLButtonElement | null
+    if (!infoEl) return
+    infoEl.addEventListener('click', () => {
+      window.ipc?.commandPalette?.showFiltered('Restore Agent Database')
+    })
+  }
+
+  private async loadBackupInfo() {
+    const infoEl = this.shadow.querySelector('#backup-info') as HTMLButtonElement | null
+    const sepEl = this.shadow.querySelector('#backup-sep') as HTMLSpanElement | null
+    if (!infoEl || !sepEl) return
+
+    try {
+      const status = await window.ipc?.getBackupStatus()
+      if (!status || !status.latestBackup) {
+        // Initial backup hasn't finished yet — leave empty, will update via event
+        return
+      }
+
+      let text: string
+      let title: string
+      if (status.currentVersion != null) {
+        const suffix = status.modified ? ' *' : ''
+        text = `v${status.currentVersion}${suffix}`
+        title = `Agent version v${status.currentVersion}${status.modified ? ' (modified)' : ''}`
+      } else {
+        text = `v${status.latestBackup.version} *`
+        title = `Modified since v${status.latestBackup.version}`
+      }
+
+      // Only update DOM if content changed — avoids stealing focus
+      if (infoEl.textContent !== text) infoEl.textContent = text
+      if (infoEl.getAttribute('title') !== title) infoEl.setAttribute('title', title)
+      if (sepEl.textContent !== '|') sepEl.textContent = '|'
+    } catch {
+      // ignore — IPC not available
+    }
+  }
+
+  private showBackupFlash(message: string) {
+    const infoEl = this.shadow.querySelector('#backup-info') as HTMLButtonElement | null
+    if (!infoEl) return
+    if (this.flashTimeout) clearTimeout(this.flashTimeout)
+    infoEl.textContent = message
+    this.flashTimeout = setTimeout(() => {
+      this.flashTimeout = null
+      this.loadBackupInfo()
+    }, 2000)
   }
 
   private shortenPath(fullPath: string): string {

@@ -321,6 +321,9 @@ if (isApp) {
     getAgentRoot(): Promise<string | null> {
       return ipcRenderer.invoke('app:getAgentRoot');
     },
+    getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
+      return ipcRenderer.invoke('app:getBackupStatus');
+    },
     tasks: {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);

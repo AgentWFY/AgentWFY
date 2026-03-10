@@ -30,6 +30,7 @@ import {
   shortenPath,
 } from './agent-manager.js';
 import { startHttpApi } from './http-api/server.js';
+import { scheduleBackup, stopBackupScheduler, getBackupStatus } from './backup.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -109,9 +110,18 @@ onAnyChange((key, newValue) => {
   }
 });
 
+let dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function onDbChange(change: AgentDbChange): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('bus:dbChanged', change);
+
+  // Debounced backup status refresh so status line updates modified indicator
+  if (dbChangeDebounceTimer) clearTimeout(dbChangeDebounceTimer);
+  dbChangeDebounceTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
+  }, 5000);
 }
 
 const tabTools = {
@@ -138,6 +148,12 @@ registerTaskRunnerHandlers(getAgentRoot, () => mainWindow);
 
 ipcMain.handle('app:getAgentRoot', () => getCurrentAgentRoot());
 
+ipcMain.handle('app:getBackupStatus', () => {
+  const root = getCurrentAgentRoot();
+  if (!root) return null;
+  return getBackupStatus(root);
+});
+
 // --- Agent root change listener ---
 
 onAgentRootChanged(async (newRoot) => {
@@ -145,6 +161,9 @@ onAgentRootChanged(async (newRoot) => {
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
   await ensureAgentRuntimeBootstrap(newRoot);
+  scheduleBackup(newRoot).then(() => {
+    rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
+  }).catch((err) => console.error('[backup] Schedule failed:', err));
   mainWindow?.reload();
   buildAndSetMenu();
 });
@@ -448,6 +467,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopFileWatcher();
+  stopBackupScheduler();
   httpServer?.close();
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();

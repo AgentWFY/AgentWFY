@@ -38,6 +38,16 @@ type CommandPaletteAction =
   | {
     type: 'switch-agent'
     agentPath: string
+  }
+  | {
+    type: 'backup-agent-db'
+  }
+  | {
+    type: 'restore-agent-db'
+  }
+  | {
+    type: 'restore-agent-db-confirm'
+    backupVersion: number
   };
 
 interface CommandPaletteItem {
@@ -45,7 +55,7 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent' | 'Recent Agents' | 'Backup'
   action: CommandPaletteAction
   settingValue?: string
   settingType?: SettingType
@@ -62,6 +72,7 @@ const COMMAND_PALETTE_CHANNEL = {
   SETTING_CHANGED: 'app:command-palette:setting-changed',
   SHOW_FILTERED: 'app:command-palette:show-filtered',
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
+  LIST_BACKUPS: 'app:command-palette:list-backups',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -92,6 +103,9 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   openSettingsFile(): Promise<void> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE);
+  },
+  listBackups(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);

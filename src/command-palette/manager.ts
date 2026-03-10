@@ -14,6 +14,7 @@ import {
   shortenPath,
 } from '../agent-manager.js';
 import type { SettingType } from '../settings/registry.js';
+import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
 
@@ -58,6 +59,16 @@ type CommandPaletteAction =
   | {
     type: 'switch-agent'
     agentPath: string
+  }
+  | {
+    type: 'backup-agent-db'
+  }
+  | {
+    type: 'restore-agent-db'
+  }
+  | {
+    type: 'restore-agent-db-confirm'
+    backupVersion: number
   };
 
 interface CommandPaletteItem {
@@ -65,7 +76,7 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent' | 'Recent Agents' | 'Backup'
   action: CommandPaletteAction
   settingValue?: string
   settingType?: SettingType
@@ -82,6 +93,7 @@ const COMMAND_PALETTE_CHANNEL = {
   SETTING_CHANGED: 'app:command-palette:setting-changed',
   SHOW_FILTERED: 'app:command-palette:show-filtered',
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
+  LIST_BACKUPS: 'app:command-palette:list-backups',
 } as const;
 
 export { COMMAND_PALETTE_CHANNEL };
@@ -362,18 +374,31 @@ export class CommandPaletteManager {
       },
     ];
 
+    agentItems.push({
+      id: 'agent:backup-db',
+      title: 'Backup Agent Database',
+      group: 'Agent',
+      action: { type: 'backup-agent-db' },
+    }, {
+      id: 'agent:restore-db',
+      title: 'Restore Agent Database...',
+      group: 'Agent',
+      action: { type: 'restore-agent-db' },
+    });
+
+    const recentAgentItems: CommandPaletteItem[] = [];
     const recents = getRecentAgents();
     for (const recent of recents) {
-      agentItems.push({
+      recentAgentItems.push({
         id: `agent:recent:${recent.path}`,
         title: shortenPath(recent.path),
         subtitle: 'Switch agent',
-        group: 'Agent',
+        group: 'Recent Agents',
         action: { type: 'switch-agent', agentPath: recent.path },
       });
     }
 
-    return [...agentItems, ...actionItems, ...taskItems, ...viewItems];
+    return [...agentItems, ...recentAgentItems, ...actionItems, ...taskItems, ...viewItems];
   }
 
   buildSettingsItems(): CommandPaletteItem[] {
@@ -417,6 +442,26 @@ export class CommandPaletteManager {
 
     storeSet(key, coerced);
     return { success: true };
+  }
+
+  buildBackupItems(): CommandPaletteItem[] {
+    const backups = listAllBackups(this.deps.getAgentRoot());
+    return backups.map((b) => {
+      const date = new Date(b.timestamp);
+      const dateStr = date.toLocaleString();
+
+      return {
+        id: `backup:v${b.version}`,
+        title: `v${b.version}`,
+        subtitle: dateStr,
+        group: 'Backup',
+        settingValue: b.matchesCurrent ? 'current' : undefined,
+        action: {
+          type: 'restore-agent-db-confirm',
+          backupVersion: b.version,
+        },
+      };
+    });
   }
 
   openSettingsFile(): void {
@@ -508,6 +553,41 @@ export class CommandPaletteManager {
         } else {
           const picked = await showOpenAgentDialog(this.deps.getMainWindow());
           if (picked) openAgent(picked);
+        }
+        return;
+      }
+
+      case 'backup-agent-db': {
+        const result = await backupAgentDb(this.deps.getAgentRoot());
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:backup-changed', {
+          version: result.version ?? null,
+          skipped: result.skipped,
+        });
+        this.hide({ focusMain: true });
+        return;
+      }
+
+      case 'restore-agent-db': {
+        // Handled in the palette UI — switches to restore mode
+        return;
+      }
+
+      case 'restore-agent-db-confirm': {
+        const restoreAction = action as Extract<CommandPaletteAction, { type: 'restore-agent-db-confirm' }>;
+        const result = await restoreFromBackup(this.deps.getAgentRoot(), restoreAction.backupVersion);
+        if (!result.success) {
+          throw new Error(result.error || 'Restore failed');
+        }
+        this.hide({ focusMain: true });
+        // Reload the app to pick up restored DB — full reset like agent switch
+        const mainWindow = this.deps.getMainWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          this.deps.getTabViewManager().destroyAllTabViews();
+          this.deps.getTabViewManager().clearTrackedViewWebContents();
+          mainWindow.reload();
         }
         return;
       }
