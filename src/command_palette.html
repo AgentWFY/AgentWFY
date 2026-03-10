@@ -286,10 +286,12 @@
       let actionInFlight = false;
 
       // --- Mode state ---
-      /** @type {'normal' | 'settings' | 'editing'} */
+      /** @type {'normal' | 'settings' | 'editing' | 'restore'} */
       let mode = 'normal';
       /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any,settingValue?:string,settingType?:string}>} */
       let settingsItems = [];
+      /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any}>} */
+      let backupItems = [];
       /** @type {{ key: string, label: string, type: string, currentValue: string, description: string } | null} */
       let editingSetting = null;
       /** @type {string} */
@@ -341,6 +343,9 @@
         } else if (mode === 'editing' && editingSetting) {
           breadcrumbEl.style.display = 'block';
           breadcrumbEl.textContent = `Settings \u203A ${editingSetting.label}`;
+        } else if (mode === 'restore') {
+          breadcrumbEl.style.display = 'block';
+          breadcrumbEl.textContent = 'Restore Agent Database';
         }
       };
 
@@ -363,6 +368,12 @@
           hintBar.innerHTML = `
             <span class="hint-item"><span class="hint-key">Enter</span> save</span>
             <span class="hint-item"><span class="hint-key">Esc</span> back</span>
+          `;
+        } else if (mode === 'restore') {
+          hintBar.innerHTML = `
+            <span class="hint-item"><span class="hint-key">Enter</span> restore</span>
+            <span class="hint-item"><span class="hint-key">Esc</span> back</span>
+            <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
           `;
         }
       };
@@ -491,6 +502,7 @@
         if (mode === 'normal') renderItemList('No matches');
         else if (mode === 'settings') renderItemList('No settings found');
         else if (mode === 'editing') renderEditing();
+        else if (mode === 'restore') renderItemList('No backups found');
       };
 
       const applyFilter = () => {
@@ -499,6 +511,8 @@
           filtered = items.filter((item) => scoreMatches(item, query));
         } else if (mode === 'settings') {
           filtered = settingsItems.filter((item) => scoreMatches(item, query));
+        } else if (mode === 'restore') {
+          filtered = backupItems.filter((item) => scoreMatches(item, query));
         }
         clampSelectedIndex();
         render();
@@ -549,6 +563,26 @@
         } catch (error) {
           console.error('Failed to list settings:', error);
           settingsItems = [];
+        }
+        applyFilter();
+        searchInput.focus();
+      };
+
+      const enterRestoreMode = async () => {
+        mode = 'restore';
+        editingSetting = null;
+        editError = '';
+        searchInput.value = '';
+        searchInput.placeholder = 'Select backup to restore...';
+        selectedIndex = 0;
+        updateBreadcrumb();
+        updateHintBar();
+
+        try {
+          backupItems = await bridge.listBackups();
+        } catch (error) {
+          console.error('Failed to list backups:', error);
+          backupItems = [];
         }
         applyFilter();
         searchInput.focus();
@@ -616,6 +650,12 @@
           return;
         }
 
+        // Handle restore-agent-db locally — enter restore mode
+        if (item.action && item.action.type === 'restore-agent-db') {
+          await enterRestoreMode();
+          return;
+        }
+
         // Handle open-settings-file locally then close
         if (item.action && item.action.type === 'open-settings-file') {
           actionInFlight = true;
@@ -655,6 +695,9 @@
           } else {
             await saveEditingValue(searchInput.value);
           }
+        } else if (mode === 'restore') {
+          if (filtered.length === 0) return;
+          await runActionForIndex(selectedIndex);
         }
       };
 
@@ -681,7 +724,7 @@
             await enterSettingsMode();
             return;
           }
-          if (mode === 'settings') {
+          if (mode === 'settings' || mode === 'restore') {
             enterNormalMode();
             return;
           }
@@ -754,6 +797,8 @@
         } else if (mode === 'settings') {
           const item = filtered[index];
           enterEditingMode(item);
+        } else if (mode === 'restore') {
+          void runActionForIndex(index);
         } else {
           void runActionForIndex(index);
         }

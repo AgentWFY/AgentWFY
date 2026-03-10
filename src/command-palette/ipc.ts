@@ -29,4 +29,8 @@ export function registerCommandPaletteHandlers(commandPalette: CommandPaletteMan
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (_event, query: string) => {
     commandPalette.showFiltered(query);
   });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async () => {
+    return commandPalette.buildBackupItems();
+  });
 }

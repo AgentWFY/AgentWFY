@@ -29,4 +29,28 @@ export const SETTINGS: SettingDefinition[] = [
     defaultValue: '',
     description: 'Bearer token for HTTP API authentication (auto-generated if empty)',
   },
+  {
+    key: 'backup.intervalHours',
+    label: 'Backup Interval (hours)',
+    type: 'number',
+    defaultValue: 24,
+    description: 'How often to automatically back up agent.db (in hours)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 1 || n > 8760) return 'Must be 1–8760'
+      return null
+    },
+  },
+  {
+    key: 'backup.maxCount',
+    label: 'Max Backup Count',
+    type: 'number',
+    defaultValue: 5,
+    description: 'Maximum number of backups to keep per agent',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 1 || n > 100) return 'Must be 1–100'
+      return null
+    },
+  },
 ]
