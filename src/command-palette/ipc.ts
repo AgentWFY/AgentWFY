@@ -25,4 +25,8 @@ export function registerCommandPaletteHandlers(commandPalette: CommandPaletteMan
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async () => {
     commandPalette.openSettingsFile();
   });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (_event, query: string) => {
+    commandPalette.showFiltered(query);
+  });
 }

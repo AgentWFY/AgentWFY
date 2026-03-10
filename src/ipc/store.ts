@@ -24,13 +24,21 @@ export function storeGet(key: string): unknown {
 }
 
 export function storeSet(key: string, value: unknown): void {
+  const oldValue = cache[key];
   cache[key] = value;
   writeStoreToDisk(cache);
+  if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
+    fireChangeListeners(key, value, oldValue);
+  }
 }
 
 export function storeRemove(key: string): void {
+  const oldValue = cache[key];
   delete cache[key];
   writeStoreToDisk(cache);
+  if (oldValue !== undefined) {
+    fireChangeListeners(key, undefined, oldValue);
+  }
 }
 
 export function getStorePath(): string {
@@ -113,14 +121,10 @@ export const registerStoreHandlers = () => {
   ipcMain.handle(Channels.store.get, async (_event, key) => storeGet(key));
 
   ipcMain.handle(Channels.store.set, async (_event, key, value) => {
-    const oldValue = storeGet(key);
     storeSet(key, value);
-    fireChangeListeners(key, value, oldValue);
   });
 
   ipcMain.handle(Channels.store.remove, async (_event, key) => {
-    const oldValue = storeGet(key);
     storeRemove(key);
-    fireChangeListeners(key, undefined, oldValue);
   });
 };

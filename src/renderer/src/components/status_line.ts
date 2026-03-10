@@ -132,6 +132,16 @@ const STYLES = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    padding: 0 4px;
+    border-radius: 2px;
+    line-height: inherit;
+  }
+  .data-dir:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text3);
   }
 `
 
@@ -181,7 +191,7 @@ export class TlStatusLine extends HTMLElement {
         </div>
       </div>
       <div class="right">
-        <span class="data-dir" id="data-dir"></span>
+        <button class="data-dir" id="data-dir" type="button"></button>
       </div>
     `
   }
@@ -283,16 +293,19 @@ export class TlStatusLine extends HTMLElement {
   }
 
   private async loadDataDir() {
-    const dirEl = this.shadow.querySelector('#data-dir')
+    const dirEl = this.shadow.querySelector('#data-dir') as HTMLButtonElement | null
     if (!dirEl) return
+    dirEl.addEventListener('click', () => {
+      window.ipc?.commandPalette?.showFiltered('Agent')
+    })
     try {
-      const dataDir = await window.ipc?.store.get('dataDir') as string
-      if (dataDir) {
-        dirEl.textContent = this.shortenPath(dataDir)
-        dirEl.setAttribute('title', dataDir)
+      const agentRoot = await window.ipc?.getAgentRoot()
+      if (agentRoot) {
+        dirEl.textContent = this.shortenPath(agentRoot)
+        dirEl.setAttribute('title', agentRoot)
       }
     } catch {
-      // ignore — store not available
+      // ignore — IPC not available
     }
   }
 

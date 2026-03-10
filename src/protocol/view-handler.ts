@@ -31,13 +31,13 @@ function resolveViewAssetPath(relativePath: string, clientPath: string): string 
   return absolutePath;
 }
 
-async function resolveViewDataPath(url: URL, getDataDir: () => string): Promise<string> {
+async function resolveViewDataPath(url: URL, getAgentRoot: () => string): Promise<string> {
   const normalizedPath = normalizeViewPathname(url.pathname);
   if (!normalizedPath) {
     throw new Error('Missing file path');
   }
 
-  return assertPathAllowed(getDataDir(), normalizedPath, { allowMissing: false });
+  return assertPathAllowed(getAgentRoot(), normalizedPath, { allowMissing: false });
 }
 
 function escapeHtml(text: string): string {
@@ -60,12 +60,12 @@ function toHtmlResponse(status: number, html: string): Response {
 }
 
 export interface ViewProtocolHandlerOptions {
-  getDataDir: () => string;
+  getAgentRoot: () => string;
   clientPath: string;
 }
 
 export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request) => Promise<Response> {
-  const { getDataDir, clientPath } = options;
+  const { getAgentRoot, clientPath } = options;
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -85,7 +85,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
     if (url.hostname === 'file' || (url.hostname === 'view' && !isViewDocumentRequest(url))) {
       try {
-        const absolutePath = await resolveViewDataPath(url, getDataDir);
+        const absolutePath = await resolveViewDataPath(url, getAgentRoot);
         return serveFile(request, absolutePath);
       } catch {
         return new Response('Asset not found', {
@@ -113,12 +113,12 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       return toHtmlResponse(400, `<pre>${escapeHtml((error as Error)?.message || 'Invalid agent view URL')}</pre>`);
     }
 
-    const dataDir = getDataDir();
+    const agentRoot = getAgentRoot();
 
     // File-sourced view: read from filesystem instead of DB
     if (url.searchParams.get('source') === 'file') {
       try {
-        const absolutePath = await assertPathAllowed(dataDir, viewId, { allowMissing: false });
+        const absolutePath = await assertPathAllowed(agentRoot, viewId, { allowMissing: false });
         const content = await readFile(absolutePath, 'utf-8');
         const html = buildViewDocument(content);
         return toHtmlResponse(200, html);
@@ -130,7 +130,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
     let record;
     try {
-      record = await getViewById(dataDir, viewId);
+      record = await getViewById(agentRoot, viewId);
     } catch (error: unknown) {
       console.error('[agentview] failed to read view from agent DB', error);
       return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);

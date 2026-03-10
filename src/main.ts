@@ -1,6 +1,5 @@
-import { app, BrowserWindow, Menu, nativeTheme, protocol, net } from 'electron';
-import createVaultWindow from './vault_window.js';
-import { registerStoreHandlers, storeGet, onDidChange, startFileWatcher, stopFileWatcher, getStorePath, onAnyChange } from './ipc/store.js';
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, net } from 'electron';
+import { registerStoreHandlers, startFileWatcher, stopFileWatcher, getStorePath, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
@@ -17,7 +16,19 @@ import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
-import { DEFAULT_DATA_DIR, getDataDir, ensureAgentRuntimeBootstrap } from './data-dir.js';
+import {
+  getAgentRoot,
+  ensureAgentRuntimeBootstrap,
+  getCurrentAgentRoot,
+  showAgentPickerDialog,
+  showOpenAgentDialog,
+  showInstallAgentDialog,
+  openAgent,
+  onAgentRootChanged,
+  getRecentAgents,
+  isAgentDir,
+  shortenPath,
+} from './agent-manager.js';
 import { startHttpApi } from './http-api/server.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -60,7 +71,6 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-let vaultWindow: BrowserWindow | null;
 let mainWindow: BrowserWindow | null;
 let httpServer: import('http').Server | null = null;
 
@@ -81,7 +91,7 @@ const tabViewManager = new TabViewManager({
 
 const commandPalette = new CommandPaletteManager({
   getMainWindow: () => mainWindow,
-  getDataDir,
+  getAgentRoot,
   rendererBridge,
   getTabViewManager: () => tabViewManager,
   getStorePath,
@@ -115,38 +125,38 @@ const tabTools = {
   execTabJs: (req: Parameters<typeof tabViewManager.execTabJsById>[0]) => tabViewManager.execTabJsById(req),
 };
 
-registerFilesHandlers(getDataDir);
-registerSqlHandlers(getDataDir, onDbChange);
+registerFilesHandlers(getAgentRoot);
+registerSqlHandlers(getAgentRoot, onDbChange);
 registerTabsHandlers(tabTools);
-registerSessionsHandlers(getDataDir);
-registerAuthHandlers(getDataDir);
+registerSessionsHandlers(getAgentRoot);
+registerAuthHandlers(getAgentRoot);
 registerRequestHeadersHandlers();
 
 registerTabViewHandlers(tabViewManager);
 registerCommandPaletteHandlers(commandPalette);
-registerTaskRunnerHandlers(getDataDir, () => mainWindow);
+registerTaskRunnerHandlers(getAgentRoot, () => mainWindow);
 
-// --- Data directory change listener ---
+ipcMain.handle('app:getAgentRoot', () => getCurrentAgentRoot());
 
-onDidChange('dataDir', async (newValue: unknown, oldValue: unknown) => {
-  if (oldValue !== newValue) {
-    const nextDataDir = typeof newValue === 'string' ? newValue : DEFAULT_DATA_DIR;
-    commandPalette.destroy();
-    tabViewManager.destroyAllTabViews();
-    tabViewManager.clearTrackedViewWebContents();
-    await ensureAgentRuntimeBootstrap(nextDataDir);
-    mainWindow?.reload();
-  }
+// --- Agent root change listener ---
+
+onAgentRootChanged(async (newRoot) => {
+  commandPalette.destroy();
+  tabViewManager.destroyAllTabViews();
+  tabViewManager.clearTrackedViewWebContents();
+  await ensureAgentRuntimeBootstrap(newRoot);
+  mainWindow?.reload();
+  buildAndSetMenu();
 });
 
 // --- App window creation ---
 
-async function createAppWindow(dataDir: string) {
-  await ensureAgentRuntimeBootstrap(dataDir);
+async function createAppWindow(agentRoot: string) {
+  await ensureAgentRuntimeBootstrap(agentRoot);
 
   mainWindow = new BrowserWindow({
     show: false,
-    title: dataDir,
+    title: agentRoot,
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 13, y: 12 } }
@@ -229,46 +239,89 @@ async function createAppWindow(dataDir: string) {
   });
 }
 
-const createWindow = () => {
-  const dataDir = storeGet('dataDir');
-  if (typeof dataDir === 'string') return createAppWindow(dataDir)
-  createAppWindow(DEFAULT_DATA_DIR)
+async function createWindow() {
+  let agentRoot = getCurrentAgentRoot();
+
+  // Try most recent agent on fresh launch
+  if (!agentRoot) {
+    const recents = getRecentAgents();
+    if (recents[0] && isAgentDir(recents[0].path)) {
+      agentRoot = recents[0].path;
+    }
+  }
+
+  if (agentRoot) {
+    openAgent(agentRoot);
+    return createAppWindow(agentRoot);
+  }
+
+  // No agent found — show picker
+  const picked = await showAgentPickerDialog();
+  if (!picked) {
+    app.quit();
+    return;
+  }
+
+  openAgent(picked);
+  await createAppWindow(picked);
 }
 
-// --- App lifecycle ---
+// --- Agent actions from menu / command palette ---
 
-app.on('ready', async () => {
-  installWebRequestHooks();
-  startFileWatcher();
-  await ensureAgentRuntimeBootstrap(getDataDir());
+async function handleOpenAgent() {
+  const picked = await showOpenAgentDialog(mainWindow);
+  if (!picked) return;
+  openAgent(picked);
+}
 
-  httpServer = startHttpApi({
-    getDataDir,
-    onDbChange,
-    startTask: (taskId) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardStartTask(mainWindow, taskId);
-    },
-    busPublish: (topic, data) => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      forwardBusPublish(mainWindow, topic, data);
-    },
-  });
+async function handleInstallAgent() {
+  const picked = await showInstallAgentDialog(mainWindow);
+  if (!picked) return;
+  openAgent(picked);
+}
+
+async function handleSwitchAgent(agentPath: string) {
+  if (!isAgentDir(agentPath)) {
+    const picked = await showOpenAgentDialog(mainWindow);
+    if (!picked) return;
+    openAgent(picked);
+    return;
+  }
+  openAgent(agentPath);
+}
+
+// --- Menu ---
+
+function buildAndSetMenu() {
+  const recents = getRecentAgents();
+  const recentItems: Electron.MenuItemConstructorOptions[] = recents.map((r) => ({
+    label: shortenPath(r.path),
+    click: () => handleSwitchAgent(r.path),
+  }));
 
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
       submenu: [
         {
-          label: 'Open Vault',
-          click: () => {
-            if (vaultWindow && !vaultWindow.isDestroyed()) {
-              vaultWindow.show();
-            } else {
-              vaultWindow = createVaultWindow(mainWindow);
-            }
-          },
+          label: 'Open Agent...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => handleOpenAgent(),
         },
+        {
+          label: 'Install Agent...',
+          click: () => handleInstallAgent(),
+        },
+        { type: 'separator' },
+        ...(recentItems.length > 0
+          ? [
+              {
+                label: 'Recent Agents',
+                submenu: recentItems,
+              } as Electron.MenuItemConstructorOptions,
+              { type: 'separator' as const },
+            ]
+          : []),
         {
           label: 'Devtools',
           click: () => {
@@ -339,8 +392,29 @@ app.on('ready', async () => {
     });
   }
 
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// --- App lifecycle ---
+
+app.on('ready', async () => {
+  installWebRequestHooks();
+  startFileWatcher();
+
+  httpServer = startHttpApi({
+    getAgentRoot,
+    onDbChange,
+    startTask: (taskId) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      return forwardStartTask(mainWindow, taskId);
+    },
+    busPublish: (topic, data) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      forwardBusPublish(mainWindow, topic, data);
+    },
+  });
+
+  buildAndSetMenu();
 
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
@@ -351,12 +425,12 @@ app.on('ready', async () => {
     return net.fetch(pathToFileURL(absolutePath).toString());
   });
 
-  const handleViewRequest = createViewProtocolHandler({ getDataDir, clientPath });
+  const handleViewRequest = createViewProtocolHandler({ getAgentRoot, clientPath });
   protocol.handle('agentview', (request) => {
     return handleViewRequest(request);
   });
 
-  createWindow()
+  createWindow();
 });
 
 app.on('web-contents-created', (event, webContents) => {

@@ -313,6 +313,14 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
       },
     },
+    commandPalette: {
+      showFiltered(query: string): Promise<void> {
+        return ipcRenderer.invoke('app:command-palette:show-filtered', query);
+      },
+    },
+    getAgentRoot(): Promise<string | null> {
+      return ipcRenderer.invoke('app:getAgentRoot');
+    },
     tasks: {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);

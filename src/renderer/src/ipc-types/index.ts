@@ -38,6 +38,10 @@ export interface NetApi {
   }
 }
 
+export interface CommandPaletteApi {
+  showFiltered(query: string): Promise<void>
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
@@ -49,6 +53,8 @@ export interface AppIpc {
   bus: BusApi
   tasks: TasksApi
   net: NetApi
+  commandPalette: CommandPaletteApi
+  getAgentRoot(): Promise<string | null>
 }
 
 export interface AgentToolsApi {
