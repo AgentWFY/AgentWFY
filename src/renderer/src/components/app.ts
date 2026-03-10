@@ -126,6 +126,7 @@ export class TlApp extends HTMLElement {
         cursor: pointer;
         padding: 0;
         transition: color var(--transition-fast), background var(--transition-fast);
+        user-select: none;
       }
       .tl-app-sidebar-btn:hover {
         color: var(--color-text4);
