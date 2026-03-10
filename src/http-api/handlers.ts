@@ -13,7 +13,7 @@ interface GrepMatch {
 }
 
 interface HandlerDeps {
-  getDataDir: () => string;
+  getAgentRoot: () => string;
   onDbChange: OnDbChange;
   startTask: (taskId: number) => Promise<{ runId: string }>;
   busPublish: (topic: string, data: unknown) => void;
@@ -22,18 +22,18 @@ interface HandlerDeps {
 type MethodHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
 export function createMethodRegistry(deps: HandlerDeps): Record<string, MethodHandler> {
-  const { getDataDir, onDbChange, startTask, busPublish } = deps;
+  const { getAgentRoot, onDbChange, startTask, busPublish } = deps;
 
   const resolvePath = (relativePath: string, opts?: { allowMissing?: boolean }) =>
-    assertPathAllowed(getDataDir(), relativePath, opts);
+    assertPathAllowed(getAgentRoot(), relativePath, opts);
 
   const resolveRoot = () =>
-    assertPathAllowed(getDataDir(), '.', { allowMissing: true, allowAgentPrivate: true });
+    assertPathAllowed(getAgentRoot(), '.', { allowMissing: true, allowAgentPrivate: true });
 
   return {
     'sql.run': async (params) => {
       const request = parseRunSqlRequest(params);
-      return routeSqlRequest(getDataDir(), request, onDbChange);
+      return routeSqlRequest(getAgentRoot(), request, onDbChange);
     },
 
     'files.read': async (params) => {

@@ -28,6 +28,16 @@ type CommandPaletteAction =
     type: 'edit-setting'
     settingKey: string
     settingLabel: string
+  }
+  | {
+    type: 'open-agent'
+  }
+  | {
+    type: 'install-agent'
+  }
+  | {
+    type: 'switch-agent'
+    agentPath: string
   };
 
 interface CommandPaletteItem {
@@ -35,7 +45,7 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent'
   action: CommandPaletteAction
   settingValue?: string
   settingType?: SettingType
@@ -50,6 +60,8 @@ const COMMAND_PALETTE_CHANNEL = {
   UPDATE_SETTING: 'app:command-palette:update-setting',
   OPEN_SETTINGS_FILE: 'app:command-palette:open-settings-file',
   SETTING_CHANGED: 'app:command-palette:setting-changed',
+  SHOW_FILTERED: 'app:command-palette:show-filtered',
+  OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -66,6 +78,11 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
     const handler = () => callback();
     ipcRenderer.on(COMMAND_PALETTE_CHANNEL.OPENED, handler);
     return () => ipcRenderer.removeListener(COMMAND_PALETTE_CHANNEL.OPENED, handler);
+  },
+  onOpenedWithFilter(callback: (query: string) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, query: string) => callback(query);
+    ipcRenderer.on(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, handler);
+    return () => ipcRenderer.removeListener(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, handler);
   },
   listSettings(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS);

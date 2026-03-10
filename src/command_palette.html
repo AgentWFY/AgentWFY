@@ -800,16 +800,28 @@
 
       // --- Lifecycle ---
 
-      bridge.onOpened(async () => {
+      const resetPalette = async () => {
         mode = 'normal';
         editingSetting = null;
         editError = '';
-        searchInput.value = '';
         searchInput.placeholder = 'Search...';
         selectedIndex = 0;
         updateBreadcrumb();
         updateHintBar();
         await reloadItems();
+      };
+
+      bridge.onOpened(async () => {
+        await resetPalette();
+        searchInput.value = '';
+        applyFilter();
+        focusSearchInput();
+      });
+
+      bridge.onOpenedWithFilter(async (query) => {
+        await resetPalette();
+        searchInput.value = query;
+        applyFilter();
         focusSearchInput();
       });
 

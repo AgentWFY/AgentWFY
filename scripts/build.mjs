@@ -18,7 +18,6 @@ mkdirSync(join(dist, 'command-palette'), { recursive: true })
 
 cpSync(join(src, 'renderer', 'index.html'), join(clientDist, 'index.html'))
 cpSync(join(src, 'renderer', 'src', 'global.css'), join(clientDist, 'global.css'))
-cpSync(join(src, 'vault_window.html'), join(dist, 'vault_window.html'))
 cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
 cpSync(join(src, 'index.css'), join(dist, 'index.css'))
 

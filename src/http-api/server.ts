@@ -11,7 +11,7 @@ const DEFAULT_PORT = 9877;
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
 interface HttpApiDeps {
-  getDataDir: () => string;
+  getAgentRoot: () => string;
   onDbChange: OnDbChange;
   startTask: (taskId: number) => Promise<{ runId: string }>;
   busPublish: (topic: string, data: unknown) => void;
@@ -135,7 +135,7 @@ export function startHttpApi(deps: HttpApiDeps): http.Server {
 
       let filePath: string;
       try {
-        filePath = await assertPathAllowed(deps.getDataDir(), relativePath);
+        filePath = await assertPathAllowed(deps.getAgentRoot(), relativePath);
       } catch (e: unknown) {
         jsonResponse(res, 403, { error: (e as Error).message });
         return;

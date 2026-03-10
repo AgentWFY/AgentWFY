@@ -5,6 +5,14 @@ import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { SETTINGS } from '../settings/registry.js';
 import { storeGet, storeSet } from '../ipc/store.js';
+import {
+  getRecentAgents,
+  showOpenAgentDialog,
+  showInstallAgentDialog,
+  openAgent,
+  isAgentDir,
+  shortenPath,
+} from '../agent-manager.js';
 import type { SettingType } from '../settings/registry.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
@@ -40,6 +48,16 @@ type CommandPaletteAction =
     type: 'edit-setting'
     settingKey: string
     settingLabel: string
+  }
+  | {
+    type: 'open-agent'
+  }
+  | {
+    type: 'install-agent'
+  }
+  | {
+    type: 'switch-agent'
+    agentPath: string
   };
 
 interface CommandPaletteItem {
@@ -47,7 +65,7 @@ interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent'
   action: CommandPaletteAction
   settingValue?: string
   settingType?: SettingType
@@ -62,13 +80,15 @@ const COMMAND_PALETTE_CHANNEL = {
   UPDATE_SETTING: 'app:command-palette:update-setting',
   OPEN_SETTINGS_FILE: 'app:command-palette:open-settings-file',
   SETTING_CHANGED: 'app:command-palette:setting-changed',
+  SHOW_FILTERED: 'app:command-palette:show-filtered',
+  OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
 } as const;
 
 export { COMMAND_PALETTE_CHANNEL };
 
 export interface CommandPaletteManagerDeps {
   getMainWindow: () => BrowserWindow | null;
-  getDataDir: () => string;
+  getAgentRoot: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
   getStorePath: () => string;
@@ -197,7 +217,7 @@ export class CommandPaletteManager {
     return this.commandPaletteWindow;
   }
 
-  show(): void {
+  private showAndNotify(channel: string, ...args: unknown[]): void {
     const paletteWindow = this.ensureWindow();
     this.syncBounds();
     paletteWindow.show();
@@ -206,10 +226,7 @@ export class CommandPaletteManager {
     paletteWindow.webContents.focus();
 
     const focusSearchInput = () => {
-      if (paletteWindow.isDestroyed()) {
-        return;
-      }
-
+      if (paletteWindow.isDestroyed()) return;
       void paletteWindow.webContents.executeJavaScript(`
         (() => {
           const input = document.getElementById('searchInput');
@@ -220,25 +237,31 @@ export class CommandPaletteManager {
           }
           return false;
         })();
-      `, true).catch((error) => {
-        console.warn('[command-palette] failed to focus search input', error);
-      });
+      `, true).catch(() => {});
     };
 
     setTimeout(focusSearchInput, 0);
     setTimeout(focusSearchInput, 80);
 
-    const notifyOpened = () => {
+    const notify = () => {
       if (!paletteWindow.isDestroyed()) {
-        paletteWindow.webContents.send(COMMAND_PALETTE_CHANNEL.OPENED);
+        paletteWindow.webContents.send(channel, ...args);
       }
     };
 
     if (paletteWindow.webContents.isLoadingMainFrame()) {
-      paletteWindow.webContents.once('did-finish-load', notifyOpened);
+      paletteWindow.webContents.once('did-finish-load', notify);
     } else {
-      notifyOpened();
+      notify();
     }
+  }
+
+  show(): void {
+    this.showAndNotify(COMMAND_PALETTE_CHANNEL.OPENED);
+  }
+
+  showFiltered(query: string): void {
+    this.showAndNotify(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, query);
   }
 
   toggle(): void {
@@ -252,7 +275,16 @@ export class CommandPaletteManager {
   }
 
   async buildItems(): Promise<CommandPaletteItem[]> {
-    const rows = await listViews(this.deps.getDataDir());
+    const agentRoot = this.deps.getAgentRoot();
+
+    const [rows, tasks] = await Promise.all([
+      listViews(agentRoot),
+      listTasks(agentRoot).catch((err) => {
+        console.error('[command-palette] listTasks failed:', err);
+        return [] as Awaited<ReturnType<typeof listTasks>>;
+      }),
+    ]);
+
     const viewItems: CommandPaletteItem[] = rows.map((row) => ({
       id: `view:${row.id}`,
       title: row.name,
@@ -265,23 +297,17 @@ export class CommandPaletteManager {
       },
     }));
 
-    let taskItems: CommandPaletteItem[] = [];
-    try {
-      const tasks = await listTasks(this.deps.getDataDir());
-      taskItems = tasks.map((task) => ({
-        id: `task:${task.id}`,
-        title: task.name,
-        subtitle: 'Run task',
-        group: 'Tasks',
-        action: {
-          type: 'run-task',
-          taskId: task.id,
-          taskName: task.name,
-        },
-      }));
-    } catch (err) {
-      console.error('[command-palette] listTasks failed:', err);
-    }
+    const taskItems: CommandPaletteItem[] = tasks.map((task) => ({
+      id: `task:${task.id}`,
+      title: task.name,
+      subtitle: 'Run task',
+      group: 'Tasks',
+      action: {
+        type: 'run-task',
+        taskId: task.id,
+        taskName: task.name,
+      },
+    }));
 
     const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
     const actionItems: CommandPaletteItem[] = [
@@ -320,7 +346,34 @@ export class CommandPaletteManager {
       },
     ];
 
-    return [...actionItems, ...taskItems, ...viewItems];
+    // Agent items
+    const agentItems: CommandPaletteItem[] = [
+      {
+        id: 'agent:open',
+        title: 'Open Agent',
+        group: 'Agent',
+        action: { type: 'open-agent' },
+      },
+      {
+        id: 'agent:install',
+        title: 'Install Agent',
+        group: 'Agent',
+        action: { type: 'install-agent' },
+      },
+    ];
+
+    const recents = getRecentAgents();
+    for (const recent of recents) {
+      agentItems.push({
+        id: `agent:recent:${recent.path}`,
+        title: shortenPath(recent.path),
+        subtitle: 'Switch agent',
+        group: 'Agent',
+        action: { type: 'switch-agent', agentPath: recent.path },
+      });
+    }
+
+    return [...agentItems, ...actionItems, ...taskItems, ...viewItems];
   }
 
   buildSettingsItems(): CommandPaletteItem[] {
@@ -401,7 +454,7 @@ export class CommandPaletteManager {
         break;
 
       case 'reload-views': {
-        const views = await listViews(this.deps.getDataDir());
+        const views = await listViews(this.deps.getAgentRoot());
         this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:views-loaded', {
           views: views.map((row) => ({
             title: row.name,
@@ -432,6 +485,32 @@ export class CommandPaletteManager {
       case 'edit-setting':
         // Handled entirely in the palette UI
         return;
+
+      case 'open-agent': {
+        this.hide({ focusMain: true });
+        const picked = await showOpenAgentDialog(this.deps.getMainWindow());
+        if (picked) openAgent(picked);
+        return;
+      }
+
+      case 'install-agent': {
+        this.hide({ focusMain: true });
+        const installed = await showInstallAgentDialog(this.deps.getMainWindow());
+        if (installed) openAgent(installed);
+        return;
+      }
+
+      case 'switch-agent': {
+        const switchAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
+        this.hide({ focusMain: true });
+        if (isAgentDir(switchAction.agentPath)) {
+          openAgent(switchAction.agentPath);
+        } else {
+          const picked = await showOpenAgentDialog(this.deps.getMainWindow());
+          if (picked) openAgent(picked);
+        }
+        return;
+      }
 
       default:
         throw new Error(`Unsupported command palette action type: ${type}`);
