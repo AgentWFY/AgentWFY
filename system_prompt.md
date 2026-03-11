@@ -33,7 +33,7 @@ await runSql({ target, sql, params?, path?, description? })
 ```
 
 Targets:
-- `'agent'` — built-in agent.db (views, docs, tasks tables). Auto-creates schema on first use.
+- `'agent'` — built-in agent.db (views, docs, tasks, triggers tables). Auto-creates schema on first use.
 - `'sqlite-file'` — any SQLite file in the working directory (requires `path`).
 
 Returns an array of row objects. Use parameterized queries with `params` array.
@@ -43,7 +43,8 @@ Agent DB schema:
 ```sql
 views (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at INTEGER, updated_at INTEGER)
 docs (id INTEGER PRIMARY KEY, name TEXT UNIQUE, content TEXT, preload INTEGER DEFAULT 0, updated_at INTEGER)
-tasks (id INTEGER PRIMARY KEY, name TEXT, content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
 ```
 
 Timestamps are unix epoch seconds (auto-set via `unixepoch()`).
@@ -74,14 +75,50 @@ Always `reloadTab` after updating view content via SQL.
 
 ### Tasks
 
-Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs).
+Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs). The `description` column is shown in the command palette.
 
-- `startTask(taskId)` → `{ runId }` — non-blocking, starts a task
+- `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task. Optional `input` is passed to the task code.
 - `stopTask(runId)` → void
+
+Inside task code, the input value is available as `input` (global variable injected by the runtime).
 
 Task completion is delivered via the bus:
 - `waitFor('task:run:' + runId)` returns `{ runId, taskId, name, status, result, error, logs }`.
 - Data passing: use the bus with runId as correlation ID (e.g. task calls `waitFor('task:' + runId + ':config')`, caller calls `publish('task:' + runId + ':config', data)`).
+
+Task runs are logged to JSON files automatically. Each run captures status, result, error, and console logs.
+
+### Triggers
+
+Triggers automate task execution. Stored in the `triggers` table (target="agent"). The `config` column holds JSON specific to each trigger type.
+
+Three trigger types:
+
+**schedule** — cron-like scheduling.
+- Config: `{ "expression": "second minute hour day month weekday" }` (6-field cron)
+- Syntax: `*`, single values (`5`), ranges (`1-5`), lists (`1,15`), steps (`*/10`, `2-30/2`)
+- Fields: seconds (0-59), minutes (0-59), hours (0-23), day (1-31), month (1-12), weekday (0-6, 0=Sunday)
+
+**http** — exposes an HTTP endpoint that triggers the task.
+- Config: `{ "path": "/my-endpoint", "method": "POST", "auth": "token" }`
+- `method`: GET, POST, PUT, PATCH, DELETE (default: POST)
+- `auth`: `"token"` (default, requires Bearer token) or `"none"`
+- Task receives `{ method, path, headers, query, body }` as input
+
+**event** — subscribes to an internal event bus topic.
+- Config: `{ "topic": "my-topic" }`
+- Task receives the published event data as input
+
+Enable/disable triggers by setting `enabled` to 1 or 0. Triggers reload automatically when the table changes.
+
+### HTTP API
+
+A local HTTP server runs on `127.0.0.1:9877` (port configurable). API key is auto-generated and stored in app settings.
+
+Built-in endpoint:
+- `GET /files/{path}?key={apiKey}` — serve files from the agent directory (always requires auth)
+
+HTTP triggers register additional dynamic routes. All responses are JSON. CORS is enabled (`*`).
 
 ### EventBus & Agent Spawning
 
