@@ -225,39 +225,6 @@
       color: var(--error);
     }
 
-    .task-detail-desc {
-      padding: 10px 14px;
-      font-size: 12px;
-      color: var(--text);
-      line-height: 1.5;
-    }
-
-    .task-detail-label {
-      padding: 8px 14px 4px;
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-weight: 600;
-    }
-
-    .task-detail-input {
-      margin: 0 14px 8px;
-      padding: 6px 10px;
-      font-size: 13px;
-      background: var(--surface);
-      color: var(--text-strong);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      outline: none;
-      font-family: inherit;
-      width: calc(100% - 28px);
-    }
-
-    .task-detail-input:focus {
-      border-color: var(--accent);
-    }
-
     .empty {
       padding: 20px 12px;
       color: var(--muted);
@@ -547,35 +514,10 @@
 
         if (taskDetail.taskDescription) {
           const descEl = document.createElement('div');
-          descEl.className = 'task-detail-desc';
+          descEl.className = 'edit-description';
           descEl.textContent = taskDetail.taskDescription;
           resultsEl.appendChild(descEl);
         }
-
-        const labelEl = document.createElement('div');
-        labelEl.className = 'task-detail-label';
-        labelEl.textContent = 'Input';
-        resultsEl.appendChild(labelEl);
-
-        const inputEl = document.createElement('input');
-        inputEl.type = 'text';
-        inputEl.className = 'task-detail-input';
-        inputEl.id = 'taskInput';
-        inputEl.placeholder = 'Optional input for the task...';
-        inputEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void runTaskFromDetail();
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            taskDetail = null;
-            enterNormalMode();
-          }
-        });
-        resultsEl.appendChild(inputEl);
-
-        // Focus the task input instead of search
-        requestAnimationFrame(() => inputEl.focus());
       };
 
       const render = () => {
@@ -729,17 +671,17 @@
           taskDescription: item.action.taskDescription || '',
         };
         searchInput.value = '';
-        searchInput.placeholder = item.action.taskName;
+        searchInput.placeholder = 'Type input and press Enter to run...';
         selectedIndex = 0;
         updateBreadcrumb();
         updateHintBar();
         render();
+        searchInput.focus();
       };
 
       const runTaskFromDetail = async () => {
         if (!taskDetail || actionInFlight) return;
-        const taskInputEl = document.getElementById('taskInput');
-        const inputValue = taskInputEl ? taskInputEl.value.trim() : '';
+        const inputValue = searchInput.value.trim();
         actionInFlight = true;
         try {
           await bridge.runAction({
@@ -935,6 +877,9 @@
         if (mode === 'editing') {
           editError = '';
           render();
+          return;
+        }
+        if (mode === 'task-detail') {
           return;
         }
         selectedIndex = 0;
