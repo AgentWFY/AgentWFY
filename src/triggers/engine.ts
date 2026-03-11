@@ -62,9 +62,17 @@ export class TriggerEngine {
 
     this.teardownAll();
 
+    let agentRoot: string;
+    try {
+      agentRoot = this.deps.getAgentRoot();
+    } catch {
+      // No agent open yet — nothing to load
+      return;
+    }
+
     let rows: TriggerRow[];
     try {
-      const raw = await runAgentDbSql(this.deps.getAgentRoot(), {
+      const raw = await runAgentDbSql(agentRoot, {
         sql: 'SELECT id, task_id, type, config, description, enabled FROM triggers WHERE enabled = 1',
       });
       rows = raw as TriggerRow[];
