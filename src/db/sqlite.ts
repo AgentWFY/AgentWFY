@@ -22,8 +22,20 @@ CREATE TABLE IF NOT EXISTS docs (
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
   timeout_ms INTEGER DEFAULT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
+);
+
+CREATE TABLE IF NOT EXISTS triggers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK(type IN ('schedule', 'http', 'event')),
+  config TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
   created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
@@ -62,6 +74,15 @@ CREATE TEMP TRIGGER IF NOT EXISTS _tasks_update AFTER UPDATE ON tasks BEGIN
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_delete AFTER DELETE ON tasks BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', OLD.id, 'delete');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_insert AFTER INSERT ON triggers BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.id, 'insert');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_update AFTER UPDATE ON triggers BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.id, 'update');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_delete AFTER DELETE ON triggers BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.id, 'delete');
 END;
 `;
 

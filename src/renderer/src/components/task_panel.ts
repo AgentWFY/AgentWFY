@@ -4,6 +4,7 @@ import type { TaskRun, TaskLogHistoryItem } from '../tasks/task_runner.js'
 interface TaskItem {
   id: number
   name: string
+  description: string
   timeout_ms: number | null
 }
 
@@ -196,6 +197,37 @@ const STYLES = `
     color: var(--color-text2);
   }
   .history-detail.open { display: block; }
+  .task-desc {
+    font-size: 11px;
+    color: var(--color-text1);
+    padding: 0 8px 2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .task-input-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px 4px;
+  }
+  .task-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+    outline: none;
+  }
+  .task-input:focus {
+    border-color: var(--color-accent, #58a6ff);
+  }
+  .task-input::placeholder {
+    color: var(--color-text1);
+  }
 `
 
 function escapeHtml(text: string): string {
@@ -321,7 +353,7 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: 'SELECT id, name, timeout_ms FROM tasks ORDER BY name ASC',
+        sql: 'SELECT id, name, description, timeout_ms FROM tasks ORDER BY name ASC',
       }) as TaskItem[]
       this.tasks = Array.isArray(rows) ? rows : []
     } catch {
@@ -382,6 +414,13 @@ export class TlTaskPanel extends HTMLElement {
         html += `<div class="task-item">`
         html += `<span class="task-name">${escapeHtml(task.name)}</span>`
         html += `<button class="btn" data-run-task="${task.id}">Run</button>`
+        html += `</div>`
+        if (task.description) {
+          html += `<div class="task-desc">${escapeHtml(task.description)}</div>`
+        }
+        html += `<div class="task-input-row">`
+        html += `<input class="task-input" data-input-task="${task.id}" placeholder="Input (optional)" />`
+        html += `<button class="btn" data-run-task-input="${task.id}">Run with input</button>`
         html += `</div>`
       }
     }
@@ -466,7 +505,7 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private attachContentListeners() {
-    // Run buttons
+    // Run buttons (no input)
     this.shadow.querySelectorAll('[data-run-task]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -474,6 +513,26 @@ export class TlTaskPanel extends HTMLElement {
         const runner = getTaskRunner()
         if (runner && taskId) {
           runner.runTask(taskId).catch(err => console.error('[TlTaskPanel] run failed', err))
+        }
+      })
+    })
+
+    // Run with input buttons
+    this.shadow.querySelectorAll('[data-run-task-input]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const taskId = Number((btn as HTMLElement).dataset.runTaskInput)
+        this.runWithInput(taskId)
+      })
+    })
+
+    // Enter key on input fields
+    this.shadow.querySelectorAll('.task-input[data-input-task]').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') {
+          e.preventDefault()
+          const taskId = Number((el as HTMLInputElement).dataset.inputTask)
+          this.runWithInput(taskId)
         }
       })
     })
@@ -518,6 +577,17 @@ export class TlTaskPanel extends HTMLElement {
         }
       })
     })
+  }
+
+  private runWithInput(taskId: number) {
+    if (!taskId) return
+    const inputEl = this.shadow.querySelector(`.task-input[data-input-task="${taskId}"]`) as HTMLInputElement | null
+    const inputValue = inputEl?.value?.trim() || undefined
+    const runner = getTaskRunner()
+    if (runner) {
+      runner.runTask(taskId, inputValue).catch(err => console.error('[TlTaskPanel] run with input failed', err))
+      if (inputEl) inputEl.value = ''
+    }
   }
 
   private async loadHistoryDetail(file: string) {

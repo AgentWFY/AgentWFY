@@ -3,6 +3,7 @@ import { runAgentDbSql } from './sqlite.js';
 export interface TaskCatalogRecord {
   id: number;
   name: string;
+  description: string;
   timeout_ms: number | null;
   updated_at: number;
 }
@@ -59,6 +60,7 @@ function toCatalogRecord(row: unknown): TaskCatalogRecord {
   return {
     id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
+    description: typeof record.description === 'string' ? record.description : '',
     timeout_ms: asNullableNumber(record.timeout_ms),
     updated_at: asNumber(record.updated_at, 'updated_at'),
   };
@@ -69,6 +71,7 @@ function toTaskRecord(row: unknown): TaskRecord {
   return {
     id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
+    description: typeof record.description === 'string' ? record.description : '',
     content: asString(record.content, 'content'),
     timeout_ms: asNullableNumber(record.timeout_ms),
     created_at: asNumber(record.created_at, 'created_at'),
@@ -78,7 +81,7 @@ function toTaskRecord(row: unknown): TaskRecord {
 
 export async function listTasks(dataDir: string): Promise<TaskCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
+    sql: 'SELECT id, name, description, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
   });
 
   return rows.map((row) => toCatalogRecord(row));
@@ -89,7 +92,7 @@ export async function getTaskById(
   taskId: number | string
 ): Promise<TaskRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, content, timeout_ms, created_at, updated_at FROM tasks WHERE id = ? LIMIT 1',
+    sql: 'SELECT id, name, description, content, timeout_ms, created_at, updated_at FROM tasks WHERE id = ? LIMIT 1',
     params: [taskId],
   });
 

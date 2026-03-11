@@ -312,7 +312,7 @@ export class CommandPaletteManager {
     const taskItems: CommandPaletteItem[] = tasks.map((task) => ({
       id: `task:${task.id}`,
       title: task.name,
-      subtitle: 'Run task',
+      subtitle: task.description || 'Run task',
       group: 'Tasks',
       action: {
         type: 'run-task',

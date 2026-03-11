@@ -129,7 +129,8 @@ export class JsRuntime {
     sessionId: string,
     code: string,
     timeoutMs?: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    input?: unknown
   ): Promise<ExecJsDetails> {
     const normalizedSessionId = normalizeSessionId(sessionId)
     this.ensureWorker(normalizedSessionId)
@@ -186,6 +187,7 @@ export class JsRuntime {
         requestId,
         code,
         timeoutMs: timeout,
+        input,
       } satisfies HostToWorkerMessage)
     })
   }

@@ -260,6 +260,7 @@ export interface WorkerExecuteRequestMessage {
   requestId: string
   code: string
   timeoutMs: number
+  input?: unknown
 }
 
 export interface WorkerCancelRequestMessage {
