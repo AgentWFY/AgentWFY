@@ -6,7 +6,7 @@ import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerAuthHandlers } from './ipc/auth.js';
-import { registerBusHandlers, forwardBusPublish } from './ipc/bus.js';
+import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor } from './ipc/bus.js';
 import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
@@ -30,6 +30,8 @@ import {
   shortenPath,
 } from './agent-manager.js';
 import { startHttpApi } from './http-api/server.js';
+import type { HttpApiServer } from './http-api/server.js';
+import { TriggerEngine } from './triggers/engine.js';
 import { scheduleBackup, stopBackupScheduler, getBackupStatus } from './backup.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -73,7 +75,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null;
-let httpServer: import('http').Server | null = null;
+let httpApi: HttpApiServer | null = null;
+let triggerEngine: TriggerEngine | null = null;
 
 const clientPath = path.join(import.meta.dirname, 'client', 'index.html');
 
@@ -115,6 +118,13 @@ let dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 function onDbChange(change: AgentDbChange): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('bus:dbChanged', change);
+
+  // Reload triggers when the triggers table changes
+  if (change.table === 'triggers' && triggerEngine) {
+    triggerEngine.reload().catch(err => {
+      console.error('[triggers] Reload failed:', err);
+    });
+  }
 
   // Debounced backup status refresh so status line updates modified indicator
   if (dbChangeDebounceTimer) clearTimeout(dbChangeDebounceTimer);
@@ -160,12 +170,19 @@ onAgentRootChanged(async (newRoot) => {
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
+  if (triggerEngine) {
+    triggerEngine.stop();
+    triggerEngine.reload().catch(err => console.error('[triggers] Reload after agent switch failed:', err));
+  }
   await ensureAgentRuntimeBootstrap(newRoot);
   scheduleBackup(newRoot).then(() => {
     rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
   }).catch((err) => console.error('[backup] Schedule failed:', err));
   mainWindow?.reload();
   buildAndSetMenu();
+  if (triggerEngine) {
+    triggerEngine.start().catch(err => console.error('[triggers] Start after agent switch failed:', err));
+  }
 });
 
 // --- App window creation ---
@@ -420,17 +437,46 @@ app.on('ready', async () => {
   installWebRequestHooks();
   startFileWatcher();
 
-  httpServer = startHttpApi({
+  httpApi = startHttpApi({
     getAgentRoot,
-    onDbChange,
-    startTask: (taskId) => {
+  });
+
+  triggerEngine = new TriggerEngine({
+    getAgentRoot,
+    startTask: (taskId, input?) => {
       if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardStartTask(mainWindow, taskId);
+      return forwardStartTask(mainWindow, taskId, input);
     },
-    busPublish: (topic, data) => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      forwardBusPublish(mainWindow, topic, data);
+    busWaitFor: (topic, timeoutMs?) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      return forwardBusWaitFor(mainWindow, topic, timeoutMs);
     },
+    busSubscribe: (topic, fn) => {
+      // Main process subscribes by forwarding from renderer via a unique channel
+      // For simplicity, we poll via bus waitFor in a loop
+      let stopped = false;
+      const poll = async () => {
+        while (!stopped) {
+          if (!mainWindow || mainWindow.isDestroyed()) {
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
+          try {
+            const data = await forwardBusWaitFor(mainWindow, topic, 60_000);
+            if (!stopped) fn(data);
+          } catch {
+            // Timeout or error — retry
+          }
+        }
+      };
+      void poll();
+      return () => { stopped = true; };
+    },
+    httpApi,
+  });
+
+  triggerEngine.start().catch(err => {
+    console.error('[triggers] Initial start failed:', err);
   });
 
   buildAndSetMenu();
@@ -468,7 +514,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopFileWatcher();
   stopBackupScheduler();
-  httpServer?.close();
+  triggerEngine?.stop();
+  httpApi?.server.close();
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();

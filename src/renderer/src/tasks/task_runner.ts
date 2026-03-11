@@ -49,7 +49,7 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').map(r => r.name)
   }
 
-  async startTask(taskId: number): Promise<string> {
+  async startTask(taskId: number, input?: unknown): Promise<string> {
     const ipc = window.ipc
     if (!ipc) throw new Error('window.ipc is not available')
 
@@ -84,13 +84,13 @@ export class TaskRunner {
     const runtime = getJsRuntime()
     runtime.ensureWorker(runId)
 
-    void this.executeRun(run, task.content, timeoutMs)
+    void this.executeRun(run, task.content, timeoutMs, input)
 
     return runId
   }
 
-  async runTask(taskId: number): Promise<string> {
-    const runId = await this.startTask(taskId)
+  async runTask(taskId: number, input?: unknown): Promise<string> {
+    const runId = await this.startTask(taskId, input)
     await new Promise<unknown>((resolve) => {
       this.completionWaiters.set(runId, { resolve })
     })
@@ -155,11 +155,11 @@ export class TaskRunner {
     this.listeners.clear()
   }
 
-  private async executeRun(run: TaskRun, code: string, timeoutMs: number): Promise<void> {
+  private async executeRun(run: TaskRun, code: string, timeoutMs: number, input?: unknown): Promise<void> {
     const runtime = getJsRuntime()
 
     try {
-      const details = await runtime.executeExecJs(run.runId, code, timeoutMs)
+      const details = await runtime.executeExecJs(run.runId, code, timeoutMs, undefined, input)
 
       run.logs = details.logs ?? []
 
