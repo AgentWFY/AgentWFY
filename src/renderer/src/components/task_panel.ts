@@ -309,12 +309,13 @@ export class TlTaskPanel extends HTMLElement {
     this.loadTasks()
   }
 
-  private onRunTaskEvent = (e: CustomEvent<{ taskId: number }>) => {
+  private onRunTaskEvent = (e: CustomEvent<{ taskId: number; input?: string }>) => {
     const taskId = e.detail?.taskId
     if (typeof taskId === 'number') {
       const runner = getTaskRunner()
       if (runner) {
-        runner.runTask(taskId).catch(err => {
+        const input = e.detail?.input
+        runner.runTask(taskId, input || undefined).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }

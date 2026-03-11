@@ -225,6 +225,39 @@
       color: var(--error);
     }
 
+    .task-detail-desc {
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .task-detail-label {
+      padding: 8px 14px 4px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+    }
+
+    .task-detail-input {
+      margin: 0 14px 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text-strong);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      outline: none;
+      font-family: inherit;
+      width: calc(100% - 28px);
+    }
+
+    .task-detail-input:focus {
+      border-color: var(--accent);
+    }
+
     .empty {
       padding: 20px 12px;
       color: var(--muted);
@@ -286,7 +319,7 @@
       let actionInFlight = false;
 
       // --- Mode state ---
-      /** @type {'normal' | 'settings' | 'editing' | 'restore'} */
+      /** @type {'normal' | 'settings' | 'editing' | 'restore' | 'task-detail'} */
       let mode = 'normal';
       /** @type {Array<{id:string,title:string,subtitle?:string,group:string,action:any,settingValue?:string,settingType?:string}>} */
       let settingsItems = [];
@@ -296,6 +329,8 @@
       let editingSetting = null;
       /** @type {string} */
       let editError = '';
+      /** @type {{ taskId: number, taskName: string, taskDescription: string } | null} */
+      let taskDetail = null;
 
       const clampSelectedIndex = () => {
         if (filtered.length === 0) {
@@ -346,6 +381,9 @@
         } else if (mode === 'restore') {
           breadcrumbEl.style.display = 'block';
           breadcrumbEl.textContent = 'Restore Agent Database';
+        } else if (mode === 'task-detail' && taskDetail) {
+          breadcrumbEl.style.display = 'block';
+          breadcrumbEl.textContent = `Tasks \u203A ${taskDetail.taskName}`;
         }
       };
 
@@ -374,6 +412,11 @@
             <span class="hint-item"><span class="hint-key">Enter</span> restore</span>
             <span class="hint-item"><span class="hint-key">Esc</span> back</span>
             <span class="hint-item"><span class="hint-key">&uarr;&darr;</span> navigate</span>
+          `;
+        } else if (mode === 'task-detail') {
+          hintBar.innerHTML = `
+            <span class="hint-item"><span class="hint-key">Enter</span> run</span>
+            <span class="hint-item"><span class="hint-key">Esc</span> back</span>
           `;
         }
       };
@@ -498,11 +541,49 @@
         }
       };
 
+      const renderTaskDetail = () => {
+        resultsEl.innerHTML = '';
+        if (!taskDetail) return;
+
+        if (taskDetail.taskDescription) {
+          const descEl = document.createElement('div');
+          descEl.className = 'task-detail-desc';
+          descEl.textContent = taskDetail.taskDescription;
+          resultsEl.appendChild(descEl);
+        }
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'task-detail-label';
+        labelEl.textContent = 'Input';
+        resultsEl.appendChild(labelEl);
+
+        const inputEl = document.createElement('input');
+        inputEl.type = 'text';
+        inputEl.className = 'task-detail-input';
+        inputEl.id = 'taskInput';
+        inputEl.placeholder = 'Optional input for the task...';
+        inputEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void runTaskFromDetail();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            taskDetail = null;
+            enterNormalMode();
+          }
+        });
+        resultsEl.appendChild(inputEl);
+
+        // Focus the task input instead of search
+        requestAnimationFrame(() => inputEl.focus());
+      };
+
       const render = () => {
         if (mode === 'normal') renderItemList('No matches');
         else if (mode === 'settings') renderItemList('No settings found');
         else if (mode === 'editing') renderEditing();
         else if (mode === 'restore') renderItemList('No backups found');
+        else if (mode === 'task-detail') renderTaskDetail();
       };
 
       const applyFilter = () => {
@@ -637,12 +718,55 @@
         }
       };
 
+      // --- Task detail mode ---
+
+      const enterTaskDetailMode = (item) => {
+        if (!item || !item.action || item.action.type !== 'run-task') return;
+        mode = 'task-detail';
+        taskDetail = {
+          taskId: item.action.taskId,
+          taskName: item.action.taskName,
+          taskDescription: item.action.taskDescription || '',
+        };
+        searchInput.value = '';
+        searchInput.placeholder = item.action.taskName;
+        selectedIndex = 0;
+        updateBreadcrumb();
+        updateHintBar();
+        render();
+      };
+
+      const runTaskFromDetail = async () => {
+        if (!taskDetail || actionInFlight) return;
+        const taskInputEl = document.getElementById('taskInput');
+        const inputValue = taskInputEl ? taskInputEl.value.trim() : '';
+        actionInFlight = true;
+        try {
+          await bridge.runAction({
+            type: 'run-task',
+            taskId: taskDetail.taskId,
+            taskName: taskDetail.taskName,
+            input: inputValue || undefined,
+          });
+        } catch (error) {
+          console.error('Failed to run task:', error);
+        } finally {
+          actionInFlight = false;
+        }
+      };
+
       // --- Action handling ---
 
       const runActionForIndex = async (index) => {
         if (actionInFlight) return;
         const item = filtered[index];
         if (!item) return;
+
+        // Handle run-task locally — enter task detail mode
+        if (item.action && item.action.type === 'run-task') {
+          enterTaskDetailMode(item);
+          return;
+        }
 
         // Handle enter-settings locally
         if (item.action && item.action.type === 'enter-settings') {
@@ -698,6 +822,8 @@
         } else if (mode === 'restore') {
           if (filtered.length === 0) return;
           await runActionForIndex(selectedIndex);
+        } else if (mode === 'task-detail') {
+          await runTaskFromDetail();
         }
       };
 
@@ -724,7 +850,8 @@
             await enterSettingsMode();
             return;
           }
-          if (mode === 'settings' || mode === 'restore') {
+          if (mode === 'settings' || mode === 'restore' || mode === 'task-detail') {
+            taskDetail = null;
             enterNormalMode();
             return;
           }
