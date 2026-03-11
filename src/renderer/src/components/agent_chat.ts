@@ -360,10 +360,19 @@ const STYLES = `
     gap: 2px;
     flex-shrink: 0;
   }
-  .settings-panel {
-    border-top: 1px solid var(--color-border);
-    padding-top: 8px;
+  .popup-panel {
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
     margin-top: 4px;
+    flex-shrink: 0;
+  }
+  .settings-panel {
+    max-height: 400px;
+    padding: 0 10px;
   }
   .setup-container {
     display: flex;
@@ -406,16 +415,7 @@ const STYLES = `
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
   }
-  .session-panel {
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    max-height: 300px;
-    overflow-y: auto;
-    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-    margin-top: 4px;
-    flex-shrink: 0;
-  }
+  .session-panel { }
   .session-panel-item {
     display: flex;
     align-items: center;
@@ -452,11 +452,9 @@ export class TlAgentChat extends HTMLElement {
   private isStreaming = false
   private error: string | null = null
   private inputValue = ''
-  private showTools = true
-  private showSettings = false
+  private activePanel: 'settings' | 'sessions' | null = null
   private isInitializing = true
   private authConfig: AgentAuthConfig | null = null
-  private showSessionPanel = false
   private notifyOnFinish = false
   private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
@@ -520,7 +518,7 @@ export class TlAgentChat extends HTMLElement {
         this.managerUnsub = mgr.subscribe(() => this.refreshState())
         this.refreshState()
       } else {
-        this.showSettings = true
+        this.activePanel = 'settings'
       }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -562,7 +560,7 @@ export class TlAgentChat extends HTMLElement {
   private async handleReconnect() {
     this.error = null
     // Keep inline settings open when reconnecting from an already-active chat.
-    const keepInlineSettingsOpen = !!this.manager && this.showSettings
+    const keepInlineSettingsOpen = !!this.manager && this.activePanel === 'settings'
     this.isInitializing = true
     this.render()
     try {
@@ -572,14 +570,14 @@ export class TlAgentChat extends HTMLElement {
       if (mgr) {
         this.managerUnsub = mgr.subscribe(() => this.refreshState())
         this.refreshState()
-        this.showSettings = keepInlineSettingsOpen
+        this.activePanel = keepInlineSettingsOpen ? 'settings' : null
       } else {
         this.managerUnsub = null
         this.agent = null
         this.messages = []
         this.isStreaming = false
         this.sessionListItems = []
-        this.showSettings = true
+        this.activePanel = 'settings'
       }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -601,7 +599,7 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleNewSession() {
     if (!this.manager) return
-    this.showSessionPanel = false
+    this.activePanel = null
     try {
       await this.manager.createSession()
     } catch (e) {
@@ -611,22 +609,22 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async toggleSessionPanel() {
-    if (this.showSessionPanel) {
-      this.showSessionPanel = false
+    if (this.activePanel === 'sessions') {
+      this.activePanel = null
       this.render()
       return
     }
     if (!this.manager) return
 
     this.sessionListItems = await this.manager.getSessionList()
-    this.showSessionPanel = true
+    this.activePanel = 'sessions'
     this._sessionPanelDirty = true
     this.render()
   }
 
   private handleSessionClick(item: SessionListItem) {
     if (item.isActive) return
-    this.showSessionPanel = false
+    this.activePanel = null
     if (item.sessionId && this.manager) {
       this.manager.switchTo(item.sessionId)
     } else if (item.file && this.manager) {
@@ -912,7 +910,7 @@ export class TlAgentChat extends HTMLElement {
 
     // Session panel (hidden by default)
     this._sessionPanel = document.createElement('div')
-    this._sessionPanel.className = 'session-panel'
+    this._sessionPanel.className = 'popup-panel session-panel'
     this._sessionPanel.style.display = 'none'
     // Event delegation for session panel items
     this._sessionPanel.addEventListener('mousedown', (e) => {
@@ -932,6 +930,12 @@ export class TlAgentChat extends HTMLElement {
       }
     })
     container.appendChild(this._sessionPanel)
+
+    // Settings panel (hidden by default, content lazy-created)
+    this._settingsPanel = document.createElement('div')
+    this._settingsPanel.className = 'popup-panel settings-panel'
+    this._settingsPanel.style.display = 'none'
+    container.appendChild(this._settingsPanel)
 
     // Input area
     const inputArea = document.createElement('div')
@@ -1016,19 +1020,13 @@ export class TlAgentChat extends HTMLElement {
     this._settingsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
     this._settingsBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      this.showSettings = !this.showSettings
+      this.activePanel = this.activePanel === 'settings' ? null : 'settings'
       this.render()
     })
     actionsDiv.appendChild(this._settingsBtn)
 
     toolsRow.appendChild(actionsDiv)
     inputArea.appendChild(toolsRow)
-
-    // Settings panel (hidden by default, content lazy-created)
-    this._settingsPanel = document.createElement('div')
-    this._settingsPanel.className = 'settings-panel'
-    this._settingsPanel.style.display = 'none'
-    inputArea.appendChild(this._settingsPanel)
 
     container.appendChild(inputArea)
     this.containerEl.appendChild(container)
@@ -1044,12 +1042,12 @@ export class TlAgentChat extends HTMLElement {
         if (block.type === 'user') {
           html += `<div class="block block-user">${this.renderMarkdown(block.text)}</div>`
         } else if (block.type === 'assistant') {
-          if (this.showTools || block.text.trim()) {
+          if (block.text.trim() || block.tools.length > 0) {
             html += '<div class="block block-assistant">'
             if (block.text) {
               html += `<div class="assistant-text">${this.renderMarkdown(block.text)}</div>`
             }
-            if (this.showTools && block.tools.length > 0) {
+            if (block.tools.length > 0) {
               html += '<div class="tools-group">'
               for (const tool of block.tools) {
                 const isOpen = this.isToolOpen(tool.id)
@@ -1129,10 +1127,10 @@ export class TlAgentChat extends HTMLElement {
       this._notifyBtn.classList.toggle('active', this.notifyOnFinish)
     }
     if (this._sessionsBtn) {
-      this._sessionsBtn.classList.toggle('active', this.showSessionPanel)
+      this._sessionsBtn.classList.toggle('active', this.activePanel === 'sessions')
     }
     if (this._settingsBtn) {
-      this._settingsBtn.classList.toggle('active', this.showSettings)
+      this._settingsBtn.classList.toggle('active', this.activePanel === 'settings')
     }
 
     // 5. New session button visibility
@@ -1155,7 +1153,7 @@ export class TlAgentChat extends HTMLElement {
 
     // 8. Session panel
     if (this._sessionPanel) {
-      if (this.showSessionPanel) {
+      if (this.activePanel === 'sessions') {
         this._sessionPanel.style.display = ''
         if (this._sessionPanelDirty) {
           this.renderSessionPanelContent()
@@ -1189,22 +1187,17 @@ export class TlAgentChat extends HTMLElement {
 
   private updateSettingsPanel() {
     if (!this._settingsPanel) return
-    if (this.showSettings && this.authConfig) {
+    if (this.activePanel === 'settings' && this.authConfig) {
       this._settingsPanel.style.display = ''
-      let settingsEl = this._settingsPanel.querySelector('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; showTools?: boolean; disabled?: boolean } | null
+      let settingsEl = this._settingsPanel.querySelector('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean } | null
       if (!settingsEl) {
-        settingsEl = document.createElement('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; showTools?: boolean; disabled?: boolean }
+        settingsEl = document.createElement('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean }
         settingsEl.id = 'inline-settings'
         settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))
         settingsEl.addEventListener('reconnect', () => this.handleReconnect())
-        settingsEl.addEventListener('tools-toggle', (e: Event) => {
-          this.showTools = (e as CustomEvent<boolean>).detail
-          this.render()
-        })
         this._settingsPanel.appendChild(settingsEl)
       }
       settingsEl.authConfig = this.authConfig!
-      settingsEl.showTools = this.showTools
       settingsEl.disabled = this.isStreaming
     } else {
       this._settingsPanel.style.display = 'none'
