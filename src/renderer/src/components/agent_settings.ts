@@ -29,38 +29,29 @@ const STYLES = `
   .section + .section {
     border-top: 1px solid var(--color-border);
   }
-  .section-label {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--color-text2);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    margin-bottom: 8px;
-  }
   .section-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
 
-  /* ── Setting rows ── */
+  /* ── Grid and fields ── */
 
-  .setting-row {
-    display: flex;
-    align-items: center;
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
-    min-height: 26px;
   }
-  .setting-label {
-    font-size: 12px;
-    color: var(--color-text3);
-    width: 64px;
-    flex-shrink: 0;
-    text-align: right;
-  }
-  .setting-control {
-    flex: 1;
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
     min-width: 0;
+  }
+  .field-label {
+    font-size: 10px;
+    color: var(--color-text2);
+    letter-spacing: 0.3px;
   }
 
   /* ── API key row ── */
@@ -84,12 +75,10 @@ const STYLES = `
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 4px 0 4px 72px;
     font-size: 12px;
     color: var(--color-text2);
   }
   .oauth-error-row {
-    padding: 4px 0 4px 72px;
     font-size: 12px;
     color: var(--color-red-fg);
   }
@@ -97,9 +86,13 @@ const STYLES = `
     font-size: 11px;
     color: var(--color-accent);
     word-break: break-all;
-    padding: 2px 0 2px 72px;
   }
   .oauth-link a { color: inherit; }
+  .connected-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .connected-dot {
     width: 6px;
     height: 6px;
@@ -113,37 +106,6 @@ const STYLES = `
     font-weight: 500;
   }
 
-  /* ── Grid for compact pairs ── */
-
-  .pair-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .pair-field {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .pair-field-label {
-    font-size: 10px;
-    color: var(--color-text2);
-    letter-spacing: 0.3px;
-  }
-
-  /* ── Toggle row ── */
-
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 2px 0;
-  }
-  .toggle-row-label {
-    font-size: 12px;
-    color: var(--color-text3);
-  }
 `
 
 const oauthProviders = getAvailableOAuthProviders()
@@ -164,8 +126,6 @@ function getModelIdForProvider(provider: string, currentModelId: string): string
 export class TlAgentSettings extends HTMLElement {
   private _authConfig!: AgentAuthConfig
   private _disabled = false
-  private _showTools = true
-
   private apiKeyInput = ''
   private oauthStatus = ''
   private oauthError = ''
@@ -188,12 +148,6 @@ export class TlAgentSettings extends HTMLElement {
   get disabled(): boolean { return this._disabled }
   set disabled(val: boolean) {
     this._disabled = val
-    this.queueRender()
-  }
-
-  get showTools(): boolean { return this._showTools }
-  set showTools(val: boolean) {
-    this._showTools = val
     this.queueRender()
   }
 
@@ -397,28 +351,27 @@ export class TlAgentSettings extends HTMLElement {
     if (config.authMethod === 'api-key') {
       const saveDisabled = disabled || !this.apiKeyInput.trim() ? 'disabled' : ''
       credentialHtml = `
-        <div class="key-row">
-          <input
-            type="password"
-            value="${this.esc(this.apiKeyInput)}"
-            placeholder="sk-..."
-            ${disabledAttr}
-            data-action="api-key-input"
-          >
-          <button class="btn btn-accent" ${saveDisabled} data-action="save-api-key">Save</button>
+        <div class="field">
+          <span class="field-label">API Key</span>
+          <div class="key-row">
+            <input
+              type="password"
+              value="${this.esc(this.apiKeyInput)}"
+              placeholder="sk-..."
+              ${disabledAttr}
+              data-action="api-key-input"
+            >
+            <button class="btn btn-accent" ${saveDisabled} data-action="save-api-key">Save</button>
+          </div>
         </div>`
     } else if (this.connected) {
       credentialHtml = `
-        <div class="setting-row">
-          <div class="setting-label"></div>
-          <div class="setting-control" style="display:flex;align-items:center;gap:8px;">
-            <span class="connected-dot"></span>
-            <span class="connected-text">Connected</span>
-            <button class="btn" style="margin-left:auto;" ${disabledAttr} data-action="logout">Logout</button>
-          </div>
+        <div class="connected-row">
+          <span class="connected-dot"></span>
+          <span class="connected-text">Connected</span>
+          <button class="btn" style="margin-left:auto;" ${disabledAttr} data-action="logout">Logout</button>
         </div>`
     } else if (this.awaitingCode) {
-      credentialHtml = ''
       if (this.oauthAuthUrl) {
         credentialHtml += `<div class="oauth-link"><a href="${this.esc(this.oauthAuthUrl)}" target="_blank" rel="noopener">${this.esc(this.oauthAuthUrl)}</a></div>`
       }
@@ -427,25 +380,23 @@ export class TlAgentSettings extends HTMLElement {
       }
       const submitDisabled = !this.oauthCodeInput.trim() ? 'disabled' : ''
       credentialHtml += `
-        <div class="key-row">
-          <input
-            type="text"
-            value="${this.esc(this.oauthCodeInput)}"
-            placeholder="Paste code here"
-            data-action="oauth-code-input"
-          >
-          <button class="btn btn-accent" ${submitDisabled} data-action="submit-code">Submit</button>
+        <div class="field">
+          <span class="field-label">Code</span>
+          <div class="key-row">
+            <input
+              type="text"
+              value="${this.esc(this.oauthCodeInput)}"
+              placeholder="Paste code here"
+              data-action="oauth-code-input"
+            >
+            <button class="btn btn-accent" ${submitDisabled} data-action="submit-code">Submit</button>
+          </div>
         </div>`
     } else {
       const loginDisabled = disabled || this.isLoggingIn ? 'disabled' : ''
       const loginLabel = this.isLoggingIn ? 'Logging in...' : 'Login'
       credentialHtml = `
-        <div class="setting-row">
-          <div class="setting-label"></div>
-          <div class="setting-control">
-            <button class="btn btn-accent" style="width:100%;" ${loginDisabled} data-action="oauth-login">${loginLabel}</button>
-          </div>
-        </div>`
+        <button class="btn btn-accent" style="width:100%;" ${loginDisabled} data-action="oauth-login">${loginLabel}</button>`
       if (this.oauthStatus) {
         credentialHtml += `<div class="oauth-status-row">${this.esc(this.oauthStatus)}</div>`
       }
@@ -457,13 +408,10 @@ export class TlAgentSettings extends HTMLElement {
 
     const connectionHtml = `
       <div class="section">
-        <div class="section-label">Connection</div>
         <div class="section-body">
-          <div class="setting-row">
-            <div class="setting-label">Auth</div>
-            <div class="setting-control">
-              <tl-select value="${this.esc(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
-            </div>
+          <div class="field">
+            <span class="field-label">Auth</span>
+            <tl-select value="${this.esc(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
           </div>
           ${credentialHtml}
         </div>
@@ -488,18 +436,18 @@ export class TlAgentSettings extends HTMLElement {
       )
 
       modelSectionBody = `
-        <div class="pair-grid">
-          <div class="pair-field">
-            <span class="pair-field-label">Provider</span>
+        <div class="field-grid">
+          <div class="field">
+            <span class="field-label">Provider</span>
             <tl-select value="${this.esc(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</tl-select>
           </div>
-          <div class="pair-field">
-            <span class="pair-field-label">Thinking</span>
+          <div class="field">
+            <span class="field-label">Thinking</span>
             <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
           </div>
         </div>
-        <div class="pair-field">
-          <span class="pair-field-label">Model</span>
+        <div class="field">
+          <span class="field-label">Model</span>
           <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
         </div>`
     } else {
@@ -513,13 +461,13 @@ export class TlAgentSettings extends HTMLElement {
       )
 
       modelSectionBody = `
-        <div class="pair-grid">
-          <div class="pair-field">
-            <span class="pair-field-label">Model</span>
+        <div class="field-grid">
+          <div class="field">
+            <span class="field-label">Model</span>
             <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
           </div>
-          <div class="pair-field">
-            <span class="pair-field-label">Thinking</span>
+          <div class="field">
+            <span class="field-label">Thinking</span>
             <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
           </div>
         </div>`
@@ -527,26 +475,8 @@ export class TlAgentSettings extends HTMLElement {
 
     const modelHtml = `
       <div class="section">
-        <div class="section-label">Model</div>
         <div class="section-body">
           ${modelSectionBody}
-        </div>
-      </div>`
-
-    // ── Section 3: Display ──
-
-    const checkedAttr = this._showTools ? 'checked' : ''
-    const displayHtml = `
-      <div class="section">
-        <div class="section-label">Display</div>
-        <div class="section-body">
-          <div class="toggle-row">
-            <span class="toggle-row-label">Show tool calls</span>
-            <label class="toggle-switch">
-              <input type="checkbox" ${checkedAttr} data-action="tools-toggle">
-              <span class="toggle-track"></span>
-            </label>
-          </div>
         </div>
       </div>`
 
@@ -555,7 +485,6 @@ export class TlAgentSettings extends HTMLElement {
       <div class="settings">
         ${connectionHtml}
         ${modelHtml}
-        ${displayHtml}
       </div>`
 
     this.attachListeners()
@@ -624,15 +553,5 @@ export class TlAgentSettings extends HTMLElement {
       thinkingPicker.addEventListener('change', (e) => this.handleThinkingChange(e))
     }
 
-    const toolsToggle = q('[data-action="tools-toggle"]') as HTMLInputElement | null
-    if (toolsToggle) {
-      toolsToggle.addEventListener('change', () => {
-        this.dispatchEvent(new CustomEvent('tools-toggle', {
-          detail: toolsToggle.checked,
-          bubbles: true,
-          composed: true,
-        }))
-      })
-    }
   }
 }
