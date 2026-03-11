@@ -6,9 +6,19 @@ Add a trigger system that can run tasks on a schedule, on HTTP requests, or on e
 
 Tasks are trigger-agnostic — they don't know if they were started by a trigger, command palette, or agent. Multiple triggers can point to the same task.
 
-## Database Schema
+## Database Schema Changes
 
-Add `triggers` table to `src/db/sqlite.ts`:
+### Add `description` column to `tasks` table
+
+```sql
+ALTER TABLE tasks ADD COLUMN description TEXT DEFAULT '';
+```
+
+Human-readable description of what the task does and what input it accepts. Used by AI to understand the task, and shown in command palette when user selects a task. Example:
+
+> Syncs transactions for a trading account. Accepts an optional account ID as input. If no input is provided, syncs all accounts.
+
+### Add `triggers` table
 
 ```sql
 CREATE TABLE IF NOT EXISTS triggers (
@@ -64,21 +74,28 @@ The engine parses this itself — no external library needed. It uses `setTimeou
 
 `startTask` gains an optional `input` parameter: `startTask(taskId, input?)`
 
-The task runner passes `input` to the worker as a global variable. Task code accesses it as `input` — it's just data, could be anything or `undefined`.
+The task runner passes `input` to the worker as a global variable. Task code accesses it as `input` — it's just data, could be anything or `undefined`. Validation is the task's responsibility.
 
-| Trigger type | What `input` contains |
+| Source | What `input` contains |
 |---|---|
-| schedule | `undefined` |
-| http | `{ method, path, headers, query, body }` |
-| event | The event data (whatever was published) |
-| command palette | `undefined` |
+| schedule trigger | `undefined` |
+| http trigger | `{ method, path, headers, query, body }` |
+| event trigger | The event data (whatever was published) |
+| command palette | `undefined` or a string typed by the user |
 | agent | `undefined` (or custom data if agent passes it) |
 
-The task code is identical regardless of how it's started. A task that handles Telegram webhooks just reads `input.body` — it doesn't know or care that an HTTP trigger started it.
+### Command palette UX
+
+When a user selects a task in the command palette:
+1. The task's `description` is shown (so the user knows what input it accepts, if any)
+2. User can press Enter to run immediately (no input), or type a value and press Enter to run with that string as `input`
+
+The task code handles it — e.g. `const accountId = input ? Number(input) : null`. No external validation layer. The description tells the user what to type.
 
 ## Files to Create/Modify
 
-### 1. `src/db/sqlite.ts` — Add table + change tracking triggers
+### 1. `src/db/sqlite.ts` — Schema changes
+- Add `description` column to `tasks` table in `AGENT_DB_SCHEMA_SQL`
 - Add `triggers` CREATE TABLE to `AGENT_DB_SCHEMA_SQL`
 - Add insert/update/delete temp triggers for `triggers` table to `CHANGE_TRACKING_SQL`
 
@@ -128,6 +145,15 @@ Core class `TriggerEngine`:
 - Stop engine on `before-quit`
 - On agent root change, stop and restart engine
 
+### 9. `src/command-palette/manager.ts` — Task description + optional input
+- When user selects a task, show its `description` in the palette
+- Allow user to optionally type input before running
+- Pass typed input string to `startTask(taskId, input)`
+
+### 10. `src/db/tasks.ts` — Include description in queries
+- Add `description` to `TaskCatalogRecord` and `TaskRecord`
+- Update list/get queries to include it
+
 ## HTTP Request → Task Flow
 
 ```
@@ -163,10 +189,12 @@ Engine subscribes to bus topic
 
 ## Implementation Order
 
-1. Schema change (`src/db/sqlite.ts`)
-2. Task runner input support (`task_runner.ts`, `task-runner/ipc.ts`)
-3. Schedule expression parser (`src/triggers/scheduler.ts`)
-4. Rewrite HTTP server (`src/http-api/server.ts`)
-5. Clean up handlers (`src/http-api/handlers.ts`)
-6. Create trigger engine (`src/triggers/engine.ts`)
-7. Wire in main process (`src/main.ts`)
+1. Schema changes — `description` on tasks, `triggers` table (`src/db/sqlite.ts`)
+2. Update task queries to include description (`src/db/tasks.ts`)
+3. Task runner input support (`task_runner.ts`, `task-runner/ipc.ts`)
+4. Schedule expression parser (`src/triggers/scheduler.ts`)
+5. Rewrite HTTP server (`src/http-api/server.ts`)
+6. Clean up handlers (`src/http-api/handlers.ts`)
+7. Create trigger engine (`src/triggers/engine.ts`)
+8. Wire in main process (`src/main.ts`)
+9. Command palette task description + input (`src/command-palette/manager.ts`)
