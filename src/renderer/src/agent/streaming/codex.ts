@@ -2,17 +2,19 @@
  * OpenAI Codex Responses API streaming.
  */
 import type {
-  AssistantMessage,
   TextContent,
   ToolCall,
   StopReason,
-  Usage,
   Model,
   AgentTool,
   Message,
 } from '../types.js'
-import { emitError, isRetryableStatus, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
-import { parseSSE } from './sse.js'
+import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import {
+  createPartial, createUsage, emitDone, emitStart,
+  fetchStream, handleStreamError, iterateSSE, snapshot,
+  ToolCallAccumulator,
+} from './common.js'
 import { decodeJwt } from '../oauth/utils.js'
 
 function convertToInput(messages: Message[]): unknown[] {
@@ -28,7 +30,6 @@ function convertToInput(messages: Message[]): unknown[] {
         result.push({ role: 'user', content: text })
       }
     } else if (msg.role === 'assistant') {
-      // Convert to output items format
       for (const c of msg.content) {
         if (c.type === 'text' && c.text) {
           result.push({
@@ -133,57 +134,18 @@ export async function streamCodex(
     body.max_output_tokens = options.maxTokens
   }
 
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
-    })
-  } catch (err) {
-    const errorMessage = options.signal?.aborted
-      ? 'Request aborted'
-      : (err instanceof Error ? err.message : String(err))
-    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error', !options.signal?.aborted)
-    return
-  }
+  const response = await fetchStream(url, headers, body, stream, model, options, 'Codex')
+  if (!response) return
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    emitError(stream, model, `Codex API error (${response.status}): ${text || response.statusText}`, 'error', isRetryableStatus(response.status))
-    return
-  }
+  const partial = createPartial(model)
+  const usage = createUsage()
+  emitStart(stream, partial)
 
-  const partial: AssistantMessage = {
-    role: 'assistant',
-    content: [],
-    provider: model.provider.id,
-    model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-    stopReason: 'end',
-    timestamp: Date.now(),
-  }
-
-  stream.push({ type: 'start', partial: { ...partial, content: [...partial.content] } })
-
-  const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }
   let stopReason: StopReason = 'end'
-
-  // Track tool calls by item_id
-  const toolCallBuilders = new Map<string, { contentIndex: number; args: string; id: string; name: string }>()
+  const toolCalls = new ToolCallAccumulator<string>()
 
   try {
-    for await (const sseEvent of parseSSE(response)) {
-      if (sseEvent.data === '[DONE]') break
-
-      let data: Record<string, unknown>
-      try {
-        data = JSON.parse(sseEvent.data)
-      } catch {
-        continue
-      }
-
+    for await (const data of iterateSSE(response)) {
       const eventType = data.type as string
 
       switch (eventType) {
@@ -203,16 +165,14 @@ export async function streamCodex(
             type: 'text_delta',
             contentIndex: textIndex,
             delta,
-            partial: { ...partial, content: [...partial.content] },
+            partial: snapshot(partial),
           })
           break
         }
 
-        // Function call start
-        case 'response.function_call_arguments.start': {
-          // Codex may not send explicit start events — handle in delta
+        // Function call start — Codex may not send explicit start events
+        case 'response.function_call_arguments.start':
           break
-        }
 
         // Function call argument delta
         case 'response.function_call_arguments.delta': {
@@ -220,33 +180,11 @@ export async function streamCodex(
           const itemId = data.item_id as string | undefined
           if (!delta || !itemId) break
 
-          let builder = toolCallBuilders.get(itemId)
-          if (!builder) {
-            // First delta for this tool call
-            const contentIndex = partial.content.length
-            partial.content.push({
-              type: 'toolCall',
-              id: itemId,
-              name: '', // will be filled on done
-              arguments: {},
-            })
-            builder = { contentIndex, args: '', id: itemId, name: '' }
-            toolCallBuilders.set(itemId, builder)
-
-            stream.push({
-              type: 'toolcall_start',
-              contentIndex,
-              partial: { ...partial, content: [...partial.content] },
-            })
+          let entry = toolCalls.get(itemId)
+          if (!entry) {
+            entry = toolCalls.start(itemId, itemId, '', partial, stream)
           }
-
-          builder.args += delta
-          stream.push({
-            type: 'toolcall_delta',
-            contentIndex: builder.contentIndex,
-            delta,
-            partial: { ...partial, content: [...partial.content] },
-          })
+          toolCalls.appendArgs(entry, delta, partial, stream)
           break
         }
 
@@ -255,20 +193,9 @@ export async function streamCodex(
           const itemId = data.item_id as string | undefined
           if (!itemId) break
 
-          const builder = toolCallBuilders.get(itemId)
-          if (builder) {
-            const toolCall = partial.content[builder.contentIndex] as ToolCall
-            try {
-              toolCall.arguments = JSON.parse(builder.args)
-            } catch {
-              toolCall.arguments = {}
-            }
-            stream.push({
-              type: 'toolcall_end',
-              contentIndex: builder.contentIndex,
-              toolCall: { ...toolCall },
-              partial: { ...partial, content: [...partial.content] },
-            })
+          const entry = toolCalls.get(itemId)
+          if (entry) {
+            toolCalls.finish(entry, partial, stream)
           }
           break
         }
@@ -279,26 +206,13 @@ export async function streamCodex(
           if (item?.type === 'function_call') {
             const itemId = item.id as string ?? item.call_id as string
             const name = item.name as string ?? ''
-            const builder = toolCallBuilders.get(itemId)
-            if (builder) {
-              builder.name = name
-              const toolCall = partial.content[builder.contentIndex] as ToolCall
+            const entry = toolCalls.get(itemId)
+            if (entry) {
+              entry.name = name
+              const toolCall = partial.content[entry.contentIndex] as ToolCall
               toolCall.name = name
             } else {
-              // Pre-register
-              const contentIndex = partial.content.length
-              partial.content.push({
-                type: 'toolCall',
-                id: itemId,
-                name,
-                arguments: {},
-              })
-              toolCallBuilders.set(itemId, { contentIndex, args: '', id: itemId, name })
-              stream.push({
-                type: 'toolcall_start',
-                contentIndex,
-                partial: { ...partial, content: [...partial.content] },
-              })
+              toolCalls.start(itemId, itemId, name, partial, stream)
             }
           }
           break
@@ -329,23 +243,13 @@ export async function streamCodex(
       }
     }
   } catch (err) {
-    if (options.signal?.aborted) {
-      partial.stopReason = 'aborted'
-      partial.errorMessage = 'Request aborted'
-      partial.usage = usage
-      stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
-      return
-    }
-    emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
+    handleStreamError(err, stream, model, partial, usage, options)
     return
   }
 
-  if (toolCallBuilders.size > 0 && stopReason === 'end') {
+  if (toolCalls.size > 0 && stopReason === 'end') {
     stopReason = 'toolCall'
   }
 
-  partial.stopReason = stopReason
-  partial.usage = usage
-  stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
+  emitDone(stream, partial, stopReason, usage)
 }
-
