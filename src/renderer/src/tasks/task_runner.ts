@@ -177,7 +177,9 @@ export class TaskRunner {
       run.finishedAt = Date.now()
       runtime.terminateWorker(run.runId)
       this.notify()
-      void this.persistLog(run)
+      void this.persistLog(run).then(() => {
+        this.removeFinishedRun(run.runId)
+      })
 
       // Publish to bus so code that calls waitFor('task:run:...') still works
       bus.publish(`task:run:${run.runId}`, {
@@ -192,6 +194,14 @@ export class TaskRunner {
         this.completionWaiters.delete(run.runId)
         waiter.resolve(undefined)
       }
+    }
+  }
+
+  private removeFinishedRun(runId: string): void {
+    const idx = this._runs.findIndex(r => r.runId === runId)
+    if (idx !== -1 && this._runs[idx].status !== 'running') {
+      this._runs.splice(idx, 1)
+      this.notify()
     }
   }
 
