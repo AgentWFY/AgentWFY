@@ -171,24 +171,31 @@ export class TaskRunner {
         run.error = details.error?.message ?? 'Unknown error'
       }
     } catch (err) {
-      run.status = 'failed'
-      run.error = err instanceof Error ? err.message : String(err)
+      // Don't overwrite status/error if stopTask already finalized this run
+      if (!run.finishedAt) {
+        run.status = 'failed'
+        run.error = err instanceof Error ? err.message : String(err)
+      }
     } finally {
-      run.finishedAt = Date.now()
-      runtime.terminateWorker(run.runId)
-      this.notify()
-      void this.persistLog(run).then(() => {
+      const alreadyFinished = !!run.finishedAt
+      if (!alreadyFinished) {
+        run.finishedAt = Date.now()
+        runtime.terminateWorker(run.runId)
+        this.notify()
+        void this.persistLog(run).then(() => {
+          this.removeFinishedRun(run.runId)
+        })
+      } else {
         this.removeFinishedRun(run.runId)
-      })
+      }
 
-      // Publish to bus so code that calls waitFor('task:run:...') still works
+      // Always publish bus event and resolve completion waiters
       bus.publish(`task:run:${run.runId}`, {
         runId: run.runId, taskId: run.taskId, name: run.name,
         status: run.status, startedAt: run.startedAt, finishedAt: run.finishedAt,
         result: run.result, error: run.error, logs: run.logs,
       })
 
-      // Resolve internal completion waiters
       const waiter = this.completionWaiters.get(run.runId)
       if (waiter) {
         this.completionWaiters.delete(run.runId)
