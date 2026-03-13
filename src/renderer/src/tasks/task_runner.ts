@@ -176,10 +176,9 @@ export class TaskRunner {
     } finally {
       run.finishedAt = Date.now()
       runtime.terminateWorker(run.runId)
+      await this.persistLog(run)
       this.notify()
-      void this.persistLog(run).then(() => {
-        this.removeFinishedRun(run.runId)
-      })
+      this.removeFinishedRun(run.runId)
 
       // Publish to bus so code that calls waitFor('task:run:...') still works
       bus.publish(`task:run:${run.runId}`, {
