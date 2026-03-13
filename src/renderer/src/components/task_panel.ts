@@ -55,6 +55,11 @@ const STYLES = `
   .section-title:first-child {
     padding-top: 0;
   }
+  .active-section {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--color-divider, var(--color-border));
+  }
   .empty {
     font-size: 12px;
     color: var(--color-text1);
@@ -437,6 +442,7 @@ export class TlTaskPanel extends HTMLElement {
 
     // Active runs (only running tasks)
     if (activeRuns.length > 0) {
+      html += `<div class="active-section">`
       html += `<div class="section-title">Active</div>`
       for (const run of activeRuns) {
         const expanded = this.expandedRunIds.has(run.runId)
@@ -452,6 +458,7 @@ export class TlTaskPanel extends HTMLElement {
         html += this.renderRunLogs(run)
         html += `</div></div>`
       }
+      html += `</div>`
     }
 
     // Task list
