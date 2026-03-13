@@ -5,7 +5,7 @@ export interface TasksApi {
   readLog(logFileName: string): Promise<string>
   writeLog(logFileName: string, content: string): Promise<void>
   // Forwarding handlers for agentview → renderer
-  onForwardStartTask(callback: (detail: { waiterId: string; taskId: number }) => void): () => void
+  onForwardStartTask(callback: (detail: { waiterId: string; taskId: number; input?: unknown }) => void): () => void
   forwardStartTaskResult(waiterId: string, result: unknown): void
   onForwardStopTask(callback: (detail: { waiterId: string; runId: string }) => void): () => void
   forwardStopTaskResult(waiterId: string, result: unknown): void

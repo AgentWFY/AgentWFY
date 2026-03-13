@@ -38,6 +38,8 @@ type CommandPaletteAction =
     type: 'run-task'
     taskId: number
     taskName: string
+    taskDescription?: string
+    input?: string
   }
   | {
     type: 'enter-settings'
@@ -312,12 +314,13 @@ export class CommandPaletteManager {
     const taskItems: CommandPaletteItem[] = tasks.map((task) => ({
       id: `task:${task.id}`,
       title: task.name,
-      subtitle: 'Run task',
+      subtitle: task.description || undefined,
       group: 'Tasks',
       action: {
         type: 'run-task',
         taskId: task.id,
         taskName: task.name,
+        taskDescription: task.description || undefined,
       },
     }));
 
@@ -515,6 +518,7 @@ export class CommandPaletteManager {
         const taskAction = action as Extract<CommandPaletteAction, { type: 'run-task' }>;
         this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:run-task', {
           taskId: taskAction.taskId,
+          input: taskAction.input || undefined,
         });
         break;
       }

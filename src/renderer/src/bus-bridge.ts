@@ -38,7 +38,7 @@ export function initBusBridge(): void {
     try {
       const runner = getTaskRunner()
       if (!runner) throw new Error('TaskRunner not initialized')
-      const runId = await runner.startTask(detail.taskId)
+      const runId = await runner.startTask(detail.taskId, detail.input)
       ipc.tasks.forwardStartTaskResult(detail.waiterId, { runId })
     } catch (err) {
       ipc.tasks.forwardStartTaskResult(detail.waiterId, { error: String(err) })

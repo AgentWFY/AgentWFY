@@ -31,7 +31,7 @@ type PendingTaskRequest = {
 const pendingStartRequests = new Map<string, PendingTaskRequest>();
 const pendingStopRequests = new Map<string, PendingTaskRequest>();
 
-export function forwardStartTask(win: BrowserWindow, taskId: number): Promise<{ runId: string }> {
+export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unknown): Promise<{ runId: string }> {
   const waiterId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -39,7 +39,7 @@ export function forwardStartTask(win: BrowserWindow, taskId: number): Promise<{ 
       reject(new Error('startTask forwarding timeout'));
     }, 30_000);
     pendingStartRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
-    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId });
+    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId, input });
   });
 }
 
