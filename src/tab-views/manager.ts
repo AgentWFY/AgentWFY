@@ -180,6 +180,7 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 export interface TabViewManagerDeps {
   getMainWindow: () => BrowserWindow | null;
   toggleCommandPalette: () => void;
+  focusMainRendererWindow: () => void;
   dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
   dispatchRendererWindowEvent: (name: string) => void;
 }
@@ -292,12 +293,14 @@ export class TabViewManager {
 
       if (key === 'i') {
         event.preventDefault();
+        this.deps.focusMainRendererWindow();
         this.deps.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
         return;
       }
 
       if (key === 'w') {
         event.preventDefault();
+        this.deps.focusMainRendererWindow();
         this.deps.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
         return;
       }
