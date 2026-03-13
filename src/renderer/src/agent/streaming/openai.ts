@@ -12,7 +12,7 @@ import type {
 } from '../types.js'
 import { type MessageStream, type StreamContext, type StreamOptions } from './types.js'
 import {
-  createPartial, createUsage, emitDone, emitStart,
+  createPartial, emitDone, emitStart,
   fetchStream, handleStreamError, iterateSSE, snapshot,
   ToolCallAccumulator,
 } from './common.js'
@@ -161,14 +161,16 @@ export async function streamOpenAI(
   if (!response) return
 
   const partial = createPartial(model)
-  const usage = createUsage()
+  const usage = partial.usage
   emitStart(stream, partial)
 
   const toolCalls = new ToolCallAccumulator<number>()
   let stopReason: StopReason = 'end'
+  let textIndex = -1
+  let thinkIndex = -1
 
   try {
-    for await (const data of iterateSSE(response)) {
+    for await (const { data } of iterateSSE(response)) {
       const chunk = data as Record<string, unknown>
 
       // Usage from final chunk
@@ -193,7 +195,6 @@ export async function streamOpenAI(
 
       // Text content
       if (delta.content) {
-        let textIndex = partial.content.findIndex((c) => c.type === 'text')
         if (textIndex === -1) {
           partial.content.push({ type: 'text', text: '' })
           textIndex = partial.content.length - 1
@@ -210,7 +211,6 @@ export async function streamOpenAI(
 
       // Reasoning/thinking content
       if (delta.reasoning_content) {
-        let thinkIndex = partial.content.findIndex((c) => c.type === 'thinking')
         if (thinkIndex === -1) {
           partial.content.push({ type: 'thinking', thinking: '' })
           thinkIndex = partial.content.length - 1
@@ -252,7 +252,7 @@ export async function streamOpenAI(
       }
     }
   } catch (err) {
-    handleStreamError(err, stream, model, partial, usage, options)
+    handleStreamError(err, stream, model, partial, options)
     return
   }
 
@@ -263,5 +263,5 @@ export async function streamOpenAI(
     stopReason = 'toolCall'
   }
 
-  emitDone(stream, partial, stopReason, usage)
+  emitDone(stream, partial, stopReason)
 }
