@@ -3,18 +3,19 @@
  * Works with OpenRouter, DeepSeek, and any OpenAI-compatible API.
  */
 import type {
-  AssistantMessage,
   TextContent,
   ThinkingContent,
-  ToolCall,
   StopReason,
-  Usage,
   Model,
   AgentTool,
   Message,
 } from '../types.js'
-import { emitError, isRetryableStatus, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
-import { parseSSE } from './sse.js'
+import { type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import {
+  createPartial, createUsage, emitDone, emitStart,
+  fetchStream, handleStreamError, iterateSSE, snapshot,
+  ToolCallAccumulator,
+} from './common.js'
 
 interface OpenAIDelta {
   content?: string | null
@@ -33,17 +34,6 @@ interface OpenAIChoice {
   index: number
   delta: OpenAIDelta
   finish_reason?: string | null
-}
-
-interface OpenAIChunk {
-  id?: string
-  choices?: OpenAIChoice[]
-  usage?: {
-    prompt_tokens?: number
-    completion_tokens?: number
-    total_tokens?: number
-    prompt_tokens_details?: { cached_tokens?: number }
-  }
 }
 
 function convertMessages(messages: Message[]): unknown[] {
@@ -84,7 +74,6 @@ function convertMessages(messages: Message[]): unknown[] {
 
       const assistantMsg: Record<string, unknown> = { role: 'assistant' }
       if (content.length > 0) {
-        // For single text content, use string format
         if (content.length === 1 && (content[0] as Record<string, unknown>).type === 'text') {
           assistantMsg.content = (content[0] as Record<string, unknown>).text
         } else {
@@ -161,7 +150,6 @@ export async function streamOpenAI(
   }
 
   if (options.reasoning && options.reasoning !== 'off' && model.reasoning) {
-    // OpenRouter/DeepSeek style reasoning budget
     body.reasoning = { effort: options.reasoning }
   }
 
@@ -169,65 +157,32 @@ export async function streamOpenAI(
     body.max_tokens = options.maxTokens
   }
 
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
-    })
-  } catch (err) {
-    const errorMessage = options.signal?.aborted
-      ? 'Request aborted'
-      : (err instanceof Error ? err.message : String(err))
-    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error', !options.signal?.aborted)
-    return
-  }
+  const response = await fetchStream(url, headers, body, stream, model, options, 'OpenAI')
+  if (!response) return
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    emitError(stream, model, `OpenAI API error (${response.status}): ${text || response.statusText}`, 'error', isRetryableStatus(response.status))
-    return
-  }
+  const partial = createPartial(model)
+  const usage = createUsage()
+  emitStart(stream, partial)
 
-  const partial: AssistantMessage = {
-    role: 'assistant',
-    content: [],
-    provider: model.provider.id,
-    model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-    stopReason: 'end',
-    timestamp: Date.now(),
-  }
-
-  stream.push({ type: 'start', partial: { ...partial, content: [...partial.content] } })
-
-  // Track in-progress tool calls by index
-  const toolCallBuilders = new Map<number, { id: string; name: string; args: string; contentIndex: number }>()
+  const toolCalls = new ToolCallAccumulator<number>()
   let stopReason: StopReason = 'end'
-  const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }
 
   try {
-    for await (const sseEvent of parseSSE(response)) {
-      if (sseEvent.data === '[DONE]') break
-
-      let chunk: OpenAIChunk
-      try {
-        chunk = JSON.parse(sseEvent.data)
-      } catch {
-        continue
-      }
+    for await (const data of iterateSSE(response)) {
+      const chunk = data as Record<string, unknown>
 
       // Usage from final chunk
       if (chunk.usage) {
-        usage.input = chunk.usage.prompt_tokens ?? 0
-        usage.output = chunk.usage.completion_tokens ?? 0
-        usage.cacheRead = chunk.usage.prompt_tokens_details?.cached_tokens ?? 0
-        usage.totalTokens = chunk.usage.total_tokens ?? 0
+        const u = chunk.usage as Record<string, unknown>
+        usage.input = (u.prompt_tokens as number) ?? 0
+        usage.output = (u.completion_tokens as number) ?? 0
+        const details = u.prompt_tokens_details as Record<string, number> | undefined
+        usage.cacheRead = details?.cached_tokens ?? 0
+        usage.totalTokens = (u.total_tokens as number) ?? 0
       }
 
-      const choice = chunk.choices?.[0]
+      const choices = chunk.choices as OpenAIChoice[] | undefined
+      const choice = choices?.[0]
       if (!choice) continue
 
       if (choice.finish_reason) {
@@ -249,7 +204,7 @@ export async function streamOpenAI(
           type: 'text_delta',
           contentIndex: textIndex,
           delta: delta.content,
-          partial: { ...partial, content: [...partial.content] },
+          partial: snapshot(partial),
         })
       }
 
@@ -266,92 +221,47 @@ export async function streamOpenAI(
           type: 'thinking_delta',
           contentIndex: thinkIndex,
           delta: delta.reasoning_content,
-          partial: { ...partial, content: [...partial.content] },
+          partial: snapshot(partial),
         })
       }
 
       // Tool calls
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls) {
-          let builder = toolCallBuilders.get(tc.index)
+          let entry = toolCalls.get(tc.index)
 
-          if (!builder) {
-            // New tool call
-            const contentIndex = partial.content.length
-            const toolCall: ToolCall = {
-              type: 'toolCall',
-              id: tc.id ?? '',
-              name: tc.function?.name ?? '',
-              arguments: {},
-            }
-            partial.content.push(toolCall)
-            builder = {
-              id: tc.id ?? '',
-              name: tc.function?.name ?? '',
-              args: tc.function?.arguments ?? '',
-              contentIndex,
-            }
-            toolCallBuilders.set(tc.index, builder)
-
-            stream.push({
-              type: 'toolcall_start',
-              contentIndex,
-              partial: { ...partial, content: [...partial.content] },
-            })
-          } else {
-            // Delta for existing tool call
-            if (tc.id) builder.id = tc.id
-            if (tc.function?.name) builder.name += tc.function.name
+          if (!entry) {
+            entry = toolCalls.start(
+              tc.index,
+              tc.id ?? '',
+              tc.function?.name ?? '',
+              partial,
+              stream,
+            )
             if (tc.function?.arguments) {
-              builder.args += tc.function.arguments
-              stream.push({
-                type: 'toolcall_delta',
-                contentIndex: builder.contentIndex,
-                delta: tc.function.arguments,
-                partial: { ...partial, content: [...partial.content] },
-              })
+              entry.args = tc.function.arguments
+            }
+          } else {
+            if (tc.id) entry.id = tc.id
+            if (tc.function?.name) entry.name += tc.function.name
+            if (tc.function?.arguments) {
+              toolCalls.appendArgs(entry, tc.function.arguments, partial, stream)
             }
           }
         }
       }
     }
   } catch (err) {
-    if (options.signal?.aborted) {
-      partial.stopReason = 'aborted'
-      partial.errorMessage = 'Request aborted'
-      partial.usage = usage
-      stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
-      return
-    }
-    emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
+    handleStreamError(err, stream, model, partial, usage, options)
     return
   }
 
   // Finalize tool calls — parse accumulated argument strings
-  for (const builder of toolCallBuilders.values()) {
-    const toolCall = partial.content[builder.contentIndex] as ToolCall
-    toolCall.id = builder.id
-    toolCall.name = builder.name
-    try {
-      toolCall.arguments = JSON.parse(builder.args)
-    } catch {
-      toolCall.arguments = {}
-    }
+  toolCalls.finishAll(partial, stream)
 
-    stream.push({
-      type: 'toolcall_end',
-      contentIndex: builder.contentIndex,
-      toolCall: { ...toolCall },
-      partial: { ...partial, content: [...partial.content] },
-    })
-  }
-
-  if (toolCallBuilders.size > 0 && stopReason === 'end') {
+  if (toolCalls.size > 0 && stopReason === 'end') {
     stopReason = 'toolCall'
   }
 
-  partial.stopReason = stopReason
-  partial.usage = usage
-  stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
+  emitDone(stream, partial, stopReason, usage)
 }
-

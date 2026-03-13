@@ -2,19 +2,19 @@
  * Anthropic Messages API streaming.
  */
 import type {
-  AssistantMessage,
   TextContent,
   ThinkingContent,
-  RedactedThinkingContent,
   ToolCall,
   StopReason,
-  Usage,
   Model,
   AgentTool,
   Message,
 } from '../types.js'
-import { emitError, isRetryableStatus, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
-import { parseSSE } from './sse.js'
+import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import {
+  createPartial, createUsage, emitDone, emitStart,
+  fetchStream, handleStreamError, iterateSSE, snapshot,
+} from './common.js'
 
 function convertMessages(messages: Message[]): unknown[] {
   const result: unknown[] = []
@@ -167,7 +167,6 @@ export async function streamAnthropic(
 
   if (thinking) {
     const budget = getThinkingBudget(options.reasoning) ?? 8192
-    // Anthropic requires max_tokens > budget_tokens
     if (maxTokens <= budget) {
       maxTokens = budget + 4096
     }
@@ -179,60 +178,21 @@ export async function streamAnthropic(
 
   body.max_tokens = maxTokens
 
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
-    })
-  } catch (err) {
-    const errorMessage = options.signal?.aborted
-      ? 'Request aborted'
-      : (err instanceof Error ? err.message : String(err))
-    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error', !options.signal?.aborted)
-    return
-  }
+  const response = await fetchStream(url, headers, body, stream, model, options, 'Anthropic')
+  if (!response) return
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    emitError(stream, model, `Anthropic API error (${response.status}): ${text || response.statusText}`, 'error', isRetryableStatus(response.status))
-    return
-  }
+  const partial = createPartial(model)
+  const usage = createUsage()
+  emitStart(stream, partial)
 
-  const partial: AssistantMessage = {
-    role: 'assistant',
-    content: [],
-    provider: model.provider.id,
-    model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-    stopReason: 'end',
-    timestamp: Date.now(),
-  }
-
-  stream.push({ type: 'start', partial: { ...partial, content: [...partial.content] } })
-
-  const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }
   let stopReason: StopReason = 'end'
-
-  // Track current content block index for streaming
-  let currentBlockIndex = -1
   let currentBlockType: 'text' | 'thinking' | 'redacted_thinking' | 'tool_use' | null = null
+  let currentBlockIndex = -1
   let toolCallArgs = ''
 
   try {
-    for await (const sseEvent of parseSSE(response)) {
-      if (sseEvent.data === '[DONE]') break
-
-      let data: Record<string, unknown>
-      try {
-        data = JSON.parse(sseEvent.data)
-      } catch {
-        continue
-      }
-
-      const eventType = sseEvent.event ?? (data.type as string)
+    for await (const data of iterateSSE(response)) {
+      const eventType = (data as Record<string, unknown> & { type?: string }).type as string
 
       switch (eventType) {
         case 'message_start': {
@@ -268,7 +228,7 @@ export async function streamAnthropic(
             stream.push({
               type: 'toolcall_start',
               contentIndex: partial.content.length - 1,
-              partial: { ...partial, content: [...partial.content] },
+              partial: snapshot(partial),
             })
           }
           break
@@ -288,7 +248,7 @@ export async function streamAnthropic(
                 type: 'text_delta',
                 contentIndex,
                 delta: delta.text,
-                partial: { ...partial, content: [...partial.content] },
+                partial: snapshot(partial),
               })
             }
           } else if (deltaType === 'thinking_delta' && typeof delta.thinking === 'string') {
@@ -299,7 +259,7 @@ export async function streamAnthropic(
                 type: 'thinking_delta',
                 contentIndex,
                 delta: delta.thinking,
-                partial: { ...partial, content: [...partial.content] },
+                partial: snapshot(partial),
               })
             }
           } else if (deltaType === 'signature_delta' && typeof delta.signature === 'string') {
@@ -313,7 +273,7 @@ export async function streamAnthropic(
               type: 'toolcall_delta',
               contentIndex,
               delta: delta.partial_json,
-              partial: { ...partial, content: [...partial.content] },
+              partial: snapshot(partial),
             })
           }
           break
@@ -332,7 +292,7 @@ export async function streamAnthropic(
               type: 'toolcall_end',
               contentIndex,
               toolCall: { ...toolCall },
-              partial: { ...partial, content: [...partial.content] },
+              partial: snapshot(partial),
             })
             toolCallArgs = ''
           }
@@ -364,20 +324,9 @@ export async function streamAnthropic(
       }
     }
   } catch (err) {
-    if (options.signal?.aborted) {
-      partial.stopReason = 'aborted'
-      partial.errorMessage = 'Request aborted'
-      partial.usage = usage
-      stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
-      return
-    }
-    emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
+    handleStreamError(err, stream, model, partial, usage, options)
     return
   }
 
-  usage.totalTokens = usage.input + usage.output
-  partial.stopReason = stopReason
-  partial.usage = usage
-  stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
+  emitDone(stream, partial, stopReason, usage)
 }
-
