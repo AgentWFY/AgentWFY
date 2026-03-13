@@ -76,6 +76,9 @@ export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
 
   const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler) => {
     const key = routeKey(routePath, method);
+    if (routes.has(key)) {
+      console.warn(`[http-api] Overwriting existing route: ${key}`);
+    }
     routes.set(key, { handler });
   };
 

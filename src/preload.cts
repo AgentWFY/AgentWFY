@@ -54,6 +54,9 @@ const Channels = {
     waitForResolved: 'bus:waitForResolved',
     forwardPublish: 'bus:forwardPublish',
     forwardWaitFor: 'bus:forwardWaitFor',
+    forwardSubscribe: 'bus:forwardSubscribe',
+    forwardUnsubscribe: 'bus:forwardUnsubscribe',
+    subscribeEvent: 'bus:subscribeEvent',
     forwardSpawnAgent: 'bus:forwardSpawnAgent',
     spawnAgentResult: 'bus:spawnAgentResult',
     spawnAgent: 'bus:spawnAgent',
@@ -296,6 +299,19 @@ if (isApp) {
       waitForResolved(waiterId: string, data: unknown): void {
         ipcRenderer.send(Channels.bus.waitForResolved, { waiterId, data });
       },
+      onForwardSubscribe(callback: (detail: { subId: string; topic: string }) => void): () => void {
+        const handler = (_event: unknown, detail: { subId: string; topic: string }) => callback(detail);
+        ipcRenderer.on(Channels.bus.forwardSubscribe, handler);
+        return () => ipcRenderer.removeListener(Channels.bus.forwardSubscribe, handler);
+      },
+      onForwardUnsubscribe(callback: (detail: { subId: string }) => void): () => void {
+        const handler = (_event: unknown, detail: { subId: string }) => callback(detail);
+        ipcRenderer.on(Channels.bus.forwardUnsubscribe, handler);
+        return () => ipcRenderer.removeListener(Channels.bus.forwardUnsubscribe, handler);
+      },
+      subscribeEvent(subId: string, data: unknown): void {
+        ipcRenderer.send(Channels.bus.subscribeEvent, { subId, data });
+      },
       onDbChanged(callback: (detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
         const handler = (_event: unknown, detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
         ipcRenderer.on(Channels.bus.dbChanged, handler);
@@ -377,8 +393,8 @@ if (isAgentView) {
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
       return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
     },
-    startTask(taskId: number): Promise<{ runId: string }> {
-      return ipcRenderer.invoke(Channels.tasks.start, taskId);
+    startTask(taskId: number, input?: unknown): Promise<{ runId: string }> {
+      return ipcRenderer.invoke(Channels.tasks.start, taskId, input);
     },
     stopTask(runId: string): Promise<void> {
       return ipcRenderer.invoke(Channels.tasks.stop, runId);

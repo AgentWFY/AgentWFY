@@ -297,8 +297,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, signal)
     const spawnAgent = (prompt: string) =>
       callHostMethod('' + requestId, 'spawnAgent', { prompt }, signal)
-    const startTask = (taskId: number) =>
-      callHostMethod('' + requestId, 'startTask', { taskId }, signal)
+    const startTask = (taskId: number, input?: unknown) =>
+      callHostMethod('' + requestId, 'startTask', { taskId, input }, signal)
     const stopTask = (runId: string) =>
       callHostMethod('' + requestId, 'stopTask', { runId }, signal)
 

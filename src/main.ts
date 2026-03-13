@@ -6,7 +6,7 @@ import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerAuthHandlers } from './ipc/auth.js';
-import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor } from './ipc/bus.js';
+import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
 import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
@@ -114,16 +114,20 @@ onAnyChange((key, newValue) => {
 });
 
 let dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function onDbChange(change: AgentDbChange): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('bus:dbChanged', change);
 
-  // Reload triggers when the triggers table changes
+  // Debounced reload of triggers when the triggers table changes
   if (change.table === 'triggers' && triggerEngine) {
-    triggerEngine.reload().catch(err => {
-      console.error('[triggers] Reload failed:', err);
-    });
+    if (triggerReloadDebounceTimer) clearTimeout(triggerReloadDebounceTimer);
+    triggerReloadDebounceTimer = setTimeout(() => {
+      triggerEngine?.reload().catch(err => {
+        console.error('[triggers] Reload failed:', err);
+      });
+    }, 500);
   }
 
   // Debounced backup status refresh so status line updates modified indicator
@@ -171,8 +175,11 @@ onAgentRootChanged(async (newRoot) => {
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();
   if (triggerEngine) {
+    if (triggerReloadDebounceTimer) {
+      clearTimeout(triggerReloadDebounceTimer);
+      triggerReloadDebounceTimer = null;
+    }
     triggerEngine.stop();
-    triggerEngine.reload().catch(err => console.error('[triggers] Reload after agent switch failed:', err));
   }
   await ensureAgentRuntimeBootstrap(newRoot);
   scheduleBackup(newRoot).then(() => {
@@ -180,8 +187,10 @@ onAgentRootChanged(async (newRoot) => {
   }).catch((err) => console.error('[backup] Schedule failed:', err));
   mainWindow?.reload();
   buildAndSetMenu();
-  if (triggerEngine) {
-    triggerEngine.start().catch(err => console.error('[triggers] Start after agent switch failed:', err));
+  if (triggerEngine && mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      triggerEngine?.start().catch(err => console.error('[triggers] Start after agent switch failed:', err));
+    });
   }
 });
 
@@ -452,25 +461,13 @@ app.on('ready', async () => {
       return forwardBusWaitFor(mainWindow, topic, timeoutMs);
     },
     busSubscribe: (topic, fn) => {
-      // Main process subscribes by forwarding from renderer via a unique channel
-      // For simplicity, we poll via bus waitFor in a loop
-      let stopped = false;
-      const poll = async () => {
-        while (!stopped) {
-          if (!mainWindow || mainWindow.isDestroyed()) {
-            await new Promise(r => setTimeout(r, 1000));
-            continue;
-          }
-          try {
-            const data = await forwardBusWaitFor(mainWindow, topic, 60_000);
-            if (!stopped) fn(data);
-          } catch {
-            // Timeout or error — retry
-          }
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      const subId = forwardBusSubscribe(mainWindow, topic, fn);
+      return () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          forwardBusUnsubscribe(mainWindow, subId);
         }
       };
-      void poll();
-      return () => { stopped = true; };
     },
     httpApi,
   });
