@@ -181,13 +181,10 @@ export class TaskRunner {
       if (!alreadyFinished) {
         run.finishedAt = Date.now()
         runtime.terminateWorker(run.runId)
+        await this.persistLog(run)
         this.notify()
-        void this.persistLog(run).then(() => {
-          this.removeFinishedRun(run.runId)
-        })
-      } else {
-        this.removeFinishedRun(run.runId)
       }
+      this.removeFinishedRun(run.runId)
 
       // Always publish bus event and resolve completion waiters
       bus.publish(`task:run:${run.runId}`, {
