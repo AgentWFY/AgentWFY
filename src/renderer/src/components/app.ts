@@ -170,7 +170,8 @@ export class TlApp extends HTMLElement {
       }
       .tl-app-sidebar > tl-agent-chat,
       .tl-app-sidebar > tl-task-panel {
-        display: block;
+        display: flex;
+        flex-direction: column;
         flex: 1;
         min-height: 0;
       }
