@@ -244,7 +244,7 @@ async function callHostMethod<M extends WorkerHostMethod>(
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
-  const { requestId, code, timeoutMs } = message
+  const { requestId, code, timeoutMs, input } = message
   const abortController = new AbortController()
   activeRequests.set(requestId, abortController)
 
@@ -515,6 +515,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'spawnAgent',
       'startTask',
       'stopTask',
+      'input',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
@@ -547,7 +548,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         WebSocket,
         spawnAgent,
         startTask,
-        stopTask
+        stopTask,
+        input
       ),
       timeoutMs,
       abortController.signal

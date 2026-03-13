@@ -33,7 +33,7 @@ await runSql({ target, sql, params?, path?, description? })
 ```
 
 Targets:
-- `'agent'` — built-in agent.db (views, docs, tasks tables). Auto-creates schema on first use.
+- `'agent'` — built-in agent.db (views, docs, tasks, triggers tables). Auto-creates schema on first use.
 - `'sqlite-file'` — any SQLite file in the working directory (requires `path`).
 
 Returns an array of row objects. Use parameterized queries with `params` array.
@@ -43,7 +43,8 @@ Agent DB schema:
 ```sql
 views (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at INTEGER, updated_at INTEGER)
 docs (id INTEGER PRIMARY KEY, name TEXT UNIQUE, content TEXT, preload INTEGER DEFAULT 0, updated_at INTEGER)
-tasks (id INTEGER PRIMARY KEY, name TEXT, content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
 ```
 
 Timestamps are unix epoch seconds (auto-set via `unixepoch()`).
@@ -72,16 +73,14 @@ Always `reloadTab` after updating view content via SQL.
 - `fetch(url, init?)` — standard fetch API, including custom/restricted headers.
 - `WebSocket(url, protocols?, options?)` — standard WebSocket. Third argument `options: { origin?, headers? }` allows setting custom headers and origin.
 
-### Tasks
+### Tasks & Triggers
 
-Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs).
+Tasks store JavaScript code in the `tasks` table. The user can run them from the command palette or they can be started programmatically. Triggers (`triggers` table) automate task execution via cron schedules, HTTP endpoints, or event bus topics.
 
-- `startTask(taskId)` → `{ runId }` — non-blocking, starts a task
+- `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task
 - `stopTask(runId)` → void
 
-Task completion is delivered via the bus:
-- `waitFor('task:run:' + runId)` returns `{ runId, taskId, name, status, result, error, logs }`.
-- Data passing: use the bus with runId as correlation ID (e.g. task calls `waitFor('task:' + runId + ':config')`, caller calls `publish('task:' + runId + ':config', data)`).
+Load `system.tasks` and `system.triggers` reference sections for full details.
 
 ### EventBus & Agent Spawning
 
@@ -110,6 +109,8 @@ Naming conventions:
 
 Available reference sections (load when needed):
 - `system.views` — how to create views, CSS variables, view runtime
+- `system.tasks` — task execution details, input handling
+- `system.triggers` — trigger types, config format, cron syntax
 
 ---
 
@@ -172,3 +173,112 @@ Docs are stored in the docs table (target="agent"). Schema: id, name (unique), c
 
 preload=1 docs are included in the system prompt at startup.
 preload=0 docs are read on demand.
+
+---
+
+# system.tasks
+
+Tasks are JavaScript code stored in the `tasks` table. They run in dedicated workers (same runtime as execJs) and can be started programmatically or by the user from the command palette.
+
+## Schema
+
+```sql
+tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+```
+
+- `name` — task name, shown to the user
+- `description` — shown to the user when selecting the task
+- `content` — JavaScript code to execute
+- `timeout_ms` — optional execution timeout (null = no limit)
+
+## APIs
+
+- `startTask(taskId, input?)` → `{ runId }` — starts the task in a new worker. Non-blocking.
+- `stopTask(runId)` → void — terminates a running task.
+
+## Input
+
+The optional `input` parameter passed to `startTask` is available as the `input` global variable inside task code.
+
+When a task is triggered (by a trigger or by the user from the command palette), the input is passed automatically:
+- **User input**: the user can type optional text when running a task from the command palette
+- **HTTP trigger**: `input` is `{ method, path, headers, query, body }`
+- **Event trigger**: `input` is the published event data
+- **Schedule trigger**: no input
+
+## Completion
+
+Task completion is published to the event bus:
+
+```js
+const { runId } = await startTask(taskId, 'some input')
+const result = await waitFor('task:run:' + runId)
+// result: { runId, taskId, name, status, result, error, logs }
+```
+
+For inter-task data passing, use the bus with runId as correlation ID:
+```js
+// caller
+publish('task:' + runId + ':config', { key: 'value' })
+// inside task code
+const config = await waitFor('task:' + runId + ':config')
+```
+
+---
+
+# system.triggers
+
+Triggers automate task execution. Stored in the `triggers` table.
+
+## Schema
+
+```sql
+triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
+```
+
+- `task_id` — references the task to run. Cascades on delete.
+- `type` — one of: `schedule`, `http`, `event`
+- `config` — JSON string, format depends on type
+- `enabled` — 1 (active) or 0 (disabled)
+
+Triggers reload automatically when the table changes.
+
+## schedule
+
+Cron-like scheduling with 6-field expressions.
+
+Config: `{ "expression": "second minute hour day month weekday" }`
+
+Fields (left to right):
+1. seconds (0-59)
+2. minutes (0-59)
+3. hours (0-23)
+4. day of month (1-31)
+5. month (1-12)
+6. weekday (0-6, 0=Sunday)
+
+Syntax: `*` (any), single values (`5`), ranges (`1-5`), lists (`1,15`), steps (`*/10`, `2-30/2`).
+
+Examples:
+- `0 */5 * * * *` — every 5 minutes
+- `0 0 9 * * 1-5` — 9:00 AM weekdays
+- `*/30 * * * * *` — every 30 seconds
+
+## http
+
+Exposes an HTTP endpoint that triggers the task when called.
+
+Config: `{ "path": "/my-endpoint", "method": "POST" }`
+
+- `path` — URL path for the endpoint (must start with `/`)
+- `method` — GET, POST, PUT, PATCH, DELETE (default: POST)
+
+Task receives as input: `{ method, path, headers, query, body }`
+
+## event
+
+Subscribes to an internal event bus topic.
+
+Config: `{ "topic": "my-topic" }`
+
+Task receives the published event data as input. Fires each time a message is published to the topic.

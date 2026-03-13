@@ -337,8 +337,8 @@ if (isApp) {
       writeLog(logFileName: string, content: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
       },
-      onForwardStartTask(callback: (detail: { waiterId: string; taskId: number }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; taskId: number }) => callback(detail);
+      onForwardStartTask(callback: (detail: { waiterId: string; taskId: number; input?: unknown }) => void): () => void {
+        const handler = (_event: unknown, detail: { waiterId: string; taskId: number; input?: unknown }) => callback(detail);
         ipcRenderer.on(Channels.tasks.forwardStart, handler);
         return () => ipcRenderer.removeListener(Channels.tasks.forwardStart, handler);
       },

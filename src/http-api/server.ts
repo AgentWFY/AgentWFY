@@ -1,28 +1,25 @@
 import http from 'http';
-import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
-import { storeGet, storeSet } from '../ipc/store.js';
+import { storeGet } from '../ipc/store.js';
 import { assertPathAllowed } from '../security/path-policy.js';
-import { createMethodRegistry, mimeFromExt } from './handlers.js';
-import type { OnDbChange } from '../db/sqlite.js';
+import { mimeFromExt } from './handlers.js';
 
 const DEFAULT_PORT = 9877;
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
-interface HttpApiDeps {
-  getAgentRoot: () => string;
-  onDbChange: OnDbChange;
-  startTask: (taskId: number) => Promise<{ runId: string }>;
-  busPublish: (topic: string, data: unknown) => void;
+export interface HttpRequestData {
+  method: string;
+  path: string;
+  headers: Record<string, string | undefined>;
+  query: Record<string, string>;
+  body: unknown;
 }
 
-function ensureApiKey(): string {
-  const existing = storeGet('httpApi.apiKey');
-  if (typeof existing === 'string' && existing.length > 0) return existing;
-  const key = crypto.randomUUID();
-  storeSet('httpApi.apiKey', key);
-  return key;
+export type RouteHandler = (request: HttpRequestData) => Promise<{ status?: number; body: unknown }>;
+
+interface RegisteredRoute {
+  handler: RouteHandler;
 }
 
 function getPort(): number {
@@ -32,7 +29,7 @@ function getPort(): number {
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
@@ -60,10 +57,31 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-export function startHttpApi(deps: HttpApiDeps): http.Server {
-  const apiKey = ensureApiKey();
+function routeKey(routePath: string, method: string): string {
+  return `${method.toUpperCase()}:${routePath}`;
+}
 
-  const methods = createMethodRegistry(deps);
+export interface HttpApiServer {
+  server: http.Server;
+  registerRoute(routePath: string, method: string, handler: RouteHandler): void;
+  unregisterRoute(routePath: string, method: string): void;
+}
+
+interface HttpApiDeps {
+  getAgentRoot: () => string;
+}
+
+export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
+  const routes = new Map<string, RegisteredRoute>();
+
+  const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler) => {
+    const key = routeKey(routePath, method);
+    routes.set(key, { handler });
+  };
+
+  const unregisterRoute: HttpApiServer['unregisterRoute'] = (routePath, method) => {
+    routes.delete(routeKey(routePath, method));
+  };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
@@ -75,58 +93,8 @@ export function startHttpApi(deps: HttpApiDeps): http.Server {
       return;
     }
 
-    // POST /rpc
-    if (req.method === 'POST' && url.pathname === '/rpc') {
-      // Auth check
-      const authHeader = req.headers.authorization;
-      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-      if (!token || token !== apiKey) {
-        jsonResponse(res, 401, { error: 'Unauthorized' });
-        return;
-      }
-
-      let body: string;
-      try {
-        body = await readBody(req);
-      } catch (e: unknown) {
-        jsonResponse(res, 413, { error: (e as Error).message });
-        return;
-      }
-
-      let parsed: { method?: string; params?: Record<string, unknown> };
-      try {
-        parsed = JSON.parse(body);
-      } catch {
-        jsonResponse(res, 400, { error: 'Invalid JSON' });
-        return;
-      }
-
-      const methodName = parsed.method;
-      if (typeof methodName !== 'string' || !methods[methodName]) {
-        jsonResponse(res, 400, { error: `Unknown method: "${methodName}"` });
-        return;
-      }
-
-      const params = (parsed.params && typeof parsed.params === 'object') ? parsed.params as Record<string, unknown> : {};
-
-      try {
-        const result = await methods[methodName](params);
-        jsonResponse(res, 200, { ok: true, data: result });
-      } catch (e: unknown) {
-        jsonResponse(res, 200, { error: (e as Error).message });
-      }
-      return;
-    }
-
-    // GET /files/*
+    // GET /files/* — file serving
     if (req.method === 'GET' && url.pathname.startsWith('/files/')) {
-      // Auth via query param
-      const key = url.searchParams.get('key');
-      if (!key || key !== apiKey) {
-        jsonResponse(res, 401, { error: 'Unauthorized' });
-        return;
-      }
-
       const relativePath = decodeURIComponent(url.pathname.slice('/files/'.length));
       if (!relativePath) {
         jsonResponse(res, 400, { error: 'Missing file path' });
@@ -171,7 +139,62 @@ export function startHttpApi(deps: HttpApiDeps): http.Server {
       return;
     }
 
-    jsonResponse(res, 404, { error: 'Not found' });
+    // Dynamic route matching
+    const method = (req.method || 'GET').toUpperCase();
+    const key = routeKey(url.pathname, method);
+    const route = routes.get(key);
+
+    if (!route) {
+      jsonResponse(res, 404, { error: 'Not found' });
+      return;
+    }
+
+    // Read body
+    let rawBody = '';
+    try {
+      rawBody = await readBody(req);
+    } catch (e: unknown) {
+      jsonResponse(res, 413, { error: (e as Error).message });
+      return;
+    }
+
+    let parsedBody: unknown = rawBody;
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('application/json') && rawBody.length > 0) {
+      try {
+        parsedBody = JSON.parse(rawBody);
+      } catch {
+        jsonResponse(res, 400, { error: 'Invalid JSON body' });
+        return;
+      }
+    }
+
+    // Build query object
+    const query: Record<string, string> = {};
+    for (const [k, v] of url.searchParams.entries()) {
+      query[k] = v;
+    }
+
+    // Build headers object
+    const headers: Record<string, string | undefined> = {};
+    for (const [k, v] of Object.entries(req.headers)) {
+      headers[k] = Array.isArray(v) ? v.join(', ') : v;
+    }
+
+    const requestData: HttpRequestData = {
+      method,
+      path: url.pathname,
+      headers,
+      query,
+      body: parsedBody,
+    };
+
+    try {
+      const result = await route.handler(requestData);
+      jsonResponse(res, result.status ?? 200, result.body);
+    } catch (e: unknown) {
+      jsonResponse(res, 500, { ok: false, error: (e as Error).message });
+    }
   });
 
   const port = getPort();
@@ -187,5 +210,5 @@ export function startHttpApi(deps: HttpApiDeps): http.Server {
     }
   });
 
-  return server;
+  return { server, registerRoute, unregisterRoute };
 }

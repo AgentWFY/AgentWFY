@@ -23,13 +23,6 @@ export const SETTINGS: SettingDefinition[] = [
     },
   },
   {
-    key: 'httpApi.apiKey',
-    label: 'HTTP API Key',
-    type: 'string',
-    defaultValue: '',
-    description: 'Bearer token for HTTP API authentication (auto-generated if empty)',
-  },
-  {
     key: 'backup.intervalHours',
     label: 'Backup Interval (hours)',
     type: 'number',

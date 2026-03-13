@@ -4,6 +4,7 @@ import type { TaskRun, TaskLogHistoryItem } from '../tasks/task_runner.js'
 interface TaskItem {
   id: number
   name: string
+  description: string
   timeout_ms: number | null
 }
 
@@ -16,17 +17,27 @@ const STYLES = `
     color: var(--color-text3);
     overflow: hidden;
   }
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--color-text2);
+  .search-box {
+    padding: 8px 10px;
     flex-shrink: 0;
+  }
+  .search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+    outline: none;
+  }
+  .search-input:focus {
+    border-color: var(--color-accent, #58a6ff);
+  }
+  .search-input::placeholder {
+    color: var(--color-text1);
   }
   .scroll-area {
     flex: 1;
@@ -41,6 +52,14 @@ const STYLES = `
     color: var(--color-text1);
     padding: 10px 4px 4px;
   }
+  .section-title:first-child {
+    padding-top: 0;
+  }
+  .active-section {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--color-divider, var(--color-border));
+  }
   .empty {
     font-size: 12px;
     color: var(--color-text1);
@@ -50,14 +69,16 @@ const STYLES = `
   .task-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px;
+    padding: 5px 8px;
     border-radius: var(--radius-sm, 4px);
-    cursor: default;
+    cursor: pointer;
     font-size: 12px;
     gap: 6px;
   }
   .task-item:hover {
+    background: var(--color-item-hover);
+  }
+  .task-item.expanded {
     background: var(--color-item-hover);
   }
   .task-name {
@@ -66,6 +87,40 @@ const STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .task-detail {
+    padding: 4px 8px 8px;
+  }
+  .task-desc {
+    font-size: 11px;
+    color: var(--color-text1);
+    padding-bottom: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .task-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .task-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+    outline: none;
+  }
+  .task-input:focus {
+    border-color: var(--color-accent, #58a6ff);
+  }
+  .task-input::placeholder {
+    color: var(--color-text1);
   }
   .btn {
     padding: 2px 8px;
@@ -76,6 +131,7 @@ const STYLES = `
     color: var(--color-text3);
     cursor: pointer;
     flex-shrink: 0;
+    white-space: nowrap;
   }
   .btn:hover {
     background: var(--color-item-hover);
@@ -172,10 +228,6 @@ const STYLES = `
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .history-status {
-    font-size: 10px;
-    flex-shrink: 0;
-  }
   .history-date {
     font-size: 10px;
     color: var(--color-text1);
@@ -226,12 +278,15 @@ export class TlTaskPanel extends HTMLElement {
   private shadow: ShadowRoot
   private tasks: TaskItem[] = []
   private logHistory: TaskLogHistoryItem[] = []
+  private expandedTaskId: number | null = null
   private expandedRunIds = new Set<string>()
   private expandedHistoryFiles = new Set<string>()
   private historyDetails = new Map<string, string>()
   private renderedLogCounts = new Map<string, number>()
   private runnerUnsub: (() => void) | null = null
   private elapsedTimer: ReturnType<typeof setInterval> | null = null
+  private searchQuery = ''
+  private prevRunCount = 0
 
   constructor() {
     super()
@@ -277,12 +332,13 @@ export class TlTaskPanel extends HTMLElement {
     this.loadTasks()
   }
 
-  private onRunTaskEvent = (e: CustomEvent<{ taskId: number }>) => {
+  private onRunTaskEvent = (e: CustomEvent<{ taskId: number; input?: string }>) => {
     const taskId = e.detail?.taskId
     if (typeof taskId === 'number') {
       const runner = getTaskRunner()
       if (runner) {
-        runner.runTask(taskId).catch(err => {
+        const input = e.detail?.input
+        runner.runTask(taskId, input || undefined).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }
@@ -292,9 +348,16 @@ export class TlTaskPanel extends HTMLElement {
   private render() {
     this.shadow.innerHTML = `
       <style>${STYLES}</style>
-      <div class="header">Tasks</div>
+      <div class="search-box">
+        <input class="search-input" type="text" placeholder="Filter tasks..." autocomplete="off" spellcheck="false" />
+      </div>
       <div class="scroll-area" id="content"></div>
     `
+    const searchInput = this.shadow.querySelector('.search-input') as HTMLInputElement
+    searchInput.addEventListener('input', () => {
+      this.searchQuery = searchInput.value.trim().toLowerCase()
+      this.updateContent()
+    })
     this.updateContent()
   }
 
@@ -305,13 +368,29 @@ export class TlTaskPanel extends HTMLElement {
         const r = getTaskRunner()
         if (r) {
           clearInterval(interval)
-          this.runnerUnsub = r.subscribe(() => this.updateContent())
+          this.runnerUnsub = r.subscribe(() => this.onRunnerUpdate())
           this.updateContent()
         }
       }, 500)
       return
     }
-    this.runnerUnsub = runner.subscribe(() => this.updateContent())
+    this.runnerUnsub = runner.subscribe(() => this.onRunnerUpdate())
+  }
+
+  private onRunnerUpdate() {
+    const runner = getTaskRunner()
+    if (!runner) return
+
+    const currentRunning = runner.runs.filter(r => r.status === 'running').length
+    const wasRunning = this.prevRunCount
+
+    this.updateContent()
+
+    // A run just finished — reload history
+    if (currentRunning < wasRunning) {
+      this.loadLogHistory()
+    }
+    this.prevRunCount = currentRunning
   }
 
   private async loadTasks() {
@@ -321,7 +400,7 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: 'SELECT id, name, timeout_ms FROM tasks ORDER BY name ASC',
+        sql: 'SELECT id, name, description, timeout_ms FROM tasks ORDER BY name ASC',
       }) as TaskItem[]
       this.tasks = Array.isArray(rows) ? rows : []
     } catch {
@@ -342,47 +421,68 @@ export class TlTaskPanel extends HTMLElement {
     this.updateContent()
   }
 
+  private getFilteredTasks(): TaskItem[] {
+    if (!this.searchQuery) return this.tasks
+    return this.tasks.filter(t =>
+      t.name.toLowerCase().includes(this.searchQuery) ||
+      (t.description && t.description.toLowerCase().includes(this.searchQuery))
+    )
+  }
+
   private updateContent() {
     const el = this.shadow.querySelector('#content')
     if (!el) return
 
     const runner = getTaskRunner()
-    const runs = runner ? runner.runs : []
-    const hasRuns = runs.length > 0
+    const allRuns = runner ? runner.runs : []
+    const activeRuns = allRuns.filter(r => r.status === 'running')
+    const filteredTasks = this.getFilteredTasks()
 
     let html = ''
 
-    // Active / recent runs
-    if (hasRuns) {
-      html += `<div class="section-title">Runs</div>`
-      for (const run of runs) {
+    // Active runs (only running tasks)
+    if (activeRuns.length > 0) {
+      html += `<div class="active-section">`
+      html += `<div class="section-title">Active</div>`
+      for (const run of activeRuns) {
         const expanded = this.expandedRunIds.has(run.runId)
-        const elapsed = (run.finishedAt ?? Date.now()) - run.startedAt
+        const elapsed = Date.now() - run.startedAt
         html += `<div class="run-entry">`
         html += `<div class="run-header" data-run-id="${escapeHtml(run.runId)}">`
-        html += `<span class="run-status ${run.status}"></span>`
+        html += `<span class="run-status running"></span>`
         html += `<span class="run-info">${escapeHtml(run.name)}</span>`
         html += `<span class="run-time">${formatElapsed(elapsed)}</span>`
-        if (run.status === 'running') {
-          html += `<button class="btn btn-stop" data-stop-run="${escapeHtml(run.runId)}">Stop</button>`
-        }
+        html += `<button class="btn btn-stop" data-stop-run="${escapeHtml(run.runId)}">Stop</button>`
         html += `</div>`
         html += `<div class="run-logs ${expanded ? 'open' : ''}">`
         html += this.renderRunLogs(run)
         html += `</div></div>`
       }
+      html += `</div>`
     }
 
-    // Available tasks
-    html += `<div class="section-title">Available Tasks</div>`
-    if (this.tasks.length === 0) {
+    // Task list
+    if (filteredTasks.length === 0 && this.tasks.length > 0) {
+      html += `<div class="empty">No matching tasks</div>`
+    } else if (filteredTasks.length === 0) {
       html += `<div class="empty">No tasks defined</div>`
     } else {
-      for (const task of this.tasks) {
-        html += `<div class="task-item">`
+      for (const task of filteredTasks) {
+        const isExpanded = this.expandedTaskId === task.id
+        html += `<div class="task-item${isExpanded ? ' expanded' : ''}" data-task-id="${task.id}">`
         html += `<span class="task-name">${escapeHtml(task.name)}</span>`
-        html += `<button class="btn" data-run-task="${task.id}">Run</button>`
         html += `</div>`
+        if (isExpanded) {
+          html += `<div class="task-detail">`
+          if (task.description) {
+            html += `<div class="task-desc">${escapeHtml(task.description)}</div>`
+          }
+          html += `<div class="task-actions">`
+          html += `<input class="task-input" data-input-task="${task.id}" placeholder="Input (optional)" />`
+          html += `<button class="btn" data-run-task="${task.id}">Run</button>`
+          html += `</div>`
+          html += `</div>`
+        }
       }
     }
 
@@ -407,10 +507,16 @@ export class TlTaskPanel extends HTMLElement {
     this.attachContentListeners()
 
     // Track rendered log counts for expanded runs
-    for (const run of runs) {
+    for (const run of activeRuns) {
       if (this.expandedRunIds.has(run.runId)) {
         this.renderedLogCounts.set(run.runId, run.logs.length)
       }
+    }
+
+    // Focus input if a task is expanded
+    if (this.expandedTaskId !== null) {
+      const inputEl = this.shadow.querySelector(`.task-input[data-input-task="${this.expandedTaskId}"]`) as HTMLInputElement | null
+      if (inputEl) inputEl.focus()
     }
   }
 
@@ -466,14 +572,31 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private attachContentListeners() {
+    // Task item click — toggle expand
+    this.shadow.querySelectorAll('.task-item[data-task-id]').forEach(el => {
+      el.addEventListener('click', () => {
+        const taskId = Number((el as HTMLElement).dataset.taskId)
+        this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId
+        this.updateContent()
+      })
+    })
+
     // Run buttons
     this.shadow.querySelectorAll('[data-run-task]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const taskId = Number((btn as HTMLElement).dataset.runTask)
-        const runner = getTaskRunner()
-        if (runner && taskId) {
-          runner.runTask(taskId).catch(err => console.error('[TlTaskPanel] run failed', err))
+        this.runWithInput(taskId)
+      })
+    })
+
+    // Enter key on input fields
+    this.shadow.querySelectorAll('.task-input[data-input-task]').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if ((e as KeyboardEvent).key === 'Enter') {
+          e.preventDefault()
+          const taskId = Number((el as HTMLInputElement).dataset.inputTask)
+          this.runWithInput(taskId)
         }
       })
     })
@@ -518,6 +641,17 @@ export class TlTaskPanel extends HTMLElement {
         }
       })
     })
+  }
+
+  private runWithInput(taskId: number) {
+    if (!taskId) return
+    const inputEl = this.shadow.querySelector(`.task-input[data-input-task="${taskId}"]`) as HTMLInputElement | null
+    const inputValue = inputEl?.value?.trim() || undefined
+    const runner = getTaskRunner()
+    if (runner) {
+      runner.runTask(taskId, inputValue).catch(err => console.error('[TlTaskPanel] run with input failed', err))
+      if (inputEl) inputEl.value = ''
+    }
   }
 
   private async loadHistoryDetail(file: string) {
