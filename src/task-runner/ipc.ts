@@ -68,10 +68,10 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
 
   // --- Forwarding handlers for agentview callers ---
 
-  ipcMain.handle(Channels.tasks.start, async (_event, taskId: number) => {
+  ipcMain.handle(Channels.tasks.start, async (_event, taskId: number, input?: unknown) => {
     const win = getMainWindow();
     if (!win || win.isDestroyed()) throw new Error('Main window is not available');
-    return forwardStartTask(win, taskId);
+    return forwardStartTask(win, taskId, input);
   });
 
   ipcMain.handle(Channels.tasks.stop, async (_event, runId: string) => {

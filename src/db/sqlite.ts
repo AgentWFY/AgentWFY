@@ -146,6 +146,7 @@ function normalizeParams(params: unknown[] | undefined): unknown[] {
 function runSqliteQuery(dbPath: string, request: SqlExecutionRequest, initSql?: string, onDbChange?: OnDbChange): unknown[] {
   const params = normalizeParams(request.params);
   const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA foreign_keys = ON;');
   const trackChanges = onDbChange && isWriteStatement(request.sql);
 
   try {

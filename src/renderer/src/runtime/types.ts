@@ -243,6 +243,7 @@ export interface WorkerHostMethodMap {
 
 export interface WorkerStartTaskRequest {
   taskId: number
+  input?: unknown
 }
 
 export interface WorkerStartTaskResult {
