@@ -379,6 +379,10 @@ export class TlApp extends HTMLElement {
       if (change.table === 'tasks') {
         window.dispatchEvent(new CustomEvent('agentwfy:tasks-db-changed'))
       }
+
+      if (change.table === 'triggers') {
+        window.dispatchEvent(new CustomEvent('agentwfy:triggers-db-changed'))
+      }
     })
   }
 }
