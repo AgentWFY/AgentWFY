@@ -1,9 +1,10 @@
 import { renderMarkdown } from '../markdown.js'
 import type { AgentMessage, RetryInfo } from '../agent/types.js'
 import { COMPACTION_SUMMARY_CUSTOM_TYPE } from '../agent/create_agent.js'
+import { escapeHtml } from './chat_utils.js'
 import type { TlJson } from './json_view.js'
 
-export interface ToolPair {
+interface ToolPair {
   name: string
   id: string
   arguments: unknown
@@ -11,7 +12,7 @@ export interface ToolPair {
   isError: boolean
 }
 
-export interface DisplayBlock {
+interface DisplayBlock {
   type: 'user' | 'assistant' | 'custom' | 'compaction'
   text: string
   tools: ToolPair[]
@@ -19,13 +20,7 @@ export interface DisplayBlock {
   raw: Record<string, unknown>
 }
 
-export function escapeHtml(str: string): string {
-  const div = document.createElement('div')
-  div.textContent = str
-  return div.innerHTML
-}
-
-export function getTextFromContent(content: unknown): string {
+function getTextFromContent(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
@@ -157,7 +152,8 @@ export function renderMessagesHtml(
   retryInfo: RetryInfo | null
 ): string {
   let html = ''
-  for (const block of displayBlocks) {
+  for (let i = 0; i < displayBlocks.length; i++) {
+    const block = displayBlocks[i]
     if (block.type === 'user') {
       html += `<div class="block block-user">${renderMarkdown(block.text)}</div>`
     } else if (block.type === 'assistant') {
@@ -191,7 +187,7 @@ export function renderMessagesHtml(
       }
       html += '</div>'
     } else if (block.type === 'custom') {
-      html += `<div class="block block-custom"><tl-json data-block-idx="${displayBlocks.indexOf(block)}"></tl-json></div>`
+      html += `<div class="block block-custom"><tl-json data-block-idx="${i}"></tl-json></div>`
     }
   }
   if (isStreaming) {
@@ -206,10 +202,10 @@ export function renderMessagesHtml(
 }
 
 export function setupCustomJsonBlocks(messagesEl: HTMLElement, displayBlocks: DisplayBlock[]) {
-  const customBlocks = displayBlocks.filter(b => b.type === 'custom')
-  for (const block of customBlocks) {
-    const idx = displayBlocks.indexOf(block)
-    const jsonEl = messagesEl.querySelector(`tl-json[data-block-idx="${idx}"]`) as TlJson | null
+  for (let i = 0; i < displayBlocks.length; i++) {
+    const block = displayBlocks[i]
+    if (block.type !== 'custom') continue
+    const jsonEl = messagesEl.querySelector(`tl-json[data-block-idx="${i}"]`) as TlJson | null
     if (jsonEl) {
       jsonEl.json = block.raw.content
       jsonEl.placeholder = 'custom message'

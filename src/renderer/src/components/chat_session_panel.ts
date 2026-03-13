@@ -1,14 +1,5 @@
-import { escapeHtml } from './chat_message_renderer.js'
+import { escapeHtml, formatDate } from './chat_utils.js'
 import type { SessionListItem } from '../agent/session_manager.js'
-
-export function formatDate(ts: number): string {
-  const d = new Date(ts)
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const hours = String(d.getHours()).padStart(2, '0')
-  const mins = String(d.getMinutes()).padStart(2, '0')
-  return `${month}/${day} ${hours}:${mins}`
-}
 
 export function renderSessionPanelHtml(items: SessionListItem[]): string {
   let html = ''
