@@ -73,22 +73,14 @@ Always `reloadTab` after updating view content via SQL.
 - `fetch(url, init?)` — standard fetch API, including custom/restricted headers.
 - `WebSocket(url, protocols?, options?)` — standard WebSocket. Third argument `options: { origin?, headers? }` allows setting custom headers and origin.
 
-### Tasks
+### Tasks & Triggers
 
-Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs). The `description` column is shown to the user.
+Tasks store JavaScript code in the `tasks` table. The user can run them from the command palette or they can be started programmatically. Triggers (`triggers` table) automate task execution via cron schedules, HTTP endpoints, or event bus topics.
 
-- `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task. Optional `input` is passed to the task code.
+- `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task
 - `stopTask(runId)` → void
 
-Inside task code, the input value is available as `input` (global variable injected by the runtime).
-
-Task completion is delivered via the bus:
-- `waitFor('task:run:' + runId)` returns `{ runId, taskId, name, status, result, error, logs }`.
-- Data passing: use the bus with runId as correlation ID (e.g. task calls `waitFor('task:' + runId + ':config')`, caller calls `publish('task:' + runId + ':config', data)`).
-
-### Triggers
-
-Triggers automate task execution. Stored in the `triggers` table (target="agent"). Three types: `schedule` (cron), `http` (external HTTP endpoint), `event` (internal bus topic). The `config` column holds JSON specific to each type. Enable/disable via `enabled` column (1/0). Triggers reload automatically when the table changes.
+Load `system.tasks` and `system.triggers` reference sections for full details.
 
 ### EventBus & Agent Spawning
 
