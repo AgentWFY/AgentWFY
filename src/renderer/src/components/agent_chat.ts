@@ -1,30 +1,16 @@
-import { renderMarkdown } from '../markdown.js'
 import type { AgentMessage, RetryInfo } from '../agent/types.js'
 import type { AgentAuthConfig } from '../agent/agent_auth.js'
 import { loadAuthConfig } from '../agent/agent_auth.js'
 import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
 import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
+import type { AgentWFYAgent } from '../agent/create_agent.js'
 import {
-  COMPACTION_SUMMARY_CUSTOM_TYPE,
-  type AgentWFYAgent
-} from '../agent/create_agent.js'
-import type { TlJson } from './json_view.js'
-
-interface ToolPair {
-  name: string
-  id: string
-  arguments: unknown
-  result: unknown
-  isError: boolean
-}
-
-interface DisplayBlock {
-  type: 'user' | 'assistant' | 'custom' | 'compaction'
-  text: string
-  tools: ToolPair[]
-  compactionBeforeCount?: number
-  raw: Record<string, unknown>
-}
+  escapeHtml,
+  buildDisplayBlocks,
+  renderMessagesHtml,
+  setupCustomJsonBlocks
+} from './chat_message_renderer.js'
+import { renderSessionPanelHtml } from './chat_session_panel.js'
 
 const STYLES = `
   tl-agent-chat {
@@ -600,7 +586,6 @@ ${detail.content}`
 
   private async handleReconnect() {
     this.error = null
-    // Keep inline settings open when reconnecting from an already-active chat.
     const keepInlineSettingsOpen = !!this.manager && this.activePanel === 'settings'
     this.isInitializing = true
     this.render()
@@ -721,145 +706,6 @@ ${detail.content}`
     textarea.style.height = textarea.scrollHeight + 'px'
   }
 
-  private toggleTool(id: string) {
-    if (this.openToolSet.has(id)) {
-      this.openToolSet.delete(id)
-    } else {
-      this.openToolSet.add(id)
-    }
-    this.render()
-  }
-
-  private isToolOpen(id: string): boolean {
-    return this.openToolSet.has(id)
-  }
-
-  private getTextFromContent(content: unknown): string {
-    if (typeof content === 'string') return content
-    if (Array.isArray(content)) {
-      return content
-        .filter((block: Record<string, unknown>) => block?.type === 'text')
-        .map((block: Record<string, unknown>) => block.text as string)
-        .join('')
-    }
-    return ''
-  }
-
-  private getToolCalls(content: unknown): Record<string, unknown>[] {
-    if (!Array.isArray(content)) return []
-    return content.filter((block: Record<string, unknown>) => block?.type === 'toolCall')
-  }
-
-  private buildDisplayBlocks(msgs: AgentMessage[]): DisplayBlock[] {
-    const blocks: DisplayBlock[] = []
-    let i = 0
-    while (i < msgs.length) {
-      const msg = msgs[i] as unknown as Record<string, unknown>
-      if (msg.role === 'user') {
-        blocks.push({ type: 'user', text: this.getTextFromContent(msg.content), tools: [], raw: msg })
-        i++
-      } else if (msg.role === 'assistant') {
-        const text = this.getTextFromContent(msg.content)
-        const toolCalls = this.getToolCalls(msg.content)
-        const tools: ToolPair[] = []
-        let j = i + 1
-        for (const tc of toolCalls) {
-          const pair: ToolPair = { name: tc.name as string, id: tc.id as string, arguments: tc.arguments, result: null, isError: false }
-          const nextMsg = j < msgs.length ? (msgs[j] as unknown as Record<string, unknown>) : null
-          if (nextMsg && nextMsg.role === 'toolResult' && nextMsg.toolCallId === tc.id) {
-            pair.result = nextMsg.content
-            pair.isError = nextMsg.isError as boolean
-            j++
-          }
-          tools.push(pair)
-        }
-        blocks.push({ type: 'assistant', text, tools, raw: msg })
-        i = j
-      } else if (msg.role === 'toolResult') {
-        i++
-      } else if (msg.role === 'custom') {
-        if (msg.customType === COMPACTION_SUMMARY_CUSTOM_TYPE) {
-          const details = msg.details && typeof msg.details === 'object' ? msg.details as Record<string, unknown> : null
-          const beforeCount = typeof details?.beforeCount === 'number' ? details.beforeCount : undefined
-          blocks.push({
-            type: 'compaction',
-            text: this.getTextFromContent(msg.content),
-            tools: [],
-            compactionBeforeCount: beforeCount,
-            raw: msg
-          })
-        } else {
-          blocks.push({ type: 'custom', text: '', tools: [], raw: msg })
-        }
-        i++
-      } else {
-        i++
-      }
-    }
-    return blocks
-  }
-
-  private renderMarkdown(text: string): string {
-    return renderMarkdown(text)
-  }
-
-  private extractImagesFromResult(result: unknown): { images: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
-    const images: Array<{ data: string; mimeType: string }> = []
-    if (!Array.isArray(result)) return { images, filteredResult: result }
-
-    const filtered = result.filter((item: Record<string, unknown>) => {
-      if (item?.type === 'image' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
-        images.push({ data: item.data, mimeType: item.mimeType })
-        return false
-      }
-      return true
-    })
-
-    return { images, filteredResult: filtered }
-  }
-
-  private getToolDescription(args: unknown): string {
-    if (!args || typeof args !== 'object') return 'Executing code'
-    const argsObj = args as Record<string, unknown>
-    if (typeof argsObj.description === 'string' && argsObj.description.trim()) {
-      return argsObj.description.trim()
-    }
-    return 'Executing code'
-  }
-
-  private getToolCode(args: unknown): string {
-    if (!args || typeof args !== 'object') return ''
-    const argsObj = args as Record<string, unknown>
-    return typeof argsObj.code === 'string' ? argsObj.code : ''
-  }
-
-  private formatToolResult(result: unknown): { text: string; images: Array<{ data: string; mimeType: string }> } {
-    const { images, filteredResult } = this.extractImagesFromResult(result)
-    if (!Array.isArray(filteredResult)) {
-      return { text: typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2), images }
-    }
-    const textParts = filteredResult
-      .filter((item: Record<string, unknown>) => item?.type === 'text')
-      .map((item: Record<string, unknown>) => item.text as string)
-    const text = textParts.length > 0 ? textParts.join('\n') : JSON.stringify(filteredResult, null, 2)
-    return { text, images }
-  }
-
-  private formatDate(ts: number): string {
-    const d = new Date(ts)
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hours = String(d.getHours()).padStart(2, '0')
-    const mins = String(d.getMinutes()).padStart(2, '0')
-    return `${month}/${day} ${hours}:${mins}`
-  }
-
-  private escapeHtml(str: string): string {
-    const div = document.createElement('div')
-    div.textContent = str
-    return div.innerHTML
-  }
-
   private handleMessagesScroll = () => {
     if (!this.messagesEl) return
     const threshold = 50
@@ -888,7 +734,7 @@ ${detail.content}`
           <div class="setup-container">
             <h3>Agent Settings</h3>
             <tl-agent-settings id="setup-settings"></tl-agent-settings>
-            ${this.error ? `<div class="error-banner">${this.escapeHtml(this.error)}</div>` : ''}
+            ${this.error ? `<div class="error-banner">${escapeHtml(this.error)}</div>` : ''}
           </div>
         </div>`
       this.attachSetupSettingsListeners()
@@ -931,14 +777,20 @@ ${detail.content}`
     this.messagesEl.className = 'messages'
     this.messagesEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;'
     this.messagesEl.addEventListener('scroll', this.handleMessagesScroll)
-    // Event delegation for tool headers
     this.messagesEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
       const toolHeader = target.closest('.tool-header[data-tool-id]') as HTMLElement | null
       if (toolHeader) {
         e.preventDefault()
         const toolId = toolHeader.dataset.toolId
-        if (toolId) this.toggleTool(toolId)
+        if (toolId) {
+          if (this.openToolSet.has(toolId)) {
+            this.openToolSet.delete(toolId)
+          } else {
+            this.openToolSet.add(toolId)
+          }
+          this.render()
+        }
       }
     })
     container.appendChild(this.messagesEl)
@@ -953,7 +805,6 @@ ${detail.content}`
     this._sessionPanel = document.createElement('div')
     this._sessionPanel.className = 'popup-panel session-panel'
     this._sessionPanel.style.display = 'none'
-    // Event delegation for session panel items
     this._sessionPanel.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
       const newBtn = target.closest('#new-session-btn') as HTMLElement | null
@@ -1074,82 +925,12 @@ ${detail.content}`
   }
 
   private updateChat() {
-    const displayBlocks = this.buildDisplayBlocks(this.messages)
+    const displayBlocks = buildDisplayBlocks(this.messages)
 
-    // 1. Messages area (only innerHTML rebuild in the component)
+    // 1. Messages area
     if (this.messagesEl) {
-      let html = ''
-      for (const block of displayBlocks) {
-        if (block.type === 'user') {
-          html += `<div class="block block-user">${this.renderMarkdown(block.text)}</div>`
-        } else if (block.type === 'assistant') {
-          const rawMsg = block.raw as { stopReason?: string; errorMessage?: string }
-          const hasError = rawMsg.stopReason === 'error' && rawMsg.errorMessage
-          if (block.text.trim() || block.tools.length > 0 || hasError) {
-            html += '<div class="block block-assistant">'
-            if (block.text) {
-              html += `<div class="assistant-text">${this.renderMarkdown(block.text)}</div>`
-            }
-            if (block.tools.length > 0) {
-              html += '<div class="tools-group">'
-              for (const tool of block.tools) {
-                const isOpen = this.isToolOpen(tool.id)
-                const description = this.getToolDescription(tool.arguments)
-                html += `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${this.escapeHtml(tool.id)}">
-                  <span class="tool-description">${this.escapeHtml(description)}</span>
-                  ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
-                </div>`
-                if (isOpen) {
-                  const code = this.getToolCode(tool.arguments)
-                  const { text: resultText, images } = this.formatToolResult(tool.result)
-                  html += '<div class="tool-body">'
-                  if (code) html += `<pre>${this.escapeHtml(code)}</pre>`
-                  if (resultText) html += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${this.escapeHtml(resultText)}</pre>`
-                  if (images.length > 0) html += images.map(img => `<img src="data:${this.escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
-                  html += '</div>'
-                }
-              }
-              html += '</div>'
-            }
-            if (hasError) {
-              html += `<div class="error-banner">${this.escapeHtml(rawMsg.errorMessage!)}</div>`
-            }
-            html += '</div>'
-          }
-        } else if (block.type === 'compaction') {
-          html += '<div class="block block-compaction">'
-          html += '<div class="compaction-label">[compaction]</div>'
-          if (typeof block.compactionBeforeCount === 'number') {
-            html += `<div class="compaction-meta">Compacted ${block.compactionBeforeCount.toLocaleString()} messages</div>`
-          }
-          if (block.text.trim()) {
-            html += `<div class="assistant-text">${this.renderMarkdown(block.text)}</div>`
-          }
-          html += '</div>'
-        } else if (block.type === 'custom') {
-          html += `<div class="block block-custom"><tl-json data-block-idx="${displayBlocks.indexOf(block)}"></tl-json></div>`
-        }
-      }
-      if (this.isStreaming) {
-        if (this.retryInfo) {
-          html += `<div class="retry-indicator"><span class="retry-dot"></span> Reconnecting (${this.retryInfo.attempt}/${this.retryInfo.maxAttempts})...</div>`
-        } else {
-          html += '<div class="thinking-dots"><span></span><span></span><span></span></div>'
-        }
-      }
-      html += '<div id="anchor"></div>'
-      this.messagesEl.innerHTML = html
-
-      // Set up tl-json elements with data
-      const customBlocks = displayBlocks.filter(b => b.type === 'custom')
-      for (const block of customBlocks) {
-        const idx = displayBlocks.indexOf(block)
-        const jsonEl = this.messagesEl.querySelector(`tl-json[data-block-idx="${idx}"]`) as TlJson | null
-        if (jsonEl) {
-          jsonEl.json = block.raw.content
-          jsonEl.placeholder = 'custom message'
-        }
-      }
+      this.messagesEl.innerHTML = renderMessagesHtml(displayBlocks, this.openToolSet, this.isStreaming, this.retryInfo)
+      setupCustomJsonBlocks(this.messagesEl, displayBlocks)
 
       // Auto-scroll
       if (!this.userScrolledUp) {
@@ -1206,7 +987,7 @@ ${detail.content}`
       if (this.activePanel === 'sessions') {
         this._sessionPanel.style.display = ''
         if (this._sessionPanelDirty) {
-          this.renderSessionPanelContent()
+          this._sessionPanel.innerHTML = renderSessionPanelHtml(this.sessionListItems)
           this._sessionPanelDirty = false
         }
       } else {
@@ -1216,23 +997,6 @@ ${detail.content}`
 
     // 9. Settings panel
     this.updateSettingsPanel()
-  }
-
-  private renderSessionPanelContent() {
-    if (!this._sessionPanel) return
-    let html = ''
-    html += `<div class="session-panel-item${!this.sessionListItems.some(i => i.isActive) ? ' active' : ''}" id="new-session-btn">
-      <span class="session-panel-item-label">New session</span>
-    </div>`
-    for (let idx = 0; idx < this.sessionListItems.length; idx++) {
-      const item = this.sessionListItems[idx]
-      html += `<div class="session-panel-item${item.isActive ? ' active' : ''}" data-session-idx="${idx}">
-        ${item.isStreaming ? '<span class="session-running-dot"></span>' : ''}
-        <span class="session-panel-item-label">${this.escapeHtml(item.label)}</span>
-        <span class="session-panel-item-date">${this.formatDate(item.updatedAt)}</span>
-      </div>`
-    }
-    this._sessionPanel.innerHTML = html
   }
 
   private updateSettingsPanel() {
