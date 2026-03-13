@@ -145,70 +145,132 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
   return html
 }
 
-export function renderMessagesHtml(
-  displayBlocks: DisplayBlock[],
+// --- Incremental DOM rendering ---
+
+/** Cache last-set HTML per element to avoid browser innerHTML normalization issues */
+const _htmlCache = new WeakMap<HTMLElement, string>()
+
+function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<string>): string {
+  if (block.type === 'user') {
+    return `<div class="block block-user">${renderMarkdown(block.text)}</div>`
+  }
+  if (block.type === 'assistant') {
+    const rawMsg = block.raw as { stopReason?: string; errorMessage?: string }
+    const hasError = rawMsg.stopReason === 'error' && rawMsg.errorMessage
+    if (!block.text.trim() && block.tools.length === 0 && !hasError) return ''
+    let html = '<div class="block block-assistant">'
+    if (block.text) {
+      html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
+    }
+    if (block.tools.length > 0) {
+      html += '<div class="tools-group">'
+      for (const tool of block.tools) {
+        html += renderToolHtml(tool, openToolSet.has(tool.id))
+      }
+      html += '</div>'
+    }
+    if (hasError) {
+      html += `<div class="error-banner">${escapeHtml(rawMsg.errorMessage!)}</div>`
+    }
+    html += '</div>'
+    return html
+  }
+  if (block.type === 'compaction') {
+    let html = '<div class="block block-compaction">'
+    html += '<div class="compaction-label">[compaction]</div>'
+    if (typeof block.compactionBeforeCount === 'number') {
+      html += `<div class="compaction-meta">Compacted ${block.compactionBeforeCount.toLocaleString()} messages</div>`
+    }
+    if (block.text.trim()) {
+      html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
+    }
+    html += '</div>'
+    return html
+  }
+  if (block.type === 'custom') {
+    return `<div class="block block-custom"><tl-json data-block-idx="${index}"></tl-json></div>`
+  }
+  return ''
+}
+
+function renderIndicatorHtml(isStreaming: boolean, retryInfo: RetryInfo | null): string {
+  if (!isStreaming) return ''
+  if (retryInfo) {
+    return `<div class="retry-indicator"><span class="retry-dot"></span> Reconnecting (${retryInfo.attempt}/${retryInfo.maxAttempts})...</div>`
+  }
+  return '<div class="thinking-dots"><span></span><span></span><span></span></div>'
+}
+
+function setupBlockCustomEl(wrapper: HTMLElement, block: DisplayBlock) {
+  if (block.type !== 'custom') return
+  const jsonEl = wrapper.querySelector('tl-json') as TlJson | null
+  if (jsonEl) {
+    jsonEl.json = block.raw.content
+    jsonEl.placeholder = 'custom message'
+  }
+}
+
+function setHtmlIfChanged(el: HTMLElement, html: string): boolean {
+  if (_htmlCache.get(el) === html) return false
+  el.innerHTML = html
+  _htmlCache.set(el, html)
+  return true
+}
+
+/**
+ * Incrementally update the messages container DOM.
+ * - Stable blocks are skipped (cached HTML matches)
+ * - Only changed blocks (last block during streaming, toggled tools) are re-rendered
+ * - New blocks are appended, excess blocks removed (compaction)
+ */
+export function updateMessagesEl(
+  container: HTMLElement,
+  blocks: DisplayBlock[],
   openToolSet: Set<string>,
   isStreaming: boolean,
   retryInfo: RetryInfo | null
-): string {
-  let html = ''
-  for (let i = 0; i < displayBlocks.length; i++) {
-    const block = displayBlocks[i]
-    if (block.type === 'user') {
-      html += `<div class="block block-user">${renderMarkdown(block.text)}</div>`
-    } else if (block.type === 'assistant') {
-      const rawMsg = block.raw as { stopReason?: string; errorMessage?: string }
-      const hasError = rawMsg.stopReason === 'error' && rawMsg.errorMessage
-      if (block.text.trim() || block.tools.length > 0 || hasError) {
-        html += '<div class="block block-assistant">'
-        if (block.text) {
-          html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
-        }
-        if (block.tools.length > 0) {
-          html += '<div class="tools-group">'
-          for (const tool of block.tools) {
-            html += renderToolHtml(tool, openToolSet.has(tool.id))
-          }
-          html += '</div>'
-        }
-        if (hasError) {
-          html += `<div class="error-banner">${escapeHtml(rawMsg.errorMessage!)}</div>`
-        }
-        html += '</div>'
-      }
-    } else if (block.type === 'compaction') {
-      html += '<div class="block block-compaction">'
-      html += '<div class="compaction-label">[compaction]</div>'
-      if (typeof block.compactionBeforeCount === 'number') {
-        html += `<div class="compaction-meta">Compacted ${block.compactionBeforeCount.toLocaleString()} messages</div>`
-      }
-      if (block.text.trim()) {
-        html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
-      }
-      html += '</div>'
-    } else if (block.type === 'custom') {
-      html += `<div class="block block-custom"><tl-json data-block-idx="${i}"></tl-json></div>`
-    }
+): void {
+  // Ensure indicator and anchor exist as persistent sentinel elements
+  let indicator = container.querySelector<HTMLElement>('#streaming-indicator')
+  let anchor = container.querySelector<HTMLElement>('#anchor')
+  if (!anchor) {
+    anchor = document.createElement('div')
+    anchor.id = 'anchor'
+    container.appendChild(anchor)
   }
-  if (isStreaming) {
-    if (retryInfo) {
-      html += `<div class="retry-indicator"><span class="retry-dot"></span> Reconnecting (${retryInfo.attempt}/${retryInfo.maxAttempts})...</div>`
-    } else {
-      html += '<div class="thinking-dots"><span></span><span></span><span></span></div>'
-    }
+  if (!indicator) {
+    indicator = document.createElement('div')
+    indicator.id = 'streaming-indicator'
+    container.insertBefore(indicator, anchor)
   }
-  html += '<div id="anchor"></div>'
-  return html
-}
 
-export function setupCustomJsonBlocks(messagesEl: HTMLElement, displayBlocks: DisplayBlock[]) {
-  for (let i = 0; i < displayBlocks.length; i++) {
-    const block = displayBlocks[i]
-    if (block.type !== 'custom') continue
-    const jsonEl = messagesEl.querySelector(`tl-json[data-block-idx="${i}"]`) as TlJson | null
-    if (jsonEl) {
-      jsonEl.json = block.raw.content
-      jsonEl.placeholder = 'custom message'
+  const wrappers = container.querySelectorAll<HTMLElement>(':scope > [data-msg-idx]')
+
+  // Remove excess wrappers if block count shrank (compaction)
+  for (let i = blocks.length; i < wrappers.length; i++) {
+    wrappers[i].remove()
+  }
+
+  // Update existing wrappers — only touches DOM when HTML actually changed
+  const existingCount = Math.min(wrappers.length, blocks.length)
+  for (let i = 0; i < existingCount; i++) {
+    const html = renderBlockHtml(blocks[i], i, openToolSet)
+    if (setHtmlIfChanged(wrappers[i], html)) {
+      setupBlockCustomEl(wrappers[i], blocks[i])
     }
   }
+
+  // Append new blocks
+  for (let i = wrappers.length; i < blocks.length; i++) {
+    const wrapper = document.createElement('div')
+    wrapper.dataset.msgIdx = String(i)
+    const html = renderBlockHtml(blocks[i], i, openToolSet)
+    wrapper.innerHTML = html
+    _htmlCache.set(wrapper, html)
+    container.insertBefore(wrapper, indicator)
+    setupBlockCustomEl(wrapper, blocks[i])
+  }
+
+  // Update streaming indicator
+  setHtmlIfChanged(indicator, renderIndicatorHtml(isStreaming, retryInfo))
 }

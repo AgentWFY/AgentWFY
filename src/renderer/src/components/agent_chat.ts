@@ -6,8 +6,7 @@ import type { AgentSessionManager, SessionListItem } from '../agent/session_mana
 import type { AgentWFYAgent } from '../agent/create_agent.js'
 import {
   buildDisplayBlocks,
-  renderMessagesHtml,
-  setupCustomJsonBlocks
+  updateMessagesEl
 } from './chat_message_renderer.js'
 import { escapeHtml } from './chat_utils.js'
 import { renderSessionPanelHtml } from './chat_session_panel.js'
@@ -929,8 +928,7 @@ ${detail.content}`
 
     // 1. Messages area
     if (this.messagesEl) {
-      this.messagesEl.innerHTML = renderMessagesHtml(displayBlocks, this.openToolSet, this.isStreaming, this.retryInfo)
-      setupCustomJsonBlocks(this.messagesEl, displayBlocks)
+      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.isStreaming, this.retryInfo)
 
       // Auto-scroll
       if (!this.userScrolledUp) {
