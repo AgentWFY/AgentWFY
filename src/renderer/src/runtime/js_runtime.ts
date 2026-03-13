@@ -549,7 +549,7 @@ export class JsRuntime {
         }
         const taskRunner = getTaskRunner()
         if (!taskRunner) throw new Error('TaskRunner not initialized')
-        const runId = await taskRunner.startTask(request.taskId)
+        const runId = await taskRunner.startTask(request.taskId, request.input)
         return { runId } as WorkerHostMethodMap[M]['result']
       }
       case 'stopTask': {

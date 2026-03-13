@@ -9,6 +9,7 @@ type PendingWaiter = {
 
 const pendingWaiters = new Map<string, PendingWaiter>()
 const pendingSpawnRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout> }>()
+const activeSubscriptions = new Map<string, (data: unknown) => void>()
 
 export function forwardBusPublish(win: BrowserWindow, topic: string, data: unknown): void {
   win.webContents.send(Channels.bus.forwardPublish, { topic, data })
@@ -26,6 +27,18 @@ export function forwardBusWaitFor(win: BrowserWindow, topic: string, timeoutMs?:
     pendingWaiters.set(waiterId, { resolve, timer })
     win.webContents.send(Channels.bus.forwardWaitFor, { waiterId, topic, timeoutMs })
   })
+}
+
+export function forwardBusSubscribe(win: BrowserWindow, topic: string, callback: (data: unknown) => void): string {
+  const subId = crypto.randomUUID()
+  activeSubscriptions.set(subId, callback)
+  win.webContents.send(Channels.bus.forwardSubscribe, { subId, topic })
+  return subId
+}
+
+export function forwardBusUnsubscribe(win: BrowserWindow, subId: string): void {
+  win.webContents.send(Channels.bus.forwardUnsubscribe, { subId })
+  activeSubscriptions.delete(subId)
 }
 
 export function forwardSpawnAgent(win: BrowserWindow, prompt: string): Promise<{ agentId: string }> {
@@ -76,6 +89,14 @@ export function registerBusHandlers(mainWindow: BrowserWindow): void {
       pendingSpawnRequests.delete(payload.waiterId)
       clearTimeout(pending.timer)
       pending.resolve(payload.result)
+    }
+  })
+
+  // Renderer forwards subscribed bus events back to main
+  ipcMain.on(Channels.bus.subscribeEvent, (_event, payload: { subId: string; data: unknown }) => {
+    const callback = activeSubscriptions.get(payload.subId)
+    if (callback) {
+      callback(payload.data)
     }
   })
 }
