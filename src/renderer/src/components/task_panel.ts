@@ -23,6 +23,7 @@ const STYLES = `
   }
   .search-input {
     width: 100%;
+    box-sizing: border-box;
     padding: 5px 8px;
     font-size: 12px;
     font-family: inherit;
