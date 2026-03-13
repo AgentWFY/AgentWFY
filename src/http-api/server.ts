@@ -1,8 +1,7 @@
 import http from 'http';
-import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
-import { storeGet, storeSet } from '../ipc/store.js';
+import { storeGet } from '../ipc/store.js';
 import { assertPathAllowed } from '../security/path-policy.js';
 import { mimeFromExt } from './handlers.js';
 
@@ -21,15 +20,6 @@ export type RouteHandler = (request: HttpRequestData) => Promise<{ status?: numb
 
 interface RegisteredRoute {
   handler: RouteHandler;
-  requireAuth: boolean;
-}
-
-function ensureApiKey(): string {
-  const existing = storeGet('httpApi.apiKey');
-  if (typeof existing === 'string' && existing.length > 0) return existing;
-  const key = crypto.randomUUID();
-  storeSet('httpApi.apiKey', key);
-  return key;
 }
 
 function getPort(): number {
@@ -73,7 +63,7 @@ function routeKey(routePath: string, method: string): string {
 
 export interface HttpApiServer {
   server: http.Server;
-  registerRoute(routePath: string, method: string, handler: RouteHandler, opts?: { auth?: 'token' | 'none' }): void;
+  registerRoute(routePath: string, method: string, handler: RouteHandler): void;
   unregisterRoute(routePath: string, method: string): void;
 }
 
@@ -82,15 +72,11 @@ interface HttpApiDeps {
 }
 
 export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
-  const apiKey = ensureApiKey();
   const routes = new Map<string, RegisteredRoute>();
 
-  const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler, opts) => {
+  const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler) => {
     const key = routeKey(routePath, method);
-    routes.set(key, {
-      handler,
-      requireAuth: opts?.auth !== 'none',
-    });
+    routes.set(key, { handler });
   };
 
   const unregisterRoute: HttpApiServer['unregisterRoute'] = (routePath, method) => {
@@ -107,14 +93,8 @@ export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
       return;
     }
 
-    // GET /files/* — file serving (always auth-required)
+    // GET /files/* — file serving
     if (req.method === 'GET' && url.pathname.startsWith('/files/')) {
-      const key = url.searchParams.get('key');
-      if (!key || key !== apiKey) {
-        jsonResponse(res, 401, { error: 'Unauthorized' });
-        return;
-      }
-
       const relativePath = decodeURIComponent(url.pathname.slice('/files/'.length));
       if (!relativePath) {
         jsonResponse(res, 400, { error: 'Missing file path' });
@@ -167,16 +147,6 @@ export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
     if (!route) {
       jsonResponse(res, 404, { error: 'Not found' });
       return;
-    }
-
-    // Per-route auth check
-    if (route.requireAuth) {
-      const authHeader = req.headers.authorization;
-      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-      if (!token || token !== apiKey) {
-        jsonResponse(res, 401, { error: 'Unauthorized' });
-        return;
-      }
     }
 
     // Read body

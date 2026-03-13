@@ -268,11 +268,10 @@ Examples:
 
 Exposes an HTTP endpoint that triggers the task when called.
 
-Config: `{ "path": "/my-endpoint", "method": "POST", "auth": "token" }`
+Config: `{ "path": "/my-endpoint", "method": "POST" }`
 
 - `path` — URL path for the endpoint (must start with `/`)
 - `method` — GET, POST, PUT, PATCH, DELETE (default: POST)
-- `auth` — `"token"` (default, requires Bearer token from app settings) or `"none"`
 
 Task receives as input: `{ method, path, headers, query, body }`
 

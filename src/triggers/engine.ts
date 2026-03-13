@@ -18,7 +18,6 @@ interface ScheduleConfig {
 interface HttpConfig {
   path: string;
   method?: string;
-  auth?: 'token' | 'none';
 }
 
 interface EventConfig {
@@ -200,7 +199,7 @@ export class TriggerEngine {
       }
     };
 
-    this.deps.httpApi.registerRoute(routePath, method, handler, { auth: config.auth });
+    this.deps.httpApi.registerRoute(routePath, method, handler);
 
     return {
       id: triggerId,
