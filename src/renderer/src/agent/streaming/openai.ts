@@ -13,7 +13,7 @@ import type {
   AgentTool,
   Message,
 } from '../types.js'
-import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import { emitError, isRetryableStatus, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
 import { parseSSE } from './sse.js'
 
 interface OpenAIDelta {
@@ -181,13 +181,13 @@ export async function streamOpenAI(
     const errorMessage = options.signal?.aborted
       ? 'Request aborted'
       : (err instanceof Error ? err.message : String(err))
-    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error')
+    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error', !options.signal?.aborted)
     return
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    emitError(stream, model, `OpenAI API error (${response.status}): ${text || response.statusText}`)
+    emitError(stream, model, `OpenAI API error (${response.status}): ${text || response.statusText}`, 'error', isRetryableStatus(response.status))
     return
   }
 
@@ -323,7 +323,7 @@ export async function streamOpenAI(
       stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
       return
     }
-    emitError(stream, model, err instanceof Error ? err.message : String(err))
+    emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
     return
   }
 

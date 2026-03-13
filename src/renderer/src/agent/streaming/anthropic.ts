@@ -13,7 +13,7 @@ import type {
   AgentTool,
   Message,
 } from '../types.js'
-import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
+import { emitError, isRetryableStatus, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
 import { parseSSE } from './sse.js'
 
 function convertMessages(messages: Message[]): unknown[] {
@@ -191,13 +191,13 @@ export async function streamAnthropic(
     const errorMessage = options.signal?.aborted
       ? 'Request aborted'
       : (err instanceof Error ? err.message : String(err))
-    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error')
+    emitError(stream, model, errorMessage, options.signal?.aborted ? 'aborted' : 'error', !options.signal?.aborted)
     return
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    emitError(stream, model, `Anthropic API error (${response.status}): ${text || response.statusText}`)
+    emitError(stream, model, `Anthropic API error (${response.status}): ${text || response.statusText}`, 'error', isRetryableStatus(response.status))
     return
   }
 
@@ -371,7 +371,7 @@ export async function streamAnthropic(
       stream.push({ type: 'done', partial: { ...partial, content: [...partial.content] } })
       return
     }
-    emitError(stream, model, err instanceof Error ? err.message : String(err))
+    emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
     return
   }
 

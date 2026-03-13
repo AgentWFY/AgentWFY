@@ -71,15 +71,21 @@ export class MessageStream implements AsyncIterable<StreamEvent> {
   }
 }
 
+export function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500
+}
+
 export function emitError(
   stream: MessageStream,
   model: Model,
   errorMessage: string,
   stopReason: StopReason = 'error',
+  retryable = false,
 ): void {
   stream.push({
     type: 'error',
     error: errorMessage,
+    retryable,
     partial: {
       role: 'assistant',
       content: [{ type: 'text', text: '' }],
