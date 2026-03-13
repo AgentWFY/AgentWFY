@@ -5,7 +5,6 @@ import type {
   AgentState,
   AssistantMessage,
   ImageContent,
-  Message,
   Model,
   ThinkingLevel,
 } from './types.js'
@@ -15,65 +14,39 @@ import {
   getModelsConfigSync,
   getProviderIds,
   loadModelsConfig,
-  supportsThinking,
 } from './models.js'
-import { createStream } from './streaming/types.js'
 import { createExecJsTool } from './exec_js.js'
-import { requireIpc, stringifyUnknown } from './tool_utils.js'
+import { requireIpc } from './tool_utils.js'
+import {
+  SESSION_VERSION,
+  type StoredSession,
+  createSessionId,
+  createSessionFileName,
+  normalizeSessionFileName,
+  isThinkingLevel,
+  requireSessionStorageTools,
+  parseStoredSession,
+} from './session_persistence.js'
+import {
+  COMPACTION_SUMMARY_CUSTOM_TYPE,
+  SESSION_SUMMARY_TAIL_MESSAGES,
+  AUTO_COMPACTION_MAX_RETRIES,
+  AUTO_COMPACTION_INSTRUCTIONS,
+  toUserMessage,
+  toCompactionSummaryMessage,
+  convertAgentMessagesToLlm,
+  isContextOverflow,
+  getLastAssistantMessage,
+  generateCompactionSummary,
+} from './session_compaction.js'
+
+export { COMPACTION_SUMMARY_CUSTOM_TYPE } from './session_compaction.js'
+export { toUserMessage } from './session_compaction.js'
 
 export const DEFAULT_PROVIDER = 'openrouter'
 export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
-const SESSION_VERSION = 1
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
-const SESSION_SUMMARY_TAIL_MESSAGES = 20
-const SESSION_SUMMARY_MAX_CHARS = 6000
-const AUTO_COMPACTION_MAX_RETRIES = 1
-const AUTO_COMPACTION_INSTRUCTIONS =
-  'Automatically compact context after overflow. Preserve user goals, constraints, unresolved tasks, tool outputs, file paths, and decisions.'
-export const COMPACTION_SUMMARY_CUSTOM_TYPE = 'compactionSummary'
-const COMPACTION_SUMMARY_CONTEXT_PREFIX = `The conversation history before this point was compacted into the following summary:
-
-<summary>
-`
-const COMPACTION_SUMMARY_CONTEXT_SUFFIX = `
-</summary>`
-const COMPACTION_SUMMARY_SYSTEM_PROMPT =
-  'You create concise, accurate context checkpoint summaries for coding sessions. Preserve exact file paths, function names, constraints, and unresolved tasks.'
-const COMPACTION_SUMMARY_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
-
-Use this EXACT format:
-
-## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
-
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
-
-## Progress
-### Done
-- [x] [Completed tasks/changes]
-
-### In Progress
-- [ ] [Current work]
-
-### Blocked
-- [Issues preventing progress, if any]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale]
-
-## Next Steps
-1. [Ordered list of what should happen next]
-
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`
-const COMPACTION_SUMMARY_MAX_TOKENS = 2200
 const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
 export interface AgentWFYAgentOptions {
@@ -104,18 +77,6 @@ export type AgentWFYAgentEvent = AgentEvent | {
 
 export type AgentWFYAgentEventListener = (event: AgentWFYAgentEvent) => void
 
-interface StoredSession {
-  version: number
-  sessionId: string
-  model?: {
-    provider: string
-    id: string
-  }
-  thinkingLevel: ThinkingLevel
-  messages: AgentMessage[]
-  updatedAt: number
-}
-
 interface AgentWFYAgentCreateArgs {
   agent: Agent
   provider: string
@@ -127,41 +88,6 @@ interface AgentWFYAgentCreateArgs {
   sessionId: string
   sessionIdRef: { current: string }
   persistSessions: boolean
-}
-
-function createSessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-function createSessionFileName(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}.json`
-}
-
-function normalizeRelativePath(path: string): string {
-  return path
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .replace(/\/+/g, '/')
-    .replace(/^\.\//, '')
-}
-
-function normalizeSessionFileName(sessionFile: string): string {
-  const normalizedPath = normalizeRelativePath(sessionFile)
-  const fileName = normalizedPath.split('/').filter(Boolean).pop() ?? normalizedPath
-
-  if (!/^[A-Za-z0-9._-]+\.json$/.test(fileName)) {
-    throw new Error(`Invalid session file name "${sessionFile}"`)
-  }
-
-  return fileName
-}
-
-function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === 'string' && THINKING_LEVELS.includes(value as ThinkingLevel)
 }
 
 function normalizeThinkingLevel(level: unknown, model?: Model): ThinkingLevel {
@@ -225,10 +151,6 @@ function buildDocsPromptSection(rows: Array<{ name: string; content: string }>):
     .trim()
 }
 
-function requireSessionStorageTools() {
-  return requireIpc().sessions
-}
-
 async function loadSystemPrompt(): Promise<string> {
   try {
     const ipc = requireIpc()
@@ -253,202 +175,12 @@ async function loadSystemPrompt(): Promise<string> {
   }
 }
 
-function getLastAssistantMessage(messages: AgentMessage[]): AgentMessage | undefined {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if ((messages[i] as unknown as { role: string }).role === 'assistant') {
-      return messages[i]
-    }
-  }
-
-  return undefined
-}
-
 function createTools(sessionIdRef: { current: string }) {
   return [
     createExecJsTool({
       getSessionId: () => sessionIdRef.current
     }),
   ]
-}
-
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') {
-    return content
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((item: Record<string, unknown>) => {
-        if (item?.type === 'text' && typeof item.text === 'string') {
-          return item.text
-        }
-        if (item?.type === 'image') {
-          return '[image]'
-        }
-        return ''
-      })
-      .filter((line: string) => line.length > 0)
-      .join('\n')
-  }
-
-  return stringifyUnknown(content)
-}
-
-function toUserMessage(text: string, images?: ImageContent[]): AgentMessage {
-  const content: (ImageContent | { type: 'text'; text: string })[] = [{ type: 'text', text }]
-  if (images && images.length > 0) {
-    content.push(...images)
-  }
-
-  return {
-    role: 'user',
-    content,
-    timestamp: Date.now()
-  } as AgentMessage
-}
-
-function toCompactionSummaryMessage(summary: string, beforeCount: number): AgentMessage {
-  return {
-    role: 'custom',
-    customType: COMPACTION_SUMMARY_CUSTOM_TYPE,
-    content: summary,
-    display: true,
-    details: { beforeCount },
-    timestamp: Date.now()
-  } as unknown as AgentMessage
-}
-
-function convertAgentMessagesToLlm(messages: AgentMessage[]): Message[] {
-  const llmMessages: Message[] = []
-
-  for (const message of messages) {
-    const unknownMessage = message as unknown as Record<string, unknown>
-    const role = unknownMessage?.role
-
-    if (role === 'user' || role === 'assistant' || role === 'toolResult') {
-      llmMessages.push(message as unknown as Message)
-      continue
-    }
-
-    if (role === 'custom' && unknownMessage?.customType === COMPACTION_SUMMARY_CUSTOM_TYPE) {
-      const summary = extractTextContent(unknownMessage.content).trim()
-      if (!summary) {
-        continue
-      }
-
-      llmMessages.push({
-        role: 'user',
-        content: [{ type: 'text', text: `${COMPACTION_SUMMARY_CONTEXT_PREFIX}${summary}${COMPACTION_SUMMARY_CONTEXT_SUFFIX}` }],
-        timestamp: typeof unknownMessage.timestamp === 'number' ? unknownMessage.timestamp : Date.now()
-      } as Message)
-    }
-  }
-
-  return llmMessages
-}
-
-function messageToSummaryLine(message: AgentMessage): string {
-  const unknownMessage = message as unknown as Record<string, unknown>
-  const role = typeof unknownMessage?.role === 'string' ? unknownMessage.role : 'unknown'
-  const content = unknownMessage?.content
-
-  if (typeof content === 'string') {
-    return `[${role}] ${content}`
-  }
-
-  if (Array.isArray(content)) {
-    const text = content
-      .map((item) => {
-        if (item?.type === 'text' && typeof item.text === 'string') {
-          return item.text
-        }
-        if (item?.type === 'toolCall' && typeof item.name === 'string') {
-          return `[tool:${item.name}]`
-        }
-        if (item?.type === 'thinking' && typeof item.thinking === 'string') {
-          return `[thinking] ${item.thinking}`
-        }
-        if (item?.type === 'redacted_thinking') {
-          return '[redacted thinking]'
-        }
-        if (item?.type === 'image') {
-          return '[image]'
-        }
-        return ''
-      })
-      .filter((line) => line.length > 0)
-      .join(' ')
-
-    return `[${role}] ${text}`
-  }
-
-  return `[${role}] ${stringifyUnknown(content)}`
-}
-
-function buildCompactionSummary(messages: AgentMessage[], customInstructions?: string): string {
-  const body = messages
-    .map((message) => messageToSummaryLine(message))
-    .join('\n')
-
-  const instructionPrefix = customInstructions && customInstructions.trim()
-    ? `Compaction instructions: ${customInstructions.trim()}\n\n`
-    : ''
-
-  const summary = `${instructionPrefix}${body}`
-  if (summary.length <= SESSION_SUMMARY_MAX_CHARS) {
-    return summary
-  }
-
-  return `${summary.slice(0, SESSION_SUMMARY_MAX_CHARS)}\n...<truncated ${summary.length - SESSION_SUMMARY_MAX_CHARS} chars>`
-}
-
-function extractTextFromAssistant(message: AssistantMessage): string {
-  return message.content
-    .filter((item) => item?.type === 'text' && typeof (item as { text?: string }).text === 'string')
-    .map((item) => (item as { type: 'text'; text: string }).text)
-    .join('\n')
-}
-
-function isContextOverflow(message: AssistantMessage): boolean {
-  if (message.stopReason === 'error' && message.errorMessage) {
-    const msg = message.errorMessage.toLowerCase()
-    return msg.includes('context') && (msg.includes('overflow') || msg.includes('too long') || msg.includes('exceed') || msg.includes('maximum'))
-  }
-  if (message.stopReason === 'maxTokens') {
-    return true
-  }
-  return false
-}
-
-function parseStoredSession(raw: string, sessionFile: string): StoredSession {
-  let parsed: Record<string, unknown>
-
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to parse session file "${sessionFile}": ${message}`)
-  }
-
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error(`Session file "${sessionFile}" does not contain a JSON object`)
-  }
-
-  const messages = Array.isArray(parsed.messages) ? parsed.messages : []
-
-  return {
-    version: typeof parsed.version === 'number' ? parsed.version : 0,
-    sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
-    model: parsed.model && typeof parsed.model === 'object' && typeof (parsed.model as Record<string, unknown>).provider === 'string' && typeof (parsed.model as Record<string, unknown>).id === 'string'
-      ? {
-        provider: (parsed.model as Record<string, unknown>).provider as string,
-        id: (parsed.model as Record<string, unknown>).id as string
-      }
-      : undefined,
-    thinkingLevel: isThinkingLevel(parsed.thinkingLevel) ? parsed.thinkingLevel : 'off',
-    messages,
-    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
-  }
 }
 
 export class AgentWFYAgent {
@@ -506,7 +238,6 @@ export class AgentWFYAgent {
   }
 
   static async create(options: AgentWFYAgentOptions = {}): Promise<AgentWFYAgent> {
-    // Ensure models config is loaded
     await loadModelsConfig()
 
     const provider = options.provider ?? DEFAULT_PROVIDER
@@ -833,7 +564,16 @@ export class AgentWFYAgent {
     try {
       const summarySource = this.messages.slice(0, beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
       const keepMessages = this.messages.slice(beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-      const summary = await this.generateCompactionSummary(summarySource, customInstructions)
+
+      this.compactionAbort = new AbortController()
+      const summary = await generateCompactionSummary(summarySource, customInstructions, {
+        model: this.model,
+        getApiKey: this.agent.getApiKey
+          ? (providerId: string) => this.agent.getApiKey!(providerId)
+          : undefined,
+        fallbackApiKey: this.apiKey,
+        signal: this.compactionAbort.signal,
+      })
       const summaryMessage = toCompactionSummaryMessage(summary, beforeCount)
 
       this.agent.replaceMessages([summaryMessage, ...keepMessages])
@@ -842,64 +582,6 @@ export class AgentWFYAgent {
       return { compacted: true }
     } finally {
       this.isCompacting = false
-    }
-  }
-
-  private async generateCompactionSummary(
-    messages: AgentMessage[],
-    customInstructions: string | undefined
-  ): Promise<string> {
-    const model = this.model
-    if (!model) {
-      return buildCompactionSummary(messages, customInstructions)
-    }
-
-    try {
-      const apiKey = this.agent.getApiKey
-        ? await this.agent.getApiKey(model.provider.id)
-        : this.apiKey
-
-      const conversationText = messages.map((message) => messageToSummaryLine(message)).join('\n')
-      const additionalFocus = customInstructions?.trim()
-        ? `\n\nAdditional focus: ${customInstructions.trim()}`
-        : ''
-      const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${COMPACTION_SUMMARY_PROMPT}${additionalFocus}`
-
-      this.compactionAbort = new AbortController()
-      const summaryStream = createStream(
-        model,
-        {
-          systemPrompt: COMPACTION_SUMMARY_SYSTEM_PROMPT,
-          messages: [toUserMessage(promptText)] as Message[],
-          tools: [],
-        },
-        {
-          apiKey,
-          maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
-          reasoning: model.reasoning ? 'high' : undefined,
-          signal: this.compactionAbort.signal,
-        }
-      )
-
-      const response = await summaryStream.result()
-
-      if (response.stopReason === 'error') {
-        throw new Error(response.errorMessage || 'Unknown summarization error')
-      }
-
-      const text = extractTextFromAssistant(response).trim()
-      if (!text) {
-        throw new Error('Summarization model returned empty text')
-      }
-
-      if (text.length <= SESSION_SUMMARY_MAX_CHARS) {
-        return text
-      }
-
-      return `${text.slice(0, SESSION_SUMMARY_MAX_CHARS)}\n...<truncated ${text.length - SESSION_SUMMARY_MAX_CHARS} chars>`
-    } catch (error) {
-      console.warn('[AgentWFYAgent] model-based compaction summary failed; falling back to local summary', error)
-      return buildCompactionSummary(messages, customInstructions)
     }
   }
 
