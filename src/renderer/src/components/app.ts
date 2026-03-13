@@ -43,6 +43,11 @@ export class TlApp extends HTMLElement {
     this.updateSidebar()
   }
 
+  private onSyncSystemPrompt = () => {
+    this.activeSidebarPanel = 'agent-chat'
+    this.updateSidebar()
+  }
+
   private onResizeMouseDown = (e: MouseEvent) => {
     e.preventDefault()
     this.isResizing = true
@@ -307,12 +312,14 @@ export class TlApp extends HTMLElement {
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.subscribeToAgentDbChanges()
   }
 
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
