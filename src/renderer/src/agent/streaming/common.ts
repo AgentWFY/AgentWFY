@@ -1,7 +1,7 @@
 /**
  * Shared streaming helpers used by all provider implementations.
  */
-import type { AssistantMessage, Model, StopReason, ToolCall, Usage } from '../types.js'
+import type { AssistantMessage, Model, StopReason, ToolCall } from '../types.js'
 import { emitError, isRetryableStatus, type MessageStream, type StreamOptions } from './types.js'
 import { parseSSE } from './sse.js'
 
@@ -24,10 +24,6 @@ export function createPartial(model: Model): AssistantMessage {
     stopReason: 'end',
     timestamp: Date.now(),
   }
-}
-
-export function createUsage(): Usage {
-  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }
 }
 
 export function emitStart(stream: MessageStream, partial: AssistantMessage): void {
@@ -72,9 +68,14 @@ export async function fetchStream(
 
 // ── SSE iteration with abort handling ──
 
+export interface SSEData {
+  eventType: string | undefined
+  data: Record<string, unknown>
+}
+
 export async function* iterateSSE(
   response: Response,
-): AsyncGenerator<Record<string, unknown>, void, undefined> {
+): AsyncGenerator<SSEData, void, undefined> {
   for await (const sseEvent of parseSSE(response)) {
     if (sseEvent.data === '[DONE]') break
 
@@ -85,28 +86,25 @@ export async function* iterateSSE(
       continue
     }
 
-    yield data
+    yield { eventType: sseEvent.event, data }
   }
 }
 
-/** Handle stream-level errors (abort vs real error). Returns true if handled. */
+/** Handle stream-level errors (abort vs real error). */
 export function handleStreamError(
   err: unknown,
   stream: MessageStream,
   model: Model,
   partial: AssistantMessage,
-  usage: Usage,
   options: StreamOptions,
-): boolean {
+): void {
   if (options.signal?.aborted) {
     partial.stopReason = 'aborted'
     partial.errorMessage = 'Request aborted'
-    partial.usage = usage
     stream.push({ type: 'done', partial: snapshot(partial) })
-    return true
+    return
   }
   emitError(stream, model, err instanceof Error ? err.message : String(err), 'error', true)
-  return true
 }
 
 // ── Finalize ──
@@ -115,11 +113,9 @@ export function emitDone(
   stream: MessageStream,
   partial: AssistantMessage,
   stopReason: StopReason,
-  usage: Usage,
 ): void {
-  usage.totalTokens = usage.input + usage.output
+  partial.usage.totalTokens = partial.usage.input + partial.usage.output
   partial.stopReason = stopReason
-  partial.usage = usage
   stream.push({ type: 'done', partial: snapshot(partial) })
 }
 

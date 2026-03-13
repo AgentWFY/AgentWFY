@@ -11,7 +11,7 @@ import type {
 } from '../types.js'
 import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
 import {
-  createPartial, createUsage, emitDone, emitStart,
+  createPartial, emitDone, emitStart,
   fetchStream, handleStreamError, iterateSSE, snapshot,
   ToolCallAccumulator,
 } from './common.js'
@@ -138,14 +138,14 @@ export async function streamCodex(
   if (!response) return
 
   const partial = createPartial(model)
-  const usage = createUsage()
+  const usage = partial.usage
   emitStart(stream, partial)
 
   let stopReason: StopReason = 'end'
   const toolCalls = new ToolCallAccumulator<string>()
 
   try {
-    for await (const data of iterateSSE(response)) {
+    for await (const { data } of iterateSSE(response)) {
       const eventType = data.type as string
 
       switch (eventType) {
@@ -243,7 +243,7 @@ export async function streamCodex(
       }
     }
   } catch (err) {
-    handleStreamError(err, stream, model, partial, usage, options)
+    handleStreamError(err, stream, model, partial, options)
     return
   }
 
@@ -251,5 +251,5 @@ export async function streamCodex(
     stopReason = 'toolCall'
   }
 
-  emitDone(stream, partial, stopReason, usage)
+  emitDone(stream, partial, stopReason)
 }
