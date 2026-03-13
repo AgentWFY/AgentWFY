@@ -75,7 +75,7 @@ Always `reloadTab` after updating view content via SQL.
 
 ### Tasks
 
-Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs). The `description` column is shown in the command palette.
+Tasks are stored in the `tasks` table (target="agent"). The `content` column holds JavaScript code (same runtime as execJs). The `description` column is shown to the user.
 
 - `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task. Optional `input` is passed to the task code.
 - `stopTask(runId)` → void
@@ -86,39 +86,9 @@ Task completion is delivered via the bus:
 - `waitFor('task:run:' + runId)` returns `{ runId, taskId, name, status, result, error, logs }`.
 - Data passing: use the bus with runId as correlation ID (e.g. task calls `waitFor('task:' + runId + ':config')`, caller calls `publish('task:' + runId + ':config', data)`).
 
-Task runs are logged to JSON files automatically. Each run captures status, result, error, and console logs.
-
 ### Triggers
 
-Triggers automate task execution. Stored in the `triggers` table (target="agent"). The `config` column holds JSON specific to each trigger type.
-
-Three trigger types:
-
-**schedule** — cron-like scheduling.
-- Config: `{ "expression": "second minute hour day month weekday" }` (6-field cron)
-- Syntax: `*`, single values (`5`), ranges (`1-5`), lists (`1,15`), steps (`*/10`, `2-30/2`)
-- Fields: seconds (0-59), minutes (0-59), hours (0-23), day (1-31), month (1-12), weekday (0-6, 0=Sunday)
-
-**http** — exposes an HTTP endpoint that triggers the task.
-- Config: `{ "path": "/my-endpoint", "method": "POST", "auth": "token" }`
-- `method`: GET, POST, PUT, PATCH, DELETE (default: POST)
-- `auth`: `"token"` (default, requires Bearer token) or `"none"`
-- Task receives `{ method, path, headers, query, body }` as input
-
-**event** — subscribes to an internal event bus topic.
-- Config: `{ "topic": "my-topic" }`
-- Task receives the published event data as input
-
-Enable/disable triggers by setting `enabled` to 1 or 0. Triggers reload automatically when the table changes.
-
-### HTTP API
-
-A local HTTP server runs on `127.0.0.1:9877` (port configurable). API key is auto-generated and stored in app settings.
-
-Built-in endpoint:
-- `GET /files/{path}?key={apiKey}` — serve files from the agent directory (always requires auth)
-
-HTTP triggers register additional dynamic routes. All responses are JSON. CORS is enabled (`*`).
+Triggers automate task execution. Stored in the `triggers` table (target="agent"). Three types: `schedule` (cron), `http` (external HTTP endpoint), `event` (internal bus topic). The `config` column holds JSON specific to each type. Enable/disable via `enabled` column (1/0). Triggers reload automatically when the table changes.
 
 ### EventBus & Agent Spawning
 
@@ -147,6 +117,8 @@ Naming conventions:
 
 Available reference sections (load when needed):
 - `system.views` — how to create views, CSS variables, view runtime
+- `system.tasks` — task execution details, input handling
+- `system.triggers` — trigger types, config format, cron syntax
 
 ---
 
@@ -209,3 +181,113 @@ Docs are stored in the docs table (target="agent"). Schema: id, name (unique), c
 
 preload=1 docs are included in the system prompt at startup.
 preload=0 docs are read on demand.
+
+---
+
+# system.tasks
+
+Tasks are JavaScript code stored in the `tasks` table. They run in dedicated workers (same runtime as execJs) and can be started programmatically or by the user from the command palette.
+
+## Schema
+
+```sql
+tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
+```
+
+- `name` — task name, shown to the user
+- `description` — shown to the user when selecting the task
+- `content` — JavaScript code to execute
+- `timeout_ms` — optional execution timeout (null = no limit)
+
+## APIs
+
+- `startTask(taskId, input?)` → `{ runId }` — starts the task in a new worker. Non-blocking.
+- `stopTask(runId)` → void — terminates a running task.
+
+## Input
+
+The optional `input` parameter passed to `startTask` is available as the `input` global variable inside task code.
+
+When a task is triggered (by a trigger or by the user from the command palette), the input is passed automatically:
+- **User input**: the user can type optional text when running a task from the command palette
+- **HTTP trigger**: `input` is `{ method, path, headers, query, body }`
+- **Event trigger**: `input` is the published event data
+- **Schedule trigger**: no input
+
+## Completion
+
+Task completion is published to the event bus:
+
+```js
+const { runId } = await startTask(taskId, 'some input')
+const result = await waitFor('task:run:' + runId)
+// result: { runId, taskId, name, status, result, error, logs }
+```
+
+For inter-task data passing, use the bus with runId as correlation ID:
+```js
+// caller
+publish('task:' + runId + ':config', { key: 'value' })
+// inside task code
+const config = await waitFor('task:' + runId + ':config')
+```
+
+---
+
+# system.triggers
+
+Triggers automate task execution. Stored in the `triggers` table.
+
+## Schema
+
+```sql
+triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
+```
+
+- `task_id` — references the task to run. Cascades on delete.
+- `type` — one of: `schedule`, `http`, `event`
+- `config` — JSON string, format depends on type
+- `enabled` — 1 (active) or 0 (disabled)
+
+Triggers reload automatically when the table changes.
+
+## schedule
+
+Cron-like scheduling with 6-field expressions.
+
+Config: `{ "expression": "second minute hour day month weekday" }`
+
+Fields (left to right):
+1. seconds (0-59)
+2. minutes (0-59)
+3. hours (0-23)
+4. day of month (1-31)
+5. month (1-12)
+6. weekday (0-6, 0=Sunday)
+
+Syntax: `*` (any), single values (`5`), ranges (`1-5`), lists (`1,15`), steps (`*/10`, `2-30/2`).
+
+Examples:
+- `0 */5 * * * *` — every 5 minutes
+- `0 0 9 * * 1-5` — 9:00 AM weekdays
+- `*/30 * * * * *` — every 30 seconds
+
+## http
+
+Exposes an HTTP endpoint that triggers the task when called.
+
+Config: `{ "path": "/my-endpoint", "method": "POST", "auth": "token" }`
+
+- `path` — URL path for the endpoint (must start with `/`)
+- `method` — GET, POST, PUT, PATCH, DELETE (default: POST)
+- `auth` — `"token"` (default, requires Bearer token from app settings) or `"none"`
+
+Task receives as input: `{ method, path, headers, query, body }`
+
+## event
+
+Subscribes to an internal event bus topic.
+
+Config: `{ "topic": "my-topic" }`
+
+Task receives the published event data as input. Fires each time a message is published to the topic.
