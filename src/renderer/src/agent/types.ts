@@ -145,6 +145,13 @@ export interface AgentState {
   streamMessage: AgentMessage | null
   pendingToolCalls: Set<string>
   error?: string
+  retryInfo?: RetryInfo
+}
+
+export interface RetryInfo {
+  attempt: number
+  maxAttempts: number
+  error: string
 }
 
 // ── Agent Events ──
@@ -157,7 +164,7 @@ export type StreamEvent =
   | { type: 'toolcall_delta'; contentIndex: number; delta: string; partial: AssistantMessage }
   | { type: 'toolcall_end'; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
   | { type: 'done'; partial: AssistantMessage }
-  | { type: 'error'; error: string; partial: AssistantMessage }
+  | { type: 'error'; error: string; partial: AssistantMessage; retryable?: boolean }
 
 export type AgentEvent =
   | { type: 'agent_start' }
@@ -171,3 +178,4 @@ export type AgentEvent =
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_execution_update'; toolCallId: string; toolName: string; args: unknown; partialResult: unknown }
   | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: unknown; isError: boolean }
+  | ({ type: 'retry'; delayMs: number } & RetryInfo)

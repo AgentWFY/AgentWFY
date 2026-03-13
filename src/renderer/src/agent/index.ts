@@ -349,6 +349,7 @@ export class Agent {
       this._state.isStreaming = false
       this._state.streamMessage = null
       this._state.pendingToolCalls = new Set()
+      this._state.retryInfo = undefined
       this.abortController = undefined
       this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
@@ -357,10 +358,63 @@ export class Agent {
     }
   }
 
+  private static readonly MAX_RETRIES = 3
+  private static readonly RETRY_BASE_DELAY_MS = 1000
+
   private async streamAssistantResponse(
     contextMessages: AgentMessage[],
     signal: AbortSignal,
   ): Promise<AssistantMessage> {
+    for (let attempt = 0; ; attempt++) {
+      const result = await this.attemptStream(contextMessages, signal)
+
+      // Success, abort, or non-retryable error — return immediately
+      if (
+        result.message.stopReason !== 'error' ||
+        !result.retryable ||
+        attempt >= Agent.MAX_RETRIES ||
+        signal.aborted
+      ) {
+        return result.message
+      }
+
+      // Retryable error — clean up any partial message added during streaming
+      if (result.addedPartial) {
+        contextMessages.pop()
+        this._state.messages = contextMessages.slice()
+      }
+
+      const delay = Agent.RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
+      const retryInfo = {
+        attempt: attempt + 1,
+        maxAttempts: Agent.MAX_RETRIES,
+        error: result.message.errorMessage || 'Connection error',
+      }
+      this._state.retryInfo = retryInfo
+      this.emit({
+        type: 'retry',
+        ...retryInfo,
+        delayMs: delay,
+      })
+
+      // Wait with abort support
+      await new Promise<void>((resolve) => {
+        const onAbort = () => { clearTimeout(timer); resolve() }
+        const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, delay)
+        signal.addEventListener('abort', onAbort, { once: true })
+      })
+
+      if (signal.aborted) {
+        return result.message
+      }
+    }
+  }
+
+  private async attemptStream(
+    contextMessages: AgentMessage[],
+    signal: AbortSignal,
+  ): Promise<{ message: AssistantMessage; addedPartial: boolean; retryable: boolean }> {
+    this._state.retryInfo = undefined
     const llmMessages = await this.convertToLlm(contextMessages)
 
     const reasoning = this._state.thinkingLevel === 'off' ? undefined : this._state.thinkingLevel
@@ -411,8 +465,7 @@ export class Agent {
           }
           break
 
-        case 'done':
-        case 'error': {
+        case 'done': {
           const finalMessage = await response.result()
           if (addedPartial) {
             contextMessages[contextMessages.length - 1] = finalMessage
@@ -425,13 +478,39 @@ export class Agent {
             this.emit({ type: 'message_start', message: { ...finalMessage } })
           }
           this.emit({ type: 'message_end', message: finalMessage })
-          return finalMessage
+          return { message: finalMessage, addedPartial, retryable: false }
+        }
+
+        case 'error': {
+          const finalMessage = await response.result()
+          const retryable = !!event.retryable
+
+          // For retryable errors, don't emit message events or push to context —
+          // the retry loop will handle cleanup and re-attempt.
+          if (retryable) {
+            this._state.streamMessage = null
+            return { message: finalMessage, addedPartial, retryable }
+          }
+
+          if (addedPartial) {
+            contextMessages[contextMessages.length - 1] = finalMessage
+          } else {
+            contextMessages.push(finalMessage)
+          }
+          this._state.streamMessage = null
+          this._state.messages = contextMessages.slice()
+          if (!addedPartial) {
+            this.emit({ type: 'message_start', message: { ...finalMessage } })
+          }
+          this.emit({ type: 'message_end', message: finalMessage })
+          return { message: finalMessage, addedPartial, retryable: false }
         }
       }
     }
 
     // Shouldn't reach here normally, but handle gracefully
-    return response.result()
+    const msg = await response.result()
+    return { message: msg, addedPartial, retryable: false }
   }
 
   private async executeToolCalls(

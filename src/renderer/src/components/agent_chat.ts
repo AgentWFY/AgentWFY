@@ -1,5 +1,5 @@
 import { renderMarkdown } from '../markdown.js'
-import type { AgentMessage } from '../agent/types.js'
+import type { AgentMessage, RetryInfo } from '../agent/types.js'
 import type { AgentAuthConfig } from '../agent/agent_auth.js'
 import { loadAuthConfig } from '../agent/agent_auth.js'
 import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
@@ -346,6 +346,21 @@ const STYLES = `
     0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
     40% { opacity: 1; transform: scale(1); }
   }
+  .retry-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 2px;
+    font-size: 12px;
+    color: var(--color-text2);
+  }
+  .retry-indicator span.retry-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-text2);
+    animation: thinking 1.4s ease-in-out infinite;
+  }
   .model-info {
     font-size: 11px;
     color: var(--color-text2);
@@ -462,6 +477,7 @@ export class TlAgentChat extends HTMLElement {
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
   private userScrolledUp = false
+  private retryInfo: RetryInfo | null = null
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
@@ -565,9 +581,11 @@ ${detail.content}`
     if (this.agent) {
       this.messages = this.agent.messages
       this.isStreaming = this.agent.isStreaming
+      this.retryInfo = this.agent.state.retryInfo ?? null
     } else {
       this.messages = []
       this.isStreaming = false
+      this.retryInfo = null
     }
     this.render()
   }
@@ -1065,7 +1083,9 @@ ${detail.content}`
         if (block.type === 'user') {
           html += `<div class="block block-user">${this.renderMarkdown(block.text)}</div>`
         } else if (block.type === 'assistant') {
-          if (block.text.trim() || block.tools.length > 0) {
+          const rawMsg = block.raw as { stopReason?: string; errorMessage?: string }
+          const hasError = rawMsg.stopReason === 'error' && rawMsg.errorMessage
+          if (block.text.trim() || block.tools.length > 0 || hasError) {
             html += '<div class="block block-assistant">'
             if (block.text) {
               html += `<div class="assistant-text">${this.renderMarkdown(block.text)}</div>`
@@ -1091,6 +1111,9 @@ ${detail.content}`
               }
               html += '</div>'
             }
+            if (hasError) {
+              html += `<div class="error-banner">${this.escapeHtml(rawMsg.errorMessage!)}</div>`
+            }
             html += '</div>'
           }
         } else if (block.type === 'compaction') {
@@ -1108,7 +1131,11 @@ ${detail.content}`
         }
       }
       if (this.isStreaming) {
-        html += '<div class="thinking-dots"><span></span><span></span><span></span></div>'
+        if (this.retryInfo) {
+          html += `<div class="retry-indicator"><span class="retry-dot"></span> Reconnecting (${this.retryInfo.attempt}/${this.retryInfo.maxAttempts})...</div>`
+        } else {
+          html += '<div class="thinking-dots"><span></span><span></span><span></span></div>'
+        }
       }
       html += '<div id="anchor"></div>'
       this.messagesEl.innerHTML = html
