@@ -384,7 +384,11 @@ export class AgentWFYAgent {
   }
 
   setThinkingLevel(level: ThinkingLevel): void {
-    this.agent.setThinkingLevel(normalizeThinkingLevel(level, this.model))
+    const normalized = normalizeThinkingLevel(level, this.model)
+    if (normalized === this.thinkingLevel) {
+      return
+    }
+    this.agent.setThinkingLevel(normalized)
     void this.persistSession()
   }
 
@@ -392,9 +396,7 @@ export class AgentWFYAgent {
     await this.abort()
     this.agent.reset()
 
-    this._sessionId = createSessionId()
-    this.agent.sessionId = this._sessionId
-    this.sessionIdRef.current = this._sessionId
+    this.updateSessionId(createSessionId())
 
     if (this.persistSessionsToDisk) {
       this._sessionFile = createSessionFileName()
@@ -439,9 +441,7 @@ export class AgentWFYAgent {
     this.agent.replaceMessages(storedSession.messages)
 
     this._sessionFile = sessionFileName
-    this._sessionId = storedSession.sessionId || createSessionId()
-    this.agent.sessionId = this._sessionId
-    this.sessionIdRef.current = this._sessionId
+    this.updateSessionId(storedSession.sessionId || createSessionId())
 
     this.emit({
       type: 'session_loaded',
@@ -477,6 +477,12 @@ export class AgentWFYAgent {
     this.compactionAbort?.abort()
     this.listeners.clear()
     this.unsubscribeFromAgent()
+  }
+
+  private updateSessionId(newId: string): void {
+    this._sessionId = newId
+    this.agent.sessionId = newId
+    this.sessionIdRef.current = newId
   }
 
   private emit(event: AgentWFYAgentEvent): void {

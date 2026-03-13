@@ -242,9 +242,6 @@ export async function generateCompactionSummary(
       : ''
     const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${COMPACTION_SUMMARY_PROMPT}${additionalFocus}`
 
-    const abortController = options.signal ? undefined : new AbortController()
-    const signal = options.signal ?? abortController?.signal
-
     const summaryStream = createStream(
       model,
       {
@@ -256,7 +253,7 @@ export async function generateCompactionSummary(
         apiKey,
         maxTokens: COMPACTION_SUMMARY_MAX_TOKENS,
         reasoning: model.reasoning ? 'high' : undefined,
-        signal,
+        signal: options.signal,
       }
     )
 
