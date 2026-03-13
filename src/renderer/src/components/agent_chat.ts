@@ -5,11 +5,11 @@ import { getSessionManager, reconnectManager } from '../agent/session_manager.js
 import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
 import type { AgentWFYAgent } from '../agent/create_agent.js'
 import {
-  escapeHtml,
   buildDisplayBlocks,
   renderMessagesHtml,
   setupCustomJsonBlocks
 } from './chat_message_renderer.js'
+import { escapeHtml } from './chat_utils.js'
 import { renderSessionPanelHtml } from './chat_session_panel.js'
 
 const STYLES = `
