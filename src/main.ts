@@ -89,6 +89,7 @@ const rendererBridge = new RendererBridge({
 const tabViewManager = new TabViewManager({
   getMainWindow: () => mainWindow,
   toggleCommandPalette: () => commandPalette.toggle(),
+  focusMainRendererWindow: () => rendererBridge.focusMainRendererWindow(),
   dispatchRendererCustomEvent: (name, detail) => rendererBridge.dispatchRendererCustomEvent(name, detail),
   dispatchRendererWindowEvent: (name) => rendererBridge.dispatchRendererWindowEvent(name),
 });

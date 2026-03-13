@@ -54,7 +54,6 @@ export class RendererBridge {
       return;
     }
 
-    this.focusMainRendererWindow();
     const serializedName = JSON.stringify(eventName);
     const eventInit = typeof detail === 'undefined'
       ? ''
