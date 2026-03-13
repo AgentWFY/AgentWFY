@@ -4,7 +4,6 @@
 import type {
   TextContent,
   ThinkingContent,
-  ToolCall,
   StopReason,
   Model,
   AgentTool,
@@ -12,8 +11,9 @@ import type {
 } from '../types.js'
 import { emitError, type MessageStream, type StreamContext, type StreamOptions } from './types.js'
 import {
-  createPartial, createUsage, emitDone, emitStart,
+  createPartial, emitDone, emitStart,
   fetchStream, handleStreamError, iterateSSE, snapshot,
+  ToolCallAccumulator,
 } from './common.js'
 
 function convertMessages(messages: Message[]): unknown[] {
@@ -182,17 +182,17 @@ export async function streamAnthropic(
   if (!response) return
 
   const partial = createPartial(model)
-  const usage = createUsage()
+  const usage = partial.usage
   emitStart(stream, partial)
 
   let stopReason: StopReason = 'end'
   let currentBlockType: 'text' | 'thinking' | 'redacted_thinking' | 'tool_use' | null = null
   let currentBlockIndex = -1
-  let toolCallArgs = ''
+  const toolCalls = new ToolCallAccumulator<number>()
 
   try {
-    for await (const data of iterateSSE(response)) {
-      const eventType = (data as Record<string, unknown> & { type?: string }).type as string
+    for await (const { eventType: sseEventType, data } of iterateSSE(response)) {
+      const eventType = sseEventType ?? (data.type as string)
 
       switch (eventType) {
         case 'message_start': {
@@ -218,18 +218,13 @@ export async function streamAnthropic(
           } else if (currentBlockType === 'redacted_thinking') {
             partial.content.push({ type: 'redacted_thinking', data: (block?.data as string) ?? '' })
           } else if (currentBlockType === 'tool_use') {
-            toolCallArgs = ''
-            partial.content.push({
-              type: 'toolCall',
-              id: (block?.id as string) ?? '',
-              name: (block?.name as string) ?? '',
-              arguments: {},
-            })
-            stream.push({
-              type: 'toolcall_start',
-              contentIndex: partial.content.length - 1,
-              partial: snapshot(partial),
-            })
+            toolCalls.start(
+              currentBlockIndex,
+              (block?.id as string) ?? '',
+              (block?.name as string) ?? '',
+              partial,
+              stream,
+            )
           }
           break
         }
@@ -268,13 +263,10 @@ export async function streamAnthropic(
               thinkContent.signature = (thinkContent.signature ?? '') + delta.signature
             }
           } else if (deltaType === 'input_json_delta' && typeof delta.partial_json === 'string') {
-            toolCallArgs += delta.partial_json
-            stream.push({
-              type: 'toolcall_delta',
-              contentIndex,
-              delta: delta.partial_json,
-              partial: snapshot(partial),
-            })
+            const entry = toolCalls.get(contentIndex)
+            if (entry) {
+              toolCalls.appendArgs(entry, delta.partial_json, partial, stream)
+            }
           }
           break
         }
@@ -282,19 +274,10 @@ export async function streamAnthropic(
         case 'content_block_stop': {
           const contentIndex = (data.index as number) ?? currentBlockIndex
           if (currentBlockType === 'tool_use') {
-            const toolCall = partial.content[contentIndex] as ToolCall
-            try {
-              toolCall.arguments = JSON.parse(toolCallArgs)
-            } catch {
-              toolCall.arguments = {}
+            const entry = toolCalls.get(contentIndex)
+            if (entry) {
+              toolCalls.finish(entry, partial, stream)
             }
-            stream.push({
-              type: 'toolcall_end',
-              contentIndex,
-              toolCall: { ...toolCall },
-              partial: snapshot(partial),
-            })
-            toolCallArgs = ''
           }
           currentBlockType = null
           break
@@ -324,9 +307,9 @@ export async function streamAnthropic(
       }
     }
   } catch (err) {
-    handleStreamError(err, stream, model, partial, usage, options)
+    handleStreamError(err, stream, model, partial, options)
     return
   }
 
-  emitDone(stream, partial, stopReason, usage)
+  emitDone(stream, partial, stopReason)
 }
