@@ -147,8 +147,39 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
 
 // --- Incremental DOM rendering ---
 
-/** Cache last-set HTML per element to avoid browser innerHTML normalization issues */
-const _htmlCache = new WeakMap<HTMLElement, string>()
+interface BlockCacheEntry {
+  raw: Record<string, unknown>
+  textLen: number
+  toolCount: number
+  toolResultCount: number
+  toolOpenState: string
+}
+
+/** Cache block identity per wrapper to skip re-rendering stable blocks entirely */
+const _blockCache = new WeakMap<HTMLElement, BlockCacheEntry>()
+
+/** Cache last-set HTML for the streaming indicator element */
+const _indicatorCache = new WeakMap<HTMLElement, string>()
+
+function blockCacheEntry(block: DisplayBlock, openToolSet: Set<string>): BlockCacheEntry {
+  return {
+    raw: block.raw,
+    textLen: block.text.length,
+    toolCount: block.tools.length,
+    toolResultCount: block.tools.reduce((n, t) => n + (t.result !== null ? 1 : 0), 0),
+    toolOpenState: block.tools.length > 0
+      ? block.tools.map(t => openToolSet.has(t.id) ? '1' : '0').join('')
+      : ''
+  }
+}
+
+function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
+  return a.raw === b.raw
+    && a.textLen === b.textLen
+    && a.toolCount === b.toolCount
+    && a.toolResultCount === b.toolResultCount
+    && a.toolOpenState === b.toolOpenState
+}
 
 function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<string>): string {
   if (block.type === 'user') {
@@ -210,17 +241,10 @@ function setupBlockCustomEl(wrapper: HTMLElement, block: DisplayBlock) {
   }
 }
 
-function setHtmlIfChanged(el: HTMLElement, html: string): boolean {
-  if (_htmlCache.get(el) === html) return false
-  el.innerHTML = html
-  _htmlCache.set(el, html)
-  return true
-}
-
 /**
  * Incrementally update the messages container DOM.
- * - Stable blocks are skipped (cached HTML matches)
- * - Only changed blocks (last block during streaming, toggled tools) are re-rendered
+ * - Stable blocks are skipped entirely (no renderBlockHtml / renderMarkdown call)
+ * - Only blocks whose content changed are re-rendered
  * - New blocks are appended, excess blocks removed (compaction)
  */
 export function updateMessagesEl(
@@ -251,26 +275,31 @@ export function updateMessagesEl(
     wrappers[i].remove()
   }
 
-  // Update existing wrappers — only touches DOM when HTML actually changed
+  // Update existing wrappers — skip blocks whose identity hasn't changed
   const existingCount = Math.min(wrappers.length, blocks.length)
   for (let i = 0; i < existingCount; i++) {
-    const html = renderBlockHtml(blocks[i], i, openToolSet)
-    if (setHtmlIfChanged(wrappers[i], html)) {
-      setupBlockCustomEl(wrappers[i], blocks[i])
-    }
+    const entry = blockCacheEntry(blocks[i], openToolSet)
+    const cached = _blockCache.get(wrappers[i])
+    if (cached && blockCacheMatches(cached, entry)) continue
+    wrappers[i].innerHTML = renderBlockHtml(blocks[i], i, openToolSet)
+    _blockCache.set(wrappers[i], entry)
+    setupBlockCustomEl(wrappers[i], blocks[i])
   }
 
   // Append new blocks
   for (let i = wrappers.length; i < blocks.length; i++) {
     const wrapper = document.createElement('div')
     wrapper.dataset.msgIdx = String(i)
-    const html = renderBlockHtml(blocks[i], i, openToolSet)
-    wrapper.innerHTML = html
-    _htmlCache.set(wrapper, html)
+    wrapper.innerHTML = renderBlockHtml(blocks[i], i, openToolSet)
+    _blockCache.set(wrapper, blockCacheEntry(blocks[i], openToolSet))
     container.insertBefore(wrapper, indicator)
     setupBlockCustomEl(wrapper, blocks[i])
   }
 
   // Update streaming indicator
-  setHtmlIfChanged(indicator, renderIndicatorHtml(isStreaming, retryInfo))
+  const indicatorHtml = renderIndicatorHtml(isStreaming, retryInfo)
+  if (_indicatorCache.get(indicator) !== indicatorHtml) {
+    indicator.innerHTML = indicatorHtml
+    _indicatorCache.set(indicator, indicatorHtml)
+  }
 }

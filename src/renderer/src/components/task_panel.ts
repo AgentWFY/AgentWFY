@@ -1,5 +1,6 @@
 import { getTaskRunner } from '../tasks/task_runner.js'
 import type { TaskRun, TaskLogHistoryItem } from '../tasks/task_runner.js'
+import { escapeHtml } from './chat_utils.js'
 
 interface TaskItem {
   id: number
@@ -345,11 +346,6 @@ const STYLES = `
   .history-detail.open { display: block; }
 `
 
-function escapeHtml(text: string): string {
-  const el = document.createElement('span')
-  el.textContent = text
-  return el.innerHTML
-}
 
 function logLevelClass(level: string): string {
   return level === 'warn' ? ' warn' : level === 'error' ? ' error' : ''
