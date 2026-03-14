@@ -83,7 +83,7 @@ function getVersionNumbers(meta: BackupMetadata): number[] {
 
 // --- Public API ---
 
-export function getCurrentDbHash(agentRoot: string): string {
+function getCurrentDbHash(agentRoot: string): string {
   return fileHash(path.join(agentRoot, '.agentwfy', 'agent.db'));
 }
 
