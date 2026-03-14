@@ -11,6 +11,7 @@ import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/re
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers, forwardStartTask } from './task-runner/ipc.js';
+import { runCleanup } from './cleanup.js';
 import type { AgentDbChange } from './db/sqlite.js';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
@@ -296,7 +297,9 @@ async function createWindow() {
 
   if (agentRoot) {
     openAgent(agentRoot);
-    return createAppWindow(agentRoot);
+    await createAppWindow(agentRoot);
+    runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
+    return;
   }
 
   // No agent found — show picker
@@ -308,6 +311,7 @@ async function createWindow() {
 
   openAgent(picked);
   await createAppWindow(picked);
+  runCleanup(picked).catch((err) => console.error('[cleanup] failed:', err));
 }
 
 // --- Agent actions from menu / command palette ---
