@@ -42,19 +42,11 @@ export interface AppWindowContext {
   };
 }
 
-function shortHash(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 10);
-}
-
 class WindowManager {
   private windows = new Map<number, AppWindowContext>();
   private senderMap = new Map<number, number>(); // webContents.id → BrowserWindow.id
   private agentHashes = new Map<string, string>(); // hash → agentRoot
-  private _onWindowCreated: (() => void) | null = null;
-
-  set onWindowCreated(fn: (() => void) | null) {
-    this._onWindowCreated = fn;
-  }
+  onWindowCreated: (() => void) | null = null;
 
   async createWindow(agentRoot: string): Promise<AppWindowContext> {
     await ensureAgentRuntimeBootstrap(agentRoot);
@@ -215,7 +207,7 @@ class WindowManager {
     // Cleanup
     runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
 
-    this._onWindowCreated?.();
+    this.onWindowCreated?.();
 
     return ctx;
   }
@@ -243,10 +235,16 @@ class WindowManager {
       }
     }
 
+    this.windows.delete(windowId);
+
     // Clean up agent hash if no other window uses this agent
-    const agentStillOpen = Array.from(this.windows.values()).some(
-      (other) => other !== ctx && other.agentRoot === ctx.agentRoot,
-    );
+    let agentStillOpen = false;
+    for (const other of this.windows.values()) {
+      if (other.agentRoot === ctx.agentRoot) {
+        agentStillOpen = true;
+        break;
+      }
+    }
     if (!agentStillOpen) {
       for (const [hash, root] of this.agentHashes) {
         if (root === ctx.agentRoot) {
@@ -255,8 +253,6 @@ class WindowManager {
         }
       }
     }
-
-    this.windows.delete(windowId);
   }
 
   findWindowForAgent(agentRoot: string): AppWindowContext | null {
@@ -326,13 +322,17 @@ class WindowManager {
       if (root === agentRoot) return hash;
     }
 
-    let hash = shortHash(agentRoot);
-
-    // Handle collision: extend hash until unique
     const fullHex = crypto.createHash('sha256').update(agentRoot).digest('hex');
     let len = 10;
+    let hash = fullHex.slice(0, len);
+
+    // Handle collision: extend hash until unique
     while (this.agentHashes.has(hash) && this.agentHashes.get(hash) !== agentRoot) {
-      len = Math.min(len + 4, fullHex.length);
+      len += 4;
+      if (len >= fullHex.length) {
+        hash = fullHex;
+        break;
+      }
       hash = fullHex.slice(0, len);
     }
 

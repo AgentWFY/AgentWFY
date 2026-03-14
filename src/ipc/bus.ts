@@ -12,6 +12,11 @@ const pendingWaiters = new Map<string, PendingWaiter>()
 const pendingSpawnRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout>; windowId: number }>()
 const activeSubscriptions = new Map<string, { callback: (data: unknown) => void; windowId: number }>()
 
+function senderMatchesWindow(event: Electron.IpcMainEvent, expectedWindowId: number): boolean {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  return !win || win.id === expectedWindowId
+}
+
 export function forwardBusPublish(win: BrowserWindow, topic: string, data: unknown): void {
   win.webContents.send(Channels.bus.forwardPublish, { topic, data })
 }
@@ -68,10 +73,7 @@ export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => Browse
   // Renderer resolved a waitFor
   ipcMain.on(Channels.bus.waitForResolved, (event, payload: { waiterId: string; data: unknown }) => {
     const waiter = pendingWaiters.get(payload.waiterId)
-    if (!waiter) return
-    // Validate sender belongs to the same window that created the waiter
-    const senderWin = BrowserWindow.fromWebContents(event.sender)
-    if (senderWin && senderWin.id !== waiter.windowId) return
+    if (!waiter || !senderMatchesWindow(event, waiter.windowId)) return
     pendingWaiters.delete(payload.waiterId)
     if (waiter.timer) clearTimeout(waiter.timer)
     waiter.resolve(payload.data)
@@ -88,9 +90,7 @@ export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => Browse
 
   ipcMain.on(Channels.bus.spawnAgentResult, (event, payload: { waiterId: string; result: unknown }) => {
     const pending = pendingSpawnRequests.get(payload.waiterId)
-    if (!pending) return
-    const senderWin = BrowserWindow.fromWebContents(event.sender)
-    if (senderWin && senderWin.id !== pending.windowId) return
+    if (!pending || !senderMatchesWindow(event, pending.windowId)) return
     pendingSpawnRequests.delete(payload.waiterId)
     clearTimeout(pending.timer)
     pending.resolve(payload.result)
@@ -99,9 +99,7 @@ export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => Browse
   // Renderer forwards subscribed bus events back to main
   ipcMain.on(Channels.bus.subscribeEvent, (event, payload: { subId: string; data: unknown }) => {
     const sub = activeSubscriptions.get(payload.subId)
-    if (!sub) return
-    const senderWin = BrowserWindow.fromWebContents(event.sender)
-    if (senderWin && senderWin.id !== sub.windowId) return
+    if (!sub || !senderMatchesWindow(event, sub.windowId)) return
     sub.callback(payload.data)
   })
 }
