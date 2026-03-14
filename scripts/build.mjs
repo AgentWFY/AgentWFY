@@ -80,6 +80,16 @@ const builds = [
     sourcemap: watch,
     logLevel: 'info',
   },
+  // Command Palette UI
+  {
+    entryPoints: [join(src, 'command-palette', 'ui', 'index.ts')],
+    bundle: true,
+    format: 'esm',
+    outfile: join(clientDist, 'command_palette.js'),
+    define: { 'process.env': '{}', 'process.versions': '{}' },
+    sourcemap: watch,
+    logLevel: 'info',
+  },
 ]
 
 // ── Execute ──

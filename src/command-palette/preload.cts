@@ -1,64 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-type SettingType = 'string' | 'number' | 'boolean'
-
-type CommandPaletteAction =
-  | {
-    type: 'open-view'
-    viewId: string
-    title: string
-    viewUpdatedAt: number | null
-  }
-  | {
-    type: 'toggle-agent-chat'
-  }
-  | {
-    type: 'close-current-tab'
-  }
-  | {
-    type: 'reload-views'
-  }
-  | {
-    type: 'enter-settings'
-  }
-  | {
-    type: 'open-settings-file'
-  }
-  | {
-    type: 'edit-setting'
-    settingKey: string
-    settingLabel: string
-  }
-  | {
-    type: 'open-agent'
-  }
-  | {
-    type: 'install-agent'
-  }
-  | {
-    type: 'switch-agent'
-    agentPath: string
-  }
-  | {
-    type: 'backup-agent-db'
-  }
-  | {
-    type: 'restore-agent-db'
-  }
-  | {
-    type: 'restore-agent-db-confirm'
-    backupVersion: number
-  };
+type CommandPaletteAction = { type: string; [key: string]: unknown }
 
 interface CommandPaletteItem {
   id: string
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent' | 'Recent Agents' | 'Backup'
+  group: string
   action: CommandPaletteAction
   settingValue?: string
-  settingType?: SettingType
+  settingType?: string
 }
 
 const COMMAND_PALETTE_CHANNEL = {
@@ -73,6 +25,7 @@ const COMMAND_PALETTE_CHANNEL = {
   SHOW_FILTERED: 'app:command-palette:show-filtered',
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
+  OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -94,6 +47,11 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
     const handler = (_event: Electron.IpcRendererEvent, query: string) => callback(query);
     ipcRenderer.on(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, handler);
     return () => ipcRenderer.removeListener(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, handler);
+  },
+  onOpenedAtScreen(callback: (options: { screen: string; params?: Record<string, unknown> }) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, options: { screen: string; params?: Record<string, unknown> }) => callback(options);
+    ipcRenderer.on(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, handler);
+    return () => ipcRenderer.removeListener(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, handler);
   },
   listSettings(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS);
