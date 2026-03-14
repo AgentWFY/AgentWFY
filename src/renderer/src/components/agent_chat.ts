@@ -520,6 +520,10 @@ ${detail.content}`
     window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
   }
 
+  focusInput() {
+    this._textarea?.focus()
+  }
+
   disconnectedCallback() {
     window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.managerUnsub?.()
