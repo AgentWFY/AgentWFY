@@ -2,13 +2,12 @@ import fs from 'fs/promises';
 import path from 'path';
 import { storeGet } from './ipc/store.js';
 
-const FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/;
+const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 
 async function deleteOldFiles(dir: string, retentionDays: number): Promise<number> {
   if (retentionDays <= 0) return 0;
 
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-  let deleted = 0;
 
   let entries;
   try {
@@ -17,22 +16,21 @@ async function deleteOldFiles(dir: string, retentionDays: number): Promise<numbe
     return 0;
   }
 
+  const toDelete: string[] = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !FILE_NAME_RE.test(entry.name)) continue;
-
-    const filePath = path.join(dir, entry.name);
-    try {
-      const stats = await fs.stat(filePath);
-      if (stats.mtimeMs < cutoff) {
-        await fs.unlink(filePath);
-        deleted++;
-      }
-    } catch {
-      // Skip files that can't be accessed
+    if (!entry.isFile()) continue;
+    const match = entry.name.match(TIMESTAMPED_JSON_RE);
+    if (!match) continue;
+    const timestamp = parseInt(match[1], 10);
+    if (timestamp < cutoff) {
+      toDelete.push(path.join(dir, entry.name));
     }
   }
 
-  return deleted;
+  if (toDelete.length === 0) return 0;
+
+  const results = await Promise.allSettled(toDelete.map((f) => fs.unlink(f)));
+  return results.filter((r) => r.status === 'fulfilled').length;
 }
 
 export async function runCleanup(agentRoot: string): Promise<void> {
