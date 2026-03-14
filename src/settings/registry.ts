@@ -46,4 +46,28 @@ export const SETTINGS: SettingDefinition[] = [
       return null
     },
   },
+  {
+    key: 'cleanup.sessionRetentionDays',
+    label: 'Session Retention (days)',
+    type: 'number',
+    defaultValue: 30,
+    description: 'Delete sessions older than this many days (0 = keep forever)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0 || n > 3650) return 'Must be 0–3650'
+      return null
+    },
+  },
+  {
+    key: 'cleanup.taskLogRetentionDays',
+    label: 'Task Log Retention (days)',
+    type: 'number',
+    defaultValue: 30,
+    description: 'Delete task logs older than this many days (0 = keep forever)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 0 || n > 3650) return 'Must be 0–3650'
+      return null
+    },
+  },
 ]
