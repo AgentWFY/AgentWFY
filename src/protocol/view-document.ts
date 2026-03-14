@@ -143,8 +143,25 @@ function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
   return `<!doctype html><html><head><meta charset="utf-8">${bootstrap}</head><body>${source}</body></html>`;
 }
 
+export function isViewHostname(hostname: string): boolean {
+  return hostname === 'view' || (hostname.startsWith('a') && hostname.endsWith('.view') && hostname.indexOf('.') > 0);
+}
+
+export function isFileHostname(hostname: string): boolean {
+  return hostname === 'file' || (hostname.startsWith('a') && hostname.endsWith('.file') && hostname.indexOf('.') > 0);
+}
+
+export function parseAgentHash(hostname: string): string | null {
+  const dotIndex = hostname.indexOf('.');
+  if (dotIndex > 0 && hostname.startsWith('a')) {
+    const hash = hostname.slice(1, dotIndex);
+    return hash.length > 0 ? hash : null;
+  }
+  return null;
+}
+
 export function parseViewId(url: URL): string {
-  if (url.hostname !== 'view') {
+  if (!isViewHostname(url.hostname)) {
     throw new Error(`Unsupported view route: ${url.hostname}`);
   }
 
@@ -168,7 +185,7 @@ export function normalizeViewPathname(pathname: string): string {
 }
 
 export function isViewDocumentRequest(url: URL): boolean {
-  if (url.hostname !== 'view') {
+  if (!isViewHostname(url.hostname)) {
     return false;
   }
 

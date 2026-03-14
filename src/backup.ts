@@ -227,48 +227,52 @@ export async function restoreFromBackup(agentRoot: string, version: number): Pro
 
 // --- Scheduler ---
 
-let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-let schedulerAgentRoot: string | null = null;
+const schedulerIntervals = new Map<string, ReturnType<typeof setInterval>>();
 let changeListenerRegistered = false;
 
-function clearScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+function clearSchedulerForAgent(agentRoot: string): void {
+  const interval = schedulerIntervals.get(agentRoot);
+  if (interval) {
+    clearInterval(interval);
+    schedulerIntervals.delete(agentRoot);
   }
-  schedulerAgentRoot = null;
 }
 
 function startSchedulerInterval(agentRoot: string): void {
   const hours = getIntervalHours();
   const ms = hours * 60 * 60 * 1000;
 
-  schedulerAgentRoot = agentRoot;
-  schedulerInterval = setInterval(() => {
-    if (schedulerAgentRoot) {
-      backupAgentDb(schedulerAgentRoot).catch((err) => {
-        console.error('[backup] Scheduled backup failed:', err);
-      });
-    }
+  const interval = setInterval(() => {
+    backupAgentDb(agentRoot).catch((err) => {
+      console.error('[backup] Scheduled backup failed:', err);
+    });
   }, ms);
+  schedulerIntervals.set(agentRoot, interval);
 }
 
 export async function scheduleBackup(agentRoot: string): Promise<void> {
-  clearScheduler();
+  clearSchedulerForAgent(agentRoot);
   await backupAgentDb(agentRoot);
   startSchedulerInterval(agentRoot);
 
   if (!changeListenerRegistered) {
     changeListenerRegistered = true;
     onDidChange('backup.intervalHours', () => {
-      if (!schedulerAgentRoot) return;
-      const root = schedulerAgentRoot;
-      clearScheduler();
-      startSchedulerInterval(root);
+      for (const root of schedulerIntervals.keys()) {
+        clearSchedulerForAgent(root);
+        startSchedulerInterval(root);
+      }
     });
   }
 }
 
+export function stopBackupSchedulerForAgent(agentRoot: string): void {
+  clearSchedulerForAgent(agentRoot);
+}
+
 export function stopBackupScheduler(): void {
-  clearScheduler();
+  for (const interval of schedulerIntervals.values()) {
+    clearInterval(interval);
+  }
+  schedulerIntervals.clear();
 }

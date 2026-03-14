@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { assertPathAllowed } from '../security/path-policy.js';
@@ -21,20 +21,20 @@ function normalizeSessionFileName(value: unknown): string {
   return normalized;
 }
 
-export function registerSessionsHandlers(getRoot: () => string) {
-  const resolvePrivatePath = (relativePath: string, options?: { allowMissing?: boolean }) =>
-    assertPathAllowed(getRoot(), relativePath, { ...options, allowAgentPrivate: true });
-  const ensureAgentSessionsDir = async (): Promise<string> => {
-    const sessionsDir = await resolvePrivatePath('.agentwfy/sessions', { allowMissing: true });
+export function registerSessionsHandlers(getRoot: (e: IpcMainInvokeEvent) => string) {
+  const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
+    assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
+  const ensureAgentSessionsDir = async (event: IpcMainInvokeEvent): Promise<string> => {
+    const sessionsDir = await resolvePrivatePath(event, '.agentwfy/sessions', { allowMissing: true });
     await fs.mkdir(sessionsDir, { recursive: true });
     return sessionsDir;
   };
-  const resolveAgentSessionPath = (sessionFileName: string, options?: { allowMissing?: boolean }) =>
-    resolvePrivatePath(`.agentwfy/sessions/${normalizeSessionFileName(sessionFileName)}`, options);
+  const resolveAgentSessionPath = (event: IpcMainInvokeEvent, sessionFileName: string, options?: { allowMissing?: boolean }) =>
+    resolvePrivatePath(event, `.agentwfy/sessions/${normalizeSessionFileName(sessionFileName)}`, options);
 
   // listSessions(limit?) → [{ name, updatedAt }]
-  ipcMain.handle(Channels.sessions.list, async (_event, limit?: number) => {
-    const sessionsDir = await ensureAgentSessionsDir();
+  ipcMain.handle(Channels.sessions.list, async (event, limit?: number) => {
+    const sessionsDir = await ensureAgentSessionsDir(event);
     const requestedLimit = typeof limit === 'number' && Number.isFinite(limit)
       ? Math.floor(limit)
       : DEFAULT_SESSION_LIST_LIMIT;
@@ -66,14 +66,14 @@ export function registerSessionsHandlers(getRoot: () => string) {
   });
 
   // readSession(sessionFileName) → file content
-  ipcMain.handle(Channels.sessions.read, async (_event, sessionFileName: string) => {
-    const sessionPath = await resolveAgentSessionPath(sessionFileName);
+  ipcMain.handle(Channels.sessions.read, async (event, sessionFileName: string) => {
+    const sessionPath = await resolveAgentSessionPath(event, sessionFileName);
     return fs.readFile(sessionPath, 'utf-8');
   });
 
   // writeSession(sessionFileName, content)
-  ipcMain.handle(Channels.sessions.write, async (_event, sessionFileName: string, content: string) => {
-    const sessionPath = await resolveAgentSessionPath(sessionFileName, { allowMissing: true });
+  ipcMain.handle(Channels.sessions.write, async (event, sessionFileName: string, content: string) => {
+    const sessionPath = await resolveAgentSessionPath(event, sessionFileName, { allowMissing: true });
     await fs.mkdir(path.dirname(sessionPath), { recursive: true });
     await fs.writeFile(sessionPath, content, 'utf-8');
   });

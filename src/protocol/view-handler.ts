@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url';
 import { readFile } from 'fs/promises';
 import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
 import { serveFile } from './file-server.js';
-import { buildViewDocument, parseViewId, normalizeViewPathname, isViewDocumentRequest } from './view-document.js';
+import { buildViewDocument, parseViewId, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, parseAgentHash } from './view-document.js';
 import { getViewById } from '../db/views.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
@@ -31,13 +31,13 @@ function resolveViewAssetPath(relativePath: string, clientPath: string): string 
   return absolutePath;
 }
 
-async function resolveViewDataPath(url: URL, getAgentRoot: () => string): Promise<string> {
+async function resolveViewDataPath(url: URL, agentRoot: string): Promise<string> {
   const normalizedPath = normalizeViewPathname(url.pathname);
   if (!normalizedPath) {
     throw new Error('Missing file path');
   }
 
-  return assertPathAllowed(getAgentRoot(), normalizedPath, { allowMissing: false });
+  return assertPathAllowed(agentRoot, normalizedPath, { allowMissing: false });
 }
 
 function escapeHtml(text: string): string {
@@ -60,7 +60,7 @@ function toHtmlResponse(status: number, html: string): Response {
 }
 
 export interface ViewProtocolHandlerOptions {
-  getAgentRoot: () => string;
+  getAgentRoot: (hash: string | null) => string | null;
   clientPath: string;
 }
 
@@ -69,7 +69,10 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
-    if (url.hostname === 'asset') {
+    const { hostname } = url;
+    const hash = parseAgentHash(hostname);
+
+    if (hostname === 'asset') {
       const assetPath = resolveViewAssetPath(decodeURIComponent(url.pathname || ''), clientPath);
       if (!assetPath) {
         return new Response('Asset not found', {
@@ -83,9 +86,17 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       return net.fetch(pathToFileURL(assetPath).toString());
     }
 
-    if (url.hostname === 'file' || (url.hostname === 'view' && !isViewDocumentRequest(url))) {
+    const agentRoot = getAgentRoot(hash);
+    if (!agentRoot) {
+      return new Response('Agent not found', {
+        status: 404,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+
+    if (isFileHostname(hostname) || (isViewHostname(hostname) && !isViewDocumentRequest(url))) {
       try {
-        const absolutePath = await resolveViewDataPath(url, getAgentRoot);
+        const absolutePath = await resolveViewDataPath(url, agentRoot);
         return serveFile(request, absolutePath);
       } catch {
         return new Response('Asset not found', {
@@ -97,7 +108,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       }
     }
 
-    if (url.hostname !== 'view') {
+    if (!isViewHostname(hostname)) {
       return new Response('Unsupported agentview route', {
         status: 404,
         headers: {
@@ -112,8 +123,6 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
     } catch (error: unknown) {
       return toHtmlResponse(400, `<pre>${escapeHtml((error as Error)?.message || 'Invalid agent view URL')}</pre>`);
     }
-
-    const agentRoot = getAgentRoot();
 
     // File-sourced view: read from filesystem instead of DB
     if (url.searchParams.get('source') === 'file') {

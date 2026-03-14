@@ -1,48 +1,48 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './manager.js';
 
-export function registerCommandPaletteHandlers(commandPalette: CommandPaletteManager): void {
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {
-    commandPalette.hide({ focusMain: true });
+export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInvokeEvent) => CommandPaletteManager): void {
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async (event) => {
+    getCommandPalette(event).hide({ focusMain: true });
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_ITEMS, async () => {
-    return commandPalette.buildItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_ITEMS, async (event) => {
+    return getCommandPalette(event).buildItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unknown) => {
-    await commandPalette.runAction(payload);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (event, payload: unknown) => {
+    await getCommandPalette(event).runAction(payload);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS, async () => {
-    return commandPalette.buildSettingsItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS, async (event) => {
+    return getCommandPalette(event).buildSettingsItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (_event, key: string, value: unknown) => {
-    return commandPalette.updateSetting(key, value);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (event, key: string, value: unknown) => {
+    return getCommandPalette(event).updateSetting(key, value);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async () => {
-    commandPalette.openSettingsFile();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async (event) => {
+    getCommandPalette(event).openSettingsFile();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (_event, query: string) => {
-    commandPalette.showFiltered(query);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (event, query: string) => {
+    getCommandPalette(event).showFiltered(query);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, async (_event, options: { screen?: string; params?: Record<string, unknown> }) => {
-    commandPalette.show(options);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, async (event, options: { screen?: string; params?: Record<string, unknown> }) => {
+    getCommandPalette(event).show(options);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async () => {
-    return commandPalette.buildBackupItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async (event) => {
+    return getCommandPalette(event).buildBackupItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS, async () => {
-    return commandPalette.buildAgentSettingsItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS, async (event) => {
+    return getCommandPalette(event).buildAgentSettingsItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, async (_event, key: string, value: unknown) => {
-    return commandPalette.updateAgentSetting(key, value);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, async (event, key: string, value: unknown) => {
+    return getCommandPalette(event).updateAgentSetting(key, value);
   });
 }

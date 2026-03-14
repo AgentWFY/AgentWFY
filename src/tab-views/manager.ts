@@ -184,6 +184,9 @@ export interface TabViewManagerDeps {
   focusMainRendererWindow: () => void;
   dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
   dispatchRendererWindowEvent: (name: string) => void;
+  agentHash?: string;
+  registerSender?: (webContentsId: number) => void;
+  unregisterSender?: (webContentsId: number) => void;
 }
 
 export class TabViewManager {
@@ -335,12 +338,14 @@ export class TabViewManager {
 
     viewWebContents.once('destroyed', () => {
       this.removeTrackedViewWebContents(viewWebContents.id);
+      this.deps.unregisterSender?.(viewWebContents.id);
       const existing = this.tabViewsByTabId.get(tabId);
       if (existing?.view === view) {
         this.tabViewsByTabId.delete(tabId);
       }
     });
 
+    this.deps.registerSender?.(viewWebContents.id);
     this.tabViewsByTabId.set(tabId, state);
 
     return state;
@@ -380,11 +385,27 @@ export class TabViewManager {
     state.view.setVisible(visible);
   }
 
+  private rewriteAgentViewUrl(src: string): string {
+    const hash = this.deps.agentHash;
+    if (!hash) return src;
+
+    // Rewrite agentview://view/... → agentview://a{hash}.view/...
+    // Rewrite agentview://file/... → agentview://a{hash}.file/...
+    if (src.startsWith('agentview://view/')) {
+      return src.replace('agentview://view/', `agentview://a${hash}.view/`);
+    }
+    if (src.startsWith('agentview://file/')) {
+      return src.replace('agentview://file/', `agentview://a${hash}.file/`);
+    }
+    return src;
+  }
+
   async mountTabView(payload: unknown): Promise<void> {
     const input = payload && typeof payload === 'object' ? payload as Partial<TabViewMountPayload> : {};
     const tabId = toNonEmptyString(input.tabId);
     const viewId = toNonEmptyString(input.viewId);
-    const src = toNonEmptyString(input.src);
+    const rawSrc = toNonEmptyString(input.src);
+    const src = this.rewriteAgentViewUrl(rawSrc);
     const visible = Boolean(input.visible);
     const bounds = normalizeTabViewBounds(input.bounds);
     const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
@@ -615,6 +636,7 @@ export class TabViewManager {
       return null;
     }
 
+    // isViewDocumentRequest checks hostname — works with both 'view' and 'a{hash}.view'
     if (!isViewDocumentRequest(parsedUrl)) {
       return null;
     }

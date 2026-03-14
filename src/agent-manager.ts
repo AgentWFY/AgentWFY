@@ -7,30 +7,6 @@ import { ensureViewsSchema } from './db/views.js';
 const AGENT_DIR_NAME = '.agentwfy';
 const MAX_RECENT_AGENTS = 10;
 
-// --- In-memory agent root ---
-
-let currentAgentRoot: string | null = null;
-
-export function getAgentRoot(): string {
-  if (!currentAgentRoot) {
-    throw new Error('No agent is currently open');
-  }
-  return currentAgentRoot;
-}
-
-export function getCurrentAgentRoot(): string | null {
-  return currentAgentRoot;
-}
-
-// --- Change listeners ---
-
-type AgentRootChangeListener = (newRoot: string, oldRoot: string | null) => void;
-const agentRootChangeListeners: AgentRootChangeListener[] = [];
-
-export function onAgentRootChanged(listener: AgentRootChangeListener): void {
-  agentRootChangeListeners.push(listener);
-}
-
 // --- Agent dir helpers ---
 
 export function getAgentDir(agentRoot: string): string {
@@ -76,17 +52,6 @@ export async function initAgent(dirPath: string, sourceDbPath?: string): Promise
   await ensureAgentRuntimeBootstrap(dirPath);
 }
 
-export function openAgent(dirPath: string): void {
-  const oldRoot = currentAgentRoot;
-  currentAgentRoot = dirPath;
-  addToRecentAgents(dirPath);
-  if (oldRoot !== dirPath) {
-    for (const listener of agentRootChangeListeners) {
-      listener(dirPath, oldRoot);
-    }
-  }
-}
-
 export interface RecentAgent {
   path: string;
   openedAt: number;
@@ -101,7 +66,7 @@ export function getRecentAgents(): RecentAgent[] {
   }
 }
 
-function addToRecentAgents(dirPath: string): void {
+export function addToRecentAgents(dirPath: string): void {
   const recents = getRecentAgents().filter(r => r.path !== dirPath);
   recents.unshift({ path: dirPath, openedAt: Date.now() });
   fs.writeFileSync(getRecentAgentsPath(), JSON.stringify(recents.slice(0, MAX_RECENT_AGENTS), null, 2));

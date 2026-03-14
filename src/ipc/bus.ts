@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import crypto from 'crypto'
 import { Channels } from './channels.js'
 
@@ -53,15 +53,15 @@ export function forwardSpawnAgent(win: BrowserWindow, prompt: string): Promise<{
   })
 }
 
-export function registerBusHandlers(mainWindow: BrowserWindow): void {
+export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => BrowserWindow): void {
   // bus:publish — view publishes → forward to renderer
-  ipcMain.handle(Channels.bus.publish, async (_event, topic: string, data: unknown) => {
-    forwardBusPublish(mainWindow, topic, data)
+  ipcMain.handle(Channels.bus.publish, async (event, topic: string, data: unknown) => {
+    forwardBusPublish(getWindow(event), topic, data)
   })
 
   // bus:waitFor — view waits → forward to renderer, store pending promise
-  ipcMain.handle(Channels.bus.waitFor, async (_event, topic: string, timeoutMs?: number) => {
-    return forwardBusWaitFor(mainWindow, topic, timeoutMs)
+  ipcMain.handle(Channels.bus.waitFor, async (event, topic: string, timeoutMs?: number) => {
+    return forwardBusWaitFor(getWindow(event), topic, timeoutMs)
   })
 
   // Renderer resolved a waitFor
@@ -75,12 +75,12 @@ export function registerBusHandlers(mainWindow: BrowserWindow): void {
   })
 
   // spawnAgent(prompt) → { agentId } — forwarded to renderer for agent creation
-  ipcMain.handle(Channels.bus.spawnAgent, async (_event, prompt: string) => {
+  ipcMain.handle(Channels.bus.spawnAgent, async (event, prompt: string) => {
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('spawnAgent requires a non-empty prompt string')
     }
 
-    return forwardSpawnAgent(mainWindow, prompt)
+    return forwardSpawnAgent(getWindow(event), prompt)
   })
 
   ipcMain.on(Channels.bus.spawnAgentResult, (_event, payload: { waiterId: string; result: unknown }) => {

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { Channels } from './channels.js';
 
 interface CaptureTabRequest {
@@ -72,14 +72,14 @@ function parseOptionalNumber(value: unknown, label: string): number | undefined 
   return value;
 }
 
-export function registerTabsHandlers(tabTools: AgentTabTools) {
+export function registerTabsHandlers(getTabTools: (e: IpcMainInvokeEvent) => AgentTabTools) {
   // getTabs() → { tabs: [...] }
-  ipcMain.handle(Channels.tabs.getTabs, async () => {
-    return tabTools.getTabs();
+  ipcMain.handle(Channels.tabs.getTabs, async (event) => {
+    return getTabTools(event).getTabs();
   });
 
   // openTab({ viewId?, filePath?, url?, title? }) — exactly one of viewId, filePath, url required
-  ipcMain.handle(Channels.tabs.openTab, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.openTab, async (event, payload: unknown) => {
     const input = payload as OpenTabRequest | undefined;
     if (!input) {
       throw new Error('openTab requires a request object');
@@ -94,7 +94,7 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
       throw new Error('openTab requires exactly one of viewId, filePath, or url');
     }
 
-    return tabTools.openTab({
+    return getTabTools(event).openTab({
       viewId: hasViewId ? input.viewId : undefined,
       filePath: hasFilePath ? input.filePath : undefined,
       url: hasUrl ? input.url : undefined,
@@ -104,35 +104,35 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
   });
 
   // closeTab({ tabId })
-  ipcMain.handle(Channels.tabs.closeTab, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.closeTab, async (event, payload: unknown) => {
     const input = payload as CloseTabRequest | undefined;
     const tabId = parseTabId(input?.tabId);
-    return tabTools.closeTab({ tabId });
+    return getTabTools(event).closeTab({ tabId });
   });
 
   // selectTab({ tabId })
-  ipcMain.handle(Channels.tabs.selectTab, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.selectTab, async (event, payload: unknown) => {
     const input = payload as SelectTabRequest | undefined;
     const tabId = parseTabId(input?.tabId);
-    return tabTools.selectTab({ tabId });
+    return getTabTools(event).selectTab({ tabId });
   });
 
   // reloadTab({ tabId })
-  ipcMain.handle(Channels.tabs.reloadTab, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.reloadTab, async (event, payload: unknown) => {
     const input = payload as ReloadTabRequest | undefined;
     const tabId = parseTabId(input?.tabId);
-    return tabTools.reloadTab({ tabId });
+    return getTabTools(event).reloadTab({ tabId });
   });
 
   // captureTab({ tabId }) → { base64, mimeType }
-  ipcMain.handle(Channels.tabs.captureTab, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.captureTab, async (event, payload: unknown) => {
     const input = payload as CaptureTabRequest | undefined;
     const tabId = parseTabId(input?.tabId);
-    return tabTools.captureTab({ tabId });
+    return getTabTools(event).captureTab({ tabId });
   });
 
   // getConsoleLogs({ tabId, since?, limit? }) → logs[]
-  ipcMain.handle(Channels.tabs.getConsoleLogs, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.getConsoleLogs, async (event, payload: unknown) => {
     const input = payload as GetTabConsoleLogsRequest | undefined;
     const tabId = parseTabId(input?.tabId);
     const since = parseOptionalNumber(input?.since, 'since');
@@ -141,7 +141,7 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
       throw new Error('limit must be >= 1 when provided');
     }
 
-    return tabTools.getTabConsoleLogs({
+    return getTabTools(event).getTabConsoleLogs({
       tabId,
       since,
       limit,
@@ -149,7 +149,7 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
   });
 
   // execJs({ tabId, code, timeoutMs? }) → execution result
-  ipcMain.handle(Channels.tabs.execJs, async (_event, payload: unknown) => {
+  ipcMain.handle(Channels.tabs.execJs, async (event, payload: unknown) => {
     const input = payload as ExecTabJsRequest | undefined;
     const tabId = parseTabId(input?.tabId);
     if (!input || typeof input.code !== 'string') {
@@ -161,7 +161,7 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
       throw new Error('timeoutMs must be >= 1 when provided');
     }
 
-    return tabTools.execTabJs({
+    return getTabTools(event).execTabJs({
       tabId,
       code: input.code,
       timeoutMs,

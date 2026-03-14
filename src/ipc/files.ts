@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import fs from 'fs/promises';
 import { assertPathAllowed, isAgentPrivatePath } from '../security/path-policy.js';
@@ -73,15 +73,15 @@ export function matchesGlob(filename: string, pattern: string): boolean {
   return new RegExp(`^${regex}$`).test(filename);
 }
 
-export function registerFilesHandlers(getRoot: () => string) {
-  const resolveToolPath = (relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
-    assertPathAllowed(getRoot(), relativePath, options);
-  const resolveToolRoot = () =>
-    assertPathAllowed(getRoot(), '.', { allowMissing: true, allowAgentPrivate: true });
+export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string) {
+  const resolveToolPath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
+    assertPathAllowed(getRoot(event), relativePath, options);
+  const resolveToolRoot = (event: IpcMainInvokeEvent) =>
+    assertPathAllowed(getRoot(event), '.', { allowMissing: true, allowAgentPrivate: true });
 
   // read(path, offset?, limit?) → text with line numbers
-  ipcMain.handle(Channels.files.read, async (_event, relativePath: string, offset?: number, limit?: number) => {
-    const filePath = await resolveToolPath(relativePath);
+  ipcMain.handle(Channels.files.read, async (event, relativePath: string, offset?: number, limit?: number) => {
+    const filePath = await resolveToolPath(event, relativePath);
     const raw = await fs.readFile(filePath, 'utf-8');
     const allLines = raw.split('\n');
     const totalLines = allLines.length;
@@ -109,16 +109,16 @@ export function registerFilesHandlers(getRoot: () => string) {
   });
 
   // write(path, content) → success message
-  ipcMain.handle(Channels.files.write, async (_event, relativePath: string, content: string) => {
-    const filePath = await resolveToolPath(relativePath, { allowMissing: true });
+  ipcMain.handle(Channels.files.write, async (event, relativePath: string, content: string) => {
+    const filePath = await resolveToolPath(event, relativePath, { allowMissing: true });
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
     return `Successfully wrote ${Buffer.byteLength(content, 'utf-8')} bytes to ${relativePath}`;
   });
 
   // edit(path, oldText, newText) → success message
-  ipcMain.handle(Channels.files.edit, async (_event, relativePath: string, oldText: string, newText: string) => {
-    const filePath = await resolveToolPath(relativePath);
+  ipcMain.handle(Channels.files.edit, async (event, relativePath: string, oldText: string, newText: string) => {
+    const filePath = await resolveToolPath(event, relativePath);
     const content = await fs.readFile(filePath, 'utf-8');
     const occurrences = content.split(oldText).length - 1;
     if (occurrences === 0) {
@@ -133,9 +133,9 @@ export function registerFilesHandlers(getRoot: () => string) {
   });
 
   // ls(path?, limit?) → sorted text, dirs have / suffix
-  ipcMain.handle(Channels.files.ls, async (_event, relativePath?: string, limit?: number) => {
-    const root = await resolveToolRoot();
-    const dirPath = await resolveToolPath(relativePath || '.');
+  ipcMain.handle(Channels.files.ls, async (event, relativePath?: string, limit?: number) => {
+    const root = await resolveToolRoot(event);
+    const dirPath = await resolveToolPath(event, relativePath || '.');
     const effectiveLimit = limit ?? DEFAULT_LS_LIMIT;
 
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -164,21 +164,21 @@ export function registerFilesHandlers(getRoot: () => string) {
   });
 
   // mkdir(path, recursive?)
-  ipcMain.handle(Channels.files.mkdir, async (_event, relativePath: string, recursive?: boolean) => {
-    const dirPath = await resolveToolPath(relativePath, { allowMissing: true });
+  ipcMain.handle(Channels.files.mkdir, async (event, relativePath: string, recursive?: boolean) => {
+    const dirPath = await resolveToolPath(event, relativePath, { allowMissing: true });
     await fs.mkdir(dirPath, { recursive: recursive ?? true });
   });
 
   // remove(path, recursive?)
-  ipcMain.handle(Channels.files.remove, async (_event, relativePath: string, recursive?: boolean) => {
-    const targetPath = await resolveToolPath(relativePath, { allowMissing: true });
+  ipcMain.handle(Channels.files.remove, async (event, relativePath: string, recursive?: boolean) => {
+    const targetPath = await resolveToolPath(event, relativePath, { allowMissing: true });
     await fs.rm(targetPath, { recursive: recursive ?? false, force: false });
   });
 
   // find(pattern, path?, limit?) → text list of matching paths
-  ipcMain.handle(Channels.files.find, async (_event, pattern: string, relativePath?: string, limit?: number) => {
-    const root = await resolveToolRoot();
-    const searchDir = relativePath ? await resolveToolPath(relativePath, { allowMissing: true }) : root;
+  ipcMain.handle(Channels.files.find, async (event, pattern: string, relativePath?: string, limit?: number) => {
+    const root = await resolveToolRoot(event);
+    const searchDir = relativePath ? await resolveToolPath(event, relativePath, { allowMissing: true }) : root;
     const effectiveLimit = limit ?? DEFAULT_FIND_LIMIT;
 
     const all = await walkDir(searchDir, root);
@@ -201,13 +201,13 @@ export function registerFilesHandlers(getRoot: () => string) {
 
   // grep(pattern, path?, options?) → formatted text matches
   ipcMain.handle(Channels.files.grep, async (
-    _event,
+    event,
     pattern: string,
     relativePath?: string,
     options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number },
   ) => {
-    const root = await resolveToolRoot();
-    const searchDir = relativePath ? await resolveToolPath(relativePath, { allowMissing: true }) : root;
+    const root = await resolveToolRoot(event);
+    const searchDir = relativePath ? await resolveToolPath(event, relativePath, { allowMissing: true }) : root;
     const ignoreCase = options?.ignoreCase ?? false;
     const literal = options?.literal ?? false;
     const contextLines = options?.context ?? 0;
