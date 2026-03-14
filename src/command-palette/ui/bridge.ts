@@ -10,6 +10,7 @@ export interface CommandPaletteBridge {
   listSettings(): Promise<CommandPaletteItem[]>
   updateSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>
   openSettingsFile(): Promise<void>
+  listRecentAgents(): Promise<CommandPaletteItem[]>
   listBackups(): Promise<CommandPaletteItem[]>
   listAgentSettings(): Promise<CommandPaletteItem[]>
   updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>

@@ -323,6 +323,11 @@ export class CommandPaletteManager {
       group: 'Agent',
       action: { type: 'enter-agent-settings' },
     }, {
+      id: 'agent:recent-agents',
+      title: 'Recent Agents...',
+      group: 'Agent',
+      action: { type: 'enter-recent-agents' },
+    }, {
       id: 'agent:backup-db',
       title: 'Backup Agent Database',
       group: 'Agent',
@@ -334,19 +339,7 @@ export class CommandPaletteManager {
       action: { type: 'restore-agent-db' },
     });
 
-    const recentAgentItems: CommandPaletteItem[] = [];
-    const recents = getRecentAgents();
-    for (const recent of recents) {
-      recentAgentItems.push({
-        id: `agent:recent:${recent.path}`,
-        title: shortenPath(recent.path),
-        subtitle: 'Switch agent',
-        group: 'Recent Agents',
-        action: { type: 'switch-agent', agentPath: recent.path },
-      });
-    }
-
-    return [...agentItems, ...recentAgentItems, ...actionItems, ...taskItems, ...viewItems];
+    return [...agentItems, ...actionItems, ...taskItems, ...viewItems];
   }
 
   private buildSettingItems(
@@ -422,6 +415,17 @@ export class CommandPaletteManager {
 
     storeSet(key, result.value);
     return { success: true };
+  }
+
+  buildRecentAgentItems(): CommandPaletteItem[] {
+    const recents = getRecentAgents();
+    return recents.map((recent) => ({
+      id: `agent:recent:${recent.path}`,
+      title: shortenPath(recent.path),
+      subtitle: 'Switch agent',
+      group: 'Recent Agents' as const,
+      action: { type: 'switch-agent' as const, agentPath: recent.path },
+    }));
   }
 
   buildBackupItems(): CommandPaletteItem[] {
@@ -506,6 +510,7 @@ export class CommandPaletteManager {
 
       case 'enter-settings':
       case 'enter-agent-settings':
+      case 'enter-recent-agents':
         // Handled entirely in the palette UI
         return;
 
