@@ -386,6 +386,23 @@ export class Agent {
         attempt >= Agent.MAX_RETRIES ||
         signal.aborted
       ) {
+        // For retryable errors that won't be retried (max retries exhausted or
+        // aborted), attemptStream skipped adding the message to context and
+        // emitting events (expecting a retry). Finalize the error message now
+        // so it appears in the UI and gets persisted to the session.
+        if (result.retryable && result.message.stopReason === 'error') {
+          if (result.addedPartial) {
+            contextMessages[contextMessages.length - 1] = result.message
+          } else {
+            contextMessages.push(result.message)
+          }
+          this._state.streamMessage = null
+          this._state.messages = contextMessages.slice()
+          if (!result.addedPartial) {
+            this.emit({ type: 'message_start', message: { ...result.message } })
+          }
+          this.emit({ type: 'message_end', message: result.message })
+        }
         return result.message
       }
 
