@@ -54,10 +54,6 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').length
   }
 
-  get runningLabels(): string[] {
-    return this._runs.filter(r => r.status === 'running').map(r => r.name)
-  }
-
   async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
     const ipc = window.ipc
     if (!ipc) throw new Error('window.ipc is not available')
