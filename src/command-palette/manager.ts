@@ -303,47 +303,45 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'sync-system-prompt' },
       },
-    ];
-
-    // Agent items
-    const agentItems: CommandPaletteItem[] = [
       {
         id: 'agent:open',
         title: 'Open Agent',
-        group: 'Agent',
+        group: 'Actions',
         action: { type: 'open-agent' },
       },
       {
         id: 'agent:install',
         title: 'Install Agent',
-        group: 'Agent',
+        group: 'Actions',
         action: { type: 'install-agent' },
+      },
+      {
+        id: 'agent:settings',
+        title: 'Agent Settings...',
+        group: 'Actions',
+        action: { type: 'enter-agent-settings' },
+      },
+      {
+        id: 'agent:recent-agents',
+        title: 'Recent Agents...',
+        group: 'Actions',
+        action: { type: 'enter-recent-agents' },
+      },
+      {
+        id: 'agent:backup-db',
+        title: 'Backup Agent Database',
+        group: 'Actions',
+        action: { type: 'backup-agent-db' },
+      },
+      {
+        id: 'agent:restore-db',
+        title: 'Restore Agent Database...',
+        group: 'Actions',
+        action: { type: 'restore-agent-db' },
       },
     ];
 
-    agentItems.push({
-      id: 'agent:settings',
-      title: 'Agent Settings...',
-      group: 'Agent',
-      action: { type: 'enter-agent-settings' },
-    }, {
-      id: 'agent:recent-agents',
-      title: 'Recent Agents...',
-      group: 'Agent',
-      action: { type: 'enter-recent-agents' },
-    }, {
-      id: 'agent:backup-db',
-      title: 'Backup Agent Database',
-      group: 'Agent',
-      action: { type: 'backup-agent-db' },
-    }, {
-      id: 'agent:restore-db',
-      title: 'Restore Agent Database...',
-      group: 'Agent',
-      action: { type: 'restore-agent-db' },
-    });
-
-    return [...agentItems, ...actionItems, ...taskItems, ...viewItems];
+    return [...actionItems, ...taskItems, ...viewItems];
   }
 
   private buildSettingItems(
