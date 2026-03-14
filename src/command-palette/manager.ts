@@ -267,6 +267,13 @@ export class CommandPaletteManager {
         action: { type: 'toggle-agent-chat' },
       },
       {
+        id: 'action:toggle-task-panel',
+        title: 'Toggle Task Panel',
+        shortcut: `${mod}J`,
+        group: 'Actions',
+        action: { type: 'toggle-task-panel' },
+      },
+      {
         id: 'action:close-current-tab',
         title: 'Close Current Tab',
         shortcut: `${mod}W`,
@@ -476,6 +483,10 @@ export class CommandPaletteManager {
 
       case 'toggle-agent-chat':
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
+        break;
+
+      case 'toggle-task-panel':
+        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
         break;
 
       case 'close-current-tab':

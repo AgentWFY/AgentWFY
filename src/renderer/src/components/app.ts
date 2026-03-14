@@ -37,6 +37,10 @@ export class TlApp extends HTMLElement {
     this.togglePanel('agent-chat')
   }
 
+  private onToggleTaskPanel = () => {
+    this.togglePanel('tasks')
+  }
+
   private onSyncSystemPrompt = () => {
     this.activeSidebarPanel = 'agent-chat'
     this.updateSidebar()
@@ -307,6 +311,7 @@ export class TlApp extends HTMLElement {
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.subscribeToAgentDbChanges()
   }
@@ -314,6 +319,7 @@ export class TlApp extends HTMLElement {
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
+    window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
