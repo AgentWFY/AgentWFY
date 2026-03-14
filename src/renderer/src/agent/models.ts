@@ -99,10 +99,6 @@ export async function loadModelsConfig(): Promise<ModelsConfig> {
   return cachedConfig
 }
 
-export function resetModelsConfigCache(): void {
-  cachedConfig = null
-}
-
 export function getModelsConfigSync(): ModelsConfig {
   return cachedConfig ?? DEFAULT_MODELS_CONFIG
 }
@@ -117,11 +113,6 @@ function buildProvider(id: string, pc: ProviderConfig): Provider {
     api: pc.api,
     auth: pc.auth,
   }
-}
-
-export function getProviders(config?: ModelsConfig): Provider[] {
-  const c = config ?? getModelsConfigSync()
-  return Object.entries(c.providers).map(([id, pc]) => buildProvider(id, pc))
 }
 
 export function getProviderIds(config?: ModelsConfig): string[] {
