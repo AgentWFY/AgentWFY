@@ -1,5 +1,6 @@
 import { getSessionManager } from '../agent/session_manager.js'
 import { getTaskRunner } from '../tasks/task_runner.js'
+import { escapeHtml } from './chat_utils.js'
 
 const STYLES = `
   :host {
@@ -280,7 +281,7 @@ export class TlStatusLine extends HTMLElement {
       const mgr = getSessionManager()
       const labels = mgr ? mgr.streamingSessionLabels : []
       const sessionListHtml = labels.length > 0
-        ? labels.map(l => `<div class="tooltip-session">${this.escapeHtml(l)}</div>`).join('')
+        ? labels.map(l => `<div class="tooltip-session">${escapeHtml(l)}</div>`).join('')
         : ''
       tooltip.innerHTML = `<div class="tooltip-title">Running agents</div>${sessionListHtml}`
     } else {
@@ -328,7 +329,7 @@ export class TlStatusLine extends HTMLElement {
       const runner = getTaskRunner()
       const labels = runner ? runner.runningLabels : []
       const listHtml = labels.length > 0
-        ? labels.map(l => `<div class="tooltip-session">${this.escapeHtml(l)}</div>`).join('')
+        ? labels.map(l => `<div class="tooltip-session">${escapeHtml(l)}</div>`).join('')
         : ''
       tooltip.innerHTML = `<div class="tooltip-title">Running tasks</div>${listHtml}`
     } else {
@@ -418,9 +419,4 @@ export class TlStatusLine extends HTMLElement {
     return match ? match[1] : null
   }
 
-  private escapeHtml(text: string): string {
-    const el = document.createElement('span')
-    el.textContent = text
-    return el.innerHTML
-  }
 }

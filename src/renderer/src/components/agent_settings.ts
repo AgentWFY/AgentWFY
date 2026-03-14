@@ -11,6 +11,7 @@ import {
   normalizeAuthConfig,
   logoutOAuth,
 } from '../agent/agent_auth.js'
+import { escapeHtml } from './chat_utils.js'
 
 const STYLES = `
   .settings {
@@ -320,15 +321,10 @@ export class TlAgentSettings extends HTMLElement {
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
   }
 
-  private esc(str: string): string {
-    const d = document.createElement('div')
-    d.textContent = str
-    return d.innerHTML
-  }
 
   private buildOptions(items: { value: string; label: string }[], selected: string): string {
     return items
-      .map(i => `<option value="${this.esc(i.value)}"${i.value === selected ? ' selected' : ''}>${this.esc(i.label)}</option>`)
+      .map(i => `<option value="${escapeHtml(i.value)}"${i.value === selected ? ' selected' : ''}>${escapeHtml(i.label)}</option>`)
       .join('')
   }
 
@@ -356,7 +352,7 @@ export class TlAgentSettings extends HTMLElement {
           <div class="key-row">
             <input
               type="password"
-              value="${this.esc(this.apiKeyInput)}"
+              value="${escapeHtml(this.apiKeyInput)}"
               placeholder="sk-..."
               ${disabledAttr}
               data-action="api-key-input"
@@ -373,10 +369,10 @@ export class TlAgentSettings extends HTMLElement {
         </div>`
     } else if (this.awaitingCode) {
       if (this.oauthAuthUrl) {
-        credentialHtml += `<div class="oauth-link"><a href="${this.esc(this.oauthAuthUrl)}" target="_blank" rel="noopener">${this.esc(this.oauthAuthUrl)}</a></div>`
+        credentialHtml += `<div class="oauth-link"><a href="${escapeHtml(this.oauthAuthUrl)}" target="_blank" rel="noopener">${escapeHtml(this.oauthAuthUrl)}</a></div>`
       }
       if (this.oauthStatus) {
-        credentialHtml += `<div class="oauth-status-row">${this.esc(this.oauthStatus)}</div>`
+        credentialHtml += `<div class="oauth-status-row">${escapeHtml(this.oauthStatus)}</div>`
       }
       const submitDisabled = !this.oauthCodeInput.trim() ? 'disabled' : ''
       credentialHtml += `
@@ -385,7 +381,7 @@ export class TlAgentSettings extends HTMLElement {
           <div class="key-row">
             <input
               type="text"
-              value="${this.esc(this.oauthCodeInput)}"
+              value="${escapeHtml(this.oauthCodeInput)}"
               placeholder="Paste code here"
               data-action="oauth-code-input"
             >
@@ -398,12 +394,12 @@ export class TlAgentSettings extends HTMLElement {
       credentialHtml = `
         <button class="btn btn-accent" style="width:100%;" ${loginDisabled} data-action="oauth-login">${loginLabel}</button>`
       if (this.oauthStatus) {
-        credentialHtml += `<div class="oauth-status-row">${this.esc(this.oauthStatus)}</div>`
+        credentialHtml += `<div class="oauth-status-row">${escapeHtml(this.oauthStatus)}</div>`
       }
     }
 
     if (this.oauthError) {
-      credentialHtml += `<div class="oauth-error-row">${this.esc(this.oauthError)}</div>`
+      credentialHtml += `<div class="oauth-error-row">${escapeHtml(this.oauthError)}</div>`
     }
 
     const connectionHtml = `
@@ -411,7 +407,7 @@ export class TlAgentSettings extends HTMLElement {
         <div class="section-body">
           <div class="field">
             <span class="field-label">Auth</span>
-            <tl-select value="${this.esc(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
+            <tl-select value="${escapeHtml(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
           </div>
           ${credentialHtml}
         </div>
@@ -439,16 +435,16 @@ export class TlAgentSettings extends HTMLElement {
         <div class="field-grid">
           <div class="field">
             <span class="field-label">Provider</span>
-            <tl-select value="${this.esc(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</tl-select>
+            <tl-select value="${escapeHtml(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</tl-select>
           </div>
           <div class="field">
             <span class="field-label">Thinking</span>
-            <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+            <tl-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
           </div>
         </div>
         <div class="field">
           <span class="field-label">Model</span>
-          <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+          <tl-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
         </div>`
     } else {
       const modelOpts = this.buildOptions(
@@ -464,11 +460,11 @@ export class TlAgentSettings extends HTMLElement {
         <div class="field-grid">
           <div class="field">
             <span class="field-label">Model</span>
-            <tl-select value="${this.esc(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+            <tl-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
           </div>
           <div class="field">
             <span class="field-label">Thinking</span>
-            <tl-select value="${this.esc(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+            <tl-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
           </div>
         </div>`
     }
