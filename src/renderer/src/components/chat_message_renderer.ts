@@ -219,7 +219,7 @@ function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<st
     return html
   }
   if (block.type === 'custom') {
-    return `<div class="block block-custom"><tl-json data-block-idx="${index}"></tl-json></div>`
+    return `<div class="block block-custom"><awfy-json data-block-idx="${index}"></awfy-json></div>`
   }
   return ''
 }
@@ -234,7 +234,7 @@ function renderIndicatorHtml(isStreaming: boolean, retryInfo: RetryInfo | null):
 
 function setupBlockCustomEl(wrapper: HTMLElement, block: DisplayBlock) {
   if (block.type !== 'custom') return
-  const jsonEl = wrapper.querySelector('tl-json') as TlJson | null
+  const jsonEl = wrapper.querySelector('awfy-json') as TlJson | null
   if (jsonEl) {
     jsonEl.json = block.raw.content
     jsonEl.placeholder = 'custom message'

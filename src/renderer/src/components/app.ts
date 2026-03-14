@@ -78,31 +78,31 @@ export class TlApp extends HTMLElement {
 
     const style = document.createElement('style')
     style.textContent = `
-      .tl-app-outer {
+      .awfy-app-outer {
         display: flex;
         flex-direction: column;
         width: 100vw;
         height: 100vh;
       }
-      .tl-app-header {
+      .awfy-app-header {
         display: flex;
         flex-shrink: 0;
         background: var(--color-bg3);
         -webkit-app-region: drag;
       }
-      .tl-app-header > .tab-bar {
+      .awfy-app-header > .tab-bar {
         flex: 1;
         min-width: 0;
       }
-      .tl-app-sidebar-header {
+      .awfy-app-sidebar-header {
         display: flex;
         flex-shrink: 0;
       }
-      .tl-app-sidebar-header.open {
+      .awfy-app-sidebar-header.open {
         background: var(--color-sidebar-bg);
         border-right: 1px solid var(--color-border);
       }
-      .tl-app-sidebar-buttons {
+      .awfy-app-sidebar-buttons {
         display: flex;
         align-items: flex-end;
         flex-shrink: 0;
@@ -112,7 +112,7 @@ export class TlApp extends HTMLElement {
         -webkit-app-region: no-drag;
         ${isMac ? 'padding-left: 78px;' : ''}
       }
-      .tl-app-sidebar-btn {
+      .awfy-app-sidebar-btn {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -127,18 +127,18 @@ export class TlApp extends HTMLElement {
         transition: color var(--transition-fast), background var(--transition-fast);
         user-select: none;
       }
-      .tl-app-sidebar-btn:hover {
+      .awfy-app-sidebar-btn:hover {
         color: var(--color-text4);
         background: var(--color-item-hover);
       }
-      .tl-app-sidebar-btn.active {
+      .awfy-app-sidebar-btn.active {
         color: var(--color-text4);
         background: var(--color-item-active);
       }
-      .tl-app-header-spacer {
+      .awfy-app-header-spacer {
         flex-shrink: 0;
       }
-      .tl-app-header-resize-spacer {
+      .awfy-app-header-resize-spacer {
         width: 4px;
         flex-shrink: 0;
         margin-left: -4px;
@@ -149,16 +149,16 @@ export class TlApp extends HTMLElement {
         transition: background var(--transition-fast);
         -webkit-app-region: no-drag;
       }
-      .tl-app-resize-handle.resize-hover,
-      .tl-app-header-resize-spacer.resize-hover {
+      .awfy-app-resize-handle.resize-hover,
+      .awfy-app-header-resize-spacer.resize-hover {
         background: var(--color-accent);
       }
-      .tl-app-container {
+      .awfy-app-container {
         display: flex;
         flex: 1;
         min-height: 0;
       }
-      .tl-app-sidebar {
+      .awfy-app-sidebar {
         display: flex;
         flex-direction: column;
         flex-shrink: 0;
@@ -167,20 +167,20 @@ export class TlApp extends HTMLElement {
         background: var(--color-sidebar-bg);
         overflow: hidden;
       }
-      .tl-app-sidebar > tl-agent-chat,
-      .tl-app-sidebar > tl-task-panel {
+      .awfy-app-sidebar > awfy-agent-chat,
+      .awfy-app-sidebar > awfy-task-panel {
         display: flex;
         flex-direction: column;
         flex: 1;
         min-height: 0;
       }
-      .tl-app-sidebar > .panel-hidden {
+      .awfy-app-sidebar > .panel-hidden {
         display: none !important;
       }
-      .tl-app-sidebar-hidden {
+      .awfy-app-sidebar-hidden {
         display: none;
       }
-      .tl-app-resize-handle {
+      .awfy-app-resize-handle {
         width: 4px;
         cursor: col-resize;
         flex-shrink: 0;
@@ -190,10 +190,10 @@ export class TlApp extends HTMLElement {
         background: transparent;
         transition: background var(--transition-fast);
       }
-      .tl-app-resize-handle-hidden {
+      .awfy-app-resize-handle-hidden {
         display: none;
       }
-      .tl-app-main-area {
+      .awfy-app-main-area {
         flex: 1;
         overflow: hidden;
         display: grid;
@@ -204,22 +204,22 @@ export class TlApp extends HTMLElement {
     this.appendChild(style)
 
     const outer = document.createElement('div')
-    outer.className = 'tl-app-outer'
+    outer.className = 'awfy-app-outer'
 
     // Header row: sidebar-header (buttons + spacer) + resize spacer + tab bar
     this.headerEl = document.createElement('div')
-    this.headerEl.className = 'tl-app-header'
+    this.headerEl.className = 'awfy-app-header'
 
     this.sidebarHeaderEl = document.createElement('div')
-    this.sidebarHeaderEl.className = 'tl-app-sidebar-header'
+    this.sidebarHeaderEl.className = 'awfy-app-sidebar-header'
 
     this.sidebarButtonsEl = document.createElement('div')
-    this.sidebarButtonsEl.className = 'tl-app-sidebar-buttons'
+    this.sidebarButtonsEl.className = 'awfy-app-sidebar-buttons'
     this.sidebarButtonsEl.innerHTML = `
-      <button class="tl-app-sidebar-btn" data-panel="agent-chat" title="Agent Chat">${CHAT_ICON}</button>
-      <button class="tl-app-sidebar-btn" data-panel="tasks" title="Tasks">${TASKS_ICON}</button>
+      <button class="awfy-app-sidebar-btn" data-panel="agent-chat" title="Agent Chat">${CHAT_ICON}</button>
+      <button class="awfy-app-sidebar-btn" data-panel="tasks" title="Tasks">${TASKS_ICON}</button>
     `
-    this.sidebarButtonsEl.querySelectorAll('.tl-app-sidebar-btn').forEach(btn => {
+    this.sidebarButtonsEl.querySelectorAll('.awfy-app-sidebar-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const panel = (btn as HTMLElement).dataset.panel!
@@ -233,14 +233,14 @@ export class TlApp extends HTMLElement {
     this.sidebarHeaderEl.appendChild(this.sidebarButtonsEl)
 
     this.headerSpacerEl = document.createElement('div')
-    this.headerSpacerEl.className = 'tl-app-header-spacer'
+    this.headerSpacerEl.className = 'awfy-app-header-spacer'
     this.headerSpacerEl.style.display = 'none'
     this.sidebarHeaderEl.appendChild(this.headerSpacerEl)
 
     this.headerEl.appendChild(this.sidebarHeaderEl)
 
     this.headerResizeSpacerEl = document.createElement('div')
-    this.headerResizeSpacerEl.className = 'tl-app-header-resize-spacer'
+    this.headerResizeSpacerEl.className = 'awfy-app-header-resize-spacer'
     this.headerResizeSpacerEl.style.display = 'none'
     this.headerResizeSpacerEl.addEventListener('mousedown', this.onResizeMouseDown)
     this.headerEl.appendChild(this.headerResizeSpacerEl)
@@ -249,30 +249,30 @@ export class TlApp extends HTMLElement {
 
     // Content row
     const container = document.createElement('div')
-    container.className = 'tl-app-container'
+    container.className = 'awfy-app-container'
 
     // Sidebar
     this.sidebarEl = document.createElement('div')
-    this.sidebarEl.className = 'tl-app-sidebar tl-app-sidebar-hidden'
+    this.sidebarEl.className = 'awfy-app-sidebar awfy-app-sidebar-hidden'
     this.sidebarEl.style.width = `${this.sidebarWidth}px`
-    this.agentChatEl = document.createElement('tl-agent-chat')
+    this.agentChatEl = document.createElement('awfy-agent-chat')
     this.agentChatEl.classList.add('panel-hidden')
     this.sidebarEl.appendChild(this.agentChatEl)
-    this.taskPanelEl = document.createElement('tl-task-panel')
+    this.taskPanelEl = document.createElement('awfy-task-panel')
     this.taskPanelEl.classList.add('panel-hidden')
     this.sidebarEl.appendChild(this.taskPanelEl)
     container.appendChild(this.sidebarEl)
 
     // Resize handle
     this.resizeHandleEl = document.createElement('div')
-    this.resizeHandleEl.className = 'tl-app-resize-handle tl-app-resize-handle-hidden'
+    this.resizeHandleEl.className = 'awfy-app-resize-handle awfy-app-resize-handle-hidden'
     this.resizeHandleEl.addEventListener('mousedown', this.onResizeMouseDown)
     container.appendChild(this.resizeHandleEl)
 
     // Main area
     const mainArea = document.createElement('div')
-    mainArea.className = 'tl-app-main-area'
-    this.tabsEl = document.createElement('tl-tabs')
+    mainArea.className = 'awfy-app-main-area'
+    this.tabsEl = document.createElement('awfy-tabs')
     mainArea.appendChild(this.tabsEl)
     container.appendChild(mainArea)
 
@@ -293,12 +293,12 @@ export class TlApp extends HTMLElement {
     outer.appendChild(container)
 
     // Status line
-    const statusLine = document.createElement('tl-status-line')
+    const statusLine = document.createElement('awfy-status-line')
     outer.appendChild(statusLine)
 
     this.appendChild(outer)
 
-    // Reparent tab bar from tl-tabs into the header
+    // Reparent tab bar from awfy-tabs into the header
     const tabsComponent = this.tabsEl as HTMLElement & { tabBarEl?: HTMLDivElement }
     if (tabsComponent.tabBarEl) {
       this.headerEl.appendChild(tabsComponent.tabBarEl)
@@ -338,13 +338,13 @@ export class TlApp extends HTMLElement {
 
   private updateSidebar() {
     const isOpen = !!this.activeSidebarPanel
-    this.sidebarEl.classList.toggle('tl-app-sidebar-hidden', !isOpen)
-    this.resizeHandleEl.classList.toggle('tl-app-resize-handle-hidden', !isOpen)
+    this.sidebarEl.classList.toggle('awfy-app-sidebar-hidden', !isOpen)
+    this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen)
 
     this.agentChatEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'agent-chat')
     this.taskPanelEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'tasks')
 
-    this.sidebarButtonsEl.querySelectorAll('.tl-app-sidebar-btn').forEach(btn => {
+    this.sidebarButtonsEl.querySelectorAll('.awfy-app-sidebar-btn').forEach(btn => {
       const panel = (btn as HTMLElement).dataset.panel
       btn.classList.toggle('active', panel === this.activeSidebarPanel)
     })

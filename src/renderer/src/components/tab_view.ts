@@ -170,11 +170,11 @@ export class TlTabView extends HTMLElement {
     this.loadingEl = document.createElement('div')
     this.loadingEl.style.cssText = 'display:none;align-items:center;justify-content:center;padding:12px;'
     const spinner = document.createElement('div')
-    spinner.style.cssText = 'width:32px;height:32px;border:3px solid var(--color-border, #ccc);border-top-color:var(--color-accent, #0078d4);border-radius:50%;animation:tl-spin 0.8s linear infinite;'
-    if (!document.getElementById('tl-spin-keyframes')) {
+    spinner.style.cssText = 'width:32px;height:32px;border:3px solid var(--color-border, #ccc);border-top-color:var(--color-accent, #0078d4);border-radius:50%;animation:awfy-spin 0.8s linear infinite;'
+    if (!document.getElementById('awfy-spin-keyframes')) {
       const style = document.createElement('style')
-      style.id = 'tl-spin-keyframes'
-      style.textContent = '@keyframes tl-spin{to{transform:rotate(360deg)}}'
+      style.id = 'awfy-spin-keyframes'
+      style.textContent = '@keyframes awfy-spin{to{transform:rotate(360deg)}}'
       document.head.appendChild(style)
     }
     this.loadingEl.appendChild(spinner)

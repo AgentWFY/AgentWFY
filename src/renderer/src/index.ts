@@ -19,15 +19,15 @@ function defineElement(tagName: string, ctor: CustomElementConstructor) {
 }
 
 async function init() {
-  defineElement('tl-json', TlJson)
-  defineElement('tl-agent-settings', TlAgentSettings)
-  defineElement('tl-tab-view', TlTabView)
-  defineElement('tl-tabs', TlTabs)
-  defineElement('tl-agent-chat', TlAgentChat)
-  defineElement('tl-status-line', TlStatusLine)
-  defineElement('tl-select', TlSelect)
-  defineElement('tl-task-panel', TlTaskPanel)
-  defineElement('tl-app', TlApp)
+  defineElement('awfy-json', TlJson)
+  defineElement('awfy-agent-settings', TlAgentSettings)
+  defineElement('awfy-tab-view', TlTabView)
+  defineElement('awfy-tabs', TlTabs)
+  defineElement('awfy-agent-chat', TlAgentChat)
+  defineElement('awfy-status-line', TlStatusLine)
+  defineElement('awfy-select', TlSelect)
+  defineElement('awfy-task-panel', TlTaskPanel)
+  defineElement('awfy-app', TlApp)
 
   const authConfig = await loadAuthConfig()
   if (hasValidAuth(authConfig)) {
@@ -37,7 +37,7 @@ async function init() {
   initTaskRunner()
   initBusBridge()
 
-  document.body.appendChild(document.createElement('tl-app'))
+  document.body.appendChild(document.createElement('awfy-app'))
 }
 
 export default init()
