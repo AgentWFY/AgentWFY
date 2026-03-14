@@ -69,9 +69,6 @@ export class CommandPaletteManager {
 
   hide(options?: { focusMain?: boolean }): void {
     if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed() || !this.commandPaletteWindow.isVisible()) {
-      if (options?.focusMain) {
-        this.deps.rendererBridge.focusMainRendererWindow();
-      }
       return;
     }
 
@@ -536,7 +533,7 @@ export class CommandPaletteManager {
 
       case 'switch-agent': {
         const switchAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
-        this.hide({ focusMain: false });
+        this.hide({ focusMain: true });
         if (isAgentDir(switchAction.agentPath)) {
           await this.deps.openAgentInWindow(switchAction.agentPath);
         } else {
