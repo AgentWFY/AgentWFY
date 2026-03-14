@@ -24,9 +24,13 @@ interface EventConfig {
   topic: string;
 }
 
+import type { TaskOrigin } from '../renderer/src/tasks/task_runner.js';
+
+type TriggerOrigin = Extract<TaskOrigin, { type: 'trigger' }>;
+
 interface TriggerEngineDeps {
   getAgentRoot: () => string;
-  startTask: (taskId: number, input?: unknown) => Promise<{ runId: string }>;
+  startTask: (taskId: number, input?: unknown, origin?: TriggerOrigin) => Promise<{ runId: string }>;
   busWaitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
   httpApi: HttpApiServer;
   busSubscribe: (topic: string, fn: (data: unknown) => void) => () => void;
@@ -148,7 +152,7 @@ export class TriggerEngine {
       const delay = next.getTime() - Date.now();
       timer = setTimeout(() => {
         if (stopped) return;
-        this.deps.startTask(taskId).catch(err => {
+        this.deps.startTask(taskId, undefined, { type: 'trigger', triggerId, triggerType: 'schedule' }).catch(err => {
           console.error(`[triggers] Schedule trigger ${triggerId} failed to start task ${taskId}:`, err);
         });
         scheduleNext();
@@ -176,7 +180,7 @@ export class TriggerEngine {
 
     const handler = async (request: HttpRequestData): Promise<{ status?: number; body: unknown }> => {
       try {
-        const { runId } = await this.deps.startTask(taskId, request);
+        const { runId } = await this.deps.startTask(taskId, request, { type: 'trigger', triggerId, triggerType: 'http' });
 
         // Wait for task completion via bus
         const result = await this.deps.busWaitFor(`task:run:${runId}`, 120_000) as {
@@ -215,7 +219,7 @@ export class TriggerEngine {
     }
 
     const unsubscribe = this.deps.busSubscribe(config.topic, (data: unknown) => {
-      this.deps.startTask(taskId, data).catch(err => {
+      this.deps.startTask(taskId, data, { type: 'trigger', triggerId, triggerType: 'event' }).catch(err => {
         console.error(`[triggers] Event trigger ${triggerId} failed to start task ${taskId}:`, err);
       });
     });
