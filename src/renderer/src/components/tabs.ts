@@ -439,10 +439,10 @@ export class TlTabs extends HTMLElement {
       }
       panel.style.display = tab.id === this.selectedTabId ? '' : 'none'
 
-      // All tab types use <tl-tab-view> with different attributes
+      // All tab types use <awfy-tab-view> with different attributes
       let viewEl = this.viewMap.get(tab.id)
       if (!viewEl) {
-        viewEl = document.createElement('tl-tab-view')
+        viewEl = document.createElement('awfy-tab-view')
         viewEl.setAttribute('tab-id', tab.id)
         viewEl.setAttribute('tab-type', tab.type)
         if (tab.type === 'view') {
@@ -667,7 +667,7 @@ export class TlTabs extends HTMLElement {
         min-height: 0;
         min-width: 0;
       }
-      .tab-panel > tl-tab-view {
+      .tab-panel > awfy-tab-view {
         display: block;
         width: 100%;
         height: 100%;
