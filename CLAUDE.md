@@ -42,10 +42,10 @@ Channel prefixes: `agentwfy:*` (agent tools), `app:*` (app-level), `bus:*` (even
 
 ### UI Framework
 
-Custom Web Components (no React/Vue). Components are in `src/renderer/src/components/` with `tl-` prefix:
-- `tl-app` — Root shell: header (sidebar buttons + tab bar) + sidebar + main tab area
-- `tl-tabs` — Tab management with external BrowserWindow views
-- `tl-agent-chat` — Chat interface for the AI agent
+Custom Web Components (no React/Vue). Components are in `src/renderer/src/components/` with `awfy-` prefix:
+- `awfy-app` — Root shell: header (sidebar buttons + tab bar) + sidebar + main tab area
+- `awfy-tabs` — Tab management with external BrowserWindow views
+- `awfy-agent-chat` — Chat interface for the AI agent
 
 Components use direct DOM manipulation (no virtual DOM), class properties for local state, and CustomEvents for communication.
 

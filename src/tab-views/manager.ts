@@ -79,7 +79,7 @@ export const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
 };
 
 export const GET_TABS_QUERY = `(() => {
-  const tabsEl = document.querySelector('tl-tabs');
+  const tabsEl = document.querySelector('awfy-tabs');
   if (!tabsEl) return { tabs: [] };
   const selectedTabId = typeof tabsEl.selectedTabId === 'string' ? tabsEl.selectedTabId : null;
   const tabList = Array.isArray(tabsEl.tabs) ? tabsEl.tabs : [];

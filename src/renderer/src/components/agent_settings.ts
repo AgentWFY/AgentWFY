@@ -407,7 +407,7 @@ export class TlAgentSettings extends HTMLElement {
         <div class="section-body">
           <div class="field">
             <span class="field-label">Auth</span>
-            <tl-select value="${escapeHtml(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</tl-select>
+            <awfy-select value="${escapeHtml(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</awfy-select>
           </div>
           ${credentialHtml}
         </div>
@@ -435,16 +435,16 @@ export class TlAgentSettings extends HTMLElement {
         <div class="field-grid">
           <div class="field">
             <span class="field-label">Provider</span>
-            <tl-select value="${escapeHtml(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</tl-select>
+            <awfy-select value="${escapeHtml(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</awfy-select>
           </div>
           <div class="field">
             <span class="field-label">Thinking</span>
-            <tl-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+            <awfy-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</awfy-select>
           </div>
         </div>
         <div class="field">
           <span class="field-label">Model</span>
-          <tl-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+          <awfy-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</awfy-select>
         </div>`
     } else {
       const modelOpts = this.buildOptions(
@@ -460,11 +460,11 @@ export class TlAgentSettings extends HTMLElement {
         <div class="field-grid">
           <div class="field">
             <span class="field-label">Model</span>
-            <tl-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</tl-select>
+            <awfy-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</awfy-select>
           </div>
           <div class="field">
             <span class="field-label">Thinking</span>
-            <tl-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</tl-select>
+            <awfy-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</awfy-select>
           </div>
         </div>`
     }
