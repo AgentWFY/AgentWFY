@@ -72,14 +72,6 @@ export class AgentSessionManager {
     return count
   }
 
-  get streamingSessionLabels(): string[] {
-    const labels: string[] = []
-    for (const [, entry] of this.sessions) {
-      if (entry.agent.isStreaming) labels.push(entry.label)
-    }
-    return labels
-  }
-
   async createSession(opts?: { label?: string; prompt?: string; background?: boolean; persistSessions?: boolean }): Promise<string> {
     const prevId = this._activeSessionId
 
