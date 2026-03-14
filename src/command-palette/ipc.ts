@@ -30,6 +30,10 @@ export function registerCommandPaletteHandlers(commandPalette: CommandPaletteMan
     commandPalette.showFiltered(query);
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, async (_event, options: { screen?: string; params?: Record<string, unknown> }) => {
+    commandPalette.show(options);
+  });
+
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async () => {
     return commandPalette.buildBackupItems();
   });

@@ -25,6 +25,7 @@ export interface NetApi {
 }
 
 export interface CommandPaletteApi {
+  show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
   showFiltered(query: string): Promise<void>
 }
 

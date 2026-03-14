@@ -330,6 +330,12 @@ if (isApp) {
       },
     },
     commandPalette: {
+      show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void> {
+        if (options?.screen) {
+          return ipcRenderer.invoke('app:command-palette:opened-at-screen', options);
+        }
+        return ipcRenderer.invoke('app:command-palette:show-filtered', '');
+      },
       showFiltered(query: string): Promise<void> {
         return ipcRenderer.invoke('app:command-palette:show-filtered', query);
       },
