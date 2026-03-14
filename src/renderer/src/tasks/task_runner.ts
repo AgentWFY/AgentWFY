@@ -2,11 +2,19 @@ import type { ExecJsLogEntry } from '../runtime/types.js'
 import { getJsRuntime } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
 
+export type TaskOrigin =
+  | { type: 'command-palette' }
+  | { type: 'task-panel' }
+  | { type: 'agent' }
+  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event' }
+  | { type: 'view' }
+
 export interface TaskRun {
   runId: string
   taskId: number
   name: string
   status: 'running' | 'completed' | 'failed'
+  origin: TaskOrigin
   startedAt: number
   finishedAt?: number
   result?: unknown
@@ -20,6 +28,7 @@ export interface TaskLogHistoryItem {
   updatedAt: number
   taskName: string
   status: string
+  origin?: TaskOrigin
 }
 
 function createRunId(taskId: number): string {
@@ -49,7 +58,7 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').map(r => r.name)
   }
 
-  async startTask(taskId: number, input?: unknown): Promise<string> {
+  async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
     const ipc = window.ipc
     if (!ipc) throw new Error('window.ipc is not available')
 
@@ -74,6 +83,7 @@ export class TaskRunner {
       taskId,
       name: task.name,
       status: 'running',
+      origin: origin ?? { type: 'task-panel' },
       startedAt: Date.now(),
       logs: [],
     }
@@ -89,8 +99,8 @@ export class TaskRunner {
     return runId
   }
 
-  async runTask(taskId: number, input?: unknown): Promise<string> {
-    const runId = await this.startTask(taskId, input)
+  async runTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
+    const runId = await this.startTask(taskId, input, origin)
     await new Promise<unknown>((resolve) => {
       this.completionWaiters.set(runId, { resolve })
     })
@@ -116,7 +126,8 @@ export class TaskRunner {
     if (!ipc) return []
 
     try {
-      return await ipc.tasks.listLogHistory()
+      const items = await ipc.tasks.listLogHistory()
+      return items as TaskLogHistoryItem[]
     } catch {
       return []
     }
@@ -189,8 +200,8 @@ export class TaskRunner {
       // Always publish bus event and resolve completion waiters
       bus.publish(`task:run:${run.runId}`, {
         runId: run.runId, taskId: run.taskId, name: run.name,
-        status: run.status, startedAt: run.startedAt, finishedAt: run.finishedAt,
-        result: run.result, error: run.error, logs: run.logs,
+        status: run.status, origin: run.origin, startedAt: run.startedAt,
+        finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
       })
 
       const waiter = this.completionWaiters.get(run.runId)
@@ -229,6 +240,7 @@ export class TaskRunner {
         taskId: run.taskId,
         taskName: run.name,
         status: run.status,
+        origin: run.origin,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         result: run.result ?? null,
