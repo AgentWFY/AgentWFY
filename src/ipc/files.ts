@@ -116,6 +116,15 @@ export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string
     return `Successfully wrote ${Buffer.byteLength(content, 'utf-8')} bytes to ${relativePath}`;
   });
 
+  // writeBinary(path, base64) → success message
+  ipcMain.handle(Channels.files.writeBinary, async (event, relativePath: string, base64: string) => {
+    const filePath = await resolveToolPath(event, relativePath, { allowMissing: true });
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const buffer = Buffer.from(base64, 'base64');
+    await fs.writeFile(filePath, buffer);
+    return `Successfully wrote ${buffer.length} bytes to ${relativePath}`;
+  });
+
   // edit(path, oldText, newText) → success message
   ipcMain.handle(Channels.files.edit, async (event, relativePath: string, oldText: string, newText: string) => {
     const filePath = await resolveToolPath(event, relativePath);

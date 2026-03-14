@@ -2,6 +2,7 @@ export const Channels = {
   files: {
     read: 'files:read',
     write: 'files:write',
+    writeBinary: 'files:writeBinary',
     edit: 'files:edit',
     ls: 'files:ls',
     mkdir: 'files:mkdir',
