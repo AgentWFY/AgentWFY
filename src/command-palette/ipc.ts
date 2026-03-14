@@ -37,4 +37,12 @@ export function registerCommandPaletteHandlers(commandPalette: CommandPaletteMan
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async () => {
     return commandPalette.buildBackupItems();
   });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS, async () => {
+    return commandPalette.buildAgentSettingsItems();
+  });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, async (_event, key: string, value: unknown) => {
+    return commandPalette.updateAgentSetting(key, value);
+  });
 }

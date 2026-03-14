@@ -26,6 +26,8 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
+  LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
+  UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -64,6 +66,12 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   listBackups(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS);
+  },
+  listAgentSettings(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS);
+  },
+  updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, key, value);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);

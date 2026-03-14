@@ -343,6 +343,9 @@ if (isApp) {
     getAgentRoot(): Promise<string | null> {
       return ipcRenderer.invoke('app:getAgentRoot');
     },
+    getHttpApiPort(): Promise<number | null> {
+      return ipcRenderer.invoke('app:getHttpApiPort');
+    },
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
       return ipcRenderer.invoke('app:getBackupStatus');
     },

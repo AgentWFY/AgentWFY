@@ -4,8 +4,9 @@ import { pathToFileURL } from 'url';
 import fs from 'fs/promises';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
-import { SETTINGS } from '../settings/registry.js';
+import { SETTINGS, AGENT_SETTINGS, type SettingDefinition } from '../settings/registry.js';
 import { storeGet, storeSet } from '../ipc/store.js';
+import { getAgentConfigValues, setAgentConfigValue } from '../http-api/agent-config.js';
 import {
   getRecentAgents,
   showOpenAgentDialog,
@@ -311,6 +312,11 @@ export class CommandPaletteManager {
     ];
 
     agentItems.push({
+      id: 'agent:settings',
+      title: 'Agent Settings...',
+      group: 'Agent',
+      action: { type: 'enter-agent-settings' },
+    }, {
       id: 'agent:backup-db',
       title: 'Backup Agent Database',
       group: 'Agent',
@@ -337,19 +343,24 @@ export class CommandPaletteManager {
     return [...agentItems, ...recentAgentItems, ...actionItems, ...taskItems, ...viewItems];
   }
 
-  buildSettingsItems(): CommandPaletteItem[] {
-    return SETTINGS.map((def) => {
-      const value = storeGet(def.key);
+  private buildSettingItems(
+    defs: SettingDefinition[],
+    getValue: (key: string) => unknown,
+    idPrefix: string,
+    group: CommandPaletteItem['group'],
+  ): CommandPaletteItem[] {
+    return defs.map((def) => {
+      const value = getValue(def.key);
       const displayValue = value !== undefined ? String(value) : String(def.defaultValue);
       return {
-        id: `setting:${def.key}`,
+        id: `${idPrefix}:${def.key}`,
         title: def.label,
         subtitle: def.description,
-        group: 'Settings',
+        group,
         settingValue: displayValue,
         settingType: def.type,
         action: {
-          type: 'edit-setting',
+          type: 'edit-setting' as const,
           settingKey: def.key,
           settingLabel: def.label,
         },
@@ -357,10 +368,16 @@ export class CommandPaletteManager {
     });
   }
 
-  updateSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
-    const def = SETTINGS.find((s) => s.key === key);
-    if (!def) return { success: false, error: 'Unknown setting' };
+  buildSettingsItems(): CommandPaletteItem[] {
+    return this.buildSettingItems(SETTINGS, storeGet, 'setting', 'Settings');
+  }
 
+  buildAgentSettingsItems(): CommandPaletteItem[] {
+    const values = getAgentConfigValues(this.deps.getAgentRoot(), AGENT_SETTINGS.map((d) => d.key));
+    return this.buildSettingItems(AGENT_SETTINGS, (key) => values.get(key), 'agent-setting', 'Agent Settings');
+  }
+
+  private coerceAndValidate(def: SettingDefinition, rawValue: unknown): { success: boolean; value?: unknown; error?: string } {
     let coerced: unknown = rawValue;
     if (def.type === 'number') {
       coerced = Number(rawValue);
@@ -376,7 +393,28 @@ export class CommandPaletteManager {
       if (error) return { success: false, error };
     }
 
-    storeSet(key, coerced);
+    return { success: true, value: coerced };
+  }
+
+  updateAgentSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
+    const def = AGENT_SETTINGS.find((s) => s.key === key);
+    if (!def) return { success: false, error: 'Unknown agent setting' };
+
+    const result = this.coerceAndValidate(def, rawValue);
+    if (!result.success) return { success: false, error: result.error };
+
+    setAgentConfigValue(this.deps.getAgentRoot(), key, result.value);
+    return { success: true };
+  }
+
+  updateSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
+    const def = SETTINGS.find((s) => s.key === key);
+    if (!def) return { success: false, error: 'Unknown setting' };
+
+    const result = this.coerceAndValidate(def, rawValue);
+    if (!result.success) return { success: false, error: result.error };
+
+    storeSet(key, result.value);
     return { success: true };
   }
 
@@ -461,6 +499,7 @@ export class CommandPaletteManager {
         break;
 
       case 'enter-settings':
+      case 'enter-agent-settings':
         // Handled entirely in the palette UI
         return;
 

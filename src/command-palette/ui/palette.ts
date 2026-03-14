@@ -63,13 +63,23 @@ export class PaletteController {
     void this.activateScreen()
   }
 
+  resetAndPush(base: PaletteScreen, target: PaletteScreen): void {
+    for (const s of this.stack) {
+      s.onDeactivate?.()
+    }
+    this.stack.length = 0
+    this.stack.push(base)
+    this.stack.push(target)
+    void this.activateScreen()
+  }
+
   handleSettingChanged(detail: { key: string; value: unknown }): void {
     for (const screen of this.stack) {
       screen.onExternalUpdate?.(detail)
     }
 
     const current = this.currentScreen
-    if (current && (current.id === 'settings' || current.id === 'editing')) {
+    if (current && (current.id === 'settings' || current.id === 'agent-settings' || current.id === 'editing')) {
       void this.loadAndRenderItems()
     }
   }

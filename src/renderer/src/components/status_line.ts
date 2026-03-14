@@ -126,6 +126,40 @@ const STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .port-info {
+    font-size: 11px;
+    color: var(--color-text2);
+    white-space: nowrap;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    padding: 0 4px;
+    border-radius: 2px;
+    line-height: inherit;
+    font-family: inherit;
+    user-select: none;
+  }
+  .port-info:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text3);
+  }
+  .port-info .port-number {
+    display: none;
+    font-family: var(--font-mono);
+  }
+  .port-info:hover .port-number {
+    display: inline;
+  }
+  .port-info .port-icon {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+    color: var(--color-text2);
+  }
+  .port-info:hover .port-icon {
+    display: none;
+  }
   .data-dir {
     font-family: var(--font-mono);
     font-size: 11px;
@@ -200,6 +234,7 @@ export class TlStatusLine extends HTMLElement {
     this.bindBackupClick()
     this.subscribeToManager()
     this.subscribeToTaskRunner()
+    this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
     window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
@@ -234,6 +269,8 @@ export class TlStatusLine extends HTMLElement {
         </div>
       </div>
       <div class="right">
+        <button class="port-info" id="port-info" type="button"></button>
+        <span class="separator" id="port-sep"></span>
         <button class="backup-info" id="backup-info" type="button"></button>
         <span class="separator" id="backup-sep"></span>
         <button class="data-dir" id="data-dir" type="button"></button>
@@ -334,6 +371,25 @@ export class TlStatusLine extends HTMLElement {
       tooltip.innerHTML = `<div class="tooltip-title">Running tasks</div>${listHtml}`
     } else {
       indicator.classList.remove('visible')
+    }
+  }
+
+  private async loadPortInfo() {
+    const portEl = this.shadow.querySelector('#port-info') as HTMLButtonElement | null
+    const sepEl = this.shadow.querySelector('#port-sep') as HTMLSpanElement | null
+    if (!portEl || !sepEl) return
+    portEl.addEventListener('click', () => {
+      window.ipc?.commandPalette?.show({ screen: 'agent-settings' })
+    })
+    try {
+      const port = await window.ipc?.getHttpApiPort()
+      if (port != null) {
+        portEl.innerHTML = `<svg class="port-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/><path d="M5 11A4.5 4.5 0 0 1 5 5"/><path d="M11 5a4.5 4.5 0 0 1 0 6"/><path d="M3 13A7.5 7.5 0 0 1 3 3"/><path d="M13 3a7.5 7.5 0 0 1 0 10"/></svg><span class="port-number">:${port}</span>`
+        portEl.setAttribute('title', `HTTP API on port ${port}`)
+        sepEl.textContent = '|'
+      }
+    } catch {
+      // ignore — IPC not available
     }
   }
 

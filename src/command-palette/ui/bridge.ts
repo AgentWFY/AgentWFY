@@ -11,5 +11,7 @@ export interface CommandPaletteBridge {
   updateSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>
   openSettingsFile(): Promise<void>
   listBackups(): Promise<CommandPaletteItem[]>
+  listAgentSettings(): Promise<CommandPaletteItem[]>
+  updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
 }
