@@ -443,7 +443,7 @@ class WindowManager {
     const existing = this.findWindowForAgent(agentRoot);
     if (existing) {
       if (!existing.window.isDestroyed()) {
-        existing.window.focus();
+        existing.window.show();
         return existing;
       }
       // Window is destroyed but context lingers — clean it up
