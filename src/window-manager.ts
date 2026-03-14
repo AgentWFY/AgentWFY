@@ -42,14 +42,11 @@ export interface AppWindowContext {
   };
 }
 
-function shortHash(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 10);
-}
-
 class WindowManager {
   private windows = new Map<number, AppWindowContext>();
   private senderMap = new Map<number, number>(); // webContents.id → BrowserWindow.id
   private agentHashes = new Map<string, string>(); // hash → agentRoot
+  onWindowCreated: (() => void) | null = null;
 
   async createWindow(agentRoot: string): Promise<AppWindowContext> {
     await ensureAgentRuntimeBootstrap(agentRoot);
@@ -93,6 +90,7 @@ class WindowManager {
       getStorePath,
       registerSender,
       unregisterSender,
+      openAgentInWindow: (root) => this.openAgentInWindow(root).then(() => {}),
     });
 
     const agentHash = this.getHashForAgentRoot(agentRoot);
@@ -209,12 +207,20 @@ class WindowManager {
     // Cleanup
     runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
 
+    this.onWindowCreated?.();
+
     return ctx;
   }
 
   destroyWindow(windowId: number): void {
     const ctx = this.windows.get(windowId);
     if (!ctx) return;
+
+    // Clear debounce timers
+    if (ctx.dbChangeDebounceTimer) {
+      clearTimeout(ctx.dbChangeDebounceTimer);
+      ctx.dbChangeDebounceTimer = null;
+    }
 
     ctx.commandPalette.destroy();
     ctx.tabViewManager.destroyAllTabViews();
@@ -230,6 +236,23 @@ class WindowManager {
     }
 
     this.windows.delete(windowId);
+
+    // Clean up agent hash if no other window uses this agent
+    let agentStillOpen = false;
+    for (const other of this.windows.values()) {
+      if (other.agentRoot === ctx.agentRoot) {
+        agentStillOpen = true;
+        break;
+      }
+    }
+    if (!agentStillOpen) {
+      for (const [hash, root] of this.agentHashes) {
+        if (root === ctx.agentRoot) {
+          this.agentHashes.delete(hash);
+          break;
+        }
+      }
+    }
   }
 
   findWindowForAgent(agentRoot: string): AppWindowContext | null {
@@ -259,6 +282,14 @@ class WindowManager {
     }
 
     throw new Error(`No window context found for sender ${senderId}`);
+  }
+
+  tryGetContextForSender(senderId: number): AppWindowContext | null {
+    try {
+      return this.getContextForSender(senderId);
+    } catch {
+      return null;
+    }
   }
 
   getAgentRootForEvent(event: IpcMainInvokeEvent): string {
@@ -291,7 +322,20 @@ class WindowManager {
       if (root === agentRoot) return hash;
     }
 
-    const hash = shortHash(agentRoot);
+    const fullHex = crypto.createHash('sha256').update(agentRoot).digest('hex');
+    let len = 10;
+    let hash = fullHex.slice(0, len);
+
+    // Handle collision: extend hash until unique
+    while (this.agentHashes.has(hash) && this.agentHashes.get(hash) !== agentRoot) {
+      len += 4;
+      if (len >= fullHex.length) {
+        hash = fullHex;
+        break;
+      }
+      hash = fullHex.slice(0, len);
+    }
+
     this.agentHashes.set(hash, agentRoot);
     return hash;
   }
@@ -400,8 +444,10 @@ class WindowManager {
     if (existing) {
       if (!existing.window.isDestroyed()) {
         existing.window.focus();
+        return existing;
       }
-      return existing;
+      // Window is destroyed but context lingers — clean it up
+      this.destroyWindow(existing.window.id);
     }
     return this.createWindow(agentRoot);
   }
