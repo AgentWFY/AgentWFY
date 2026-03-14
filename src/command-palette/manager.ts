@@ -14,7 +14,6 @@ import {
   isAgentDir,
   shortenPath,
 } from '../agent-manager.js';
-import { windowManager } from '../window-manager.js';
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
@@ -31,6 +30,7 @@ export interface CommandPaletteManagerDeps {
   getStorePath: () => string;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
+  openAgentInWindow?: (agentRoot: string) => Promise<void>;
 }
 
 export class CommandPaletteManager {
@@ -516,14 +516,14 @@ export class CommandPaletteManager {
       case 'open-agent': {
         this.hide({ focusMain: true });
         const picked = await showOpenAgentDialog(this.deps.getMainWindow());
-        if (picked) await windowManager.openAgentInWindow(picked);
+        if (picked) await this.deps.openAgentInWindow?.(picked);
         return;
       }
 
       case 'install-agent': {
         this.hide({ focusMain: true });
         const installed = await showInstallAgentDialog(this.deps.getMainWindow());
-        if (installed) await windowManager.openAgentInWindow(installed);
+        if (installed) await this.deps.openAgentInWindow?.(installed);
         return;
       }
 
@@ -531,10 +531,10 @@ export class CommandPaletteManager {
         const switchAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
         this.hide({ focusMain: true });
         if (isAgentDir(switchAction.agentPath)) {
-          await windowManager.openAgentInWindow(switchAction.agentPath);
+          await this.deps.openAgentInWindow?.(switchAction.agentPath);
         } else {
           const picked = await showOpenAgentDialog(this.deps.getMainWindow());
-          if (picked) await windowManager.openAgentInWindow(picked);
+          if (picked) await this.deps.openAgentInWindow?.(picked);
         }
         return;
       }

@@ -118,20 +118,20 @@ ipcMain.handle('app:getBackupStatus', (event) => {
 // --- Agent actions from menu / command palette ---
 
 async function handleOpenAgent() {
-  const picked = await showOpenAgentDialog(null);
+  const picked = await showOpenAgentDialog(BrowserWindow.getFocusedWindow());
   if (!picked) return;
   await windowManager.openAgentInWindow(picked);
 }
 
 async function handleInstallAgent() {
-  const picked = await showInstallAgentDialog(null);
+  const picked = await showInstallAgentDialog(BrowserWindow.getFocusedWindow());
   if (!picked) return;
   await windowManager.openAgentInWindow(picked);
 }
 
 async function handleSwitchAgent(agentPath: string) {
   if (!isAgentDir(agentPath)) {
-    const picked = await showOpenAgentDialog(null);
+    const picked = await showOpenAgentDialog(BrowserWindow.getFocusedWindow());
     if (!picked) return;
     await windowManager.openAgentInWindow(picked);
     return;
@@ -302,6 +302,9 @@ app.on('ready', async () => {
     return handleViewRequest(request);
   });
 
+  // Rebuild menu whenever a new window is created (updates recent agents list)
+  windowManager.onWindowCreated = () => buildAndSetMenu();
+
   createInitialWindow();
 });
 
@@ -315,16 +318,19 @@ app.on('web-contents-created', (_event, webContents) => {
     : BrowserWindow.fromWebContents(webContents);
 
   if (ownerWin) {
-    try {
-      const ctx = windowManager.getContextForSender(ownerWin.webContents.id);
+    const ctx = windowManager.tryGetContextForSender(ownerWin.webContents.id);
+    if (ctx) {
       ctx.tabViewManager.registerWebContentsTracking(_event, webContents);
       return;
-    } catch { /* fall through */ }
+    }
   }
 
-  // Fallback: register with all (for webviews created before window mapping is ready)
-  for (const ctx of windowManager.getAllContexts()) {
-    ctx.tabViewManager.registerWebContentsTracking(_event, webContents);
+  // Fallback: only register if there's exactly one window (unambiguous owner)
+  const contexts = windowManager.getAllContexts();
+  if (contexts.length === 1) {
+    contexts[0].tabViewManager.registerWebContentsTracking(_event, webContents);
+  } else {
+    console.warn('[web-contents-created] Could not determine owning window for webview; skipping registration');
   }
 });
 
