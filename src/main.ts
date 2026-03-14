@@ -32,6 +32,8 @@ import {
 } from './agent-manager.js';
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
+import { readAgentHttpPort } from './http-api/agent-config.js';
+import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { scheduleBackup, stopBackupScheduler, getBackupStatus } from './backup.js';
 import path from 'path';
@@ -162,26 +164,80 @@ registerTaskRunnerHandlers(getAgentRoot, () => mainWindow);
 
 ipcMain.handle('app:getAgentRoot', () => getCurrentAgentRoot());
 
+ipcMain.handle('app:getHttpApiPort', () => httpApi?.port() ?? null);
+
 ipcMain.handle('app:getBackupStatus', () => {
   const root = getCurrentAgentRoot();
   if (!root) return null;
   return getBackupStatus(root);
 });
 
-// --- Agent root change listener ---
+// --- HTTP server + trigger engine lifecycle ---
 
-onAgentRootChanged(async (newRoot) => {
-  commandPalette.destroy();
-  tabViewManager.destroyAllTabViews();
-  tabViewManager.clearTrackedViewWebContents();
+function createTriggerEngine(api: HttpApiServer): TriggerEngine {
+  return new TriggerEngine({
+    getAgentRoot,
+    startTask: (taskId, input?, origin?) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      return forwardStartTask(mainWindow, taskId, input, origin);
+    },
+    busWaitFor: (topic, timeoutMs?) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      return forwardBusWaitFor(mainWindow, topic, timeoutMs);
+    },
+    busSubscribe: (topic, fn) => {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
+      const subId = forwardBusSubscribe(mainWindow, topic, fn);
+      return () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          forwardBusUnsubscribe(mainWindow, subId);
+        }
+      };
+    },
+    httpApi: api,
+  });
+}
+
+async function stopHttpServerForAgent(agentRoot: string | null): Promise<void> {
   if (triggerEngine) {
     if (triggerReloadDebounceTimer) {
       clearTimeout(triggerReloadDebounceTimer);
       triggerReloadDebounceTimer = null;
     }
     triggerEngine.stop();
+    triggerEngine = null;
   }
+  if (httpApi) {
+    await httpApi.close();
+    httpApi = null;
+  }
+  if (agentRoot) {
+    removeLockfile(agentRoot);
+  }
+}
+
+async function startHttpServerForAgent(agentRoot: string): Promise<void> {
+  cleanStaleLockfile(agentRoot);
+  const preferredPort = readAgentHttpPort(agentRoot);
+
+  try {
+    httpApi = await startHttpApi({ getAgentRoot, preferredPort });
+    writeLockfile(agentRoot, httpApi.port());
+    triggerEngine = createTriggerEngine(httpApi);
+  } catch (err) {
+    console.error('[http-api] Failed to start HTTP server:', err);
+  }
+}
+
+// --- Agent root change listener ---
+
+onAgentRootChanged(async (newRoot, oldRoot) => {
+  commandPalette.destroy();
+  tabViewManager.destroyAllTabViews();
+  tabViewManager.clearTrackedViewWebContents();
+  await stopHttpServerForAgent(oldRoot);
   await ensureAgentRuntimeBootstrap(newRoot);
+  await startHttpServerForAgent(newRoot);
   scheduleBackup(newRoot).then(() => {
     rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
   }).catch((err) => console.error('[backup] Schedule failed:', err));
@@ -287,6 +343,13 @@ async function createAppWindow(agentRoot: string) {
       mainWindow?.reload();
     }
   });
+
+  // Start triggers after page loads (triggers need mainWindow for bus/task forwarding)
+  if (triggerEngine) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
+    });
+  }
 }
 
 async function createWindow() {
@@ -454,36 +517,6 @@ app.on('ready', async () => {
   installWebRequestHooks();
   startFileWatcher();
 
-  httpApi = startHttpApi({
-    getAgentRoot,
-  });
-
-  triggerEngine = new TriggerEngine({
-    getAgentRoot,
-    startTask: (taskId, input?, origin?) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardStartTask(mainWindow, taskId, input, origin);
-    },
-    busWaitFor: (topic, timeoutMs?) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardBusWaitFor(mainWindow, topic, timeoutMs);
-    },
-    busSubscribe: (topic, fn) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      const subId = forwardBusSubscribe(mainWindow, topic, fn);
-      return () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          forwardBusUnsubscribe(mainWindow, subId);
-        }
-      };
-    },
-    httpApi,
-  });
-
-  triggerEngine.start().catch(err => {
-    console.error('[triggers] Initial start failed:', err);
-  });
-
   buildAndSetMenu();
 
   protocol.handle('app', (request) => {
@@ -519,8 +552,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopFileWatcher();
   stopBackupScheduler();
-  triggerEngine?.stop();
-  httpApi?.server.close();
+  stopHttpServerForAgent(getCurrentAgentRoot());
   commandPalette.destroy();
   tabViewManager.destroyAllTabViews();
   tabViewManager.clearTrackedViewWebContents();

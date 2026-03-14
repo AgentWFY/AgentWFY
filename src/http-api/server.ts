@@ -1,11 +1,9 @@
 import http from 'http';
 import path from 'path';
 import fs from 'fs/promises';
-import { storeGet } from '../ipc/store.js';
 import { assertPathAllowed } from '../security/path-policy.js';
 import { mimeFromExt } from './handlers.js';
 
-const DEFAULT_PORT = 9877;
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export interface HttpRequestData {
@@ -20,11 +18,6 @@ export type RouteHandler = (request: HttpRequestData) => Promise<{ status?: numb
 
 interface RegisteredRoute {
   handler: RouteHandler;
-}
-
-function getPort(): number {
-  const port = storeGet('httpApi.port');
-  return typeof port === 'number' ? port : DEFAULT_PORT;
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -43,17 +36,19 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
+    let rejected = false;
     req.on('data', (chunk: Buffer) => {
       bytes += chunk.length;
       if (bytes > MAX_BODY_BYTES) {
+        rejected = true;
         reject(new Error('Request body too large'));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-    req.on('error', reject);
+    req.on('end', () => { if (!rejected) resolve(Buffer.concat(chunks).toString('utf-8')); });
+    req.on('error', (err) => { if (!rejected) reject(err); });
   });
 }
 
@@ -63,30 +58,22 @@ function routeKey(routePath: string, method: string): string {
 
 export interface HttpApiServer {
   server: http.Server;
+  port(): number;
+  close(): Promise<void>;
   registerRoute(routePath: string, method: string, handler: RouteHandler): void;
   unregisterRoute(routePath: string, method: string): void;
 }
 
 interface HttpApiDeps {
   getAgentRoot: () => string;
+  preferredPort: number;
 }
 
-export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
-  const routes = new Map<string, RegisteredRoute>();
-
-  const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler) => {
-    const key = routeKey(routePath, method);
-    if (routes.has(key)) {
-      console.warn(`[http-api] Overwriting existing route: ${key}`);
-    }
-    routes.set(key, { handler });
-  };
-
-  const unregisterRoute: HttpApiServer['unregisterRoute'] = (routePath, method) => {
-    routes.delete(routeKey(routePath, method));
-  };
-
-  const server = http.createServer(async (req, res) => {
+function createRequestHandler(
+  routes: Map<string, RegisteredRoute>,
+  deps: { getAgentRoot: () => string },
+): http.RequestListener {
+  return async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
 
     // CORS preflight
@@ -198,20 +185,65 @@ export function startHttpApi(deps: HttpApiDeps): HttpApiServer {
     } catch (e: unknown) {
       jsonResponse(res, 500, { ok: false, error: (e as Error).message });
     }
-  });
+  };
+}
 
-  const port = getPort();
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`[http-api] listening on http://127.0.0.1:${port}`);
+function listenOnPort(server: http.Server, port: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const onError = (err: NodeJS.ErrnoException) => {
+      server.removeListener('listening', onListening);
+      reject(err);
+    };
+    const onListening = () => {
+      server.removeListener('error', onError);
+      const addr = server.address();
+      resolve(typeof addr === 'object' && addr ? addr.port : port);
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
   });
+}
 
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`[http-api] port ${port} is already in use, HTTP API disabled`);
-    } else {
-      console.error(`[http-api] server error:`, err);
+export async function startHttpApi(deps: HttpApiDeps): Promise<HttpApiServer> {
+  const routes = new Map<string, RegisteredRoute>();
+
+  const registerRoute: HttpApiServer['registerRoute'] = (routePath, method, handler) => {
+    const key = routeKey(routePath, method);
+    if (routes.has(key)) {
+      console.warn(`[http-api] Overwriting existing route: ${key}`);
     }
-  });
+    routes.set(key, { handler });
+  };
 
-  return { server, registerRoute, unregisterRoute };
+  const unregisterRoute: HttpApiServer['unregisterRoute'] = (routePath, method) => {
+    routes.delete(routeKey(routePath, method));
+  };
+
+  const server = http.createServer(createRequestHandler(routes, deps));
+
+  let actualPort: number;
+  try {
+    actualPort = await listenOnPort(server, deps.preferredPort);
+    console.log(`[http-api] listening on http://127.0.0.1:${actualPort}`);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      console.warn(`[http-api] port ${deps.preferredPort} in use, falling back to OS-assigned port`);
+      actualPort = await listenOnPort(server, 0);
+      console.log(`[http-api] listening on http://127.0.0.1:${actualPort} (fallback)`);
+    } else {
+      throw err;
+    }
+  }
+
+  return {
+    server,
+    port: () => actualPort,
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+      server.closeAllConnections();
+    }),
+    registerRoute,
+    unregisterRoute,
+  };
 }

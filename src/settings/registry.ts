@@ -11,18 +11,6 @@ export interface SettingDefinition {
 
 export const SETTINGS: SettingDefinition[] = [
   {
-    key: 'httpApi.port',
-    label: 'HTTP API Port',
-    type: 'number',
-    defaultValue: 9877,
-    description: 'Port for the local HTTP API server',
-    validate: (v) => {
-      const n = Number(v)
-      if (!Number.isInteger(n) || n < 1 || n > 65535) return 'Must be 1–65535'
-      return null
-    },
-  },
-  {
     key: 'backup.intervalHours',
     label: 'Backup Interval (hours)',
     type: 'number',
@@ -67,6 +55,21 @@ export const SETTINGS: SettingDefinition[] = [
     validate: (v) => {
       const n = Number(v)
       if (!Number.isInteger(n) || n < 0 || n > 3650) return 'Must be 0–3650'
+      return null
+    },
+  },
+]
+
+export const AGENT_SETTINGS: SettingDefinition[] = [
+  {
+    key: 'httpApi.port',
+    label: 'HTTP API Port',
+    type: 'number',
+    defaultValue: 9877,
+    description: 'Preferred port for the local HTTP API server (restart required)',
+    validate: (v) => {
+      const n = Number(v)
+      if (!Number.isInteger(n) || n < 1 || n > 65535) return 'Must be 1–65535'
       return null
     },
   },

@@ -27,6 +27,9 @@ export type CommandPaletteAction =
     type: 'enter-settings'
   }
   | {
+    type: 'enter-agent-settings'
+  }
+  | {
     type: 'open-settings-file'
   }
   | {
@@ -63,7 +66,7 @@ export interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent' | 'Recent Agents' | 'Backup'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Agent Settings' | 'Agent' | 'Recent Agents' | 'Backup'
   action: CommandPaletteAction
   settingValue?: string
   settingType?: SettingType
@@ -82,4 +85,6 @@ export const COMMAND_PALETTE_CHANNEL = {
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
+  LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
+  UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
 } as const

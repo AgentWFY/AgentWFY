@@ -42,6 +42,7 @@ export interface AppIpc {
   net: NetApi
   commandPalette: CommandPaletteApi
   getAgentRoot(): Promise<string | null>
+  getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>
 }
 
