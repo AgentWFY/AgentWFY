@@ -302,6 +302,13 @@ export class TabViewManager {
         return;
       }
 
+      if (key === 'j') {
+        event.preventDefault();
+        this.deps.focusMainRendererWindow();
+        this.deps.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+        return;
+      }
+
       if (key === 'w') {
         event.preventDefault();
         this.deps.focusMainRendererWindow();

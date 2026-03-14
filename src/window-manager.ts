@@ -175,6 +175,11 @@ class WindowManager {
         rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
         return;
       }
+      if (!input.shift && key === 'j') {
+        event.preventDefault();
+        rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+        return;
+      }
       if (!input.shift && key === 'w') {
         event.preventDefault();
         rendererBridge.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
