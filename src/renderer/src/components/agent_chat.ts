@@ -353,6 +353,16 @@ const STYLES = `
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .model-info .separator {
+    margin: 0 5px;
+    opacity: 0.4;
+  }
+  .model-info .meta {
+    opacity: 0.7;
   }
   .tools-row-actions {
     display: flex;
@@ -981,7 +991,31 @@ ${detail.content}`
 
     // 7. Model info
     if (this._modelInfo) {
-      this._modelInfo.textContent = this.authConfig?.modelId ?? ''
+      const modelId = this.authConfig?.modelId ?? ''
+      const parts: string[] = [modelId]
+
+      // Thinking level
+      const thinking = this.agent?.thinkingLevel
+      if (thinking && thinking !== 'off') {
+        parts.push(thinking)
+      }
+
+      // Context size from last assistant message
+      const lastAssistant = [...this.messages].reverse().find(m => m.role === 'assistant') as
+        | (typeof this.messages[number] & { usage?: { input: number } })
+        | undefined
+      if (lastAssistant?.usage?.input) {
+        const tokens = lastAssistant.usage.input
+        const formatted = tokens >= 1000 ? (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(tokens)
+        parts.push(formatted)
+      }
+
+      const html = parts
+        .map((p, i) => i === 0 ? escapeHtml(p) : `<span class="separator">·</span><span class="meta">${escapeHtml(p)}</span>`)
+        .join('')
+      if (this._modelInfo.innerHTML !== html) {
+        this._modelInfo.innerHTML = html
+      }
     }
 
     // 8. Session panel
