@@ -6,7 +6,7 @@ export type TaskOrigin =
   | { type: 'command-palette' }
   | { type: 'task-panel' }
   | { type: 'agent' }
-  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event' }
+  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
 
 export interface TaskRun {
@@ -15,6 +15,7 @@ export interface TaskRun {
   name: string
   status: 'running' | 'completed' | 'failed'
   origin: TaskOrigin
+  input?: unknown
   startedAt: number
   finishedAt?: number
   result?: unknown
@@ -80,6 +81,7 @@ export class TaskRunner {
       name: task.name,
       status: 'running',
       origin: origin ?? { type: 'task-panel' },
+      input,
       startedAt: Date.now(),
       logs: [],
     }
@@ -237,6 +239,7 @@ export class TaskRunner {
         taskName: run.name,
         status: run.status,
         origin: run.origin,
+        input: run.input ?? null,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         result: run.result ?? null,
