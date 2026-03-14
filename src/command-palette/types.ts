@@ -11,6 +11,9 @@ export type CommandPaletteAction =
     type: 'toggle-agent-chat'
   }
   | {
+    type: 'toggle-task-panel'
+  }
+  | {
     type: 'close-current-tab'
   }
   | {
