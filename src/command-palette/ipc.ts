@@ -38,6 +38,10 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).buildBackupItems();
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_RECENT_AGENTS, async (event) => {
+    return getCommandPalette(event).buildRecentAgentItems();
+  });
+
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS, async (event) => {
     return getCommandPalette(event).buildAgentSettingsItems();
   });

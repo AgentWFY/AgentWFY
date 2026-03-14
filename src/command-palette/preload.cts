@@ -25,6 +25,7 @@ const COMMAND_PALETTE_CHANNEL = {
   SHOW_FILTERED: 'app:command-palette:show-filtered',
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
+  LIST_RECENT_AGENTS: 'app:command-palette:list-recent-agents',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
   UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
@@ -63,6 +64,9 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   openSettingsFile(): Promise<void> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE);
+  },
+  listRecentAgents(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_RECENT_AGENTS);
   },
   listBackups(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS);
