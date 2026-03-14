@@ -881,8 +881,18 @@ export class TlTaskPanel extends HTMLElement {
       const raw = await ipc.tasks.readLog(file)
       const parsed = JSON.parse(raw)
       let detail = `Status: ${parsed.status}\n`
+      if (parsed.origin) {
+        const label = originLabel(parsed.origin as TaskOrigin)
+        if (label) detail += `Origin: ${label}\n`
+        if (parsed.origin.type === 'trigger' && parsed.origin.triggerConfig) {
+          detail += `Trigger: ${parsed.origin.triggerConfig}\n`
+        }
+      }
       if (parsed.startedAt) detail += `Started: ${new Date(parsed.startedAt).toLocaleString()}\n`
       if (parsed.finishedAt) detail += `Finished: ${new Date(parsed.finishedAt).toLocaleString()}\n`
+      if (parsed.input !== null && parsed.input !== undefined) {
+        detail += `Input: ${typeof parsed.input === 'string' ? parsed.input : JSON.stringify(parsed.input, null, 2)}\n`
+      }
       if (parsed.error) detail += `Error: ${parsed.error}\n`
       if (parsed.result !== null && parsed.result !== undefined) {
         detail += `Result: ${typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result, null, 2)}\n`
