@@ -143,10 +143,6 @@ export async function saveAuthConfig(config: AgentAuthConfig): Promise<void> {
   await auth.writeConfig(JSON.stringify(normalized, null, 2))
 }
 
-export function getOAuthProvider(authMethod: AuthMethod): OAuthProvider | undefined {
-  return OAUTH_PROVIDERS[authMethod]
-}
-
 let refreshLock: Promise<void> | null = null
 
 export async function getEffectiveApiKey(config: AgentAuthConfig): Promise<string | undefined> {

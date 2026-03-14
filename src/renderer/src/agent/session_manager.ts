@@ -373,7 +373,7 @@ function getTextContent(content: unknown): string {
   return text
 }
 
-export function extractFirstUserMessage(messages: unknown, maxLen: number): string | null {
+function extractFirstUserMessage(messages: unknown, maxLen: number): string | null {
   if (!Array.isArray(messages)) return null
 
   for (const msg of messages) {
