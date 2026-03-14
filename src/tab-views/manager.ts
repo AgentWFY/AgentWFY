@@ -488,22 +488,6 @@ export class TabViewManager {
     }
   }
 
-  reloadAllTabViews(): void {
-    for (const [tabId] of this.tabViewsByTabId) {
-      this.reloadTabView(tabId);
-    }
-  }
-
-  reloadVisibleTabView(): void {
-    for (const [tabId, state] of this.tabViewsByTabId) {
-      const bounds = state.view.getBounds();
-      if (bounds.width > 0 && bounds.height > 0) {
-        this.reloadTabView(tabId);
-        return;
-      }
-    }
-  }
-
   // --- Tab resolution ---
 
   resolveTabViewState(tabId: string): TabViewState {
@@ -564,8 +548,7 @@ export class TabViewManager {
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {
-    this.reloadTabView(request.tabId);
-    this.deps.dispatchRendererCustomEvent('agentwfy:agent-clear-view-changed', {
+    this.deps.dispatchRendererCustomEvent('agentwfy:agent-reload-tab', {
       tabId: request.tabId,
     });
   }

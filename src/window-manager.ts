@@ -182,7 +182,7 @@ class WindowManager {
       }
       if (!input.shift && key === 'r') {
         event.preventDefault();
-        tabViewManager.reloadVisibleTabView();
+        rendererBridge.dispatchRendererWindowEvent('agentwfy:refresh-current-view');
       }
       if (input.shift && key === 'r') {
         event.preventDefault();
