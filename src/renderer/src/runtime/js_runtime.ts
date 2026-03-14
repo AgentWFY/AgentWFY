@@ -327,6 +327,19 @@ export class JsRuntime {
         const result = await ipc.files.write(request.path, request.content)
         return result as WorkerHostMethodMap[M]['result']
       }
+      case 'writeBinary': {
+        const request = params as WorkerHostMethodMap['writeBinary']['params']
+        if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+          throw new Error('writeBinary requires a non-empty path string')
+        }
+
+        if (typeof request.base64 !== 'string') {
+          throw new Error('writeBinary requires base64 as a string')
+        }
+
+        const result = await ipc.files.writeBinary(request.path, request.base64)
+        return result as WorkerHostMethodMap[M]['result']
+      }
       case 'edit': {
         const request = params as WorkerHostMethodMap['edit']['params']
         if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
