@@ -197,22 +197,19 @@ export class Agent {
     await this.runLoop(undefined)
   }
 
+  private dequeueOne(queue: 'steeringQueue' | 'followUpQueue'): AgentMessage[] {
+    if (this[queue].length === 0) return []
+    const [first, ...rest] = this[queue]
+    this[queue] = rest
+    return [first]
+  }
+
   private dequeueSteeringMessages(): AgentMessage[] {
-    if (this.steeringQueue.length > 0) {
-      const first = this.steeringQueue[0]
-      this.steeringQueue = this.steeringQueue.slice(1)
-      return [first]
-    }
-    return []
+    return this.dequeueOne('steeringQueue')
   }
 
   private dequeueFollowUpMessages(): AgentMessage[] {
-    if (this.followUpQueue.length > 0) {
-      const first = this.followUpQueue[0]
-      this.followUpQueue = this.followUpQueue.slice(1)
-      return [first]
-    }
-    return []
+    return this.dequeueOne('followUpQueue')
   }
 
   private async runLoop(

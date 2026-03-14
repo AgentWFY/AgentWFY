@@ -8,11 +8,6 @@ export interface TaskCatalogRecord {
   updated_at: number;
 }
 
-export interface TaskRecord extends TaskCatalogRecord {
-  content: string;
-  created_at: number;
-}
-
 function asObject(row: unknown): Record<string, unknown> {
   if (!row || typeof row !== 'object') {
     throw new Error('Invalid task row returned from agent DB');
@@ -66,39 +61,10 @@ function toCatalogRecord(row: unknown): TaskCatalogRecord {
   };
 }
 
-function toTaskRecord(row: unknown): TaskRecord {
-  const record = asObject(row);
-  return {
-    id: asNumber(record.id, 'id'),
-    name: asString(record.name, 'name'),
-    description: typeof record.description === 'string' ? record.description : '',
-    content: asString(record.content, 'content'),
-    timeout_ms: asNullableNumber(record.timeout_ms),
-    created_at: asNumber(record.created_at, 'created_at'),
-    updated_at: asNumber(record.updated_at, 'updated_at'),
-  };
-}
-
 export async function listTasks(dataDir: string): Promise<TaskCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
     sql: 'SELECT id, name, description, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
   });
 
   return rows.map((row) => toCatalogRecord(row));
-}
-
-export async function getTaskById(
-  dataDir: string,
-  taskId: number | string
-): Promise<TaskRecord | null> {
-  const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, description, content, timeout_ms, created_at, updated_at FROM tasks WHERE id = ? LIMIT 1',
-    params: [taskId],
-  });
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return toTaskRecord(rows[0]);
 }
