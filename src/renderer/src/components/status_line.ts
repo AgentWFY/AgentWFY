@@ -1,6 +1,5 @@
 import { getSessionManager } from '../agent/session_manager.js'
 import { getTaskRunner } from '../tasks/task_runner.js'
-import { escapeHtml } from './chat_utils.js'
 
 const STYLES = `
   :host {
@@ -35,7 +34,7 @@ const STYLES = `
     align-items: center;
     gap: 5px;
     position: relative;
-    cursor: default;
+    cursor: pointer;
   }
   .agent-indicator.visible {
     display: flex;
@@ -60,7 +59,7 @@ const STYLES = `
     align-items: center;
     gap: 5px;
     position: relative;
-    cursor: default;
+    cursor: pointer;
   }
   .task-indicator.visible {
     display: flex;
@@ -76,55 +75,9 @@ const STYLES = `
   .task-label {
     white-space: nowrap;
   }
-  .task-tooltip {
-    display: none;
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 6px);
-    min-width: 140px;
-    max-width: 220px;
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md, 6px);
-    padding: 8px 10px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    z-index: 1000;
-    pointer-events: none;
-  }
-  .task-indicator:hover .task-tooltip {
-    display: block;
-  }
-  .agent-tooltip {
-    display: none;
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 6px);
-    min-width: 140px;
-    max-width: 220px;
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md, 6px);
-    padding: 8px 10px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    z-index: 1000;
-    pointer-events: none;
-  }
-  .agent-indicator:hover .agent-tooltip {
-    display: block;
-  }
-  .tooltip-title {
-    font-size: 11px;
-    font-weight: 600;
+  .agent-indicator:hover,
+  .task-indicator:hover {
     color: var(--color-text3);
-    margin-bottom: 4px;
-  }
-  .tooltip-session {
-    font-size: 10px;
-    color: var(--color-text1);
-    padding: 2px 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .port-info {
     font-size: 11px;
@@ -232,6 +185,7 @@ export class TlStatusLine extends HTMLElement {
   connectedCallback() {
     this.render()
     this.bindBackupClick()
+    this.bindIndicatorClicks()
     this.subscribeToManager()
     this.subscribeToTaskRunner()
     this.loadPortInfo()
@@ -256,16 +210,10 @@ export class TlStatusLine extends HTMLElement {
         <div class="agent-indicator" id="agent-indicator">
           <div class="agent-dot"></div>
           <span class="agent-label" id="agent-label"></span>
-          <div class="agent-tooltip" id="agent-tooltip">
-            <div class="tooltip-title">Running agents</div>
-          </div>
         </div>
         <div class="task-indicator" id="task-indicator">
           <div class="task-dot"></div>
           <span class="task-label" id="task-label"></span>
-          <div class="task-tooltip" id="task-tooltip">
-            <div class="tooltip-title">Running tasks</div>
-          </div>
         </div>
       </div>
       <div class="right">
@@ -307,20 +255,12 @@ export class TlStatusLine extends HTMLElement {
   private updateAgentIndicator() {
     const indicator = this.shadow.querySelector('#agent-indicator')
     const label = this.shadow.querySelector('#agent-label')
-    const tooltip = this.shadow.querySelector('#agent-tooltip')
-    if (!indicator || !label || !tooltip) return
+    if (!indicator || !label) return
 
     if (this._agentCount > 0) {
       const suffix = this._agentCount === 1 ? 'agent running' : 'agents running'
       label.textContent = `${this._agentCount} ${suffix}`
       indicator.classList.add('visible')
-
-      const mgr = getSessionManager()
-      const labels = mgr ? mgr.streamingSessionLabels : []
-      const sessionListHtml = labels.length > 0
-        ? labels.map(l => `<div class="tooltip-session">${escapeHtml(l)}</div>`).join('')
-        : ''
-      tooltip.innerHTML = `<div class="tooltip-title">Running agents</div>${sessionListHtml}`
     } else {
       indicator.classList.remove('visible')
     }
@@ -355,20 +295,12 @@ export class TlStatusLine extends HTMLElement {
   private updateTaskIndicator() {
     const indicator = this.shadow.querySelector('#task-indicator')
     const label = this.shadow.querySelector('#task-label')
-    const tooltip = this.shadow.querySelector('#task-tooltip')
-    if (!indicator || !label || !tooltip) return
+    if (!indicator || !label) return
 
     if (this._taskCount > 0) {
       const suffix = this._taskCount === 1 ? 'task running' : 'tasks running'
       label.textContent = `${this._taskCount} ${suffix}`
       indicator.classList.add('visible')
-
-      const runner = getTaskRunner()
-      const labels = runner ? runner.runningLabels : []
-      const listHtml = labels.length > 0
-        ? labels.map(l => `<div class="tooltip-session">${escapeHtml(l)}</div>`).join('')
-        : ''
-      tooltip.innerHTML = `<div class="tooltip-title">Running tasks</div>${listHtml}`
     } else {
       indicator.classList.remove('visible')
     }
@@ -407,6 +339,14 @@ export class TlStatusLine extends HTMLElement {
       }
     } catch {
       // ignore — IPC not available
+    }
+  }
+
+  private bindIndicatorClicks() {
+    for (const [id, panel] of [['agent-indicator', 'agent-chat'], ['task-indicator', 'tasks']]) {
+      this.shadow.querySelector(`#${id}`)?.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel } }))
+      })
     }
   }
 

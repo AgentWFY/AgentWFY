@@ -24,6 +24,13 @@ export class TlApp extends HTMLElement {
   private sidebarWidth = 380
   private isResizing = false
 
+  private openPanel(panel: string) {
+    if (this.activeSidebarPanel !== panel) {
+      this.activeSidebarPanel = panel
+      this.updateSidebar()
+    }
+  }
+
   private togglePanel(panel: string) {
     this.activeSidebarPanel = this.activeSidebarPanel === panel ? null : panel
     this.updateSidebar()
@@ -41,9 +48,12 @@ export class TlApp extends HTMLElement {
     this.togglePanel('tasks')
   }
 
+  private onOpenSidebarPanel = (e: Event) => {
+    this.openPanel((e as CustomEvent<{ panel: string }>).detail.panel)
+  }
+
   private onSyncSystemPrompt = () => {
-    this.activeSidebarPanel = 'agent-chat'
-    this.updateSidebar()
+    this.openPanel('agent-chat')
   }
 
   private onResizeMouseDown = (e: MouseEvent) => {
@@ -312,6 +322,7 @@ export class TlApp extends HTMLElement {
     this.addEventListener('panel-toggle', this.onPanelToggle)
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
+    window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.subscribeToAgentDbChanges()
   }
@@ -320,6 +331,7 @@ export class TlApp extends HTMLElement {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
+    window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
