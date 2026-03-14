@@ -12,7 +12,7 @@ import { escapeHtml } from './chat_utils.js'
 import { renderSessionPanelHtml } from './chat_session_panel.js'
 
 const STYLES = `
-  tl-agent-chat {
+  awfy-agent-chat {
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -732,7 +732,7 @@ ${detail.content}`
         <div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;">
           <div class="setup-container">
             <h3>Agent Settings</h3>
-            <tl-agent-settings id="setup-settings"></tl-agent-settings>
+            <awfy-agent-settings id="setup-settings"></awfy-agent-settings>
             ${this.error ? `<div class="error-banner">${escapeHtml(this.error)}</div>` : ''}
           </div>
         </div>`
@@ -1001,9 +1001,9 @@ ${detail.content}`
     if (!this._settingsPanel) return
     if (this.activePanel === 'settings' && this.authConfig) {
       this._settingsPanel.style.display = ''
-      let settingsEl = this._settingsPanel.querySelector('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean } | null
+      let settingsEl = this._settingsPanel.querySelector('awfy-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean } | null
       if (!settingsEl) {
-        settingsEl = document.createElement('tl-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean }
+        settingsEl = document.createElement('awfy-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean }
         settingsEl.id = 'inline-settings'
         settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))
         settingsEl.addEventListener('reconnect', () => this.handleReconnect())
