@@ -536,7 +536,7 @@ export class CommandPaletteManager {
 
       case 'switch-agent': {
         const switchAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
-        this.hide({ focusMain: true });
+        this.hide({ focusMain: false });
         if (isAgentDir(switchAction.agentPath)) {
           await this.deps.openAgentInWindow(switchAction.agentPath);
         } else {
