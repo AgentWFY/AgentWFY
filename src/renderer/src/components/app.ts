@@ -24,23 +24,17 @@ export class TlApp extends HTMLElement {
   private sidebarWidth = 380
   private isResizing = false
 
-  private onPanelToggle = (e: Event) => {
-    const detail = (e as CustomEvent<{ panel: string }>).detail
-    if (this.activeSidebarPanel === detail.panel) {
-      this.activeSidebarPanel = null
-    } else {
-      this.activeSidebarPanel = detail.panel
-    }
+  private togglePanel(panel: string) {
+    this.activeSidebarPanel = this.activeSidebarPanel === panel ? null : panel
     this.updateSidebar()
   }
 
+  private onPanelToggle = (e: Event) => {
+    this.togglePanel((e as CustomEvent<{ panel: string }>).detail.panel)
+  }
+
   private onToggleAgentChat = () => {
-    if (this.activeSidebarPanel === 'agent-chat') {
-      this.activeSidebarPanel = null
-    } else {
-      this.activeSidebarPanel = 'agent-chat'
-    }
-    this.updateSidebar()
+    this.togglePanel('agent-chat')
   }
 
   private onSyncSystemPrompt = () => {
