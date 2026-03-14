@@ -26,6 +26,7 @@ interface OpenTabRequest {
   filePath?: string
   url?: string
   title?: string
+  hidden?: boolean
 }
 
 interface CloseTabRequest {
@@ -98,6 +99,7 @@ export function registerTabsHandlers(tabTools: AgentTabTools) {
       filePath: hasFilePath ? input.filePath : undefined,
       url: hasUrl ? input.url : undefined,
       title: typeof input.title === 'string' ? input.title : undefined,
+      hidden: typeof input.hidden === 'boolean' ? input.hidden : undefined,
     });
   });
 

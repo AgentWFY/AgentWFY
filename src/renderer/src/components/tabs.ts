@@ -9,9 +9,12 @@ interface TabData {
   viewUpdatedAt?: number | null    // only for view
   viewChanged: boolean             // only for view
   pinned: boolean
+  hidden: boolean
 }
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
+
+const HIDDEN_TABS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
 
 const TAB_TYPE_ICONS: Record<TabDataType, string> = {
   view: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
@@ -39,6 +42,8 @@ export class TlTabs extends HTMLElement {
   private panelMap: Map<string, HTMLDivElement> = new Map()
 
   private styleEl!: HTMLStyleElement
+  private hiddenTabsBtnEl!: HTMLDivElement
+  private hiddenTabsExpanded = false
 
   // Command palette / UI opens a view
   private onOpenView = (e: Event) => {
@@ -54,6 +59,7 @@ export class TlTabs extends HTMLElement {
       viewUpdatedAt: detail.viewUpdatedAt ?? null,
       viewChanged: false,
       pinned: false,
+      hidden: false,
     }
     this.tabs = [...this.tabs, tab]
     this.selectedTabId = tabId
@@ -97,6 +103,7 @@ export class TlTabs extends HTMLElement {
     }
 
     const tabId = generateId()
+    const isHidden = Boolean(detail.hidden)
     const tab: TabData = {
       id: tabId,
       type,
@@ -105,11 +112,16 @@ export class TlTabs extends HTMLElement {
       viewUpdatedAt: null,
       viewChanged: false,
       pinned: false,
+      hidden: isHidden,
     }
     this.tabs = [...this.tabs, tab]
-    this.selectedTabId = tabId
+    if (!isHidden) {
+      this.selectedTabId = tabId
+    }
     this.render()
-    this.dispatchTabSelected()
+    if (!isHidden) {
+      this.dispatchTabSelected()
+    }
   }
 
   private onAgentCloseTab = (e: Event) => {
@@ -189,6 +201,16 @@ export class TlTabs extends HTMLElement {
     this.tabBarEl = document.createElement('div')
     this.tabBarEl.className = 'tab-bar'
 
+    this.hiddenTabsBtnEl = document.createElement('div')
+    this.hiddenTabsBtnEl.className = 'hidden-tabs-btn'
+    this.hiddenTabsBtnEl.style.display = 'none'
+    this.hiddenTabsBtnEl.addEventListener('click', () => {
+      this.hiddenTabsExpanded = !this.hiddenTabsExpanded
+      this.render()
+    })
+
+    this.tabBarEl.appendChild(this.hiddenTabsBtnEl)
+
     this.panelContainerEl = document.createElement('div')
     this.panelContainerEl.className = 'tab-panel-container'
 
@@ -243,8 +265,9 @@ export class TlTabs extends HTMLElement {
 
     this.tabs = this.tabs.filter(t => t.id !== id)
     if (this.selectedTabId === id) {
-      const lastTab = this.tabs[this.tabs.length - 1]
-      this.selectedTabId = lastTab?.id || null
+      const visible = this.visibleTabs()
+      const lastVisible = visible[visible.length - 1]
+      this.selectedTabId = lastVisible?.id || null
     }
     this.render()
     this.dispatchTabSelected()
@@ -263,7 +286,7 @@ export class TlTabs extends HTMLElement {
   }
 
   private pinnedCount(): number {
-    return this.tabs.filter(t => t.pinned).length
+    return this.tabs.filter(t => t.pinned && !t.hidden).length
   }
 
   private reorderTab(fromIndex: number, toIndex: number) {
@@ -290,144 +313,208 @@ export class TlTabs extends HTMLElement {
     }))
   }
 
+  private hiddenTabs(): TabData[] {
+    return this.tabs.filter(t => t.hidden)
+  }
+
+  private visibleTabs(): TabData[] {
+    return this.tabs.filter(t => !t.hidden)
+  }
+
+  private revealTab(id: string) {
+    const tab = this.tabs.find(t => t.id === id)
+    if (!tab || !tab.hidden) return
+    tab.hidden = false
+    this.selectedTabId = id
+    this.render()
+    this.dispatchTabSelected()
+  }
+
   private render() {
     if (!this.containerEl) return
-    const hasTabs = this.tabs.length > 0
-    this.panelContainerEl.style.display = hasTabs ? 'flex' : 'none'
-    this.emptyStateEl.style.display = hasTabs ? 'none' : 'flex'
+    const visible = this.visibleTabs()
+    const hasVisibleTabs = visible.length > 0
+    this.panelContainerEl.style.display = hasVisibleTabs ? 'flex' : 'none'
+    this.emptyStateEl.style.display = hasVisibleTabs ? 'none' : 'flex'
 
-    const oldTabItems = this.tabBarEl.querySelectorAll('.tab-item, .pinned-separator')
+    const oldTabItems = this.tabBarEl.querySelectorAll('.tab-item, .pinned-separator, .hidden-separator, .hidden-tab-item')
     oldTabItems.forEach(el => el.remove())
 
-    if (!hasTabs) {
-      return
+    // Update hidden tabs toggle button
+    const hidden = this.hiddenTabs()
+    if (hidden.length > 0) {
+      this.hiddenTabsBtnEl.innerHTML = `${HIDDEN_TABS_ICON}<span class="hidden-tabs-count">${hidden.length}</span>`
+      this.hiddenTabsBtnEl.style.display = ''
+      this.hiddenTabsBtnEl.classList.toggle('active', this.hiddenTabsExpanded)
+    } else {
+      this.hiddenTabsBtnEl.style.display = 'none'
+      this.hiddenTabsExpanded = false
     }
 
-    const tabBar = this.tabBarEl
-    const pinnedEnd = this.pinnedCount()
+    if (!hasVisibleTabs && !this.hiddenTabsExpanded) {
+      // Still need to manage panels for hidden tabs below
+    } else {
+      const tabBar = this.tabBarEl
+      const pinnedEnd = visible.filter(t => t.pinned).length
 
-    this.tabs.forEach((tab, index) => {
-      const tabItem = document.createElement('div')
-      tabItem.className = 'tab-item'
-      if (tab.id === this.selectedTabId) tabItem.classList.add('active')
-      if (tab.pinned) tabItem.classList.add('pinned')
-      tabItem.draggable = true
+      visible.forEach((tab, index) => {
+        const tabItem = document.createElement('div')
+        tabItem.className = 'tab-item'
+        if (tab.id === this.selectedTabId) tabItem.classList.add('active')
+        if (tab.pinned) tabItem.classList.add('pinned')
+        tabItem.draggable = true
 
-      // Drag handlers
-      tabItem.addEventListener('dragstart', (e) => {
-        this.dragFromIndex = index
-        if (e.dataTransfer) {
-          e.dataTransfer.effectAllowed = 'move'
-          e.dataTransfer.setData('text/plain', String(index))
-        }
-        tabItem.classList.add('dragging')
-      })
-
-      tabItem.addEventListener('dragover', (e) => {
-        e.preventDefault()
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
-
-        // Check boundary constraint before showing indicators
-        const fromPinned = this.dragFromIndex !== null && this.dragFromIndex < pinnedEnd
-        const toPinned = index < pinnedEnd
-        if (this.dragFromIndex !== null && fromPinned !== toPinned) {
-          e.dataTransfer!.dropEffect = 'none'
-          return
-        }
-
-        // Remove old drag-over classes
-        tabBar.querySelectorAll('.drag-over-left, .drag-over-right').forEach(el => {
-          el.classList.remove('drag-over-left', 'drag-over-right')
-        })
-        if (this.dragFromIndex !== null && this.dragFromIndex !== index) {
-          if (this.dragFromIndex > index) {
-            tabItem.classList.add('drag-over-left')
-          } else {
-            tabItem.classList.add('drag-over-right')
+        // Drag handlers — use index within visible tabs for reorder
+        const realIndex = this.tabs.indexOf(tab)
+        tabItem.addEventListener('dragstart', (e) => {
+          this.dragFromIndex = realIndex
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData('text/plain', String(realIndex))
           }
-        }
-        this.dragOverIndex = index
-      })
-
-      tabItem.addEventListener('dragleave', () => {
-        tabItem.classList.remove('drag-over-left', 'drag-over-right')
-        if (this.dragOverIndex === index) this.dragOverIndex = null
-      })
-
-      tabItem.addEventListener('drop', (e) => {
-        e.preventDefault()
-        if (this.dragFromIndex !== null && this.dragFromIndex !== index) {
-          this.reorderTab(this.dragFromIndex, index)
-        }
-        this.dragFromIndex = null
-        this.dragOverIndex = null
-      })
-
-      tabItem.addEventListener('dragend', () => {
-        this.dragFromIndex = null
-        this.dragOverIndex = null
-        tabBar.querySelectorAll('.dragging, .drag-over-left, .drag-over-right').forEach(el => {
-          el.classList.remove('dragging', 'drag-over-left', 'drag-over-right')
+          tabItem.classList.add('dragging')
         })
-      })
 
-      tabItem.addEventListener('click', () => this.selectTab(tab.id))
-      tabItem.addEventListener('auxclick', (e) => {
-        if (e.button === 1 && !tab.pinned) this.removeTab(tab.id)
-      })
+        tabItem.addEventListener('dragover', (e) => {
+          e.preventDefault()
+          if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
 
-      // Context menu for pin/unpin
-      tabItem.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        void this.showTabContextMenu(e, tab)
-      })
+          // Check boundary constraint before showing indicators
+          const fromPinned = this.dragFromIndex !== null && this.tabs[this.dragFromIndex]?.pinned === true
+          const toPinned = tab.pinned
+          if (this.dragFromIndex !== null && fromPinned !== toPinned) {
+            e.dataTransfer!.dropEffect = 'none'
+            return
+          }
 
-      if (tab.pinned) {
-        const pin = document.createElement('span')
-        pin.className = 'tab-pin-icon'
-        pin.innerHTML = PIN_ICON_SVG
-        tabItem.appendChild(pin)
-        if (tab.viewChanged) {
-          const dot = document.createElement('span')
-          dot.className = 'tab-changed-dot'
-          tabItem.appendChild(dot)
-        }
-      } else {
-        const icon = document.createElement('span')
-        icon.className = 'tab-type-icon'
-        icon.innerHTML = TAB_TYPE_ICONS[tab.type]
-        tabItem.appendChild(icon)
-
-        const title = document.createElement('span')
-        title.className = 'tab-title'
-        title.textContent = tab.title
-        tabItem.appendChild(title)
-
-        if (tab.viewChanged) {
-          const dot = document.createElement('span')
-          dot.className = 'tab-changed-dot'
-          tabItem.appendChild(dot)
-        }
-
-        const close = document.createElement('span')
-        close.className = 'tab-close'
-        close.textContent = '\u00d7'
-        close.addEventListener('click', (e) => {
-          e.stopPropagation()
-          this.removeTab(tab.id)
+          // Remove old drag-over classes
+          tabBar.querySelectorAll('.drag-over-left, .drag-over-right').forEach(el => {
+            el.classList.remove('drag-over-left', 'drag-over-right')
+          })
+          if (this.dragFromIndex !== null && this.dragFromIndex !== realIndex) {
+            if (this.dragFromIndex > realIndex) {
+              tabItem.classList.add('drag-over-left')
+            } else {
+              tabItem.classList.add('drag-over-right')
+            }
+          }
+          this.dragOverIndex = realIndex
         })
-        tabItem.appendChild(close)
-      }
 
-      tabBar.appendChild(tabItem)
+        tabItem.addEventListener('dragleave', () => {
+          tabItem.classList.remove('drag-over-left', 'drag-over-right')
+          if (this.dragOverIndex === realIndex) this.dragOverIndex = null
+        })
 
-      // Add separator after last pinned tab
-      if (tab.pinned && index === pinnedEnd - 1 && pinnedEnd < this.tabs.length) {
-        const separator = document.createElement('div')
-        separator.className = 'pinned-separator'
-        tabBar.appendChild(separator)
+        tabItem.addEventListener('drop', (e) => {
+          e.preventDefault()
+          if (this.dragFromIndex !== null && this.dragFromIndex !== realIndex) {
+            this.reorderTab(this.dragFromIndex, realIndex)
+          }
+          this.dragFromIndex = null
+          this.dragOverIndex = null
+        })
+
+        tabItem.addEventListener('dragend', () => {
+          this.dragFromIndex = null
+          this.dragOverIndex = null
+          tabBar.querySelectorAll('.dragging, .drag-over-left, .drag-over-right').forEach(el => {
+            el.classList.remove('dragging', 'drag-over-left', 'drag-over-right')
+          })
+        })
+
+        tabItem.addEventListener('click', () => this.selectTab(tab.id))
+        tabItem.addEventListener('auxclick', (e) => {
+          if (e.button === 1 && !tab.pinned) this.removeTab(tab.id)
+        })
+
+        // Context menu for pin/unpin
+        tabItem.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          void this.showTabContextMenu(e, tab)
+        })
+
+        if (tab.pinned) {
+          const pin = document.createElement('span')
+          pin.className = 'tab-pin-icon'
+          pin.innerHTML = PIN_ICON_SVG
+          tabItem.appendChild(pin)
+          if (tab.viewChanged) {
+            const dot = document.createElement('span')
+            dot.className = 'tab-changed-dot'
+            tabItem.appendChild(dot)
+          }
+        } else {
+          const icon = document.createElement('span')
+          icon.className = 'tab-type-icon'
+          icon.innerHTML = TAB_TYPE_ICONS[tab.type]
+          tabItem.appendChild(icon)
+
+          const title = document.createElement('span')
+          title.className = 'tab-title'
+          title.textContent = tab.title
+          tabItem.appendChild(title)
+
+          if (tab.viewChanged) {
+            const dot = document.createElement('span')
+            dot.className = 'tab-changed-dot'
+            tabItem.appendChild(dot)
+          }
+
+          const close = document.createElement('span')
+          close.className = 'tab-close'
+          close.textContent = '\u00d7'
+          close.addEventListener('click', (e) => {
+            e.stopPropagation()
+            this.removeTab(tab.id)
+          })
+          tabItem.appendChild(close)
+        }
+
+        tabBar.insertBefore(tabItem, this.hiddenTabsBtnEl)
+
+        // Add separator after last pinned tab
+        if (tab.pinned && index === pinnedEnd - 1 && pinnedEnd < visible.length) {
+          const separator = document.createElement('div')
+          separator.className = 'pinned-separator'
+          tabBar.insertBefore(separator, this.hiddenTabsBtnEl)
+        }
+      })
+
+      // Render expanded hidden tabs inline after the toggle button
+      if (this.hiddenTabsExpanded && hidden.length > 0) {
+        const sep = document.createElement('div')
+        sep.className = 'hidden-separator'
+        tabBar.appendChild(sep)
+
+        for (const tab of hidden) {
+          const tabItem = document.createElement('div')
+          tabItem.className = 'hidden-tab-item'
+
+          const icon = document.createElement('span')
+          icon.className = 'tab-type-icon'
+          icon.innerHTML = TAB_TYPE_ICONS[tab.type]
+          tabItem.appendChild(icon)
+
+          const title = document.createElement('span')
+          title.className = 'tab-title'
+          title.textContent = tab.title
+          tabItem.appendChild(title)
+
+          const close = document.createElement('span')
+          close.className = 'tab-close'
+          close.textContent = '\u00d7'
+          close.addEventListener('click', (e) => {
+            e.stopPropagation()
+            this.removeTab(tab.id)
+          })
+          tabItem.appendChild(close)
+
+          tabItem.addEventListener('click', () => this.revealTab(tab.id))
+          tabBar.appendChild(tabItem)
+        }
       }
-    })
+    }
 
     const activeIds = new Set(this.tabs.map((tab) => tab.id))
     this.tabs.forEach((tab, index) => {
@@ -437,7 +524,8 @@ export class TlTabs extends HTMLElement {
         panel.className = 'tab-panel'
         this.panelMap.set(tab.id, panel)
       }
-      panel.style.display = tab.id === this.selectedTabId ? '' : 'none'
+      // Hidden tabs are always display:none; visible tabs show only when selected
+      panel.style.display = tab.hidden ? 'none' : (tab.id === this.selectedTabId ? '' : 'none')
 
       // All tab types use <awfy-tab-view> with different attributes
       let viewEl = this.viewMap.get(tab.id)
@@ -445,6 +533,9 @@ export class TlTabs extends HTMLElement {
         viewEl = document.createElement('awfy-tab-view')
         viewEl.setAttribute('tab-id', tab.id)
         viewEl.setAttribute('tab-type', tab.type)
+        if (tab.hidden) {
+          viewEl.setAttribute('hidden-tab', '')
+        }
         if (tab.type === 'view') {
           viewEl.setAttribute('view-id', String(tab.target))
           viewEl.setAttribute('view-updated-at', tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))
@@ -456,6 +547,13 @@ export class TlTabs extends HTMLElement {
         const tabViewEl1 = viewEl as HTMLElement & { viewChanged?: boolean }
         tabViewEl1.viewChanged = tab.viewChanged
         this.viewMap.set(tab.id, viewEl)
+      }
+
+      // Sync hidden-tab attribute
+      if (tab.hidden && !viewEl.hasAttribute('hidden-tab')) {
+        viewEl.setAttribute('hidden-tab', '')
+      } else if (!tab.hidden && viewEl.hasAttribute('hidden-tab')) {
+        viewEl.removeAttribute('hidden-tab')
       }
 
       // Sync attributes for view tabs
@@ -682,6 +780,73 @@ export class TlTabs extends HTMLElement {
         font-size: 14px;
         -webkit-app-region: drag;
       }
+      .hidden-tabs-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        cursor: pointer;
+        color: var(--color-text2);
+        font-size: 11px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        transition: color var(--transition-fast), background var(--transition-fast);
+        -webkit-app-region: no-drag;
+        margin-left: auto;
+      }
+      .hidden-tabs-btn:hover {
+        color: var(--color-text3);
+        background: var(--color-bg2);
+      }
+      .hidden-tabs-btn.active {
+        color: var(--color-text4);
+        background: var(--color-bg2);
+      }
+      .hidden-tabs-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: var(--color-accent);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+      }
+      .hidden-separator {
+        width: 1px;
+        background: var(--color-divider);
+        margin: 6px 2px;
+        flex-shrink: 0;
+        align-self: stretch;
+      }
+      .hidden-tab-item {
+        display: flex;
+        align-items: center;
+        padding: 6px 10px;
+        cursor: pointer;
+        color: var(--color-text2);
+        font-size: 12px;
+        white-space: nowrap;
+        max-width: 200px;
+        flex-shrink: 0;
+        gap: 6px;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        transition: color var(--transition-fast), background var(--transition-fast);
+        -webkit-app-region: no-drag;
+        opacity: 0.6;
+        border-bottom: 1px dashed var(--color-divider);
+      }
+      .hidden-tab-item:hover {
+        opacity: 1;
+        color: var(--color-text3);
+        background: var(--color-bg2);
+      }
+      .hidden-tab-item:hover .tab-close { opacity: 1; }
     `
   }
 }

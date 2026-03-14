@@ -96,6 +96,7 @@ export interface WorkerGetTabsResult {
     viewUpdatedAt: number | null
     viewChanged: boolean
     pinned: boolean
+    hidden: boolean
     selected: boolean
   }>
 }
@@ -105,6 +106,7 @@ export interface WorkerOpenTabRequest {
   filePath?: string
   url?: string
   title?: string
+  hidden?: boolean
 }
 
 export interface WorkerCloseTabRequest {

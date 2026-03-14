@@ -57,10 +57,12 @@ The app uses a tab-based UI with three tab types:
 - **url** (type="url"): External web page loaded by URL. Opened via `openTab({ url })`. Does NOT get the runtime injected.
 
 APIs:
-- `getTabs()` → `{ tabs: [{ id, title, type, target, viewUpdatedAt, viewChanged, pinned, selected }] }`
+- `getTabs()` → `{ tabs: [{ id, title, type, target, viewUpdatedAt, viewChanged, pinned, hidden, selected }] }`
   - `type`: "view", "file", or "url". `target`: view ID, file path, or URL respectively.
   - `viewChanged` means DB content was updated but tab has not been reloaded yet.
-- `openTab({ viewId })` or `openTab({ filePath })` or `openTab({ url })` — exactly one source required. Optional `title`.
+  - `hidden`: true if the tab is a hidden background tab (not shown in the tab bar).
+- `openTab({ viewId, title?, hidden? })` or `openTab({ filePath, title?, hidden? })` or `openTab({ url, title?, hidden? })` — exactly one source required.
+  - `hidden: true` opens the tab in the background without disrupting the user's current view. Hidden tabs are not shown in the tab bar but still load their content, so you can use `captureTab`, `execTabJs`, and `getTabConsoleLogs` on them. The user can expand hidden tabs in the tab bar to inspect them. Use hidden tabs when you need to do background work (e.g. rendering a view, running JS in a page context) without interrupting the user.
 - `closeTab({ tabId })`, `selectTab({ tabId })`, `reloadTab({ tabId })`
 - `captureTab({ tabId })` → screenshot is auto-attached as an image to the tool result
 - `getTabConsoleLogs({ tabId, since?, limit? })` → `[{ level, message, timestamp }]`

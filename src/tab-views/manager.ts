@@ -92,6 +92,7 @@ export const GET_TABS_QUERY = `(() => {
       viewUpdatedAt: tab.viewUpdatedAt ?? null,
       viewChanged: Boolean(tab.viewChanged),
       pinned: Boolean(tab.pinned),
+      hidden: Boolean(tab.hidden),
       selected: tab.id === selectedTabId,
     })),
   };
@@ -517,7 +518,7 @@ export class TabViewManager {
     }
   }
 
-  async openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string }): Promise<void> {
+  async openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string; hidden?: boolean }): Promise<void> {
     const type = request.url ? 'url' : request.filePath ? 'file' : 'view';
     this.deps.dispatchRendererCustomEvent('agentwfy:agent-open-tab', {
       type,
@@ -525,6 +526,7 @@ export class TabViewManager {
       filePath: request.filePath,
       url: request.url,
       title: request.title,
+      hidden: request.hidden,
     });
   }
 
