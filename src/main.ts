@@ -281,6 +281,11 @@ async function createAppWindow(agentRoot: string) {
       event.preventDefault();
       tabViewManager.reloadVisibleTabView();
     }
+
+    if (input.shift && key === 'r') {
+      event.preventDefault();
+      mainWindow?.reload();
+    }
   });
 }
 
