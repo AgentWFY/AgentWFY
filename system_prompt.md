@@ -189,7 +189,18 @@ await runSql({
 
 ## Debugging Views
 
-Use `captureTab({ tabId })` to take a screenshot, `getTabConsoleLogs({ tabId })` to read console output, and `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access).
+**Always use hidden tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS — NEVER open visible tabs. Use `hidden: true`:
+
+```js
+await openTab({ viewId: id, hidden: true })
+await openTab({ filePath: path, hidden: true })
+```
+
+Visible tabs steal the user's focus and clutter their tab bar. Hidden tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user.
+
+Always close hidden tabs and remove `.tmp/` files when done.
+
+**Tools:** `captureTab({ tabId })` for screenshots, `getTabConsoleLogs({ tabId })` for console output, `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access).
 
 ---
 
