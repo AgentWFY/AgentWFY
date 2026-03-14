@@ -35,7 +35,7 @@ Static assets (HTML, CSS) are copied to dist/. One `tsconfig.json` for type chec
 ### IPC Channels
 
 All IPC flows through `src/preload.cts` which exposes two global APIs:
-- `window.agentwfy` — Agent tool operations: file ops (read/write/edit/ls/mkdir/remove/find/grep), SQL queries, tab management, event bus, agent spawning
+- `window.agentwfy` — Agent tool operations: file ops (read/write/writeBinary/edit/ls/mkdir/remove/find/grep), SQL queries, tab management, event bus, agent spawning
 - `window.electronClientTools` — App operations: dialogs, store, sessions, auth, external views
 
 Channel prefixes: `agentwfy:*` (agent tools), `app:*` (app-level), `bus:*` (event bus), `electronExternalView:*` (view management), `dialog:*`, `electron-store:*`
@@ -70,9 +70,37 @@ Components use direct DOM manipulation (no virtual DOM), class properties for lo
 Node.js built-in `sqlite` module (not better-sqlite3). Schema in `src/db/sqlite.ts`:
 - `views`: id, name, content, created_at, updated_at
 - `docs`: id, name, content, preload, updated_at
+- `tasks`: id, name, description, content (JavaScript), timeout_ms, created_at, updated_at
+- `triggers`: id, task_id, type (schedule/http/event), config (JSON), description, enabled, created_at, updated_at
 - `db_changes`: auto-populated change tracking via triggers
 
 SQL routing (`src/db/sql-router.ts`) supports two targets: `agent` (built-in agent.db) and `sqlite-file` (arbitrary .sqlite files).
+
+### Task System
+
+- `TaskRunner` (`src/renderer/src/tasks/task_runner.ts`): Manages task execution lifecycle — start, stop, log persistence, completion notifications
+- Tasks are JavaScript code stored in the `tasks` table, executed in Web Workers via `JsRuntime`
+- Task code has access to host methods: `runSql`, `read`, `write`, `writeBinary`, `edit`, `ls`, `mkdir`, `remove`, `find`, `grep`, `getTabs`, `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `getTabConsoleLogs`, `execTabJs`, `publish`, `waitFor`, `fetch`, `WebSocket`, `spawnAgent`, `startTask`, `stopTask`
+- Task receives `input` parameter (provided by caller)
+- Task logs persisted to `.agentwfy/task_logs/`
+- Origins: command-palette, task-panel, agent, trigger, view
+
+### Trigger Engine
+
+`src/triggers/engine.ts` — Loads enabled triggers from DB, sets up handlers, auto-reloads on changes.
+
+Three trigger types:
+- **schedule**: Cron-like expressions, fires task at scheduled times
+- **http**: Registers dynamic HTTP route on the HTTP API server, executes task with request data as input (`{ method, path, headers, query, body }`), waits up to 120s for response
+- **event**: Subscribes to event bus topic, fires task with event data
+
+### HTTP API
+
+`src/http-api/server.ts` — Localhost-only HTTP server (Node built-in `http`, no frameworks). Default port 9877, configured per-agent in `.agentwfy/config.json` (`httpApi.port`). CORS enabled for all origins.
+
+- `GET /files/*` — Static file serving with path security validation
+- Dynamic routes registered by trigger engine (HTTP triggers)
+- Lockfile at `.agentwfy/http-api.pid` tracks port and process
 
 ### Security
 

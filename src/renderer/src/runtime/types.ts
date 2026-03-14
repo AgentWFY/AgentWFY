@@ -45,6 +45,11 @@ export interface WorkerWriteRequest {
   content: string
 }
 
+export interface WorkerWriteBinaryRequest {
+  path: string
+  base64: string
+}
+
 export interface WorkerEditRequest {
   path: string
   oldText: string
@@ -159,6 +164,10 @@ export interface WorkerHostMethodMap {
   }
   write: {
     params: WorkerWriteRequest
+    result: string
+  }
+  writeBinary: {
+    params: WorkerWriteBinaryRequest
     result: string
   }
   edit: {

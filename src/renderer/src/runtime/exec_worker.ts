@@ -260,6 +260,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'read', { path, offset, limit }, signal)
     const write = (path: string, content: string) =>
       callHostMethod('' + requestId, 'write', { path, content }, signal)
+    const writeBinary = (path: string, base64: string) =>
+      callHostMethod('' + requestId, 'writeBinary', { path, base64 }, signal)
     const edit = (path: string, oldText: string, newText: string) =>
       callHostMethod('' + requestId, 'edit', { path, oldText, newText }, signal)
     const ls = (path?: string, limit?: number) =>
@@ -494,6 +496,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'runSql',
       'read',
       'write',
+      'writeBinary',
       'edit',
       'ls',
       'mkdir',
@@ -528,6 +531,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         runSql,
         read,
         write,
+        writeBinary,
         edit,
         ls,
         mkdir,
