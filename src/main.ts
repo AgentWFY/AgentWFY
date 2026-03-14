@@ -41,13 +41,11 @@ app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommuni
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
 // calls and are already propagated to the renderer as rejected promises.
+const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'headers:'];
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'files:')) return;
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'sql:')) return;
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'tabs:')) return;
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'bus:')) return;
-  if (typeof args[0] === 'string' && args[0].startsWith('Error occurred in handler for \'headers:')) return;
+  const first = args[0]
+  if (typeof first === 'string' && suppressedChannels.some((ch) => first.startsWith(`Error occurred in handler for '${ch}`))) return;
   originalConsoleError.apply(console, args);
 };
 

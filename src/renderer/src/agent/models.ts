@@ -137,7 +137,3 @@ export function getModels(config: ModelsConfig | undefined, providerId: string):
 export function getModel(config: ModelsConfig | undefined, providerId: string, modelId: string): Model | undefined {
   return getModels(config, providerId).find((m) => m.id === modelId)
 }
-
-export function supportsThinking(model: Model): boolean {
-  return model.reasoning === true
-}
