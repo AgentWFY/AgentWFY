@@ -341,8 +341,15 @@ export class TlApp extends HTMLElement {
     this.sidebarEl.classList.toggle('awfy-app-sidebar-hidden', !isOpen)
     this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen)
 
-    this.agentChatEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'agent-chat')
+    const agentChatVisible = this.activeSidebarPanel === 'agent-chat'
+    this.agentChatEl.classList.toggle('panel-hidden', !agentChatVisible)
     this.taskPanelEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'tasks')
+
+    if (agentChatVisible) {
+      requestAnimationFrame(() => {
+        (this.agentChatEl as any).focusInput?.()
+      })
+    }
 
     this.sidebarButtonsEl.querySelectorAll('.awfy-app-sidebar-btn').forEach(btn => {
       const panel = (btn as HTMLElement).dataset.panel
