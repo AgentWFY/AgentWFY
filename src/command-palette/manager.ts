@@ -274,11 +274,11 @@ export class CommandPaletteManager {
         action: { type: 'close-current-tab' },
       },
       {
-        id: 'action:reload-views',
-        title: 'Reload Views Catalog',
+        id: 'action:reload-current-tab',
+        title: 'Reload Current Tab',
         shortcut: `${mod}R`,
         group: 'Actions',
-        action: { type: 'reload-views' },
+        action: { type: 'reload-current-tab' },
       },
       {
         id: 'action:enter-settings',
@@ -482,18 +482,9 @@ export class CommandPaletteManager {
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
         break;
 
-      case 'reload-views': {
-        const views = await listViews(this.deps.getAgentRoot());
-        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:views-loaded', {
-          views: views.map((row) => ({
-            title: row.name,
-            viewId: row.id,
-            viewUpdatedAt: row.updated_at ?? null,
-          })),
-        });
-        this.deps.getTabViewManager().reloadAllTabViews();
+      case 'reload-current-tab':
+        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:refresh-current-view');
         break;
-      }
 
       case 'run-task': {
         const taskAction = action as Extract<CommandPaletteAction, { type: 'run-task' }>;

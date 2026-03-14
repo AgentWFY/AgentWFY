@@ -14,7 +14,7 @@ export type CommandPaletteAction =
     type: 'close-current-tab'
   }
   | {
-    type: 'reload-views'
+    type: 'reload-current-tab'
   }
   | {
     type: 'run-task'

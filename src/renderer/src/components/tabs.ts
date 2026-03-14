@@ -76,9 +76,7 @@ export class TlTabs extends HTMLElement {
 
   private onRefreshCurrentView = () => {
     if (!this.selectedTabId) return
-    window.dispatchEvent(new CustomEvent('agentwfy:refresh-view', {
-      detail: { viewId: this.selectedTabId }
-    }))
+    this.reloadTab(this.selectedTabId)
   }
 
   // Agent opens a tab (view, file, or url)
@@ -140,17 +138,12 @@ export class TlTabs extends HTMLElement {
     this.selectTab(detail.tabId)
   }
 
-  private onAgentClearViewChanged = (e: Event) => {
+  private onAgentReloadTab = (e: Event) => {
     const detail = (e as CustomEvent).detail
     if (!detail || typeof detail.tabId !== 'string') return
     const tab = this.tabs.find(t => t.id === detail.tabId)
     if (!tab) return
-    tab.viewChanged = false
-    const viewEl = this.viewMap.get(tab.id) as (HTMLElement & { viewChanged?: boolean }) | undefined
-    if (viewEl) {
-      viewEl.viewChanged = false
-    }
-    this.render()
+    this.reloadTab(detail.tabId)
   }
 
   // Only view tabs track DB changes
@@ -230,7 +223,7 @@ export class TlTabs extends HTMLElement {
     window.addEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
     window.addEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
     window.addEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
-    window.addEventListener('agentwfy:agent-clear-view-changed', this.onAgentClearViewChanged)
+    window.addEventListener('agentwfy:agent-reload-tab', this.onAgentReloadTab)
 
     this.render()
   }
@@ -243,7 +236,7 @@ export class TlTabs extends HTMLElement {
     window.removeEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
     window.removeEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
     window.removeEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
-    window.removeEventListener('agentwfy:agent-clear-view-changed', this.onAgentClearViewChanged)
+    window.removeEventListener('agentwfy:agent-reload-tab', this.onAgentReloadTab)
   }
 
   private selectTab(id: string) {
