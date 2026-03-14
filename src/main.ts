@@ -453,9 +453,9 @@ app.on('ready', async () => {
 
   triggerEngine = new TriggerEngine({
     getAgentRoot,
-    startTask: (taskId, input?) => {
+    startTask: (taskId, input?, origin?) => {
       if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardStartTask(mainWindow, taskId, input);
+      return forwardStartTask(mainWindow, taskId, input, origin);
     },
     busWaitFor: (topic, timeoutMs?) => {
       if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');

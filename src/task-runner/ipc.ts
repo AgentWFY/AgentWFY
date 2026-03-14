@@ -31,7 +31,7 @@ type PendingTaskRequest = {
 const pendingStartRequests = new Map<string, PendingTaskRequest>();
 const pendingStopRequests = new Map<string, PendingTaskRequest>();
 
-export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unknown): Promise<{ runId: string }> {
+export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
   const waiterId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -39,7 +39,7 @@ export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unk
       reject(new Error('startTask forwarding timeout'));
     }, 30_000);
     pendingStartRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
-    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId, input });
+    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId, input, origin });
   });
 }
 
@@ -71,7 +71,7 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
   ipcMain.handle(Channels.tasks.start, async (_event, taskId: number, input?: unknown) => {
     const win = getMainWindow();
     if (!win || win.isDestroyed()) throw new Error('Main window is not available');
-    return forwardStartTask(win, taskId, input);
+    return forwardStartTask(win, taskId, input, { type: 'view' });
   });
 
   ipcMain.handle(Channels.tasks.stop, async (_event, runId: string) => {
@@ -125,7 +125,7 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
 
     try {
       const entries = await fs.readdir(taskLogsDir, { withFileTypes: true });
-      const items: Array<{ file: string; updatedAt: number; taskName: string; status: string }> = [];
+      const items: Array<{ file: string; updatedAt: number; taskName: string; status: string; origin?: unknown }> = [];
 
       for (const entry of entries) {
         if (!entry.isFile()) continue;
@@ -141,6 +141,7 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
             updatedAt: typeof parsed.finishedAt === 'number' ? parsed.finishedAt : Math.floor(stats.mtimeMs),
             taskName: typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
             status: typeof parsed.status === 'string' ? parsed.status : 'unknown',
+            origin: parsed.origin ?? undefined,
           });
         } catch {
           // Skip unparseable files

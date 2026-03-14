@@ -1,6 +1,7 @@
 import { bus } from './event-bus.js'
 import { getSessionManager } from './agent/session_manager.js'
 import { getTaskRunner } from './tasks/task_runner.js'
+import type { TaskOrigin } from './tasks/task_runner.js'
 
 export function initBusBridge(): void {
   const ipc = window.ipc
@@ -51,12 +52,13 @@ export function initBusBridge(): void {
     }
   })
 
-  // Forward startTask from agentview → task runner
+  // Forward startTask from agentview / triggers → task runner
   ipc.tasks.onForwardStartTask(async (detail) => {
     try {
       const runner = getTaskRunner()
       if (!runner) throw new Error('TaskRunner not initialized')
-      const runId = await runner.startTask(detail.taskId, detail.input)
+      const origin = (detail.origin as TaskOrigin) ?? { type: 'view' as const }
+      const runId = await runner.startTask(detail.taskId, detail.input, origin)
       ipc.tasks.forwardStartTaskResult(detail.waiterId, { runId })
     } catch (err) {
       ipc.tasks.forwardStartTaskResult(detail.waiterId, { error: String(err) })

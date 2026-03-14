@@ -1,5 +1,5 @@
 import { getTaskRunner } from '../tasks/task_runner.js'
-import type { TaskRun, TaskLogHistoryItem } from '../tasks/task_runner.js'
+import type { TaskRun, TaskLogHistoryItem, TaskOrigin } from '../tasks/task_runner.js'
 import { escapeHtml } from './chat_utils.js'
 
 interface TaskItem {
@@ -344,8 +344,24 @@ const STYLES = `
     color: var(--color-text2);
   }
   .history-detail.open { display: block; }
+  .origin-tag {
+    font-size: 10px;
+    color: var(--color-text1);
+  }
 `
 
+
+function originLabel(origin?: TaskOrigin): string {
+  if (!origin) return ''
+  switch (origin.type) {
+    case 'command-palette': return 'cmd'
+    case 'task-panel': return 'panel'
+    case 'agent': return 'agent'
+    case 'trigger': return origin.triggerType
+    case 'view': return 'view'
+    default: return ''
+  }
+}
 
 function logLevelClass(level: string): string {
   return level === 'warn' ? ' warn' : level === 'error' ? ' error' : ''
@@ -457,7 +473,7 @@ export class TlTaskPanel extends HTMLElement {
       const runner = getTaskRunner()
       if (runner) {
         const input = e.detail?.input
-        runner.runTask(taskId, input || undefined).catch(err => {
+        runner.runTask(taskId, input || undefined, { type: 'command-palette' }).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }
@@ -577,10 +593,12 @@ export class TlTaskPanel extends HTMLElement {
       for (const run of activeRuns) {
         const expanded = this.expandedRunIds.has(run.runId)
         const elapsed = Date.now() - run.startedAt
+        const oLabel = originLabel(run.origin)
         html += `<div class="run-entry">`
         html += `<div class="run-header" data-run-id="${escapeHtml(run.runId)}">`
         html += `<span class="run-status running"></span>`
         html += `<span class="run-info">${escapeHtml(run.name)}</span>`
+        if (oLabel) html += `<span class="trigger-type origin-tag">${escapeHtml(oLabel)}</span>`
         html += `<span class="run-time">${formatElapsed(elapsed)}</span>`
         html += `<button class="btn btn-stop" data-stop-run="${escapeHtml(run.runId)}">Stop</button>`
         html += `</div>`
@@ -669,9 +687,11 @@ export class TlTaskPanel extends HTMLElement {
     } else {
       for (const item of this.logHistory) {
         const expanded = this.expandedHistoryFiles.has(item.file)
+        const hLabel = originLabel(item.origin)
         html += `<div class="history-item" data-history-file="${escapeHtml(item.file)}">`
         html += `<span class="run-status ${item.status}"></span>`
         html += `<span class="history-name">${escapeHtml(item.taskName)}</span>`
+        if (hLabel) html += `<span class="trigger-type origin-tag">${escapeHtml(hLabel)}</span>`
         html += `<span class="history-date">${formatDate(item.updatedAt)}</span>`
         html += `</div>`
         if (expanded) {
@@ -848,7 +868,7 @@ export class TlTaskPanel extends HTMLElement {
     const inputValue = inputEl?.value?.trim() || undefined
     const runner = getTaskRunner()
     if (runner) {
-      runner.runTask(taskId, inputValue).catch(err => console.error('[TlTaskPanel] run with input failed', err))
+      runner.runTask(taskId, inputValue, { type: 'task-panel' }).catch(err => console.error('[TlTaskPanel] run with input failed', err))
       if (inputEl) inputEl.value = ''
     }
   }
