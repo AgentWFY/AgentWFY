@@ -236,6 +236,7 @@ const STYLES = `
     color: var(--color-text2);
   }
   .run-logs.open { display: block; }
+  .run-logs { user-select: text; }
   .run-error {
     color: var(--color-red-fg, #e55);
   }
@@ -344,6 +345,7 @@ const STYLES = `
     color: var(--color-text2);
   }
   .history-detail.open { display: block; }
+  .history-detail { user-select: text; }
   .origin-tag {
     font-size: 10px;
     color: var(--color-text1);
