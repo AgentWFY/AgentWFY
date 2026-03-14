@@ -12,6 +12,7 @@ export class TlTabView extends HTMLElement {
   private _source = ''  // viewId for view, filePath for file, url for url
   private _viewUpdatedAt: number | null = null
   private _viewChanged = false
+  private _hiddenTab = false
   private loadRequestId = 0
   private loading = false
   private error: string | null = null
@@ -35,7 +36,9 @@ export class TlTabView extends HTMLElement {
   }
 
   private onWindowOrVisibilityChanged = () => {
-    this.scheduleBoundsSync()
+    if (!this._hiddenTab) {
+      this.scheduleBoundsSync()
+    }
 
     if (!this.mounted && this._source) {
       this.scheduleLoad(this._source)
@@ -43,7 +46,7 @@ export class TlTabView extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at']
+    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab']
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
@@ -54,6 +57,7 @@ export class TlTabView extends HTMLElement {
     if (name === 'view-path' && !this.hasAttribute('view-id')) this._source = nextValue
     if (name === 'view-url' && !this.hasAttribute('view-id') && !this.hasAttribute('view-path')) this._source = nextValue
     if (name === 'view-updated-at') this._viewUpdatedAt = parseOptionalNumber(value)
+    if (name === 'hidden-tab') this._hiddenTab = value !== null
 
     if (!this.isConnected || oldValue === nextValue) return
 
@@ -93,6 +97,7 @@ export class TlTabView extends HTMLElement {
     this._tabType = (this.getAttribute('tab-type') as TabType) || 'view'
     this._source = this.getAttribute('view-id') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
     this._viewUpdatedAt = parseOptionalNumber(this.getAttribute('view-updated-at'))
+    this._hiddenTab = this.hasAttribute('hidden-tab')
 
     this.style.display = 'block'
     this.style.width = '100%'
@@ -187,7 +192,9 @@ export class TlTabView extends HTMLElement {
     this.containerEl.appendChild(this.errorEl)
 
     this.wrapperResizeObserver = new ResizeObserver(() => {
-      this.scheduleBoundsSync()
+      if (!this._hiddenTab) {
+        this.scheduleBoundsSync()
+      }
 
       if (!this.mounted && this._source) {
         this.scheduleLoad(this._source)
@@ -208,7 +215,9 @@ export class TlTabView extends HTMLElement {
     }
 
     this.parentVisibilityObserver = new MutationObserver(() => {
-      this.scheduleBoundsSync()
+      if (!this._hiddenTab) {
+        this.scheduleBoundsSync()
+      }
 
       if (!this.mounted && this._source) {
         this.scheduleLoad(this._source)
@@ -294,6 +303,9 @@ export class TlTabView extends HTMLElement {
   }
 
   private isViewVisible(bounds?: TabViewBounds): boolean {
+    // Hidden tabs are never visually visible but should still load
+    if (this._hiddenTab) return false
+
     const nextBounds = bounds || this.getWrapperBounds()
     return (
       document.visibilityState === 'visible' &&
@@ -301,6 +313,11 @@ export class TlTabView extends HTMLElement {
       nextBounds.width > 0 &&
       nextBounds.height > 0
     )
+  }
+
+  /** Whether this tab's view should be loaded (visible tabs or hidden tabs). */
+  private shouldLoad(): boolean {
+    return this._hiddenTab || this.isViewVisible()
   }
 
   private destroyTabViewHost() {
@@ -399,8 +416,10 @@ export class TlTabView extends HTMLElement {
       return
     }
 
-    const bounds = this.getWrapperBounds()
-    const visible = this.isViewVisible(bounds)
+    const bounds = this._hiddenTab
+      ? { x: 0, y: 0, width: 0, height: 0 }
+      : this.getWrapperBounds()
+    const visible = this._hiddenTab ? false : this.isViewVisible(bounds)
     const request: MountTabViewRequest = {
       tabId,
       viewId: source,
@@ -451,7 +470,7 @@ export class TlTabView extends HTMLElement {
         return
       }
 
-      if (!this.isViewVisible()) {
+      if (!this.shouldLoad()) {
         this.pendingLoadAnimationFrame = requestAnimationFrame(tryLoad)
         return
       }

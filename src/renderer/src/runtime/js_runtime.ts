@@ -438,6 +438,7 @@ export class JsRuntime {
           filePath: hasFilePath ? request.filePath : undefined,
           url: hasUrl ? request.url : undefined,
           title: request.title,
+          hidden: request.hidden,
         })
         return undefined as WorkerHostMethodMap[M]['result']
       }
