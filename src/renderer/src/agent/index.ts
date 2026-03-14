@@ -285,18 +285,32 @@ export class Agent {
           const toolCalls = assistantMessage.content.filter(
             (c): c is ToolCall => c.type === 'toolCall',
           )
-          hasMoreToolCalls = toolCalls.length > 0
           const toolResults: ToolResultMessage[] = []
 
-          if (hasMoreToolCalls) {
-            const execution = await this.executeToolCalls(
-              toolCalls,
-              contextMessages,
-              newMessages,
-              this.abortController.signal,
-            )
-            toolResults.push(...execution.toolResults)
-            steeringAfterTools = execution.steeringMessages ?? null
+          if (assistantMessage.stopReason === 'maxTokens' && toolCalls.length > 0) {
+            // Response was truncated — tool call arguments are likely incomplete
+            // (parsed as empty {}). Return error results so the LLM can retry
+            // with a smaller output instead of executing broken tool calls.
+            hasMoreToolCalls = true
+            for (const tc of toolCalls) {
+              const skipped = this.skipToolCall(tc, contextMessages, newMessages,
+                'Your response was cut off because it exceeded the output token limit. '
+                + 'The tool call arguments were incomplete and could not be executed. '
+                + 'Please break your work into smaller steps.')
+              toolResults.push(skipped)
+            }
+          } else {
+            hasMoreToolCalls = toolCalls.length > 0
+            if (hasMoreToolCalls) {
+              const execution = await this.executeToolCalls(
+                toolCalls,
+                contextMessages,
+                newMessages,
+                this.abortController.signal,
+              )
+              toolResults.push(...execution.toolResults)
+              steeringAfterTools = execution.steeringMessages ?? null
+            }
           }
 
           this.emit({ type: 'turn_end', message: assistantMessage, toolResults })
@@ -607,9 +621,10 @@ export class Agent {
     toolCall: ToolCall,
     contextMessages: AgentMessage[],
     newMessages: AgentMessage[],
+    reason = 'Skipped due to queued user message.',
   ): ToolResultMessage {
     const result = {
-      content: [{ type: 'text' as const, text: 'Skipped due to queued user message.' }],
+      content: [{ type: 'text' as const, text: reason }],
       details: {},
     }
 
