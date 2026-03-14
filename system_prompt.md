@@ -156,6 +156,36 @@ Injected automatically — no need to define them.
 Light: bg1=#ffffff, bg2=#f8f8f8, bg3=#f0f0f0, surface=#ffffff, border=#e0e0e0, text1=#6b6b6b, text2=#999999, text3=#444444, text4=#1a1a1a, accent=#1a6fb5
 Dark: bg1=#1e1e1e, bg2=#252526, bg3=#1a1a1a, surface=#2d2d2d, border=#3d3d3d, text1=#b0b0b0, text2=#808080, text3=#cccccc, text4=#e0e0e0, accent=#2b7ab5
 
+## Working with Large Views
+
+When a view's content is too large to read or write in a single call, use chunked SQL operations instead of reading/writing the full content.
+
+**Reading in chunks** — use `SUBSTR()` to read portions of the content:
+```js
+// Read 2000 characters starting at position 1
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) FROM views WHERE id = ?', params: [1, 2000, viewId] })
+// Read the next chunk
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) FROM views WHERE id = ?', params: [2001, 2000, viewId] })
+// Check total length first
+await runSql({ target: 'agent', sql: 'SELECT LENGTH(content) FROM views WHERE id = ?', params: [viewId] })
+```
+
+**Editing surgically** — use `REPLACE()` to modify specific parts without rewriting the full content:
+```js
+await runSql({
+  target: 'agent',
+  sql: 'UPDATE views SET content = REPLACE(content, ?, ?), updated_at = unixepoch() WHERE id = ?',
+  params: [oldText, newText, viewId]
+})
+```
+
+**Guidelines:**
+- For small views (under ~150000 characters), read/write the full content normally.
+- For large views, always check `LENGTH(content)` first. If it exceeds ~150000 characters, use `SUBSTR()` to read in chunks.
+- Prefer `REPLACE()` edits over full content updates. Only include enough surrounding context in `oldText` to ensure a unique match.
+- For multiple edits, chain them in separate `runSql` calls — each `REPLACE()` should target a unique string.
+- Always `reloadTab` after updating view content.
+
 ## Debugging Views
 
 Use `captureTab({ tabId })` to take a screenshot, `getTabConsoleLogs({ tabId })` to read console output, and `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access).

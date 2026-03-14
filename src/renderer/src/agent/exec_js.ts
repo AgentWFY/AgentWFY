@@ -47,7 +47,7 @@ function buildToolResult(details: ExecJsDetails): AgentToolResult<ExecJsDetails>
 
   // Strip images from text serialization — they're included as ImageContent
   const textDetails = hasImages ? { ...details, images: `[${details.images.length} image(s) attached]` } : details
-  const text = truncate(stringifyUnknown(textDetails), 50000)
+  const text = truncate(stringifyUnknown(textDetails), 200000)
   const content: (TextContent | ImageContent)[] = [{ type: 'text', text }]
 
   if (hasImages) {
