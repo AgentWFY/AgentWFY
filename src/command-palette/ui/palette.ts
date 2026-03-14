@@ -168,9 +168,14 @@ export class PaletteController {
       return
     }
 
+    // Hide group titles when the breadcrumb already provides context
+    // (i.e., sub-screens with a single group don't need a redundant header)
+    const uniqueGroups = new Set(this.filtered.map(i => i.group))
+    const hideGroupTitles = screen.breadcrumb !== null && uniqueGroups.size <= 1
+
     let lastGroup = ''
     this.filtered.forEach((item, index) => {
-      if (item.group !== lastGroup) {
+      if (!hideGroupTitles && item.group !== lastGroup) {
         lastGroup = item.group
         const groupTitleEl = document.createElement('div')
         groupTitleEl.className = 'group-title'
