@@ -1,41 +1,27 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, protocol, net } from 'electron';
-import { registerStoreHandlers, startFileWatcher, stopFileWatcher, getStorePath, onAnyChange } from './ipc/store.js';
+import { app, BrowserWindow, ipcMain, Menu, protocol, net } from 'electron';
+import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerAuthHandlers } from './ipc/auth.js';
-import { registerBusHandlers, forwardBusPublish, forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
+import { registerBusHandlers } from './ipc/bus.js';
 import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
-import { registerTaskRunnerHandlers, forwardStartTask } from './task-runner/ipc.js';
-import { runCleanup } from './cleanup.js';
-import type { AgentDbChange } from './db/sqlite.js';
-import { RendererBridge } from './renderer-bridge.js';
-import { TabViewManager } from './tab-views/manager.js';
-import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
+import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
-  getAgentRoot,
-  ensureAgentRuntimeBootstrap,
-  getCurrentAgentRoot,
   showAgentPickerDialog,
   showOpenAgentDialog,
   showInstallAgentDialog,
-  openAgent,
-  onAgentRootChanged,
   getRecentAgents,
   isAgentDir,
   shortenPath,
 } from './agent-manager.js';
-import { startHttpApi } from './http-api/server.js';
-import type { HttpApiServer } from './http-api/server.js';
-import { readAgentHttpPort } from './http-api/agent-config.js';
-import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
-import { TriggerEngine } from './triggers/engine.js';
-import { scheduleBackup, stopBackupScheduler, getBackupStatus } from './backup.js';
+import { windowManager } from './window-manager.js';
+import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -75,335 +61,82 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-let mainWindow: BrowserWindow | null;
-let httpApi: HttpApiServer | null = null;
-let triggerEngine: TriggerEngine | null = null;
-
 const clientPath = path.join(import.meta.dirname, 'client', 'index.html');
 
-// --- Module instantiation + dependency wiring ---
-
-const rendererBridge = new RendererBridge({
-  getMainWindow: () => mainWindow,
-});
-
-const tabViewManager = new TabViewManager({
-  getMainWindow: () => mainWindow,
-  toggleCommandPalette: () => commandPalette.toggle(),
-  focusMainRendererWindow: () => rendererBridge.focusMainRendererWindow(),
-  dispatchRendererCustomEvent: (name, detail) => rendererBridge.dispatchRendererCustomEvent(name, detail),
-  dispatchRendererWindowEvent: (name) => rendererBridge.dispatchRendererWindowEvent(name),
-});
-
-const commandPalette = new CommandPaletteManager({
-  getMainWindow: () => mainWindow,
-  getAgentRoot,
-  rendererBridge,
-  getTabViewManager: () => tabViewManager,
-  getStorePath,
-});
-
-// --- IPC registration ---
+// --- IPC registration (global, routes via windowManager) ---
 
 registerStoreHandlers();
 registerDialogSubscribers();
 
 onAnyChange((key, newValue) => {
-  const cpWindow = commandPalette.getWindow();
-  if (cpWindow && !cpWindow.isDestroyed()) {
-    cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value: newValue });
-  }
+  windowManager.broadcastSettingChanged(key, newValue);
 });
 
-let dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-function onDbChange(change: AgentDbChange): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('bus:dbChanged', change);
-
-  // Debounced reload of triggers when the triggers table changes
-  if (change.table === 'triggers' && triggerEngine) {
-    if (triggerReloadDebounceTimer) clearTimeout(triggerReloadDebounceTimer);
-    triggerReloadDebounceTimer = setTimeout(() => {
-      triggerEngine?.reload().catch(err => {
-        console.error('[triggers] Reload failed:', err);
-      });
-    }, 500);
-  }
-
-  // Debounced backup status refresh so status line updates modified indicator
-  if (dbChangeDebounceTimer) clearTimeout(dbChangeDebounceTimer);
-  dbChangeDebounceTimer = setTimeout(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
-  }, 5000);
-}
-
-const tabTools = {
-  getTabs: () => tabViewManager.getTabsHandler(),
-  openTab: (req: Parameters<typeof tabViewManager.openTabHandler>[0]) => tabViewManager.openTabHandler(req),
-  closeTab: (req: Parameters<typeof tabViewManager.closeTabHandler>[0]) => tabViewManager.closeTabHandler(req),
-  selectTab: (req: Parameters<typeof tabViewManager.selectTabHandler>[0]) => tabViewManager.selectTabHandler(req),
-  reloadTab: (req: Parameters<typeof tabViewManager.reloadTabHandler>[0]) => tabViewManager.reloadTabHandler(req),
-  captureTab: (req: Parameters<typeof tabViewManager.captureTabById>[0]) => tabViewManager.captureTabById(req),
-  getTabConsoleLogs: (req: Parameters<typeof tabViewManager.getTabConsoleLogsById>[0]) => tabViewManager.getTabConsoleLogsById(req),
-  execTabJs: (req: Parameters<typeof tabViewManager.execTabJsById>[0]) => tabViewManager.execTabJsById(req),
-};
-
-registerFilesHandlers(getAgentRoot);
-registerSqlHandlers(getAgentRoot, onDbChange);
-registerTabsHandlers(tabTools);
-registerSessionsHandlers(getAgentRoot);
-registerAuthHandlers(getAgentRoot);
+registerFilesHandlers((e) => windowManager.getAgentRootForEvent(e));
+registerSqlHandlers(
+  (e) => windowManager.getAgentRootForEvent(e),
+  (event, change) => windowManager.onDbChange(event, change),
+);
+registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTools);
+registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
+registerAuthHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerRequestHeadersHandlers();
+registerBusHandlers((e) => windowManager.getWindowForEvent(e));
+registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
+registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);
+registerTaskRunnerHandlers(
+  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getWindowForEvent(e),
+);
 
-registerTabViewHandlers(tabViewManager);
-registerCommandPaletteHandlers(commandPalette);
-registerTaskRunnerHandlers(getAgentRoot, () => mainWindow);
-
-ipcMain.handle('app:getAgentRoot', () => getCurrentAgentRoot());
-
-ipcMain.handle('app:getHttpApiPort', () => httpApi?.port() ?? null);
-
-ipcMain.handle('app:getBackupStatus', () => {
-  const root = getCurrentAgentRoot();
-  if (!root) return null;
-  return getBackupStatus(root);
-});
-
-// --- HTTP server + trigger engine lifecycle ---
-
-function createTriggerEngine(api: HttpApiServer): TriggerEngine {
-  return new TriggerEngine({
-    getAgentRoot,
-    startTask: (taskId, input?, origin?) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardStartTask(mainWindow, taskId, input, origin);
-    },
-    busWaitFor: (topic, timeoutMs?) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      return forwardBusWaitFor(mainWindow, topic, timeoutMs);
-    },
-    busSubscribe: (topic, fn) => {
-      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window is not available');
-      const subId = forwardBusSubscribe(mainWindow, topic, fn);
-      return () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          forwardBusUnsubscribe(mainWindow, subId);
-        }
-      };
-    },
-    httpApi: api,
-  });
-}
-
-async function stopHttpServerForAgent(agentRoot: string | null): Promise<void> {
-  if (triggerEngine) {
-    if (triggerReloadDebounceTimer) {
-      clearTimeout(triggerReloadDebounceTimer);
-      triggerReloadDebounceTimer = null;
-    }
-    triggerEngine.stop();
-    triggerEngine = null;
-  }
-  if (httpApi) {
-    await httpApi.close();
-    httpApi = null;
-  }
-  if (agentRoot) {
-    removeLockfile(agentRoot);
-  }
-}
-
-async function startHttpServerForAgent(agentRoot: string): Promise<void> {
-  cleanStaleLockfile(agentRoot);
-  const preferredPort = readAgentHttpPort(agentRoot);
-
+ipcMain.handle('app:getAgentRoot', (event) => {
   try {
-    httpApi = await startHttpApi({ getAgentRoot, preferredPort });
-    writeLockfile(agentRoot, httpApi.port());
-    triggerEngine = createTriggerEngine(httpApi);
-  } catch (err) {
-    console.error('[http-api] Failed to start HTTP server:', err);
-  }
-}
-
-// --- Agent root change listener ---
-
-onAgentRootChanged(async (newRoot, oldRoot) => {
-  commandPalette.destroy();
-  tabViewManager.destroyAllTabViews();
-  tabViewManager.clearTrackedViewWebContents();
-  await stopHttpServerForAgent(oldRoot);
-  await ensureAgentRuntimeBootstrap(newRoot);
-  await startHttpServerForAgent(newRoot);
-  scheduleBackup(newRoot).then(() => {
-    rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
-  }).catch((err) => console.error('[backup] Schedule failed:', err));
-  mainWindow?.reload();
-  buildAndSetMenu();
-  if (triggerEngine && mainWindow) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      triggerEngine?.start().catch(err => console.error('[triggers] Start after agent switch failed:', err));
-    });
+    return windowManager.getAgentRootForEvent(event);
+  } catch {
+    return null;
   }
 });
 
-// --- App window creation ---
-
-async function createAppWindow(agentRoot: string) {
-  await ensureAgentRuntimeBootstrap(agentRoot);
-
-  mainWindow = new BrowserWindow({
-    show: false,
-    title: agentRoot,
-    titleBarStyle: 'hidden',
-    ...(process.platform === 'darwin'
-      ? { trafficLightPosition: { x: 13, y: 12 } }
-      : {
-          titleBarOverlay: {
-            color: nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#f0f0f0',
-            symbolColor: nativeTheme.shouldUseDarkColors ? '#808080' : '#999999',
-            height: 36,
-          },
-        }),
-    webPreferences: {
-      preload: path.join(import.meta.dirname, 'preload.cjs'),
-      webSecurity: false,
-    },
-  });
-
-  mainWindow.on('page-title-updated', (evt) => {
-    evt.preventDefault();
-  });
-
-  mainWindow.on('closed', () => {
-    commandPalette.destroy();
-    tabViewManager.destroyAllTabViews();
-  });
-
-  mainWindow.on('move', () => {
-    commandPalette.syncBounds();
-  });
-
-  mainWindow.on('resize', () => {
-    commandPalette.syncBounds();
-  });
-
-  registerBusHandlers(mainWindow);
-
-  mainWindow.maximize();
-
-  mainWindow.webContents.on('did-start-loading', () => {
-    commandPalette.destroy();
-    tabViewManager.destroyAllTabViews();
-  });
-
-  mainWindow.loadURL('app://index.html');
-
-  mainWindow.show();
-
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    const key = String(input.key || '').toLowerCase();
-    if (!key || input.alt || input.isAutoRepeat) {
-      return;
-    }
-
-    const hasCommandModifier = process.platform === 'darwin' ? input.meta : input.control;
-    if (!hasCommandModifier) {
-      return;
-    }
-
-    if (!input.shift && key === 'k') {
-      event.preventDefault();
-      commandPalette.toggle();
-      return;
-    }
-
-    if (!input.shift && key === 'i') {
-      event.preventDefault();
-      rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
-      return;
-    }
-
-    if (!input.shift && key === 'w') {
-      event.preventDefault();
-      rendererBridge.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
-      return;
-    }
-
-    if (!input.shift && key === 'r') {
-      event.preventDefault();
-      tabViewManager.reloadVisibleTabView();
-    }
-
-    if (input.shift && key === 'r') {
-      event.preventDefault();
-      mainWindow?.reload();
-    }
-  });
-
-  // Start triggers after page loads (triggers need mainWindow for bus/task forwarding)
-  if (triggerEngine) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
-    });
+ipcMain.handle('app:getHttpApiPort', (event) => {
+  try {
+    const ctx = windowManager.getContextForSender(event.sender.id);
+    return ctx.httpApi?.port() ?? null;
+  } catch {
+    return null;
   }
-}
+});
 
-async function createWindow() {
-  let agentRoot = getCurrentAgentRoot();
-
-  // Try most recent agent on fresh launch
-  if (!agentRoot) {
-    const recents = getRecentAgents();
-    if (recents[0] && isAgentDir(recents[0].path)) {
-      agentRoot = recents[0].path;
-    }
+ipcMain.handle('app:getBackupStatus', (event) => {
+  try {
+    const root = windowManager.getAgentRootForEvent(event);
+    return getBackupStatus(root);
+  } catch {
+    return null;
   }
-
-  if (agentRoot) {
-    openAgent(agentRoot);
-    await createAppWindow(agentRoot);
-    runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
-    return;
-  }
-
-  // No agent found — show picker
-  const picked = await showAgentPickerDialog();
-  if (!picked) {
-    app.quit();
-    return;
-  }
-
-  openAgent(picked);
-  await createAppWindow(picked);
-  runCleanup(picked).catch((err) => console.error('[cleanup] failed:', err));
-}
+});
 
 // --- Agent actions from menu / command palette ---
 
 async function handleOpenAgent() {
-  const picked = await showOpenAgentDialog(mainWindow);
+  const picked = await showOpenAgentDialog(null);
   if (!picked) return;
-  openAgent(picked);
+  await windowManager.openAgentInWindow(picked);
 }
 
 async function handleInstallAgent() {
-  const picked = await showInstallAgentDialog(mainWindow);
+  const picked = await showInstallAgentDialog(null);
   if (!picked) return;
-  openAgent(picked);
+  await windowManager.openAgentInWindow(picked);
 }
 
 async function handleSwitchAgent(agentPath: string) {
   if (!isAgentDir(agentPath)) {
-    const picked = await showOpenAgentDialog(mainWindow);
+    const picked = await showOpenAgentDialog(null);
     if (!picked) return;
-    openAgent(picked);
+    await windowManager.openAgentInWindow(picked);
     return;
   }
-  openAgent(agentPath);
+  await windowManager.openAgentInWindow(agentPath);
 }
 
 // --- Menu ---
@@ -441,7 +174,8 @@ function buildAndSetMenu() {
         {
           label: 'Devtools',
           click: () => {
-            mainWindow?.webContents.openDevTools();
+            const win = BrowserWindow.getFocusedWindow();
+            win?.webContents.openDevTools();
           },
         },
       ],
@@ -511,6 +245,30 @@ function buildAndSetMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// --- Initial window creation ---
+
+async function createInitialWindow() {
+  // Try most recent agent on fresh launch
+  const recents = getRecentAgents();
+  const agentRoot = recents[0] && isAgentDir(recents[0].path) ? recents[0].path : null;
+
+  if (agentRoot) {
+    await windowManager.createWindow(agentRoot);
+    buildAndSetMenu();
+    return;
+  }
+
+  // No agent found — show picker
+  const picked = await showAgentPickerDialog();
+  if (!picked) {
+    app.quit();
+    return;
+  }
+
+  await windowManager.createWindow(picked);
+  buildAndSetMenu();
+}
+
 // --- App lifecycle ---
 
 app.on('ready', async () => {
@@ -528,22 +286,49 @@ app.on('ready', async () => {
     return net.fetch(pathToFileURL(absolutePath).toString());
   });
 
-  const handleViewRequest = createViewProtocolHandler({ getAgentRoot, clientPath });
+  const handleViewRequest = createViewProtocolHandler({
+    getAgentRoot: (hash) => {
+      if (hash) {
+        return windowManager.getAgentRootForHash(hash);
+      }
+      // Fallback: if no hash, try to find the only open agent
+      const contexts = windowManager.getAllContexts();
+      if (contexts.length === 1) return contexts[0].agentRoot;
+      return null;
+    },
+    clientPath,
+  });
   protocol.handle('agentview', (request) => {
     return handleViewRequest(request);
   });
 
-  createWindow();
+  createInitialWindow();
 });
 
-app.on('web-contents-created', (event, webContents) => {
-  tabViewManager.registerWebContentsTracking(event, webContents);
+app.on('web-contents-created', (_event, webContents) => {
+  if (webContents.getType() !== 'webview') return;
+
+  // Find owning window via hostWebContents → BrowserWindow lookup
+  const hostWc = (webContents as Electron.WebContents & { hostWebContents?: Electron.WebContents }).hostWebContents;
+  const ownerWin = hostWc
+    ? BrowserWindow.fromWebContents(hostWc)
+    : BrowserWindow.fromWebContents(webContents);
+
+  if (ownerWin) {
+    try {
+      const ctx = windowManager.getContextForSender(ownerWin.webContents.id);
+      ctx.tabViewManager.registerWebContentsTracking(_event, webContents);
+      return;
+    } catch { /* fall through */ }
+  }
+
+  // Fallback: register with all (for webviews created before window mapping is ready)
+  for (const ctx of windowManager.getAllContexts()) {
+    ctx.tabViewManager.registerWebContentsTracking(_event, webContents);
+  }
 });
 
 app.on('window-all-closed', () => {
-  commandPalette.destroy();
-  tabViewManager.destroyAllTabViews();
-  tabViewManager.clearTrackedViewWebContents();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -552,14 +337,11 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   stopFileWatcher();
   stopBackupScheduler();
-  stopHttpServerForAgent(getCurrentAgentRoot());
-  commandPalette.destroy();
-  tabViewManager.destroyAllTabViews();
-  tabViewManager.clearTrackedViewWebContents();
+  windowManager.destroyAll();
 });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    createInitialWindow();
   }
 });

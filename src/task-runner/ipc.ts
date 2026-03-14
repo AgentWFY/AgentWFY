@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -55,28 +55,28 @@ function forwardStopTask(win: BrowserWindow, runId: string): Promise<void> {
   });
 }
 
-export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow: () => BrowserWindow | null): void {
-  const resolvePrivatePath = (relativePath: string, options?: { allowMissing?: boolean }) =>
-    assertPathAllowed(getRoot(), relativePath, { ...options, allowAgentPrivate: true });
-  const ensureTaskLogsDir = async (): Promise<string> => {
-    const taskLogsDir = await resolvePrivatePath('.agentwfy/task_logs', { allowMissing: true });
+export function registerTaskRunnerHandlers(getRoot: (e: IpcMainInvokeEvent) => string, getMainWindow: (e: IpcMainInvokeEvent) => BrowserWindow): void {
+  const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
+    assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
+  const ensureTaskLogsDir = async (event: IpcMainInvokeEvent): Promise<string> => {
+    const taskLogsDir = await resolvePrivatePath(event, '.agentwfy/task_logs', { allowMissing: true });
     await fs.mkdir(taskLogsDir, { recursive: true });
     return taskLogsDir;
   };
-  const resolveTaskLogPath = (logFileName: string, options?: { allowMissing?: boolean }) =>
-    resolvePrivatePath(`.agentwfy/task_logs/${normalizeTaskLogFileName(logFileName)}`, options);
+  const resolveTaskLogPath = (event: IpcMainInvokeEvent, logFileName: string, options?: { allowMissing?: boolean }) =>
+    resolvePrivatePath(event, `.agentwfy/task_logs/${normalizeTaskLogFileName(logFileName)}`, options);
 
   // --- Forwarding handlers for agentview callers ---
 
-  ipcMain.handle(Channels.tasks.start, async (_event, taskId: number, input?: unknown) => {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) throw new Error('Main window is not available');
+  ipcMain.handle(Channels.tasks.start, async (event, taskId: number, input?: unknown) => {
+    const win = getMainWindow(event);
+    if (win.isDestroyed()) throw new Error('Main window is not available');
     return forwardStartTask(win, taskId, input, { type: 'view' });
   });
 
-  ipcMain.handle(Channels.tasks.stop, async (_event, runId: string) => {
-    const win = getMainWindow();
-    if (!win || win.isDestroyed()) throw new Error('Main window is not available');
+  ipcMain.handle(Channels.tasks.stop, async (event, runId: string) => {
+    const win = getMainWindow(event);
+    if (win.isDestroyed()) throw new Error('Main window is not available');
     return forwardStopTask(win, runId);
   });
 
@@ -110,11 +110,11 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
     }
   });
 
-  // --- Log persistence handlers (unchanged) ---
+  // --- Log persistence handlers ---
 
   // listLogHistory — inlined from TaskRunner class
-  ipcMain.handle(Channels.tasks.listLogHistory, async () => {
-    const dataDir = getRoot();
+  ipcMain.handle(Channels.tasks.listLogHistory, async (event) => {
+    const dataDir = getRoot(event);
     const taskLogsDir = path.join(dataDir, '.agentwfy', 'task_logs');
 
     try {
@@ -156,8 +156,8 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
   });
 
   // listTaskLogs(limit?) → [{ name, updatedAt }]
-  ipcMain.handle(Channels.tasks.listLogs, async (_event, limit?: number) => {
-    const taskLogsDir = await ensureTaskLogsDir();
+  ipcMain.handle(Channels.tasks.listLogs, async (event, limit?: number) => {
+    const taskLogsDir = await ensureTaskLogsDir(event);
     const requestedLimit = typeof limit === 'number' && Number.isFinite(limit)
       ? Math.floor(limit)
       : DEFAULT_TASK_LOG_LIST_LIMIT;
@@ -189,14 +189,14 @@ export function registerTaskRunnerHandlers(getRoot: () => string, getMainWindow:
   });
 
   // readTaskLog(logFileName) → file content
-  ipcMain.handle(Channels.tasks.readLog, async (_event, logFileName: string) => {
-    const logPath = await resolveTaskLogPath(logFileName);
+  ipcMain.handle(Channels.tasks.readLog, async (event, logFileName: string) => {
+    const logPath = await resolveTaskLogPath(event, logFileName);
     return fs.readFile(logPath, 'utf-8');
   });
 
   // writeTaskLog(logFileName, content)
-  ipcMain.handle(Channels.tasks.writeLog, async (_event, logFileName: string, content: string) => {
-    const logPath = await resolveTaskLogPath(logFileName, { allowMissing: true });
+  ipcMain.handle(Channels.tasks.writeLog, async (event, logFileName: string, content: string) => {
+    const logPath = await resolveTaskLogPath(event, logFileName, { allowMissing: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
     await fs.writeFile(logPath, content, 'utf-8');
   });
