@@ -13,6 +13,7 @@ export class TlTabView extends HTMLElement {
   private _viewUpdatedAt: number | null = null
   private _viewChanged = false
   private _hiddenTab = false
+  private _viewParams: Record<string, string> | null = null
   private loadRequestId = 0
   private loading = false
   private error: string | null = null
@@ -46,7 +47,7 @@ export class TlTabView extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab']
+    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab', 'view-params']
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
@@ -58,6 +59,7 @@ export class TlTabView extends HTMLElement {
     if (name === 'view-url' && !this.hasAttribute('view-id') && !this.hasAttribute('view-path')) this._source = nextValue
     if (name === 'view-updated-at') this._viewUpdatedAt = parseOptionalNumber(value)
     if (name === 'hidden-tab') this._hiddenTab = value !== null
+    if (name === 'view-params') this._viewParams = TlTabView.parseJsonParams(value)
 
     if (!this.isConnected || oldValue === nextValue) return
 
@@ -86,6 +88,11 @@ export class TlTabView extends HTMLElement {
   get tabId() { return this._tabId }
   get viewId() { return this._source }
 
+  private static parseJsonParams(value: string | null): Record<string, string> | null {
+    if (!value) return null
+    try { return JSON.parse(value) } catch { return null }
+  }
+
   get viewChanged() { return this._viewChanged }
   set viewChanged(value: boolean) {
     this._viewChanged = value
@@ -98,6 +105,7 @@ export class TlTabView extends HTMLElement {
     this._source = this.getAttribute('view-id') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
     this._viewUpdatedAt = parseOptionalNumber(this.getAttribute('view-updated-at'))
     this._hiddenTab = this.hasAttribute('hidden-tab')
+    this._viewParams = TlTabView.parseJsonParams(this.getAttribute('view-params'))
 
     this.style.display = 'block'
     this.style.width = '100%'
@@ -377,17 +385,27 @@ export class TlTabView extends HTMLElement {
       return source
     }
 
+    let url: string
     if (this._tabType === 'file') {
       // File tabs use agentview://view/ with source=file param
       const encodedPath = encodeURIComponent(source)
       const revision = Date.now()
-      return `agentview://view/${encodedPath}?source=file&rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
+      url = `agentview://view/${encodedPath}?source=file&rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
+    } else {
+      // Default: view
+      const encodedViewId = encodeURIComponent(source)
+      const revision = this._viewUpdatedAt ?? Date.now()
+      url = `agentview://view/${encodedViewId}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
     }
 
-    // Default: view
-    const encodedViewId = encodeURIComponent(source)
-    const revision = this._viewUpdatedAt ?? Date.now()
-    return `agentview://view/${encodedViewId}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
+    // Append custom params
+    if (this._viewParams) {
+      for (const [key, value] of Object.entries(this._viewParams)) {
+        url += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+      }
+    }
+
+    return url
   }
 
   private async loadView(source: string) {
