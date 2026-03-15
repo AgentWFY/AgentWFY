@@ -29,6 +29,7 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
   UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
+  LIST_TASKS: 'app:command-palette:list-tasks',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -76,6 +77,9 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, key, value);
+  },
+  listTasks(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_TASKS);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);

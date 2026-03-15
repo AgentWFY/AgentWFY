@@ -221,13 +221,7 @@ export class CommandPaletteManager {
   async buildItems(): Promise<CommandPaletteItem[]> {
     const agentRoot = this.deps.getAgentRoot();
 
-    const [rows, tasks] = await Promise.all([
-      listViews(agentRoot),
-      listTasks(agentRoot).catch((err) => {
-        console.error('[command-palette] listTasks failed:', err);
-        return [] as Awaited<ReturnType<typeof listTasks>>;
-      }),
-    ]);
+    const rows = await listViews(agentRoot);
 
     const viewItems: CommandPaletteItem[] = rows.map((row) => ({
       id: `view:${row.id}`,
@@ -238,19 +232,6 @@ export class CommandPaletteManager {
         viewId: String(row.id),
         title: row.name,
         viewUpdatedAt: row.updated_at ?? null,
-      },
-    }));
-
-    const taskItems: CommandPaletteItem[] = tasks.map((task) => ({
-      id: `task:${task.id}`,
-      title: task.name,
-      subtitle: task.description || undefined,
-      group: 'Tasks',
-      action: {
-        type: 'run-task',
-        taskId: task.id,
-        taskName: task.name,
-        taskDescription: task.description || undefined,
       },
     }));
 
@@ -339,9 +320,15 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'restore-agent-db' },
       },
+      {
+        id: 'action:run-task',
+        title: 'Run Task...',
+        group: 'Actions',
+        action: { type: 'enter-tasks' },
+      },
     ];
 
-    return [...actionItems, ...taskItems, ...viewItems];
+    return [...actionItems, ...viewItems];
   }
 
   private buildSettingItems(
@@ -430,6 +417,27 @@ export class CommandPaletteManager {
     }));
   }
 
+  async buildTaskItems(): Promise<CommandPaletteItem[]> {
+    try {
+      const tasks = await listTasks(this.deps.getAgentRoot());
+      return tasks.map((task) => ({
+        id: `task:${task.id}`,
+        title: task.name,
+        subtitle: task.description || undefined,
+        group: 'Tasks' as const,
+        action: {
+          type: 'run-task' as const,
+          taskId: task.id,
+          taskName: task.name,
+          taskDescription: task.description || undefined,
+        },
+      }));
+    } catch (err) {
+      console.error('[command-palette] listTasks failed:', err);
+      return [];
+    }
+  }
+
   buildBackupItems(): CommandPaletteItem[] {
     const backups = listAllBackups(this.deps.getAgentRoot());
     return backups.map((b) => {
@@ -508,6 +516,7 @@ export class CommandPaletteManager {
       case 'enter-settings':
       case 'enter-agent-settings':
       case 'enter-recent-agents':
+      case 'enter-tasks':
         // Handled entirely in the palette UI
         return;
 
