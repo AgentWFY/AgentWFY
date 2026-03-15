@@ -18,8 +18,12 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).buildSettingsItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (event, key: string, value: unknown) => {
-    return getCommandPalette(event).updateSetting(key, value);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (event, key: string, value: unknown, scope?: 'agent' | 'global') => {
+    return getCommandPalette(event).updateSetting(key, value, scope);
+  });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_AGENT_OVERRIDE, async (event, key: string) => {
+    getCommandPalette(event).clearAgentOverride(key);
   });
 
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async (event) => {
@@ -40,14 +44,6 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
 
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_RECENT_AGENTS, async (event) => {
     return getCommandPalette(event).buildRecentAgentItems();
-  });
-
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS, async (event) => {
-    return getCommandPalette(event).buildAgentSettingsItems();
-  });
-
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, async (event, key: string, value: unknown) => {
-    return getCommandPalette(event).updateAgentSetting(key, value);
   });
 
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_TASKS, async (event) => {

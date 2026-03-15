@@ -4,9 +4,9 @@ import { pathToFileURL } from 'url';
 import fs from 'fs/promises';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
-import { SETTINGS, AGENT_SETTINGS, type SettingDefinition } from '../settings/registry.js';
-import { storeGet, storeSet } from '../ipc/store.js';
-import { getAgentConfigValues, setAgentConfigValue } from '../http-api/agent-config.js';
+import { ALL_SETTINGS, type SettingDefinition } from '../settings/registry.js';
+import { storeSet } from '../ipc/store.js';
+import { getConfigResolved, setAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
   getRecentAgents,
   showOpenAgentDialog,
@@ -297,12 +297,6 @@ export class CommandPaletteManager {
         action: { type: 'install-agent' },
       },
       {
-        id: 'agent:settings',
-        title: 'Agent Settings...',
-        group: 'Actions',
-        action: { type: 'enter-agent-settings' },
-      },
-      {
         id: 'agent:recent-agents',
         title: 'Recent Agents...',
         group: 'Actions',
@@ -331,21 +325,17 @@ export class CommandPaletteManager {
     return [...actionItems, ...viewItems];
   }
 
-  private buildSettingItems(
-    defs: SettingDefinition[],
-    getValue: (key: string) => unknown,
-    idPrefix: string,
-    group: CommandPaletteItem['group'],
-  ): CommandPaletteItem[] {
-    return defs.map((def) => {
-      const value = getValue(def.key);
-      const displayValue = value !== undefined ? String(value) : String(def.defaultValue);
+  buildSettingsItems(): CommandPaletteItem[] {
+    const agentRoot = this.deps.getAgentRoot();
+    return ALL_SETTINGS.map((def) => {
+      const resolved = getConfigResolved(agentRoot, def.key);
       return {
-        id: `${idPrefix}:${def.key}`,
+        id: `setting:${def.key}`,
         title: def.label,
         subtitle: def.description,
-        group,
-        settingValue: displayValue,
+        group: 'Settings' as const,
+        settingValue: String(resolved.value),
+        settingSource: resolved.source,
         settingType: def.type,
         action: {
           type: 'edit-setting' as const,
@@ -354,15 +344,6 @@ export class CommandPaletteManager {
         },
       };
     });
-  }
-
-  buildSettingsItems(): CommandPaletteItem[] {
-    return this.buildSettingItems(SETTINGS, storeGet, 'setting', 'Settings');
-  }
-
-  buildAgentSettingsItems(): CommandPaletteItem[] {
-    const values = getAgentConfigValues(this.deps.getAgentRoot(), AGENT_SETTINGS.map((d) => d.key));
-    return this.buildSettingItems(AGENT_SETTINGS, (key) => values.get(key), 'agent-setting', 'Agent Settings');
   }
 
   private coerceAndValidate(def: SettingDefinition, rawValue: unknown): { success: boolean; value?: unknown; error?: string } {
@@ -384,26 +365,23 @@ export class CommandPaletteManager {
     return { success: true, value: coerced };
   }
 
-  updateAgentSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
-    const def = AGENT_SETTINGS.find((s) => s.key === key);
-    if (!def) return { success: false, error: 'Unknown agent setting' };
-
-    const result = this.coerceAndValidate(def, rawValue);
-    if (!result.success) return { success: false, error: result.error };
-
-    setAgentConfigValue(this.deps.getAgentRoot(), key, result.value);
-    return { success: true };
-  }
-
-  updateSetting(key: string, rawValue: unknown): { success: boolean; error?: string } {
-    const def = SETTINGS.find((s) => s.key === key);
+  updateSetting(key: string, rawValue: unknown, scope?: 'agent' | 'global'): { success: boolean; error?: string } {
+    const def = ALL_SETTINGS.find((s) => s.key === key);
     if (!def) return { success: false, error: 'Unknown setting' };
 
     const result = this.coerceAndValidate(def, rawValue);
     if (!result.success) return { success: false, error: result.error };
 
-    storeSet(key, result.value);
+    if (scope === 'agent') {
+      setAgentConfig(this.deps.getAgentRoot(), key, result.value);
+    } else {
+      storeSet(key, result.value);
+    }
     return { success: true };
+  }
+
+  clearAgentOverride(key: string): void {
+    removeAgentConfig(this.deps.getAgentRoot(), key);
   }
 
   buildRecentAgentItems(): CommandPaletteItem[] {
@@ -514,7 +492,6 @@ export class CommandPaletteManager {
         break;
 
       case 'enter-settings':
-      case 'enter-agent-settings':
       case 'enter-recent-agents':
       case 'enter-tasks':
         // Handled entirely in the palette UI

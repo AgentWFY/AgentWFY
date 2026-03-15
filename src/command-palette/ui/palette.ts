@@ -79,7 +79,7 @@ export class PaletteController {
     }
 
     const current = this.currentScreen
-    if (current && (current.id === 'settings' || current.id === 'agent-settings' || current.id === 'editing')) {
+    if (current && (current.id === 'settings' || current.id === 'editing')) {
       void this.loadAndRenderItems()
     }
   }
@@ -223,10 +223,19 @@ export class PaletteController {
       }
 
       if (item.settingValue !== undefined) {
-        const valueEl = document.createElement('span')
-        valueEl.className = 'setting-value'
-        valueEl.textContent = item.settingValue || '(empty)'
-        itemButton.appendChild(valueEl)
+        const valueWrap = document.createElement('span')
+        valueWrap.className = 'setting-value'
+
+        if (item.settingSource) {
+          const sourceEl = document.createElement('span')
+          sourceEl.className = 'setting-source'
+          sourceEl.textContent = item.settingSource
+          valueWrap.appendChild(sourceEl)
+          valueWrap.appendChild(document.createTextNode(' '))
+        }
+
+        valueWrap.appendChild(document.createTextNode(item.settingValue || '(empty)'))
+        itemButton.appendChild(valueWrap)
       }
 
       this.resultsEl.appendChild(itemButton)

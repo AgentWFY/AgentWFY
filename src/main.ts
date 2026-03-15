@@ -24,7 +24,7 @@ import {
 import { windowManager } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import { getViewByName } from './db/views.js';
-import { getAgentConfigValue } from './http-api/agent-config.js';
+import { getConfigValue } from './settings/config.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -116,7 +116,7 @@ ipcMain.handle('app:getHttpApiPort', (event) => {
 ipcMain.handle('app:getDefaultView', async (event) => {
   try {
     const root = windowManager.getAgentRootForEvent(event);
-    const configValue = getAgentConfigValue(root, 'defaultView');
+    const configValue = getConfigValue(root, 'defaultView');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
     const viewName = trimmed || 'Home';
     const view = await getViewByName(root, viewName);
