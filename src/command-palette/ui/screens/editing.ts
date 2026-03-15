@@ -101,7 +101,7 @@ export class EditingScreen implements PaletteScreen {
     try {
       const result = await this.bridge.updateSetting(this.params.key, value, this.params.scope)
       if (result.success) {
-        return { type: 'pop' }
+        return { type: 'pop', count: 2 }
       }
       this.error = result.error || 'Failed to save'
       return { type: 'none' }
