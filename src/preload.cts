@@ -357,6 +357,9 @@ if (isApp) {
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
       return ipcRenderer.invoke('app:getBackupStatus');
     },
+    getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null> {
+      return ipcRenderer.invoke('app:getDefaultView');
+    },
     ffmpeg: {
       run(args: string[]): Promise<{ id: string }> {
         return ipcRenderer.invoke(Channels.ffmpeg.run, args);
