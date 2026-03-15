@@ -73,4 +73,11 @@ export const AGENT_SETTINGS: SettingDefinition[] = [
       return null
     },
   },
+  {
+    key: 'defaultView',
+    label: 'Default View',
+    type: 'string',
+    defaultValue: 'Home',
+    description: 'Name of the view to open on startup',
+  },
 ]
