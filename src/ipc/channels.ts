@@ -76,4 +76,8 @@ export const Channels = {
     forwardStop: 'tasks:forwardStop',
     forwardStopResult: 'tasks:forwardStopResult',
   },
+  ffmpeg: {
+    run: 'ffmpeg:run',
+    kill: 'ffmpeg:kill',
+  },
 } as const;

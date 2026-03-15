@@ -576,6 +576,21 @@ export class JsRuntime {
         taskRunner.stopTask(request.runId)
         return undefined as WorkerHostMethodMap[M]['result']
       }
+      case 'ffmpeg': {
+        const request = params as WorkerHostMethodMap['ffmpeg']['params']
+        if (!request || !Array.isArray(request.args)) {
+          throw new Error('ffmpeg requires an args array')
+        }
+        return await ipc.ffmpeg.run(request.args) as WorkerHostMethodMap[M]['result']
+      }
+      case 'ffmpegKill': {
+        const request = params as WorkerHostMethodMap['ffmpegKill']['params']
+        if (!request || typeof request.id !== 'string' || !request.id.trim()) {
+          throw new Error('ffmpegKill requires a non-empty id string')
+        }
+        await ipc.ffmpeg.kill(request.id)
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
       default:
         throw new Error(`Unsupported worker host method: ${String(method)}`)
     }

@@ -78,6 +78,10 @@ const Channels = {
     forwardStop: 'tasks:forwardStop',
     forwardStopResult: 'tasks:forwardStopResult',
   },
+  ffmpeg: {
+    run: 'ffmpeg:run',
+    kill: 'ffmpeg:kill',
+  },
 } as const;
 
 // --- Helpers ---
@@ -353,6 +357,14 @@ if (isApp) {
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
       return ipcRenderer.invoke('app:getBackupStatus');
     },
+    ffmpeg: {
+      run(args: string[]): Promise<{ id: string }> {
+        return ipcRenderer.invoke(Channels.ffmpeg.run, args);
+      },
+      kill(id: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
+      },
+    },
     tasks: {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
@@ -411,6 +423,12 @@ if (isAgentView) {
     },
     stopTask(runId: string): Promise<void> {
       return ipcRenderer.invoke(Channels.tasks.stop, runId);
+    },
+    ffmpeg(args: string[]): Promise<{ id: string }> {
+      return ipcRenderer.invoke(Channels.ffmpeg.run, args);
+    },
+    ffmpegKill(id: string): Promise<void> {
+      return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
     },
   });
 }

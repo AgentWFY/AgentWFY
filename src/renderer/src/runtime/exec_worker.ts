@@ -303,6 +303,10 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'startTask', { taskId, input }, signal)
     const stopTask = (runId: string) =>
       callHostMethod('' + requestId, 'stopTask', { runId }, signal)
+    const ffmpeg = (args: string[]) =>
+      callHostMethod('' + requestId, 'ffmpeg', { args }, signal)
+    const ffmpegKill = (id: string) =>
+      callHostMethod('' + requestId, 'ffmpegKill', { id }, signal)
 
     // Native fetch shadow: registers headers via IPC, appends _awfy_id, uses native fetch
     const fetch = async (input: string | URL | Request, init?: RequestInit) => {
@@ -518,6 +522,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'spawnAgent',
       'startTask',
       'stopTask',
+      'ffmpeg',
+      'ffmpegKill',
       'input',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
@@ -553,6 +559,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         spawnAgent,
         startTask,
         stopTask,
+        ffmpeg,
+        ffmpegKill,
         input
       ),
       timeoutMs,
