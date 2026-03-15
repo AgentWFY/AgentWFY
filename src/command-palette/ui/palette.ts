@@ -348,13 +348,13 @@ export class PaletteController {
     const screen = this.currentScreen
     const canNavigate = screen?.navigable ?? false
 
-    if (canNavigate && (event.key === 'ArrowDown' || event.key === 'Down' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'j'))) {
+    if (canNavigate && (event.key === 'ArrowDown' || event.key === 'Down' || (event.ctrlKey && (event.key.toLowerCase() === 'j' || event.key.toLowerCase() === 'n')))) {
       event.preventDefault()
       this.selectNext()
       return
     }
 
-    if (canNavigate && (event.key === 'ArrowUp' || event.key === 'Up' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k'))) {
+    if (canNavigate && (event.key === 'ArrowUp' || event.key === 'Up' || (event.ctrlKey && (event.key.toLowerCase() === 'k' || event.key.toLowerCase() === 'p')))) {
       event.preventDefault()
       this.selectPrev()
       return
@@ -368,13 +368,15 @@ export class PaletteController {
 
   private bindEvents(): void {
     this.searchInput.addEventListener('keydown', (event) => {
+      const isCtrlNav = event.ctrlKey && 'jknp'.includes(event.key.toLowerCase())
       if (
         event.key === 'ArrowDown' ||
         event.key === 'Down' ||
         event.key === 'ArrowUp' ||
         event.key === 'Up' ||
         event.key === 'Enter' ||
-        event.key === 'Escape'
+        event.key === 'Escape' ||
+        isCtrlNav
       ) {
         void this.handleKeyDown(event)
       }
