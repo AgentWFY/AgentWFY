@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS triggers (
   created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
+
+CREATE TABLE IF NOT EXISTS config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const CHANGE_TRACKING_SQL = `
@@ -83,6 +88,15 @@ CREATE TEMP TRIGGER IF NOT EXISTS _triggers_update AFTER UPDATE ON triggers BEGI
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _triggers_delete AFTER DELETE ON triggers BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.id, 'delete');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _config_insert AFTER INSERT ON config BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.rowid, 'insert');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _config_update AFTER UPDATE ON config BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.rowid, 'update');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.rowid, 'delete');
 END;
 `;
 

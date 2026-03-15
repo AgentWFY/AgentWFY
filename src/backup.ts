@@ -2,11 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { storeGet, onDidChange } from './ipc/store.js';
+import { getConfigValue } from './settings/config.js';
 import { resolveAgentDbPath } from './db/paths.js';
 
-const DEFAULT_INTERVAL_HOURS = 24;
-const DEFAULT_MAX_COUNT = 5;
 const BACKUP_DIR_NAME = 'backups';
 const META_FILE_NAME = 'backup-meta.json';
 
@@ -39,16 +37,12 @@ function getMetaPath(agentRoot: string): string {
   return path.join(agentRoot, '.agentwfy', META_FILE_NAME);
 }
 
-function getIntervalHours(): number {
-  const val = storeGet('backup.intervalHours');
-  if (typeof val === 'number' && isFinite(val) && val > 0) return val;
-  return DEFAULT_INTERVAL_HOURS;
+function getIntervalHours(agentRoot: string): number {
+  return getConfigValue(agentRoot, 'backup.intervalHours') as number;
 }
 
-function getMaxCount(): number {
-  const val = storeGet('backup.maxCount');
-  if (typeof val === 'number' && Number.isInteger(val) && val > 0) return val;
-  return DEFAULT_MAX_COUNT;
+function getMaxCount(agentRoot: string): number {
+  return getConfigValue(agentRoot, 'backup.maxCount') as number;
 }
 
 function fileHash(filePath: string): string {
@@ -168,7 +162,7 @@ export async function backupAgentDb(agentRoot: string): Promise<{ created: boole
     meta.nextVersion = version + 1;
 
     // Prune oldest versions beyond maxCount
-    const maxCount = getMaxCount();
+    const maxCount = getMaxCount(agentRoot);
     const sorted = getVersionNumbers(meta);
     if (sorted.length > maxCount) {
       const toRemove = sorted.slice(0, sorted.length - maxCount);
@@ -228,7 +222,6 @@ export async function restoreFromBackup(agentRoot: string, version: number): Pro
 // --- Scheduler ---
 
 const schedulerIntervals = new Map<string, ReturnType<typeof setInterval>>();
-let changeListenerRegistered = false;
 
 function clearSchedulerForAgent(agentRoot: string): void {
   const interval = schedulerIntervals.get(agentRoot);
@@ -239,7 +232,7 @@ function clearSchedulerForAgent(agentRoot: string): void {
 }
 
 function startSchedulerInterval(agentRoot: string): void {
-  const hours = getIntervalHours();
+  const hours = getIntervalHours(agentRoot);
   const ms = hours * 60 * 60 * 1000;
 
   const interval = setInterval(() => {
@@ -254,15 +247,12 @@ export async function scheduleBackup(agentRoot: string): Promise<void> {
   clearSchedulerForAgent(agentRoot);
   await backupAgentDb(agentRoot);
   startSchedulerInterval(agentRoot);
+}
 
-  if (!changeListenerRegistered) {
-    changeListenerRegistered = true;
-    onDidChange('backup.intervalHours', () => {
-      for (const root of schedulerIntervals.keys()) {
-        clearSchedulerForAgent(root);
-        startSchedulerInterval(root);
-      }
-    });
+export function rescheduleBackupForAgent(agentRoot: string): void {
+  if (schedulerIntervals.has(agentRoot)) {
+    clearSchedulerForAgent(agentRoot);
+    startSchedulerInterval(agentRoot);
   }
 }
 
