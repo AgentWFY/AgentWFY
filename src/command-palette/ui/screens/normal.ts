@@ -4,7 +4,7 @@ import type { CommandPaletteItem } from '../../types.js'
 import { SettingsScreen, AgentSettingsScreen } from './settings.js'
 import { RestoreScreen } from './restore.js'
 import { RecentAgentsScreen } from './recent-agents.js'
-import { TaskDetailScreen } from './task-detail.js'
+import { TasksScreen } from './tasks.js'
 
 export class NormalScreen implements PaletteScreen {
   readonly id = 'normal'
@@ -58,15 +58,8 @@ export class NormalScreen implements PaletteScreen {
       return { type: 'push', screen: new RestoreScreen(this.bridge) }
     }
 
-    if (item.action.type === 'run-task') {
-      return {
-        type: 'push',
-        screen: new TaskDetailScreen(this.bridge, {
-          taskId: item.action.taskId,
-          taskName: item.action.taskName,
-          taskDescription: item.action.taskDescription,
-        }),
-      }
+    if (item.action.type === 'enter-tasks') {
+      return { type: 'push', screen: new TasksScreen(this.bridge) }
     }
 
     if (item.action.type === 'open-settings-file') {

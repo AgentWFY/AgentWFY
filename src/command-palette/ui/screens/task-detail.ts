@@ -26,7 +26,7 @@ export class TaskDetailScreen implements PaletteScreen {
   constructor(bridge: CommandPaletteBridge, params: TaskDetailParams) {
     this.bridge = bridge
     this.params = params
-    this.breadcrumb = `Tasks \u203A ${params.taskName}`
+    this.breadcrumb = params.taskName
   }
 
   getItems(): CommandPaletteItem[] {
