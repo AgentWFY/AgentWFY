@@ -52,7 +52,9 @@ function buildToolResult(details: ExecJsDetails): AgentToolResult<ExecJsDetails>
 
   if (hasImages) {
     for (const image of details.images) {
-      content.push({ type: 'image', data: image.base64, mimeType: image.mimeType })
+      if (image.base64) {
+        content.push({ type: 'image', data: image.base64, mimeType: image.mimeType })
+      }
     }
   }
 
