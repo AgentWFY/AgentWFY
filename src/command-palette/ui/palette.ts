@@ -285,9 +285,11 @@ export class PaletteController {
       case 'push':
         this.push(result.screen)
         break
-      case 'pop':
-        this.pop()
+      case 'pop': {
+        const count = result.count ?? 1
+        for (let i = 0; i < count; i++) this.pop()
         break
+      }
       case 'close':
         await this.bridge.close()
         break

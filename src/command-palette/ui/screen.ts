@@ -26,7 +26,7 @@ export interface PaletteScreen {
 
 export type ScreenResult =
   | { type: 'push'; screen: PaletteScreen }
-  | { type: 'pop' }
+  | { type: 'pop'; count?: number }
   | { type: 'close' }
   | { type: 'action'; action: unknown }
   | { type: 'none' }
