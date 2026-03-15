@@ -22,6 +22,8 @@ import {
 } from './agent-manager.js';
 import { windowManager } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
+import { getViewByName } from './db/views.js';
+import { getAgentConfigValue } from './http-api/agent-config.js';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -101,6 +103,20 @@ ipcMain.handle('app:getHttpApiPort', (event) => {
   try {
     const ctx = windowManager.getContextForSender(event.sender.id);
     return ctx.httpApi?.port() ?? null;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('app:getDefaultView', async (event) => {
+  try {
+    const root = windowManager.getAgentRootForEvent(event);
+    const configValue = getAgentConfigValue(root, 'defaultView');
+    const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
+    const viewName = trimmed || 'Home';
+    const view = await getViewByName(root, viewName);
+    if (!view) return null;
+    return { viewId: view.id, title: view.name, viewUpdatedAt: view.updated_at };
   } catch {
     return null;
   }
