@@ -62,7 +62,8 @@ APIs:
   - `type`: "view", "file", or "url". `target`: view ID, file path, or URL respectively.
   - `viewChanged` means DB content was updated but tab has not been reloaded yet.
   - `hidden`: true if the tab is a hidden background tab (not shown in the tab bar).
-- `openTab({ viewId, title?, hidden? })` or `openTab({ filePath, title?, hidden? })` or `openTab({ url, title?, hidden? })` — exactly one source required.
+- `openTab({ viewId, title?, hidden?, params? })` or `openTab({ filePath, title?, hidden?, params? })` or `openTab({ url, title?, hidden? })` — exactly one source required.
+  - `params`: optional `Record<string, string>` of custom query parameters appended to the view URL. Views read them via `new URLSearchParams(window.location.search)`. Not supported for URL tabs.
   - `hidden: true` opens the tab in the background without disrupting the user's current view. Hidden tabs are not shown in the tab bar but still load their content, so you can use `captureTab`, `execTabJs`, and `getTabConsoleLogs` on them. The user can expand hidden tabs in the tab bar to inspect them. Use hidden tabs when you need to do background work (e.g. rendering a view, running JS in a page context) without interrupting the user.
 - `closeTab({ tabId })`, `selectTab({ tabId })`, `reloadTab({ tabId })`
 - `captureTab({ tabId })` → screenshot is auto-attached as an image to the tool result
@@ -126,6 +127,8 @@ Views are HTML rendered as isolated webview runtimes. There are two kinds:
 - **File views** — HTML files in the working directory. Opened via `openTab({ filePath })`.
 
 Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL tabs (`openTab({ url })`) do NOT get the runtime.
+
+**View params:** Pass custom parameters when opening a view via `openTab({ viewId, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 

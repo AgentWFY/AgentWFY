@@ -27,6 +27,7 @@ interface OpenTabRequest {
   url?: string
   title?: string
   hidden?: boolean
+  params?: Record<string, string>
 }
 
 interface CloseTabRequest {
@@ -94,12 +95,19 @@ export function registerTabsHandlers(getTabTools: (e: IpcMainInvokeEvent) => Age
       throw new Error('openTab requires exactly one of viewId, filePath, or url');
     }
 
+    const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+      ? Object.fromEntries(
+          Object.entries(input.params).filter(([, v]) => typeof v === 'string')
+        ) as Record<string, string>
+      : undefined;
+
     return getTabTools(event).openTab({
       viewId: hasViewId ? input.viewId : undefined,
       filePath: hasFilePath ? input.filePath : undefined,
       url: hasUrl ? input.url : undefined,
       title: typeof input.title === 'string' ? input.title : undefined,
       hidden: typeof input.hidden === 'boolean' ? input.hidden : undefined,
+      params: params && Object.keys(params).length > 0 ? params : undefined,
     });
   });
 

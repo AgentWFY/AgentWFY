@@ -10,6 +10,7 @@ interface TabData {
   viewChanged: boolean             // only for view
   pinned: boolean
   hidden: boolean
+  params?: Record<string, string>  // custom query params passed to the view
 }
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
@@ -20,6 +21,11 @@ const TAB_TYPE_ICONS: Record<TabDataType, string> = {
   view: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
   file: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
   url: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+}
+
+function extractParams(detail: Record<string, unknown>): Record<string, string> | undefined {
+  const p = detail.params
+  return p && typeof p === 'object' && !Array.isArray(p) ? p as Record<string, string> : undefined
 }
 
 function generateId(len = 8): string {
@@ -51,6 +57,7 @@ export class TlTabs extends HTMLElement {
     const tabId = generateId()
     const viewId = typeof detail?.viewId !== 'undefined' ? detail.viewId : (detail?.path ?? null)
     if (viewId == null) return
+    const params = extractParams(detail)
     const tab: TabData = {
       id: tabId,
       type: 'view',
@@ -60,6 +67,7 @@ export class TlTabs extends HTMLElement {
       viewChanged: false,
       pinned: false,
       hidden: false,
+      params,
     }
     this.tabs = [...this.tabs, tab]
     this.selectedTabId = tabId
@@ -102,6 +110,7 @@ export class TlTabs extends HTMLElement {
 
     const tabId = generateId()
     const isHidden = Boolean(detail.hidden)
+    const params = extractParams(detail)
     const tab: TabData = {
       id: tabId,
       type,
@@ -111,6 +120,7 @@ export class TlTabs extends HTMLElement {
       viewChanged: false,
       pinned: false,
       hidden: isHidden,
+      params,
     }
     this.tabs = [...this.tabs, tab]
     if (!isHidden) {
@@ -545,6 +555,9 @@ export class TlTabs extends HTMLElement {
           viewEl.setAttribute('view-path', String(tab.target))
         } else if (tab.type === 'url') {
           viewEl.setAttribute('view-url', String(tab.target))
+        }
+        if (tab.params) {
+          viewEl.setAttribute('view-params', JSON.stringify(tab.params))
         }
         const tabViewEl1 = viewEl as HTMLElement & { viewChanged?: boolean }
         tabViewEl1.viewChanged = tab.viewChanged
