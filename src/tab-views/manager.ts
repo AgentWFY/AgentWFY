@@ -70,6 +70,8 @@ type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
 export const VIEW_LOG_BUFFER_MAX = 1000;
 const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
+const FALLBACK_VIEW_WIDTH = 1280;
+const FALLBACK_VIEW_HEIGHT = 720;
 
 export const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
@@ -385,11 +387,17 @@ export class TabViewManager {
   private applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
     this.attachTabViewToWindow(state);
 
-    const effectiveBounds = visible
-      ? bounds
-      : { x: 0, y: 0, width: 0, height: 0 };
+    if (visible) {
+      state.view.setBounds(bounds);
+    } else {
+      // Keep real dimensions so the WebContents renders at a proper viewport
+      // (CSS layouts, media queries, capturePage all depend on non-zero bounds).
+      // setVisible(false) removes the view from the compositor — no visual or input side effects.
+      const mainWindow = this.deps.getMainWindow();
+      const [w, h] = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getContentSize() : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
+      state.view.setBounds({ x: 0, y: 0, width: w, height: h });
+    }
 
-    state.view.setBounds(effectiveBounds);
     state.view.setVisible(visible);
   }
 
