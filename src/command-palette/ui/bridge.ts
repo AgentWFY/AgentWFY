@@ -8,11 +8,10 @@ export interface CommandPaletteBridge {
   onOpenedWithFilter(callback: (query: string) => void): () => void
   onOpenedAtScreen(callback: (options: { screen: string; params?: Record<string, unknown> }) => void): () => void
   listSettings(): Promise<CommandPaletteItem[]>
-  updateSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>
+  updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }>
+  clearAgentOverride(key: string): Promise<void>
   openSettingsFile(): Promise<void>
   listRecentAgents(): Promise<CommandPaletteItem[]>
   listBackups(): Promise<CommandPaletteItem[]>
-  listAgentSettings(): Promise<CommandPaletteItem[]>
-  updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
 }

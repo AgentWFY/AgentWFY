@@ -1,7 +1,7 @@
 import type { PaletteScreen, ScreenResult } from '../screen.js'
 import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
-import { SettingsScreen, AgentSettingsScreen } from './settings.js'
+import { SettingsScreen } from './settings.js'
 import { RestoreScreen } from './restore.js'
 import { RecentAgentsScreen } from './recent-agents.js'
 import { TaskDetailScreen } from './task-detail.js'
@@ -44,10 +44,6 @@ export class NormalScreen implements PaletteScreen {
 
     if (item.action.type === 'enter-settings') {
       return { type: 'push', screen: new SettingsScreen(this.bridge) }
-    }
-
-    if (item.action.type === 'enter-agent-settings') {
-      return { type: 'push', screen: new AgentSettingsScreen(this.bridge) }
     }
 
     if (item.action.type === 'enter-recent-agents') {

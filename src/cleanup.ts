@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { storeGet } from './ipc/store.js';
+import { getConfigValue } from './settings/config.js';
 
 const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 
@@ -34,8 +34,8 @@ async function deleteOldFiles(dir: string, retentionDays: number): Promise<numbe
 }
 
 export async function runCleanup(agentRoot: string): Promise<void> {
-  const sessionDays = Number(storeGet('cleanup.sessionRetentionDays') ?? 30);
-  const taskLogDays = Number(storeGet('cleanup.taskLogRetentionDays') ?? 30);
+  const sessionDays = getConfigValue(agentRoot, 'cleanup.sessionRetentionDays') as number;
+  const taskLogDays = getConfigValue(agentRoot, 'cleanup.taskLogRetentionDays') as number;
 
   const sessionsDir = path.join(agentRoot, '.agentwfy', 'sessions');
   const taskLogsDir = path.join(agentRoot, '.agentwfy', 'task_logs');

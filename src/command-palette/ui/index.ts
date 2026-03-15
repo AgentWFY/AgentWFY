@@ -2,7 +2,7 @@ import type { CommandPaletteBridge } from './bridge.js'
 import type { PaletteScreen } from './screen.js'
 import { PaletteController } from './palette.js'
 import { NormalScreen } from './screens/normal.js'
-import { SettingsScreen, AgentSettingsScreen } from './screens/settings.js'
+import { SettingsScreen } from './screens/settings.js'
 import { RestoreScreen } from './screens/restore.js'
 import { TaskDetailScreen } from './screens/task-detail.js'
 import type { TaskDetailParams } from './screens/task-detail.js'
@@ -16,7 +16,6 @@ declare global {
 const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Record<string, unknown>) => PaletteScreen> = {
   'normal': (bridge, params) => new NormalScreen(bridge, params?.filter as string | undefined),
   'settings': (bridge) => new SettingsScreen(bridge),
-  'agent-settings': (bridge) => new AgentSettingsScreen(bridge),
   'restore': (bridge) => new RestoreScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
 }

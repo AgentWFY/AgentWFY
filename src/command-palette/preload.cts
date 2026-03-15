@@ -10,6 +10,7 @@ interface CommandPaletteItem {
   group: string
   action: CommandPaletteAction
   settingValue?: string
+  settingSource?: string
   settingType?: string
 }
 
@@ -27,8 +28,7 @@ const COMMAND_PALETTE_CHANNEL = {
   LIST_BACKUPS: 'app:command-palette:list-backups',
   LIST_RECENT_AGENTS: 'app:command-palette:list-recent-agents',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
-  LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
-  UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
+  CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -59,8 +59,11 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   listSettings(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS);
   },
-  updateSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, key, value);
+  updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, key, value, scope);
+  },
+  clearAgentOverride(key: string): Promise<void> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.CLEAR_AGENT_OVERRIDE, key);
   },
   openSettingsFile(): Promise<void> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE);
@@ -70,12 +73,6 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   listBackups(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS);
-  },
-  listAgentSettings(): Promise<CommandPaletteItem[]> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_AGENT_SETTINGS);
-  },
-  updateAgentSetting(key: string, value: unknown): Promise<{ success: boolean; error?: string }> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, key, value);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);
