@@ -49,4 +49,8 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_AGENT_SETTING, async (event, key: string, value: unknown) => {
     return getCommandPalette(event).updateAgentSetting(key, value);
   });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_TASKS, async (event) => {
+    return getCommandPalette(event).buildTaskItems();
+  });
 }

@@ -60,6 +60,9 @@ export type CommandPaletteAction =
     type: 'restore-agent-db'
   }
   | {
+    type: 'enter-tasks'
+  }
+  | {
     type: 'restore-agent-db-confirm'
     backupVersion: number
   }
@@ -94,4 +97,5 @@ export const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   LIST_AGENT_SETTINGS: 'app:command-palette:list-agent-settings',
   UPDATE_AGENT_SETTING: 'app:command-palette:update-agent-setting',
+  LIST_TASKS: 'app:command-palette:list-tasks',
 } as const
