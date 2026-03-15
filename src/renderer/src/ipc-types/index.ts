@@ -29,6 +29,11 @@ export interface CommandPaletteApi {
   showFiltered(query: string): Promise<void>
 }
 
+export interface FfmpegApi {
+  run(args: string[]): Promise<{ id: string }>
+  kill(id: string): Promise<void>
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
@@ -40,6 +45,7 @@ export interface AppIpc {
   bus: BusApi
   tasks: TasksApi
   net: NetApi
+  ffmpeg: FfmpegApi
   commandPalette: CommandPaletteApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>

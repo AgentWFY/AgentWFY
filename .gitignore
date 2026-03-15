@@ -95,3 +95,4 @@ tmp
 dist
 output
 .claude
+resources/bin/ffmpeg-*
