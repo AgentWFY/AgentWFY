@@ -6,7 +6,7 @@ import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
-import { readAgentHttpPort } from './http-api/agent-config.js';
+import { getConfigValue } from './settings/config.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { forwardStartTask } from './task-runner/ipc.js';
@@ -17,7 +17,7 @@ import {
   addToRecentAgents,
 } from './agent-manager.js';
 import { runCleanup } from './cleanup.js';
-import { scheduleBackup, stopBackupSchedulerForAgent } from './backup.js';
+import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
 import type { AgentDbChange } from './db/sqlite.js';
 
 export interface AppWindowContext {
@@ -354,6 +354,11 @@ class WindowManager {
     if (win.isDestroyed()) return;
     win.webContents.send('bus:dbChanged', change);
 
+    // Reschedule backup when config changes
+    if (change.table === 'config') {
+      rescheduleBackupForAgent(ctx.agentRoot);
+    }
+
     // Debounced reload of triggers when the triggers table changes
     if (change.table === 'triggers' && triggerEngine) {
       if (ctx.triggerReloadDebounceTimer) clearTimeout(ctx.triggerReloadDebounceTimer);
@@ -377,7 +382,7 @@ class WindowManager {
   private async startHttpServerForContext(ctx: AppWindowContext): Promise<void> {
     const { agentRoot, window: win } = ctx;
     cleanStaleLockfile(agentRoot);
-    const preferredPort = readAgentHttpPort(agentRoot);
+    const preferredPort = getConfigValue(agentRoot, 'httpApi.port') as number;
 
     try {
       ctx.httpApi = await startHttpApi({ getAgentRoot: () => agentRoot, preferredPort });

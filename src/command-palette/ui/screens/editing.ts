@@ -8,7 +8,7 @@ export interface EditingParams {
   type: string
   currentValue: string
   description: string
-  isAgentSetting?: boolean
+  scope: 'agent' | 'global'
 }
 
 export class EditingScreen implements PaletteScreen {
@@ -47,8 +47,8 @@ export class EditingScreen implements PaletteScreen {
   constructor(bridge: CommandPaletteBridge, params: EditingParams) {
     this.bridge = bridge
     this.params = params
-    const prefix = params.isAgentSetting ? 'Agent Settings' : 'Settings'
-    this.breadcrumb = `${prefix} \u203A ${params.label}`
+    const scopeLabel = params.scope === 'agent' ? 'Agent' : 'Global'
+    this.breadcrumb = `Settings \u203A ${params.label} (${scopeLabel})`
   }
 
   getItems(): CommandPaletteItem[] {
@@ -99,9 +99,7 @@ export class EditingScreen implements PaletteScreen {
     }
 
     try {
-      const result = this.params.isAgentSetting
-        ? await this.bridge.updateAgentSetting(this.params.key, value)
-        : await this.bridge.updateSetting(this.params.key, value)
+      const result = await this.bridge.updateSetting(this.params.key, value, this.params.scope)
       if (result.success) {
         return { type: 'pop' }
       }

@@ -9,7 +9,7 @@ export interface SettingDefinition {
   validate?: (value: unknown) => string | null
 }
 
-export const SETTINGS: SettingDefinition[] = [
+export const ALL_SETTINGS: SettingDefinition[] = [
   {
     key: 'backup.intervalHours',
     label: 'Backup Interval (hours)',
@@ -58,9 +58,6 @@ export const SETTINGS: SettingDefinition[] = [
       return null
     },
   },
-]
-
-export const AGENT_SETTINGS: SettingDefinition[] = [
   {
     key: 'httpApi.port',
     label: 'HTTP API Port',
