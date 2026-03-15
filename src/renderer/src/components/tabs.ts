@@ -226,6 +226,15 @@ export class TlTabs extends HTMLElement {
     window.addEventListener('agentwfy:agent-reload-tab', this.onAgentReloadTab)
 
     this.render()
+    this.openDefaultView()
+  }
+
+  private openDefaultView() {
+    window.ipc?.getDefaultView().then(view => {
+      if (view && this.tabs.length === 0) {
+        window.dispatchEvent(new CustomEvent('agentwfy:open-view', { detail: view }))
+      }
+    }).catch(err => console.error('[openDefaultView]', err))
   }
 
   disconnectedCallback() {

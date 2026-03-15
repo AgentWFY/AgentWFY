@@ -353,6 +353,9 @@ if (isApp) {
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
       return ipcRenderer.invoke('app:getBackupStatus');
     },
+    getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null> {
+      return ipcRenderer.invoke('app:getDefaultView');
+    },
     tasks: {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);

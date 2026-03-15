@@ -90,3 +90,19 @@ export async function getViewById(
 
   return toViewRecord(rows[0]);
 }
+
+export async function getViewByName(
+  dataDir: string,
+  name: string
+): Promise<ViewCatalogRecord | null> {
+  const rows = await runAgentDbSql(dataDir, {
+    sql: 'SELECT id, name, updated_at FROM views WHERE name = ? LIMIT 1',
+    params: [name],
+  });
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return toCatalogRecord(rows[0]);
+}
