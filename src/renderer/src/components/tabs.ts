@@ -745,7 +745,9 @@ export class TlTabs extends HTMLElement {
       .tab-pin-icon {
         flex-shrink: 0;
         width: 14px;
-        height: 14px;
+        height: 16px;
+        display: flex;
+        align-items: center;
         opacity: 0.5;
       }
       .tab-item.active .tab-pin-icon {
