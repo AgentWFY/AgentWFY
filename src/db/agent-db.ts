@@ -140,27 +140,40 @@ class AgentDb {
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec(AGENT_DB_SCHEMA_SQL);
 
-    // Upsert platform docs and clean up stale ones in a single transaction
+    // Sync platform docs: only write if something actually changed
     const raw = fs.readFileSync(platformDocsPath, 'utf-8');
     const platformDocs: PlatformDoc[] = JSON.parse(raw);
-    const upsert = this.db.prepare(`
-      INSERT INTO docs (name, content, updated_at)
-        VALUES (?, ?, unixepoch())
-        ON CONFLICT(name) DO UPDATE SET
-          content = excluded.content,
-          updated_at = unixepoch()
-        WHERE docs.content != excluded.content
-    `);
-    const placeholders = platformDocs.map(() => '?').join(', ');
-    const deleteStale = this.db.prepare(
-      `DELETE FROM docs WHERE name LIKE 'system.%' AND name NOT IN (${placeholders})`
-    );
-    this.db.exec('BEGIN');
-    for (const doc of platformDocs) {
-      upsert.run(doc.name, doc.content);
+
+    const existing = new Map<string, string>();
+    const rows = this.db.prepare(
+      "SELECT name, content FROM docs WHERE name LIKE 'system.%'"
+    ).all() as { name: string; content: string }[];
+    for (const row of rows) {
+      existing.set(row.name, row.content);
     }
-    deleteStale.run(...platformDocs.map(d => d.name));
-    this.db.exec('COMMIT');
+
+    const toUpsert = platformDocs.filter(d => existing.get(d.name) !== d.content);
+    const platformNames = new Set(platformDocs.map(d => d.name));
+    const toDelete = rows.filter(r => !platformNames.has(r.name));
+
+    if (toUpsert.length > 0 || toDelete.length > 0) {
+      const upsert = this.db.prepare(`
+        INSERT INTO docs (name, content, updated_at)
+          VALUES (?, ?, unixepoch())
+          ON CONFLICT(name) DO UPDATE SET
+            content = excluded.content,
+            updated_at = unixepoch()
+      `);
+      const del = this.db.prepare('DELETE FROM docs WHERE name = ?');
+      this.db.exec('BEGIN');
+      for (const doc of toUpsert) {
+        upsert.run(doc.name, doc.content);
+      }
+      for (const row of toDelete) {
+        del.run(row.name);
+      }
+      this.db.exec('COMMIT');
+    }
 
     this.db.exec(CHANGE_TRACKING_SQL);
     this.db.exec(SYSTEM_DOCS_GUARD_SQL);
