@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.agents
 
 Spawn and interact with sub-agents.

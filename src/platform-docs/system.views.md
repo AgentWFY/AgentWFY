@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.views
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:

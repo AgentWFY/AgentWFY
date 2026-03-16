@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.config
 
 App settings are stored in the `config` table of agent.db. Each setting can be set at agent level (in the DB) or globally (in the app's Electron store). The user can manage settings via the command palette.
