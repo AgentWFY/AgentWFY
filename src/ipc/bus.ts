@@ -10,6 +10,7 @@ type PendingWaiter = {
 
 const pendingWaiters = new Map<string, PendingWaiter>()
 const pendingSpawnRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout>; windowId: number }>()
+const pendingSendToAgentRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout>; windowId: number }>()
 const activeSubscriptions = new Map<string, { callback: (data: unknown) => void; windowId: number }>()
 
 function senderMatchesWindow(event: Electron.IpcMainEvent, expectedWindowId: number): boolean {
@@ -59,6 +60,18 @@ export function forwardSpawnAgent(win: BrowserWindow, prompt: string): Promise<{
   })
 }
 
+export function forwardSendToAgent(win: BrowserWindow, agentId: string, message: string): Promise<void> {
+  const waiterId = crypto.randomUUID()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingSendToAgentRequests.delete(waiterId)
+      reject(new Error('sendToAgent timeout'))
+    }, 120_000)
+    pendingSendToAgentRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer, windowId: win.id })
+    win.webContents.send(Channels.bus.forwardSendToAgent, { waiterId, agentId, message })
+  })
+}
+
 export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => BrowserWindow): void {
   // bus:publish — view publishes → forward to renderer
   ipcMain.handle(Channels.bus.publish, async (event, topic: string, data: unknown) => {
@@ -94,6 +107,31 @@ export function registerBusHandlers(getWindow: (e: IpcMainInvokeEvent) => Browse
     pendingSpawnRequests.delete(payload.waiterId)
     clearTimeout(pending.timer)
     pending.resolve(payload.result)
+  })
+
+  // sendToAgent(agentId, message) — forwarded to renderer
+  ipcMain.handle(Channels.bus.sendToAgent, async (event, agentId: string, message: string) => {
+    if (typeof agentId !== 'string' || agentId.trim().length === 0) {
+      throw new Error('sendToAgent requires a non-empty agentId string')
+    }
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      throw new Error('sendToAgent requires a non-empty message string')
+    }
+
+    return forwardSendToAgent(getWindow(event), agentId, message)
+  })
+
+  ipcMain.on(Channels.bus.sendToAgentResult, (event, payload: { waiterId: string; result: unknown }) => {
+    const pending = pendingSendToAgentRequests.get(payload.waiterId)
+    if (!pending || !senderMatchesWindow(event, pending.windowId)) return
+    pendingSendToAgentRequests.delete(payload.waiterId)
+    clearTimeout(pending.timer)
+    const result = payload.result as { error?: string } | undefined
+    if (result?.error) {
+      pending.reject(new Error(result.error))
+    } else {
+      pending.resolve(undefined)
+    }
   })
 
   // Renderer forwards subscribed bus events back to main

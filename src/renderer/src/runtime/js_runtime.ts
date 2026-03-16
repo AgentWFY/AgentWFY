@@ -556,6 +556,19 @@ export class JsRuntime {
         const result = await mgr.spawnSession(request.prompt)
         return result as WorkerHostMethodMap[M]['result']
       }
+      case 'sendToAgent': {
+        const request = params as WorkerHostMethodMap['sendToAgent']['params']
+        if (!request || typeof request.agentId !== 'string' || request.agentId.trim().length === 0) {
+          throw new Error('sendToAgent requires a non-empty agentId string')
+        }
+        if (typeof request.message !== 'string' || request.message.trim().length === 0) {
+          throw new Error('sendToAgent requires a non-empty message string')
+        }
+        const mgr = getSessionManager()
+        if (!mgr) throw new Error('AgentSessionManager not initialized')
+        await mgr.sendToAgent(request.agentId, request.message)
+        return undefined as WorkerHostMethodMap[M]['result']
+      }
       case 'startTask': {
         const request = params as WorkerHostMethodMap['startTask']['params']
         if (!request || typeof request.taskId !== 'number') {

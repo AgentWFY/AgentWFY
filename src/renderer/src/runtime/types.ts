@@ -242,6 +242,10 @@ export interface WorkerHostMethodMap {
     params: { prompt: string }
     result: { agentId: string }
   }
+  sendToAgent: {
+    params: { agentId: string; message: string }
+    result: void
+  }
   startTask: {
     params: WorkerStartTaskRequest
     result: WorkerStartTaskResult

@@ -3,7 +3,6 @@ import type { AgentAuthConfig } from '../agent/agent_auth.js'
 import { loadAuthConfig } from '../agent/agent_auth.js'
 import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
 import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
-import type { AgentWFYAgent } from '../agent/create_agent.js'
 import {
   buildDisplayBlocks,
   updateMessagesEl
@@ -457,7 +456,6 @@ const STYLES = `
 export class TlAgentChat extends HTMLElement {
   private manager: AgentSessionManager | null = null
   private managerUnsub: (() => void) | null = null
-  private agent: AgentWFYAgent | null = null
   private messages: AgentMessage[] = []
   private isStreaming = false
   private error: string | null = null
@@ -516,7 +514,6 @@ export class TlAgentChat extends HTMLElement {
     this.managerUnsub?.()
     this.managerUnsub = null
     this.manager = null
-    this.agent = null
     this.messages = []
     this.isStreaming = false
     this.sessionListItems = []
@@ -545,24 +542,16 @@ export class TlAgentChat extends HTMLElement {
 
   private refreshState() {
     if (!this.manager) {
-      this.agent = null
       this.messages = []
       this.isStreaming = false
       this.render()
       return
     }
-    const session = this.manager.activeSession
-    this.agent = session?.agent ?? null
-    this.notifyOnFinish = session?.notifyOnFinish ?? false
-    if (this.agent) {
-      this.messages = this.agent.messages
-      this.isStreaming = this.agent.isStreaming
-      this.retryInfo = this.agent.state.retryInfo ?? null
-    } else {
-      this.messages = []
-      this.isStreaming = false
-      this.retryInfo = null
-    }
+    this.messages = this.manager.activeMessages
+    this.isStreaming = this.manager.activeIsStreaming
+    this.notifyOnFinish = this.manager.activeNotifyOnFinish
+    const agent = this.manager.activeAgent
+    this.retryInfo = agent?.state.retryInfo ?? null
     this.render()
   }
 
@@ -589,7 +578,6 @@ export class TlAgentChat extends HTMLElement {
         this.activePanel = keepInlineSettingsOpen ? 'settings' : null
       } else {
         this.managerUnsub = null
-        this.agent = null
         this.messages = []
         this.isStreaming = false
         this.sessionListItems = []
@@ -604,9 +592,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleStop() {
-    if (!this.agent || !this.isStreaming) return
+    if (!this.manager || !this.isStreaming) return
     try {
-      await this.agent.abort()
+      await this.manager.abortActive()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -649,12 +637,11 @@ export class TlAgentChat extends HTMLElement {
         this.render()
       })
     }
-    this.render()
   }
 
   private async sendMessage() {
     const text = this.inputValue.trim()
-    if (!text || !this.agent) return
+    if (!text || !this.manager) return
 
     this.inputValue = ''
     if (this._textarea) {
@@ -666,9 +653,9 @@ export class TlAgentChat extends HTMLElement {
 
     try {
       if (this.isStreaming) {
-        await this.agent.prompt(text, { streamingBehavior: 'followUp' })
+        await this.manager.sendMessage(text, { streamingBehavior: 'followUp' })
       } else {
-        await this.agent.prompt(text)
+        await this.manager.sendMessage(text)
       }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -707,7 +694,7 @@ export class TlAgentChat extends HTMLElement {
     if (!this.containerEl) return
 
     const mode = this.isInitializing ? 'initializing'
-      : (!this.agent && !this.manager && this.authConfig) ? 'setup'
+      : (!this.manager && this.authConfig) ? 'setup'
       : 'chat'
 
     if (mode === 'initializing') {
@@ -878,8 +865,8 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 4 3.5 4 5.5c0 3-1.5 4.5-2 5h12c-.5-.5-2-2-2-5 0-2-1.5-4-4-4z"/><path d="M6.5 12.5c.3.6.9 1 1.5 1s1.2-.4 1.5-1"/></svg>'
     this._notifyBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      if (this.manager && this.manager.activeSessionId) {
-        this.manager.setNotifyOnFinish(this.manager.activeSessionId, !this.notifyOnFinish)
+      if (this.manager) {
+        this.manager.setNotifyOnFinish(!this.notifyOnFinish)
       }
     })
     actionsDiv.appendChild(this._notifyBtn)
@@ -972,7 +959,7 @@ export class TlAgentChat extends HTMLElement {
       const parts: string[] = [modelId]
 
       // Thinking level
-      const thinking = this.agent?.thinkingLevel
+      const thinking = this.manager?.activeAgent?.thinkingLevel
       if (thinking && thinking !== 'off') {
         parts.push(thinking)
       }

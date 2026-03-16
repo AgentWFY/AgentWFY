@@ -52,6 +52,18 @@ export function initBusBridge(): void {
     }
   })
 
+  // Forward sendToAgent from views → session manager
+  ipc.bus.onForwardSendToAgent(async (detail) => {
+    try {
+      const mgr = getSessionManager()
+      if (!mgr) throw new Error('AgentSessionManager not initialized')
+      await mgr.sendToAgent(detail.agentId, detail.message)
+      ipc.bus.sendToAgentResult(detail.waiterId, {})
+    } catch (err) {
+      ipc.bus.sendToAgentResult(detail.waiterId, { error: String(err) })
+    }
+  })
+
   // Forward startTask from agentview / triggers → task runner
   ipc.tasks.onForwardStartTask(async (detail) => {
     try {
