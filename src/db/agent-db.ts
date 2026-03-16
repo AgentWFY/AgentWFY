@@ -149,6 +149,7 @@ class AgentDb {
         ON CONFLICT(name) DO UPDATE SET
           content = excluded.content,
           updated_at = unixepoch()
+        WHERE docs.content != excluded.content
     `);
     const placeholders = platformDocs.map(() => '?').join(', ');
     const deleteStale = this.db.prepare(
