@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.ffmpeg
 
 Run ffmpeg processes from tasks, agent execJs, or views.

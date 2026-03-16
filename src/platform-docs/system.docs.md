@@ -1,9 +1,6 @@
----
-preload: 0
----
 # system.docs
 
-Docs are stored in the docs table (target="agent"). Schema: id, name (unique), content, preload (0|1), updated_at.
+Docs are stored in the docs table (target="agent"). Schema: id, name (unique), content, updated_at.
 
 ## Naming
 
@@ -12,5 +9,4 @@ Docs are stored in the docs table (target="agent"). Schema: id, name (unique), c
 
 ## Preload
 
-preload=1 docs are included in the system prompt at startup.
-preload=0 docs are read on demand.
+Docs whose name contains no dots (e.g. `system`, `notes`) are automatically included in the system prompt at startup. Docs with dots in the name (e.g. `system.views`, `my.reference`) are read on demand.

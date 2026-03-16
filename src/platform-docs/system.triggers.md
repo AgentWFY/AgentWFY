@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.triggers
 
 Triggers automate task execution. Stored in the `triggers` table.
