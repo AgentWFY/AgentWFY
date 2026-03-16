@@ -299,6 +299,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, signal)
     const spawnAgent = (prompt: string) =>
       callHostMethod('' + requestId, 'spawnAgent', { prompt }, signal)
+    const sendToAgent = (agentId: string, message: string) =>
+      callHostMethod('' + requestId, 'sendToAgent', { agentId, message }, signal)
     const startTask = (taskId: number, input?: unknown) =>
       callHostMethod('' + requestId, 'startTask', { taskId, input }, signal)
     const stopTask = (runId: string) =>
@@ -520,6 +522,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'fetch',
       'WebSocket',
       'spawnAgent',
+      'sendToAgent',
       'startTask',
       'stopTask',
       'ffmpeg',
@@ -557,6 +560,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         fetch,
         WebSocket,
         spawnAgent,
+        sendToAgent,
         startTask,
         stopTask,
         ffmpeg,

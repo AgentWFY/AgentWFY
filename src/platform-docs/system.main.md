@@ -90,18 +90,15 @@ Tasks store JavaScript code in the `tasks` table. The user can run them from the
 
 Load `system.tasks` and `system.triggers` reference sections for full details.
 
-### EventBus & Agent Spawning
+### EventBus
 
 - `publish(topic, data)` — publish a message. If a waiter exists, it receives immediately. Otherwise queued until a waiter arrives.
 - `waitFor(topic, timeoutMs?)` — wait for next message. Returns immediately if already queued. Default 120s timeout.
 - Messages are consumed: each publish delivers to exactly one waitFor (FIFO). Use unique topic names (e.g. include agentId) to avoid collisions.
 
-`spawnAgent(prompt)` → `{ agentId }` — spawn a headless sub-agent. It has its own execJs context with the same host APIs. Coordinate via the bus:
+### Agents
 
-```javascript
-const { agentId } = await spawnAgent(`Analyze the data and publish results to topic "result-${id}".`)
-const result = await waitFor(`result-${id}`, 60000)
-```
+Spawn headless sub-agents with their own execJs context and the same host APIs. Send follow-up messages for multi-turn conversations. Responses are delivered via the event bus. Load `system.agents` for full details.
 
 ## Docs
 
@@ -119,5 +116,6 @@ Available reference sections (load when needed):
 - `system.views` — how to create views, CSS variables, view runtime
 - `system.tasks` — task execution details, input handling
 - `system.triggers` — trigger types, config format, cron syntax
+- `system.agents` — agent spawning, interactive agent messaging
 - `system.config` — config keys, resolution order, how to read/write settings
 - `system.ffmpeg` — ffmpeg process spawning, streaming output, kill support

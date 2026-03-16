@@ -59,6 +59,9 @@ export const Channels = {
     forwardSpawnAgent: 'bus:forwardSpawnAgent',
     spawnAgentResult: 'bus:spawnAgentResult',
     spawnAgent: 'bus:spawnAgent',
+    forwardSendToAgent: 'bus:forwardSendToAgent',
+    sendToAgentResult: 'bus:sendToAgentResult',
+    sendToAgent: 'bus:sendToAgent',
     dbChanged: 'bus:dbChanged',
   },
   headers: {

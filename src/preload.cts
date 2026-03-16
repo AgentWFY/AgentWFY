@@ -61,6 +61,9 @@ const Channels = {
     forwardSpawnAgent: 'bus:forwardSpawnAgent',
     spawnAgentResult: 'bus:spawnAgentResult',
     spawnAgent: 'bus:spawnAgent',
+    forwardSendToAgent: 'bus:forwardSendToAgent',
+    sendToAgentResult: 'bus:sendToAgentResult',
+    sendToAgent: 'bus:sendToAgent',
     dbChanged: 'bus:dbChanged',
   },
   headers: {
@@ -336,6 +339,17 @@ if (isApp) {
       spawnAgent(prompt: string): Promise<{ agentId: string }> {
         return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
       },
+      onForwardSendToAgent(callback: (detail: { waiterId: string; agentId: string; message: string }) => void): () => void {
+        const handler = (_event: unknown, detail: { waiterId: string; agentId: string; message: string }) => callback(detail);
+        ipcRenderer.on(Channels.bus.forwardSendToAgent, handler);
+        return () => ipcRenderer.removeListener(Channels.bus.forwardSendToAgent, handler);
+      },
+      sendToAgentResult(waiterId: string, result: unknown): void {
+        ipcRenderer.send(Channels.bus.sendToAgentResult, { waiterId, result });
+      },
+      sendToAgent(agentId: string, message: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.bus.sendToAgent, agentId, message);
+      },
     },
     commandPalette: {
       show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void> {
@@ -420,6 +434,9 @@ if (isAgentView) {
     ...busAgent,
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
       return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
+    },
+    sendToAgent(agentId: string, message: string): Promise<void> {
+      return ipcRenderer.invoke(Channels.bus.sendToAgent, agentId, message);
     },
     startTask(taskId: number, input?: unknown): Promise<{ runId: string }> {
       return ipcRenderer.invoke(Channels.tasks.start, taskId, input);
