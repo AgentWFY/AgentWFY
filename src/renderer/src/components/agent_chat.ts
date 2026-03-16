@@ -158,9 +158,10 @@ const STYLES = `
     color: var(--color-text2);
   }
   .block-user {
-    background: var(--color-bg3);
+    background: var(--color-surface);
     padding: 6px 10px;
     border-radius: var(--radius-sm);
+    color: var(--color-text4);
   }
   .assistant-text { padding: 2px 0; }
   .tools-group {
