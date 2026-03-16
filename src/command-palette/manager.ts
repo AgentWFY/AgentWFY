@@ -1,7 +1,6 @@
 import { BrowserWindow, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import fs from 'fs/promises';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { ALL_SETTINGS, type SettingDefinition } from '../settings/registry.js';
@@ -278,13 +277,6 @@ export class CommandPaletteManager {
         action: { type: 'open-settings-file' },
       },
       {
-        id: 'action:sync-system-prompt',
-        title: 'Update Agent Documentation',
-        subtitle: 'Update agent knowledge base to reflect the latest platform and API changes',
-        group: 'Actions',
-        action: { type: 'sync-system-prompt' },
-      },
-      {
         id: 'agent:open',
         title: 'Open Agent',
         group: 'Actions',
@@ -542,19 +534,6 @@ export class CommandPaletteManager {
 
       case 'restore-agent-db': {
         // Handled in the palette UI — switches to restore mode
-        return;
-      }
-
-      case 'sync-system-prompt': {
-        const promptPath = path.join(import.meta.dirname, 'system_prompt.md');
-        let content: string;
-        try {
-          content = await fs.readFile(promptPath, 'utf-8');
-        } catch {
-          throw new Error('Could not read bundled system_prompt.md');
-        }
-        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:sync-system-prompt', { content });
-        this.hide({ focusMain: true });
         return;
       }
 

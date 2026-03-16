@@ -486,26 +486,6 @@ export class TlAgentChat extends HTMLElement {
   private _stopBtn: HTMLElement | null = null
   private _sessionPanelDirty = false
 
-  private onSyncSystemPrompt = (e: Event) => {
-    const detail = (e as CustomEvent<{ content: string }>).detail
-    if (!detail?.content || !this.manager) return
-    const prompt = `Update the documentation in the agent.db \`docs\` table based on the following updated documentation.
-
-Steps:
-1. Read all current docs: \`SELECT id, name, content, preload FROM docs\`
-2. Compare with the content below and decide how to best structure it across docs rows
-3. Update existing docs whose content has changed, insert new ones, delete obsolete ones
-4. After done, give a short summary of what changed (added, updated, deleted)
-
-Here is the updated documentation:
-
-${detail.content}`
-    this.manager.createSession({ prompt }).catch((err) => {
-      this.error = err instanceof Error ? err.message : String(err)
-      this.render()
-    })
-  }
-
   connectedCallback() {
     this.style.display = 'flex'
     this.style.flexDirection = 'column'
@@ -526,8 +506,6 @@ ${detail.content}`
 
     this.render()
     this.init()
-
-    window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
   }
 
   focusInput() {
@@ -535,7 +513,6 @@ ${detail.content}`
   }
 
   disconnectedCallback() {
-    window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.managerUnsub?.()
     this.managerUnsub = null
     this.manager = null

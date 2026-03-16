@@ -63,9 +63,6 @@ export type CommandPaletteAction =
     type: 'restore-agent-db-confirm'
     backupVersion: number
   }
-  | {
-    type: 'sync-system-prompt'
-  }
 
 export interface CommandPaletteItem {
   id: string

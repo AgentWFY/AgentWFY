@@ -19,6 +19,7 @@ import {
 import { runCleanup } from './cleanup.js';
 import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
 import type { AgentDbChange } from './db/sqlite.js';
+import { closeAgentDb } from './db/agent-db.js';
 
 export interface AppWindowContext {
   window: BrowserWindow;
@@ -251,6 +252,7 @@ class WindowManager {
       }
     }
     if (!agentStillOpen) {
+      closeAgentDb(ctx.agentRoot);
       for (const [hash, root] of this.agentHashes) {
         if (root === ctx.agentRoot) {
           this.agentHashes.delete(hash);

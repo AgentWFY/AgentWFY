@@ -2,6 +2,7 @@ import * as esbuild from 'esbuild'
 import { cpSync, mkdirSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+import { buildPlatformDb } from './build-platform-db.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -20,7 +21,10 @@ cpSync(join(src, 'renderer', 'index.html'), join(clientDist, 'index.html'))
 cpSync(join(src, 'renderer', 'src', 'global.css'), join(clientDist, 'global.css'))
 cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
 cpSync(join(src, 'index.css'), join(dist, 'index.css'))
-cpSync(join(root, 'system_prompt.md'), join(dist, 'system_prompt.md'))
+
+// ── Platform DB ──
+
+buildPlatformDb(dist)
 
 // ── Build configs ──
 
