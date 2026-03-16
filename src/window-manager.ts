@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
@@ -150,6 +150,21 @@ class WindowManager {
     });
 
     window.maximize();
+
+    // Prevent the main window from navigating away (e.g. clicking links in agent chat)
+    window.webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('app://')) {
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    });
+
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      if (url && url !== 'about:blank') {
+        shell.openExternal(url);
+      }
+      return { action: 'deny' };
+    });
 
     window.webContents.on('did-start-loading', () => {
       commandPalette.destroy();
