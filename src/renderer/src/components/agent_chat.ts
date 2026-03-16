@@ -959,15 +959,15 @@ export class TlAgentChat extends HTMLElement {
       const parts: string[] = [modelId]
 
       // Thinking level
-      const thinking = this.manager?.activeAgent?.thinkingLevel
+      const thinking = this.authConfig?.thinkingLevel
       if (thinking && thinking !== 'off') {
         parts.push(thinking)
       }
 
-      // Context size from last assistant message
-      const lastAssistant = [...this.messages].reverse().find(m => m.role === 'assistant') as
-        | (typeof this.messages[number] & { usage?: { input: number } })
-        | undefined
+      // Context size from last assistant message with usage data
+      const lastAssistant = [...this.messages].reverse().find(m =>
+        m.role === 'assistant' && (m as unknown as { usage?: { input: number } }).usage?.input
+      ) as (typeof this.messages[number] & { usage?: { input: number } }) | undefined
       if (lastAssistant?.usage?.input) {
         const tokens = lastAssistant.usage.input
         const formatted = tokens >= 1000 ? (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(tokens)

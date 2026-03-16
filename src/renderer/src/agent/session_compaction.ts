@@ -109,7 +109,17 @@ export function convertAgentMessagesToLlm(messages: AgentMessage[]): Message[] {
     const unknownMessage = message as unknown as Record<string, unknown>
     const role = unknownMessage?.role
 
-    if (role === 'user' || role === 'assistant' || role === 'toolResult') {
+    if (role === 'assistant') {
+      const content = Array.isArray(unknownMessage.content) ? unknownMessage.content : []
+      const filtered = content.filter(
+        (c: Record<string, unknown>) => !(c?.type === 'text' && !c.text)
+      )
+      if (filtered.length === 0) continue
+      llmMessages.push({ ...message, content: filtered } as unknown as Message)
+      continue
+    }
+
+    if (role === 'user' || role === 'toolResult') {
       llmMessages.push(message as unknown as Message)
       continue
     }
