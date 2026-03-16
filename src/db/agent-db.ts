@@ -105,19 +105,19 @@ END;
 // interfere with our own upserts on next launch)
 const SYSTEM_DOCS_GUARD_SQL = `
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_insert BEFORE INSERT ON docs
-WHEN NEW.name LIKE 'system.%'
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
 
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_update BEFORE UPDATE ON docs
-WHEN NEW.name LIKE 'system.%' OR OLD.name LIKE 'system.%'
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
 
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_delete BEFORE DELETE ON docs
-WHEN OLD.name LIKE 'system.%'
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
@@ -146,7 +146,7 @@ class AgentDb {
 
     const existing = new Map<string, string>();
     const rows = this.db.prepare(
-      "SELECT name, content FROM docs WHERE name LIKE 'system.%'"
+      "SELECT name, content FROM docs WHERE name = 'system' OR name LIKE 'system.%'"
     ).all() as { name: string; content: string }[];
     for (const row of rows) {
       existing.set(row.name, row.content);
