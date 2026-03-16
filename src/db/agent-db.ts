@@ -13,11 +13,10 @@ CREATE TABLE IF NOT EXISTS views (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
-CREATE TABLE IF NOT EXISTS _docs (
+CREATE TABLE IF NOT EXISTS docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   content TEXT NOT NULL,
-  preload INTEGER NOT NULL DEFAULT 0 CHECK(preload IN (0, 1)),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
@@ -64,13 +63,13 @@ END;
 CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.id, 'delete');
 END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON _docs BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'insert');
 END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON _docs BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'update');
 END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON _docs BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.id, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
@@ -102,64 +101,68 @@ CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
 END;
 `;
 
-const DOCS_VIEW_SQL = `
-CREATE TEMP VIEW docs AS
-  SELECT id, name, content, preload, updated_at FROM _docs
-  UNION ALL
-  SELECT id, name, content, preload, updated_at FROM platform.docs
-  WHERE name NOT IN (SELECT name FROM _docs);
-
-CREATE TEMP TRIGGER docs_insert INSTEAD OF INSERT ON docs
+// Block agent from writing to system.* docs (created as TEMP so they don't
+// interfere with our own upserts on next launch)
+const SYSTEM_DOCS_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_insert BEFORE INSERT ON docs
+WHEN NEW.name LIKE 'system.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only')
-    WHERE NEW.name LIKE 'system.%';
-  INSERT INTO _docs (name, content, preload, updated_at)
-    VALUES (NEW.name, NEW.content, NEW.preload, COALESCE(NEW.updated_at, unixepoch()));
+  SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
 
-CREATE TEMP TRIGGER docs_update INSTEAD OF UPDATE ON docs
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_update BEFORE UPDATE ON docs
+WHEN NEW.name LIKE 'system.%' OR OLD.name LIKE 'system.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only')
-    WHERE NEW.name LIKE 'system.%' OR OLD.name LIKE 'system.%';
-  UPDATE _docs SET name = NEW.name, content = NEW.content,
-    preload = NEW.preload, updated_at = COALESCE(NEW.updated_at, unixepoch())
-  WHERE id = OLD.id;
+  SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
 
-CREATE TEMP TRIGGER docs_delete INSTEAD OF DELETE ON docs
+CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_delete BEFORE DELETE ON docs
+WHEN OLD.name LIKE 'system.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only')
-    WHERE OLD.name LIKE 'system.%';
-  DELETE FROM _docs WHERE id = OLD.id;
+  SELECT RAISE(ABORT, 'system.* docs are read-only');
 END;
 `;
+
+interface PlatformDoc {
+  name: string;
+  content: string;
+}
 
 class AgentDb {
   private db: DatabaseSync;
 
-  constructor(agentDbPath: string, platformDbPath: string) {
+  constructor(agentDbPath: string, platformDocsPath: string) {
     this.db = new DatabaseSync(agentDbPath);
-    this.init(platformDbPath);
+    this.init(platformDocsPath);
   }
 
-  private init(platformDbPath: string): void {
+  private init(platformDocsPath: string): void {
     this.db.exec('PRAGMA foreign_keys = ON;');
-
-    // Migration: rename docs → _docs if needed
-    const tables = this.db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('docs', '_docs')"
-    ).all() as { name: string }[];
-    const tableNames = new Set(tables.map(t => t.name));
-
-    if (tableNames.has('docs') && !tableNames.has('_docs')) {
-      this.db.exec('ALTER TABLE docs RENAME TO _docs;');
-      this.db.exec("DELETE FROM _docs WHERE name LIKE 'system.%';");
-    }
-
     this.db.exec(AGENT_DB_SCHEMA_SQL);
-    this.db.exec(`ATTACH DATABASE '${platformDbPath.replace(/'/g, "''")}' AS platform;`);
+
+    // Upsert platform docs and clean up stale ones in a single transaction
+    const raw = fs.readFileSync(platformDocsPath, 'utf-8');
+    const platformDocs: PlatformDoc[] = JSON.parse(raw);
+    const upsert = this.db.prepare(`
+      INSERT INTO docs (name, content, updated_at)
+        VALUES (?, ?, unixepoch())
+        ON CONFLICT(name) DO UPDATE SET
+          content = excluded.content,
+          updated_at = unixepoch()
+    `);
+    const placeholders = platformDocs.map(() => '?').join(', ');
+    const deleteStale = this.db.prepare(
+      `DELETE FROM docs WHERE name LIKE 'system.%' AND name NOT IN (${placeholders})`
+    );
+    this.db.exec('BEGIN');
+    for (const doc of platformDocs) {
+      upsert.run(doc.name, doc.content);
+    }
+    deleteStale.run(...platformDocs.map(d => d.name));
+    this.db.exec('COMMIT');
+
     this.db.exec(CHANGE_TRACKING_SQL);
-    this.db.exec(DOCS_VIEW_SQL);
+    this.db.exec(SYSTEM_DOCS_GUARD_SQL);
   }
 
   run(request: SqlExecutionRequest, onDbChange?: OnDbChange): unknown[] {
@@ -207,9 +210,9 @@ export function getOrCreateAgentDb(dataDir: string): AgentDb {
   const agentDir = path.join(dataDir, '.agentwfy');
   fs.mkdirSync(agentDir, { recursive: true });
   const agentDbPath = path.join(agentDir, 'agent.db');
-  const platformDbPath = path.join(import.meta.dirname, 'platform.db');
+  const platformDocsPath = path.join(import.meta.dirname, 'platform-docs.json');
 
-  conn = new AgentDb(agentDbPath, platformDbPath);
+  conn = new AgentDb(agentDbPath, platformDocsPath);
   connections.set(dataDir, conn);
   return conn;
 }

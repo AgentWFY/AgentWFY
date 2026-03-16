@@ -1,6 +1,3 @@
----
-preload: 0
----
 # system.tasks
 
 Tasks are JavaScript code stored in the `tasks` table. They run in dedicated workers (same runtime as execJs) and can be started programmatically or by the user from the command palette.

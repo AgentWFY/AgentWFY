@@ -157,7 +157,7 @@ async function loadSystemPrompt(): Promise<string> {
 
     const rows = await ipc.sql.run({
       target: 'agent',
-      sql: 'SELECT name, content FROM docs WHERE preload = 1 ORDER BY name ASC',
+      sql: "SELECT name, content FROM docs WHERE name NOT LIKE '%.%' ORDER BY name ASC",
       description: 'Load preload docs for agent system prompt'
     })
     const docs = parsePreloadDocRows(rows)
