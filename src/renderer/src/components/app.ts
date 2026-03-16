@@ -52,10 +52,6 @@ export class TlApp extends HTMLElement {
     this.openPanel((e as CustomEvent<{ panel: string }>).detail.panel)
   }
 
-  private onSyncSystemPrompt = () => {
-    this.openPanel('agent-chat')
-  }
-
   private onResizeMouseDown = (e: MouseEvent) => {
     e.preventDefault()
     this.isResizing = true
@@ -323,7 +319,6 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.addEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     this.subscribeToAgentDbChanges()
   }
 
@@ -332,7 +327,6 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.removeEventListener('agentwfy:sync-system-prompt', this.onSyncSystemPrompt)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
