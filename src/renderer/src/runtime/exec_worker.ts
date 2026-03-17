@@ -353,7 +353,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
 
       // Create a wrapper that defers native WS creation until headers are registered
       const tid = createId('ws')
-      const taggedUrl = tagUrl(urlStr, '_awfy_id', tid)
 
       // We need to create the native WS after async header registration.
       // Use a wrapper object that proxies to the real WS once created.
@@ -453,12 +452,13 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       }
 
       // Async: register headers then create native WS
-      void callHostMethod('' + requestId, 'setRequestHeaders', { tid, headers: hdrs }, signal).then(() => {
+      // Pass url so main process can match by URL (Chromium can't redirect WebSocket requests to strip _awfy_id)
+      void callHostMethod('' + requestId, 'setRequestHeaders', { tid, headers: hdrs, url: urlStr }, signal).then(() => {
         if (pendingClose) {
           // User called close() before we could connect
           return
         }
-        nativeWs = new NativeWebSocket(taggedUrl, prots)
+        nativeWs = new NativeWebSocket(urlStr, prots)
 
         // Apply stored on* handlers
         if (_onopen) nativeWs.onopen = _onopen
