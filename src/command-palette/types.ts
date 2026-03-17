@@ -1,5 +1,3 @@
-export type SettingType = 'string' | 'number' | 'boolean'
-
 export type CommandPaletteAction =
   | {
     type: 'open-view'
@@ -80,11 +78,10 @@ export interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
-  settingType?: SettingType
 }
 
 export const COMMAND_PALETTE_CHANNEL = {

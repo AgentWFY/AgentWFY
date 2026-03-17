@@ -11,6 +11,16 @@ Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<meth
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 
+## View Naming Convention
+
+DB views follow a naming convention with prefixes:
+
+- **`system.*`** — Built-in views shipped with the app (e.g. `system.settings`, `system.plugins`, `system.docs`). Read-only — cannot be modified via SQL.
+- **`plugin.*`** — Views installed from plugin packages (e.g. `plugin.ffmpeg.config`). Read-only — managed by the plugin installer.
+- **No prefix** — User-created views. Fully editable.
+
+The `title` field provides a human-readable display name for a view. When `title` is set, it is used in the command palette and tab bar instead of the raw `name`.
+
 ## View Runtime
 
 Each view (DB or file) gets a bootstrap injected by the app:

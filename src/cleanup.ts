@@ -34,8 +34,8 @@ async function deleteOldFiles(dir: string, retentionDays: number): Promise<numbe
 }
 
 export async function runCleanup(agentRoot: string): Promise<void> {
-  const sessionDays = getConfigValue(agentRoot, 'cleanup.sessionRetentionDays') as number;
-  const taskLogDays = getConfigValue(agentRoot, 'cleanup.taskLogRetentionDays') as number;
+  const sessionDays = getConfigValue(agentRoot, 'system.cleanup.sessionRetentionDays', 30) as number;
+  const taskLogDays = getConfigValue(agentRoot, 'system.cleanup.taskLogRetentionDays', 30) as number;
 
   const sessionsDir = path.join(agentRoot, '.agentwfy', 'sessions');
   const taskLogsDir = path.join(agentRoot, '.agentwfy', 'task_logs');
