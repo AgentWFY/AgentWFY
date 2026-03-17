@@ -53,9 +53,9 @@ class WindowManager {
   private agentHashes = new Map<string, string>(); // hash → agentRoot
   onWindowCreated: (() => void) | null = null;
 
-  async createWindow(agentRoot: string): Promise<AppWindowContext> {
+  async createWindow(agentRoot: string, options?: { skipRecents?: boolean }): Promise<AppWindowContext> {
     await ensureAgentRuntimeBootstrap(agentRoot);
-    addToRecentAgents(agentRoot);
+    if (!options?.skipRecents) addToRecentAgents(agentRoot);
 
     // Init DB (creates schema, syncs platform docs, generates system.plugins)
     getOrCreateAgentDb(agentRoot);
