@@ -6,6 +6,7 @@ export interface ModelConfig {
   id: string
   name: string
   reasoning?: boolean
+  adaptiveThinking?: boolean
 }
 
 export interface ProviderConfig {
@@ -30,8 +31,8 @@ export const DEFAULT_MODELS_CONFIG: ModelsConfig = {
       api: 'openai-completions',
       auth: 'api-key',
       models: [
-        { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', reasoning: true },
-        { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', reasoning: true },
+        { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6', reasoning: true, adaptiveThinking: true },
+        { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6', reasoning: true, adaptiveThinking: true },
         { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', reasoning: true },
         { id: 'anthropic/claude-opus-4.5', name: 'Claude Opus 4.5', reasoning: true },
         { id: 'anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5', reasoning: true },
@@ -47,8 +48,8 @@ export const DEFAULT_MODELS_CONFIG: ModelsConfig = {
       api: 'anthropic-messages',
       auth: 'oauth-anthropic',
       models: [
-        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true },
-        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true },
+        { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', reasoning: true, adaptiveThinking: true },
+        { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', reasoning: true, adaptiveThinking: true },
         { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', reasoning: true },
         { id: 'claude-opus-4-5', name: 'Claude Opus 4.5', reasoning: true },
         { id: 'claude-sonnet-4-0', name: 'Claude Sonnet 4', reasoning: true },
@@ -130,6 +131,7 @@ export function getModels(config: ModelsConfig | undefined, providerId: string):
     id: mc.id,
     name: mc.name,
     reasoning: mc.reasoning ?? false,
+    adaptiveThinking: mc.adaptiveThinking ?? false,
     provider,
   }))
 }

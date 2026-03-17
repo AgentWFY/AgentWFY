@@ -119,6 +119,17 @@ function getThinkingBudget(level: string | undefined): number | undefined {
   }
 }
 
+function getAdaptiveEffort(level: string | undefined): string {
+  switch (level) {
+    case 'minimal':
+    case 'low': return 'low'
+    case 'medium': return 'medium'
+    case 'high':
+    case 'xhigh': return 'high'
+    default: return 'high'
+  }
+}
+
 export async function streamAnthropic(
   stream: MessageStream,
   model: Model,
@@ -131,7 +142,9 @@ export async function streamAnthropic(
 
   const betaFeatures: string[] = []
   const thinking = options.reasoning && options.reasoning !== 'off' && model.reasoning
-  if (thinking) {
+
+  // Adaptive models (Opus 4.6, Sonnet 4.6) don't need the interleaved-thinking beta
+  if (thinking && !model.adaptiveThinking) {
     betaFeatures.push('interleaved-thinking-2025-05-14')
   }
 
@@ -144,9 +157,13 @@ export async function streamAnthropic(
   if (isOAuth) {
     headers['Authorization'] = `Bearer ${apiKey}`
     betaFeatures.push('claude-code-20250219', 'oauth-2025-04-20')
+    headers['user-agent'] = 'claude-cli/2.1.75'
+    headers['x-app'] = 'cli'
   } else {
     headers['x-api-key'] = apiKey
   }
+
+  betaFeatures.push('fine-grained-tool-streaming-2025-05-14')
 
   if (betaFeatures.length > 0) {
     headers['anthropic-beta'] = betaFeatures.join(',')
@@ -154,9 +171,17 @@ export async function streamAnthropic(
 
   let maxTokens = options.maxTokens ?? 16384
 
+  // OAuth requires the Claude Code identity prefix as the first system block
+  const system: unknown = isOAuth
+    ? [
+        { type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." },
+        { type: 'text', text: context.systemPrompt },
+      ]
+    : context.systemPrompt
+
   const body: Record<string, unknown> = {
     model: model.id,
-    system: context.systemPrompt,
+    system,
     messages: convertMessages(context.messages),
     stream: true,
   }
@@ -166,13 +191,20 @@ export async function streamAnthropic(
   }
 
   if (thinking) {
-    const budget = getThinkingBudget(options.reasoning) ?? 8192
-    if (maxTokens <= budget) {
-      maxTokens = budget + 4096
-    }
-    body.thinking = {
-      type: 'enabled',
-      budget_tokens: budget,
+    if (model.adaptiveThinking) {
+      // Opus 4.6 / Sonnet 4.6: adaptive thinking with effort level
+      body.thinking = { type: 'adaptive' }
+      body.output_config = { effort: getAdaptiveEffort(options.reasoning) }
+    } else {
+      // Older models: budget-based thinking
+      const budget = getThinkingBudget(options.reasoning) ?? 8192
+      if (maxTokens <= budget) {
+        maxTokens = budget + 4096
+      }
+      body.thinking = {
+        type: 'enabled',
+        budget_tokens: budget,
+      }
     }
   }
 
