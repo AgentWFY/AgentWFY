@@ -3,6 +3,7 @@ import { runAgentDbSql } from './sqlite.js';
 export interface ViewCatalogRecord {
   id: number;
   name: string;
+  title: string;
   updated_at: number;
 }
 
@@ -46,6 +47,7 @@ function toCatalogRecord(row: unknown): ViewCatalogRecord {
   return {
     id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
+    title: typeof record.title === 'string' ? record.title : '',
     updated_at: asNumber(record.updated_at, 'updated_at'),
   };
 }
@@ -55,6 +57,7 @@ function toViewRecord(row: unknown): ViewRecord {
   return {
     id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
+    title: typeof record.title === 'string' ? record.title : '',
     content: asString(record.content, 'content'),
     created_at: asNumber(record.created_at, 'created_at'),
     updated_at: asNumber(record.updated_at, 'updated_at'),
@@ -69,7 +72,14 @@ export async function ensureViewsSchema(dataDir: string): Promise<void> {
 
 export async function listViews(dataDir: string): Promise<ViewCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, updated_at FROM views ORDER BY updated_at DESC',
+    sql: `SELECT id, name, title, updated_at FROM views
+ORDER BY
+  CASE
+    WHEN name NOT LIKE 'system.%' AND name NOT LIKE 'plugin.%' THEN 0
+    WHEN name LIKE 'system.%' THEN 1
+    WHEN name LIKE 'plugin.%' THEN 2
+  END,
+  updated_at DESC`,
   });
 
   return rows.map((row) => toCatalogRecord(row));
@@ -80,7 +90,7 @@ export async function getViewById(
   viewId: number | string
 ): Promise<ViewRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, content, created_at, updated_at FROM views WHERE id = ? LIMIT 1',
+    sql: 'SELECT id, name, title, content, created_at, updated_at FROM views WHERE id = ? LIMIT 1',
     params: [viewId],
   });
 
@@ -96,7 +106,7 @@ export async function getViewByName(
   name: string
 ): Promise<ViewCatalogRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, updated_at FROM views WHERE name = ? LIMIT 1',
+    sql: 'SELECT id, name, title, updated_at FROM views WHERE name = ? LIMIT 1',
     params: [name],
   });
 

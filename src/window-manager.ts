@@ -418,7 +418,7 @@ class WindowManager {
   private async startHttpServerForContext(ctx: AppWindowContext): Promise<void> {
     const { agentRoot, window: win } = ctx;
     cleanStaleLockfile(agentRoot);
-    const preferredPort = getConfigValue(agentRoot, 'httpApi.port') as number;
+    const preferredPort = getConfigValue(agentRoot, 'system.httpApi.port', 9877) as number;
 
     try {
       ctx.httpApi = await startHttpApi({ getAgentRoot: () => agentRoot, preferredPort });
