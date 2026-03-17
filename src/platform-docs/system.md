@@ -107,6 +107,7 @@ const rows = await runSql({ target: 'agent', sql: "SELECT content FROM docs WHER
 
 Naming conventions:
 - `system.*` — app platform docs, read-only (writes will be rejected).
+- `plugin.*` — plugin docs, read-only (managed by plugins).
 - Everything else is agent-managed.
 
 Available reference sections (load when needed):
@@ -116,3 +117,4 @@ Available reference sections (load when needed):
 - `system.agents` — agent spawning, interactive agent messaging
 - `system.config` — config keys, resolution order, how to read/write settings
 - `system.ffmpeg` — ffmpeg process spawning, streaming output, kill support
+- `system.plugins` — plugin system overview, references to plugin sub-docs

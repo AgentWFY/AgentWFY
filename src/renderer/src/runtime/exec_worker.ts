@@ -244,7 +244,7 @@ async function callHostMethod<M extends WorkerHostMethod>(
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
-  const { requestId, code, timeoutMs, input } = message
+  const { requestId, code, timeoutMs, input, pluginMethods } = message
   const abortController = new AbortController()
   activeRequests.set(requestId, abortController)
 
@@ -309,6 +309,16 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'ffmpeg', { args }, signal)
     const ffmpegKill = (id: string) =>
       callHostMethod('' + requestId, 'ffmpegKill', { id }, signal)
+
+    // Build plugin function wrappers
+    const pluginFnNames: string[] = []
+    const pluginFnValues: Function[] = []
+    for (const name of (pluginMethods ?? [])) {
+      pluginFnNames.push(name)
+      pluginFnValues.push((params: unknown) =>
+        callHostMethod('' + requestId, `plugin:${name}` as WorkerHostMethod, params, signal)
+      )
+    }
 
     // Native fetch shadow: registers headers via IPC, appends _awfy_id, uses native fetch
     const fetch = async (input: string | URL | Request, init?: RequestInit) => {
@@ -494,7 +504,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     WebSocket.CLOSING = NativeWebSocket.CLOSING
     WebSocket.CLOSED = NativeWebSocket.CLOSED
 
-    const fn = new AsyncFunction(
+    const builtInParamNames = [
       'window',
       'self',
       'globalThis',
@@ -528,44 +538,54 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'ffmpeg',
       'ffmpegKill',
       'input',
+    ]
+
+    const builtInArgValues = [
+      globalThis,
+      globalThis,
+      globalThis,
+      undefined,
+      runSql,
+      read,
+      write,
+      writeBinary,
+      edit,
+      ls,
+      mkdir,
+      remove,
+      find,
+      grep,
+      getTabs,
+      openTab,
+      closeTab,
+      selectTab,
+      reloadTab,
+      captureTab,
+      getTabConsoleLogs,
+      execTabJs,
+      publish,
+      waitFor,
+      fetch,
+      WebSocket,
+      spawnAgent,
+      sendToAgent,
+      startTask,
+      stopTask,
+      ffmpeg,
+      ffmpegKill,
+      input,
+    ]
+
+    const fn = new AsyncFunction(
+      ...builtInParamNames,
+      ...pluginFnNames,
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
     const value = await withTimeoutAndAbort(
       fn(
-        globalThis,
-        globalThis,
-        globalThis,
-        undefined,
-        runSql,
-        read,
-        write,
-        writeBinary,
-        edit,
-        ls,
-        mkdir,
-        remove,
-        find,
-        grep,
-        getTabs,
-        openTab,
-        closeTab,
-        selectTab,
-        reloadTab,
-        captureTab,
-        getTabConsoleLogs,
-        execTabJs,
-        publish,
-        waitFor,
-        fetch,
-        WebSocket,
-        spawnAgent,
-        sendToAgent,
-        startTask,
-        stopTask,
-        ffmpeg,
-        ffmpegKill,
-        input
+        ...builtInArgValues,
+        ...pluginFnValues,
       ),
       timeoutMs,
       abortController.signal
