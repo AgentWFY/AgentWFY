@@ -4,6 +4,7 @@ import { Channels } from './channels.js';
 interface SetHeadersRequest {
   tid: string;
   headers: Record<string, string>;
+  url?: string;
 }
 
 const HEADER_TTL_MS = 30_000;
@@ -15,6 +16,8 @@ interface HeaderEntry {
 
 const registeredHeaders = new Map<string, HeaderEntry>();
 const requestIdToTid = new Map<number, string>();
+// WebSocket URL → HeaderEntry queue (Chromium can't redirect WS, so we match by URL)
+const pendingWsHeaders: Map<string, HeaderEntry[]> = new Map();
 
 function purgeStale(): void {
   const now = Date.now();
@@ -22,6 +25,12 @@ function purgeStale(): void {
     if (now - entry.createdAt > HEADER_TTL_MS) {
       registeredHeaders.delete(tid);
     }
+  }
+  for (const [url, queue] of pendingWsHeaders) {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (now - queue[i].createdAt > HEADER_TTL_MS) queue.splice(i, 1);
+    }
+    if (queue.length === 0) pendingWsHeaders.delete(url);
   }
   // requestIdToTid entries should be consumed within milliseconds;
   // if the map grows beyond a threshold, something went wrong — clear it.
@@ -36,7 +45,16 @@ export function registerRequestHeadersHandlers(): void {
       throw new Error('headers:set requires tid and headers');
     }
     purgeStale();
-    registeredHeaders.set(request.tid, { headers: request.headers, createdAt: Date.now() });
+    const entry: HeaderEntry = { headers: request.headers, createdAt: Date.now() };
+    if (request.url) {
+      // WebSocket: store by URL only (Chromium can't redirect WS to strip query params)
+      const queue = pendingWsHeaders.get(request.url) || [];
+      queue.push(entry);
+      pendingWsHeaders.set(request.url, queue);
+    } else {
+      // Fetch: store by tid (matched via _awfy_id redirect)
+      registeredHeaders.set(request.tid, entry);
+    }
   });
 }
 
@@ -65,7 +83,7 @@ export function installWebRequestHooks(): void {
   // Inject registered headers for both fetch (via requestIdToTid) and WebSocket (via URL param)
   ses.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
     // Fast exit: nothing registered
-    if (registeredHeaders.size === 0) {
+    if (registeredHeaders.size === 0 && pendingWsHeaders.size === 0) {
       return callback({ requestHeaders: details.requestHeaders });
     }
 
@@ -77,13 +95,17 @@ export function installWebRequestHooks(): void {
       requestIdToTid.delete(details.id);
     }
 
-    // For WebSocket: extract from URL directly (no redirect happened)
-    if (!tid && details.resourceType === 'webSocket' && details.url.includes('_awfy_id=')) {
-      try {
-        const url = new URL(details.url);
-        tid = url.searchParams.get('_awfy_id') || undefined;
-      } catch {
-        // ignore malformed URLs
+    // For WebSocket: match by URL (Chromium can't redirect WS to strip query params)
+    if (!tid && details.resourceType === 'webSocket') {
+      const queue = pendingWsHeaders.get(details.url);
+      if (queue && queue.length > 0) {
+        const wsEntry = queue.shift()!;
+        if (queue.length === 0) pendingWsHeaders.delete(details.url);
+        const requestHeaders = { ...details.requestHeaders };
+        for (const [key, value] of Object.entries(wsEntry.headers)) {
+          requestHeaders[key] = value;
+        }
+        return callback({ requestHeaders });
       }
     }
 

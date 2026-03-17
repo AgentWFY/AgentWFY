@@ -227,7 +227,7 @@ export interface WorkerHostMethodMap {
     result: unknown
   }
   setRequestHeaders: {
-    params: { tid: string; headers: Record<string, string> }
+    params: { tid: string; headers: Record<string, string>; url?: string }
     result: void
   }
   busPublish: {
