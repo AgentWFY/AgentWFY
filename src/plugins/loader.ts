@@ -1,8 +1,13 @@
 import path from 'path'
 import fs from 'fs'
+import { createRequire } from 'node:module'
 import { PluginRegistry } from './registry.js'
 import type { PluginApi } from './registry.js'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
+
+// Use Node's real require (not esbuild's bundled version) so plugins can
+// require built-in modules like child_process, crypto, etc.
+const nodeRequire = createRequire(import.meta.url)
 
 // Built-in host method names that plugins cannot shadow
 const BUILT_IN_METHODS = new Set([
@@ -26,7 +31,7 @@ export function loadPlugins(agentRoot: string, publish: (topic: string, data: un
       const mod: Record<string, unknown> = { exports: {} }
       const modExports = mod.exports as Record<string, unknown>
       const fn = new Function('module', 'exports', 'require', row.code)
-      fn(mod, modExports, require)
+      fn(mod, modExports, nodeRequire)
 
       const activate = (modExports.activate ?? (mod.exports as Record<string, unknown>).activate) as
         ((api: PluginApi) => { deactivate?: () => void } | void) | undefined
