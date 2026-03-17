@@ -968,9 +968,10 @@ export class TlAgentChat extends HTMLElement {
       // Context size from last assistant message with usage data
       const lastAssistant = [...this.messages].reverse().find(m =>
         m.role === 'assistant' && (m as unknown as { usage?: { input: number } }).usage?.input
-      ) as (typeof this.messages[number] & { usage?: { input: number } }) | undefined
+      ) as (typeof this.messages[number] & { usage?: { input: number; cacheRead?: number; cacheWrite?: number } }) | undefined
       if (lastAssistant?.usage?.input) {
-        const tokens = lastAssistant.usage.input
+        const u = lastAssistant.usage
+        const tokens = u.input + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0)
         const formatted = tokens >= 1000 ? (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(tokens)
         parts.push(formatted)
       }
