@@ -42,10 +42,10 @@ export class SettingsScreen implements PaletteScreen {
       screen: new ScopeScreen(this.bridge, {
         key: item.action.settingKey,
         label: item.action.settingLabel,
-        type: item.settingType || 'string',
+        type: 'string',
         currentValue: item.settingValue || '',
         description: item.subtitle || '',
-        hasAgentOverride: item.settingSource === 'agent',
+        hasAgentOverride: !!item.settingValue,
       }),
     }
   }

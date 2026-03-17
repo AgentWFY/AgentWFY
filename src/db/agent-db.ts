@@ -7,7 +7,8 @@ import type { SqlExecutionRequest, OnDbChange } from './sqlite.js';
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
@@ -42,8 +43,9 @@ CREATE TABLE IF NOT EXISTS triggers (
 );
 
 CREATE TABLE IF NOT EXISTS config (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
+  name TEXT PRIMARY KEY,
+  value TEXT,
+  description TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS plugins (
@@ -162,6 +164,43 @@ BEGIN
 END;
 `;
 
+// Block agent from writing to system.* and plugin.* views
+const SYSTEM_VIEWS_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_insert BEFORE INSERT ON views
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_update BEFORE UPDATE ON views
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
+  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_delete BEFORE DELETE ON views
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
+END;
+`;
+
+// Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
+const SYSTEM_CONFIG_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_insert BEFORE INSERT ON config
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* config cannot be inserted');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_delete BEFORE DELETE ON config
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* config cannot be deleted');
+END;
+`;
+
 const DROP_GUARDS_SQL = `
 DROP TRIGGER IF EXISTS plugins_guard_insert;
 DROP TRIGGER IF EXISTS plugins_guard_update;
@@ -169,62 +208,88 @@ DROP TRIGGER IF EXISTS plugins_guard_delete;
 DROP TRIGGER IF EXISTS _docs_system_guard_insert;
 DROP TRIGGER IF EXISTS _docs_system_guard_update;
 DROP TRIGGER IF EXISTS _docs_system_guard_delete;
+DROP TRIGGER IF EXISTS _views_system_guard_insert;
+DROP TRIGGER IF EXISTS _views_system_guard_update;
+DROP TRIGGER IF EXISTS _views_system_guard_delete;
+DROP TRIGGER IF EXISTS _config_system_guard_insert;
+DROP TRIGGER IF EXISTS _config_system_guard_delete;
 `;
 
-interface PlatformDoc {
-  name: string;
-  content: string;
+interface SystemDataSync<T extends { name: string }> {
+  jsonPath: string;
+  selectSql: string;
+  upsertSql: string;
+  hasChanged: (item: T, existing: Record<string, unknown>) => boolean;
+  bindUpsert: (item: T) => (string | number | null)[];
 }
 
 class AgentDb {
   private db: DatabaseSync;
 
-  constructor(agentDbPath: string, platformDocsPath: string) {
-    this.db = new DatabaseSync(agentDbPath);
-    this.init(platformDocsPath);
+  constructor(opts: { dbPath: string; systemDocsPath: string; systemViewsPath: string; systemConfigPath: string }) {
+    this.db = new DatabaseSync(opts.dbPath);
+    this.init(opts);
   }
 
-  private init(platformDocsPath: string): void {
+  /** Generic sync: read JSON, diff against DB, upsert/delete in a transaction. */
+  private syncSystemData<T extends { name: string }>(spec: SystemDataSync<T>): void {
+    const items: T[] = JSON.parse(fs.readFileSync(spec.jsonPath, 'utf-8'));
+
+    const rows = this.db.prepare(spec.selectSql).all() as Record<string, unknown>[];
+    const existing = new Map(rows.map(r => [r.name as string, r]));
+
+    const toUpsert = items.filter(item => {
+      const ex = existing.get(item.name);
+      return !ex || spec.hasChanged(item, ex);
+    });
+    const itemNames = new Set(items.map(i => i.name));
+    const toDelete = rows.filter(r => !itemNames.has(r.name as string));
+
+    if (toUpsert.length === 0 && toDelete.length === 0) return;
+
+    const upsert = this.db.prepare(spec.upsertSql);
+    const del = this.db.prepare('DELETE FROM ' + spec.selectSql.match(/FROM (\w+)/i)![1] + ' WHERE name = ?');
+    this.db.exec('BEGIN');
+    for (const item of toUpsert) upsert.run(...spec.bindUpsert(item));
+    for (const row of toDelete) del.run(row.name as string);
+    this.db.exec('COMMIT');
+  }
+
+  private init(opts: { systemDocsPath: string; systemViewsPath: string; systemConfigPath: string }): void {
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.db.exec(AGENT_DB_SCHEMA_SQL);
 
-    // Sync platform docs: only write if something actually changed
-    const raw = fs.readFileSync(platformDocsPath, 'utf-8');
-    const platformDocs: PlatformDoc[] = JSON.parse(raw);
+    this.syncSystemData<{ name: string; content: string }>({
+      jsonPath: opts.systemDocsPath,
+      selectSql: "SELECT name, content FROM docs WHERE name = 'system' OR name LIKE 'system.%'",
+      upsertSql: `INSERT INTO docs (name, content, updated_at) VALUES (?, ?, unixepoch())
+        ON CONFLICT(name) DO UPDATE SET content = excluded.content, updated_at = unixepoch()`,
+      hasChanged: (doc, ex) => ex.content !== doc.content,
+      bindUpsert: (doc) => [doc.name, doc.content],
+    });
 
-    const existing = new Map<string, string>();
-    const rows = this.db.prepare(
-      "SELECT name, content FROM docs WHERE name = 'system' OR name LIKE 'system.%'"
-    ).all() as { name: string; content: string }[];
-    for (const row of rows) {
-      existing.set(row.name, row.content);
-    }
+    this.syncSystemData<{ name: string; title: string; content: string }>({
+      jsonPath: opts.systemViewsPath,
+      selectSql: "SELECT name, title, content FROM views WHERE name LIKE 'system.%'",
+      upsertSql: `INSERT INTO views (name, title, content, updated_at) VALUES (?, ?, ?, unixepoch())
+        ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = unixepoch()`,
+      hasChanged: (v, ex) => ex.title !== v.title || ex.content !== v.content,
+      bindUpsert: (v) => [v.name, v.title, v.content],
+    });
 
-    const toUpsert = platformDocs.filter(d => existing.get(d.name) !== d.content);
-    const platformNames = new Set(platformDocs.map(d => d.name));
-    const toDelete = rows.filter(r => !platformNames.has(r.name));
-
-    if (toUpsert.length > 0 || toDelete.length > 0) {
-      const upsert = this.db.prepare(`
-        INSERT INTO docs (name, content, updated_at)
-          VALUES (?, ?, unixepoch())
-          ON CONFLICT(name) DO UPDATE SET
-            content = excluded.content,
-            updated_at = unixepoch()
-      `);
-      const del = this.db.prepare('DELETE FROM docs WHERE name = ?');
-      this.db.exec('BEGIN');
-      for (const doc of toUpsert) {
-        upsert.run(doc.name, doc.content);
-      }
-      for (const row of toDelete) {
-        del.run(row.name);
-      }
-      this.db.exec('COMMIT');
-    }
+    this.syncSystemData<{ name: string; description: string }>({
+      jsonPath: opts.systemConfigPath,
+      selectSql: "SELECT name, description FROM config WHERE name LIKE 'system.%'",
+      upsertSql: `INSERT INTO config (name, value, description) VALUES (?, NULL, ?)
+        ON CONFLICT(name) DO UPDATE SET description = excluded.description`,
+      hasChanged: (item, ex) => ex.description !== item.description,
+      bindUpsert: (item) => [item.name, item.description],
+    });
 
     this.db.exec(CHANGE_TRACKING_SQL);
     this.db.exec(SYSTEM_DOCS_GUARD_SQL);
+    this.db.exec(SYSTEM_VIEWS_GUARD_SQL);
+    this.db.exec(SYSTEM_CONFIG_GUARD_SQL);
     this.db.exec(PLUGINS_TABLE_GUARD_SQL);
   }
 
@@ -250,6 +315,8 @@ class AgentDb {
   installPlugins(
     plugins: Array<{ name: string; description: string; version: string; code: string }>,
     docs: Array<{ name: string; content: string }>,
+    views: Array<{ name: string; title: string; content: string }>,
+    config: Array<{ name: string; value: string | null; description: string }>,
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
@@ -268,6 +335,20 @@ class AgentDb {
             content = excluded.content,
             updated_at = unixepoch()
       `);
+      const upsertView = this.db.prepare(`
+        INSERT INTO views (name, title, content, updated_at)
+          VALUES (?, ?, ?, unixepoch())
+          ON CONFLICT(name) DO UPDATE SET
+            title = excluded.title,
+            content = excluded.content,
+            updated_at = unixepoch()
+      `);
+      const upsertConfig = this.db.prepare(`
+        INSERT INTO config (name, value, description)
+          VALUES (?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            description = excluded.description
+      `);
 
       this.db.exec('BEGIN');
       for (const p of plugins) {
@@ -275,6 +356,12 @@ class AgentDb {
       }
       for (const d of docs) {
         upsertDoc.run(d.name, d.content);
+      }
+      for (const v of views) {
+        upsertView.run(v.name, v.title, v.content);
+      }
+      for (const c of config) {
+        upsertConfig.run(c.name, c.value, c.description);
       }
       this.db.exec('COMMIT');
     });
@@ -287,6 +374,12 @@ class AgentDb {
       this.db.prepare(
         "DELETE FROM docs WHERE name = ? OR name LIKE ?"
       ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.prepare(
+        "DELETE FROM views WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.prepare(
+        "DELETE FROM config WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
       this.db.exec('COMMIT');
     });
   }
@@ -297,6 +390,8 @@ class AgentDb {
       fn();
     } finally {
       this.db.exec(SYSTEM_DOCS_GUARD_SQL);
+      this.db.exec(SYSTEM_VIEWS_GUARD_SQL);
+      this.db.exec(SYSTEM_CONFIG_GUARD_SQL);
       this.db.exec(PLUGINS_TABLE_GUARD_SQL);
     }
   }
@@ -346,9 +441,11 @@ export function getOrCreateAgentDb(dataDir: string): AgentDb {
   const agentDir = path.join(dataDir, '.agentwfy');
   fs.mkdirSync(agentDir, { recursive: true });
   const agentDbPath = path.join(agentDir, 'agent.db');
-  const platformDocsPath = path.join(import.meta.dirname, 'platform-docs.json');
+  const systemDocsPath = path.join(import.meta.dirname, 'system-docs.json');
+  const systemViewsPath = path.join(import.meta.dirname, 'system-views.json');
+  const systemConfigPath = path.join(import.meta.dirname, 'system-config.json');
 
-  conn = new AgentDb(agentDbPath, platformDocsPath);
+  conn = new AgentDb({ dbPath: agentDbPath, systemDocsPath, systemViewsPath, systemConfigPath });
   connections.set(dataDir, conn);
   return conn;
 }

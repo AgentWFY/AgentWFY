@@ -4,9 +4,9 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export function buildPlatformDocs(distDir) {
-  const docsDir = join(__dirname, '..', 'src', 'platform-docs')
-  const outPath = join(distDir, 'platform-docs.json')
+export function buildSystemDocs(distDir) {
+  const docsDir = join(__dirname, '..', 'src', 'system-docs')
+  const outPath = join(distDir, 'system-docs.json')
 
   const files = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
   const docs = []
@@ -18,5 +18,5 @@ export function buildPlatformDocs(distDir) {
   }
 
   writeFileSync(outPath, JSON.stringify(docs))
-  console.log(`[platform-docs] Built ${docs.length} docs → ${outPath}`)
+  console.log(`[system-docs] Built ${docs.length} docs → ${outPath}`)
 }

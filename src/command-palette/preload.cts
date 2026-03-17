@@ -11,7 +11,6 @@ interface CommandPaletteItem {
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
-  settingType?: string
 }
 
 const COMMAND_PALETTE_CHANNEL = {

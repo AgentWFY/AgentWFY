@@ -15,6 +15,18 @@ interface PackageDoc {
   content: string
 }
 
+interface PackageView {
+  name: string
+  title: string
+  content: string
+}
+
+interface PackageConfig {
+  name: string
+  value: string | null
+  description: string
+}
+
 interface PackageAsset {
   name: string
   data: Buffer
@@ -23,6 +35,8 @@ interface PackageAsset {
 function readPackage(packagePath: string): {
   plugins: PackagePlugin[]
   docs: PackageDoc[]
+  views: PackageView[]
+  config: PackageConfig[]
   assets: PackageAsset[]
 } {
   const db = new DatabaseSync(packagePath)
@@ -36,6 +50,20 @@ function readPackage(packagePath: string): {
       // docs table is optional
     }
 
+    let views: PackageView[] = []
+    try {
+      views = db.prepare('SELECT name, title, content FROM views').all() as unknown as PackageView[]
+    } catch {
+      // views table is optional
+    }
+
+    let config: PackageConfig[] = []
+    try {
+      config = db.prepare('SELECT name, value, description FROM config').all() as unknown as PackageConfig[]
+    } catch {
+      // config table is optional
+    }
+
     let assets: PackageAsset[] = []
     try {
       assets = db.prepare('SELECT name, data FROM assets').all() as unknown as PackageAsset[]
@@ -43,15 +71,35 @@ function readPackage(packagePath: string): {
       // assets table is optional
     }
 
-    return { plugins, docs, assets }
+    return { plugins, docs, views, config, assets }
   } finally {
     db.close()
+  }
+}
+
+function validatePluginNames(
+  items: Array<{ name: string }>,
+  type: string,
+  pluginNames: Set<string>,
+  errors: string[],
+): void {
+  for (const item of items) {
+    if (typeof item.name !== 'string' || !item.name.startsWith('plugin.')) {
+      errors.push(`${type} '${item.name}' must start with 'plugin.'`)
+      continue
+    }
+    const pluginName = item.name.split('.')[1]
+    if (!pluginNames.has(pluginName)) {
+      errors.push(`${type} '${item.name}' references unknown plugin '${pluginName}'`)
+    }
   }
 }
 
 function validatePackage(
   plugins: PackagePlugin[],
   docs: PackageDoc[],
+  views: PackageView[],
+  config: PackageConfig[],
   assets: PackageAsset[],
 ): string[] {
   const errors: string[] = []
@@ -76,18 +124,9 @@ function validatePackage(
     pluginNames.add(p.name)
   }
 
-  for (const d of docs) {
-    if (typeof d.name !== 'string' || !d.name.startsWith('plugin.')) {
-      errors.push(`Doc '${d.name}' must start with 'plugin.'`)
-      continue
-    }
-    // Extract plugin name: 'plugin.foo' → 'foo', 'plugin.foo.bar' → 'foo'
-    const parts = d.name.split('.')
-    const docPluginName = parts[1]
-    if (!pluginNames.has(docPluginName)) {
-      errors.push(`Doc '${d.name}' references unknown plugin '${docPluginName}'`)
-    }
-  }
+  validatePluginNames(docs, 'Doc', pluginNames, errors)
+  validatePluginNames(views, 'View', pluginNames, errors)
+  validatePluginNames(config, 'Config', pluginNames, errors)
 
   for (const a of assets) {
     if (typeof a.name !== 'string' || !a.name.includes('/')) {
@@ -104,15 +143,15 @@ function validatePackage(
 }
 
 export function installFromPackage(agentRoot: string, packagePath: string): { installed: string[] } {
-  const { plugins, docs, assets } = readPackage(packagePath)
+  const { plugins, docs, views, config, assets } = readPackage(packagePath)
 
-  const errors = validatePackage(plugins, docs, assets)
+  const errors = validatePackage(plugins, docs, views, config, assets)
   if (errors.length > 0) {
     throw new Error(`Invalid plugin package:\n${errors.join('\n')}`)
   }
 
   const db = getOrCreateAgentDb(agentRoot)
-  db.installPlugins(plugins, docs)
+  db.installPlugins(plugins, docs, views, config)
 
   // Extract assets to plugin-assets/<plugin>/<path>
   for (const asset of assets) {

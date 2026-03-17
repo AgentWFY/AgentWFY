@@ -25,6 +25,8 @@ const db = new DatabaseSync(outPath);
 db.exec(`
   CREATE TABLE plugins (name TEXT NOT NULL, description TEXT NOT NULL, version TEXT NOT NULL, code TEXT NOT NULL);
   CREATE TABLE docs (name TEXT NOT NULL, content TEXT NOT NULL);
+  CREATE TABLE views (name TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL);
+  CREATE TABLE config (name TEXT NOT NULL, value TEXT, description TEXT NOT NULL DEFAULT '');
 `);
 
 const code = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf-8');

@@ -1,90 +1,62 @@
-import { DatabaseSync } from 'node:sqlite';
-import path from 'path';
 import { storeGet } from '../ipc/store.js';
-import { ALL_SETTINGS, type SettingDefinition } from './registry.js';
+import { getOrCreateAgentDb } from '../db/agent-db.js';
 
-const AGENT_DIR_NAME = '.agentwfy';
-const AGENT_DB_NAME = 'agent.db';
-
-const SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);`;
-
-function getAgentDbPath(agentRoot: string): string {
-  return path.join(agentRoot, AGENT_DIR_NAME, AGENT_DB_NAME);
-}
-
-function readAgentConfigRaw(agentRoot: string, key: string): unknown {
-  const dbPath = getAgentDbPath(agentRoot);
+function readAgentConfigValue(agentRoot: string, name: string): unknown {
   try {
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.exec(SCHEMA_SQL);
-      const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key) as { value: string } | undefined;
-      if (!row) return undefined;
-      return JSON.parse(row.value);
-    } finally {
-      db.close();
-    }
+    const rows = getOrCreateAgentDb(agentRoot).run({
+      sql: 'SELECT value FROM config WHERE name = ?',
+      params: [name],
+    });
+    if (rows.length === 0) return undefined;
+    const row = rows[0] as Record<string, unknown>;
+    if (row.value === null) return undefined;
+    return JSON.parse(row.value as string);
   } catch {
     return undefined;
   }
 }
 
-function isValidValue(def: SettingDefinition, value: unknown): boolean {
-  if (def.type === 'number' && typeof value !== 'number') return false;
-  if (def.type === 'string' && typeof value !== 'string') return false;
-  if (def.type === 'boolean' && typeof value !== 'boolean') return false;
+export function getConfigValue(agentRoot: string, name: string, fallback?: unknown): unknown {
+  const agentValue = readAgentConfigValue(agentRoot, name);
+  if (agentValue !== undefined) return agentValue;
 
-  if (def.validate) {
-    const error = def.validate(value);
-    if (error) return false;
-  }
+  const globalValue = storeGet(name);
+  if (globalValue !== undefined) return globalValue;
 
-  return true;
+  return fallback;
 }
 
-export function getConfigResolved(agentRoot: string, key: string): { value: unknown; source: 'agent' | 'global' | 'default' } {
-  const def = ALL_SETTINGS.find((s) => s.key === key);
-  if (!def) return { value: undefined, source: 'default' };
-
-  const agentValue = readAgentConfigRaw(agentRoot, key);
-  if (agentValue !== undefined && isValidValue(def, agentValue)) {
-    return { value: agentValue, source: 'agent' };
-  }
-
-  const globalValue = storeGet(key);
-  if (globalValue !== undefined && isValidValue(def, globalValue)) {
-    return { value: globalValue, source: 'global' };
-  }
-
-  return { value: def.defaultValue, source: 'default' };
-}
-
-export function getConfigValue(agentRoot: string, key: string): unknown {
-  return getConfigResolved(agentRoot, key).value;
-}
-
-export function setAgentConfig(agentRoot: string, key: string, value: unknown): void {
-  const dbPath = getAgentDbPath(agentRoot);
-  const db = new DatabaseSync(dbPath);
+export function setAgentConfig(agentRoot: string, name: string, value: unknown): void {
+  const db = getOrCreateAgentDb(agentRoot);
+  const jsonValue = JSON.stringify(value);
+  // UPDATE first — works for all existing rows (including guarded system/plugin rows)
+  db.run({ sql: 'UPDATE config SET value = ? WHERE name = ?', params: [jsonValue, name] });
+  // INSERT for new user rows — guard blocks this for system/plugin, but those already exist from sync
   try {
-    db.exec(SCHEMA_SQL);
-    db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, JSON.stringify(value));
-  } finally {
-    db.close();
-  }
-}
-
-export function removeAgentConfig(agentRoot: string, key: string): void {
-  const dbPath = getAgentDbPath(agentRoot);
-  try {
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.exec(SCHEMA_SQL);
-      db.prepare('DELETE FROM config WHERE key = ?').run(key);
-    } finally {
-      db.close();
-    }
+    db.run({ sql: 'INSERT INTO config (name, value) VALUES (?, ?)', params: [name, jsonValue] });
   } catch {
-    // DB doesn't exist — nothing to remove
+    // Row already exists (UPDATE handled it) or guard blocked system/plugin INSERT
+  }
+}
+
+export function clearAgentConfig(agentRoot: string, name: string): void {
+  try {
+    getOrCreateAgentDb(agentRoot).run({
+      sql: 'UPDATE config SET value = NULL WHERE name = ?',
+      params: [name],
+    });
+  } catch {
+    // DB not ready
+  }
+}
+
+export function removeAgentConfig(agentRoot: string, name: string): void {
+  try {
+    getOrCreateAgentDb(agentRoot).run({
+      sql: 'DELETE FROM config WHERE name = ?',
+      params: [name],
+    });
+  } catch {
+    // DB not ready or guard blocked
   }
 }

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "system.defaultView",
+    "description": "Name of the view to open on startup (default: Home)"
+  },
+  {
+    "name": "system.backup.intervalHours",
+    "description": "How often to back up agent.db in hours (default: 24)"
+  },
+  {
+    "name": "system.backup.maxCount",
+    "description": "Maximum number of backups to keep (default: 5)"
+  },
+  {
+    "name": "system.cleanup.sessionRetentionDays",
+    "description": "Delete sessions older than this many days, 0 = keep forever (default: 30)"
+  },
+  {
+    "name": "system.cleanup.taskLogRetentionDays",
+    "description": "Delete task logs older than this many days, 0 = keep forever (default: 30)"
+  },
+  {
+    "name": "system.httpApi.port",
+    "description": "Preferred port for the local HTTP API server, restart required (default: 9877)"
+  }
+]
