@@ -77,6 +77,7 @@ export interface Model {
   id: string
   name: string
   reasoning: boolean
+  adaptiveThinking: boolean
   provider: Provider
 }
 
