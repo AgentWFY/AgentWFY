@@ -1,6 +1,7 @@
 import type { AgentMessage, AssistantMessage, ImageContent, Message, Model } from './types.js'
 import { stringifyUnknown } from './tool_utils.js'
 import { createStream } from './streaming/types.js'
+import { estimateTokens, COMPACTION_TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
 export const SESSION_SUMMARY_TAIL_MESSAGES = 20
 export const SESSION_SUMMARY_MAX_CHARS = 6000
@@ -66,6 +67,37 @@ export function toUserMessage(text: string, images?: ImageContent[]): AgentMessa
     content,
     timestamp: Date.now()
   } as AgentMessage
+}
+
+/**
+ * Estimate total token count for an array of agent messages.
+ * Uses chars/4 heuristic for text and ~1200 tokens per image.
+ */
+export function estimateMessagesTokens(messages: AgentMessage[]): number {
+  let total = 0
+
+  for (const msg of messages) {
+    const unknownMsg = msg as unknown as Record<string, unknown>
+    const content = unknownMsg?.content
+
+    if (typeof content === 'string') {
+      total += estimateTokens(content)
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block?.type === 'text' && typeof block.text === 'string') {
+          total += estimateTokens(block.text)
+        } else if (block?.type === 'thinking' && typeof block.thinking === 'string') {
+          total += estimateTokens(block.thinking)
+        } else if (block?.type === 'image') {
+          total += 1200
+        } else if (block?.type === 'toolCall') {
+          total += estimateTokens(JSON.stringify(block.arguments ?? {}))
+        }
+      }
+    }
+  }
+
+  return total
 }
 
 export function extractTextContent(content: unknown): string {
@@ -246,7 +278,15 @@ export async function generateCompactionSummary(
       ? await options.getApiKey(model.provider.id)
       : options.fallbackApiKey
 
-    const conversationText = messages.map((message) => messageToSummaryLine(message)).join('\n')
+    // Truncate individual message lines to avoid blowing up the summarization prompt
+    // with large tool results. The full content isn't needed for a good summary.
+    const conversationText = messages.map((message) => {
+      const line = messageToSummaryLine(message)
+      if (line.length > COMPACTION_TOOL_RESULT_MAX_CHARS) {
+        return line.slice(0, COMPACTION_TOOL_RESULT_MAX_CHARS) + '...<truncated>'
+      }
+      return line
+    }).join('\n')
     const additionalFocus = customInstructions?.trim()
       ? `\n\nAdditional focus: ${customInstructions.trim()}`
       : ''
