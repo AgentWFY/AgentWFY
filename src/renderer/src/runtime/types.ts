@@ -254,14 +254,6 @@ export interface WorkerHostMethodMap {
     params: WorkerStopTaskRequest
     result: void
   }
-  ffmpeg: {
-    params: { args: string[] }
-    result: { id: string }
-  }
-  ffmpegKill: {
-    params: { id: string }
-    result: void
-  }
 }
 
 export interface WorkerStartTaskRequest {

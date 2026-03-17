@@ -29,11 +29,6 @@ export interface CommandPaletteApi {
   showFiltered(query: string): Promise<void>
 }
 
-export interface FfmpegApi {
-  run(args: string[]): Promise<{ id: string }>
-  kill(id: string): Promise<void>
-}
-
 export interface PluginsApi {
   call(method: string, params: unknown): Promise<unknown>
   methods(): Promise<string[]>
@@ -52,7 +47,6 @@ export interface AppIpc {
   bus: BusApi
   tasks: TasksApi
   net: NetApi
-  ffmpeg: FfmpegApi
   plugins: PluginsApi
   commandPalette: CommandPaletteApi
   getAgentRoot(): Promise<string | null>

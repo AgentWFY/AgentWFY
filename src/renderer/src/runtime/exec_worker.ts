@@ -305,11 +305,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       callHostMethod('' + requestId, 'startTask', { taskId, input }, signal)
     const stopTask = (runId: string) =>
       callHostMethod('' + requestId, 'stopTask', { runId }, signal)
-    const ffmpeg = (args: string[]) =>
-      callHostMethod('' + requestId, 'ffmpeg', { args }, signal)
-    const ffmpegKill = (id: string) =>
-      callHostMethod('' + requestId, 'ffmpegKill', { id }, signal)
-
     // Build plugin function wrappers
     const pluginFnNames: string[] = []
     const pluginFnValues: Function[] = []
@@ -535,8 +530,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       'sendToAgent',
       'startTask',
       'stopTask',
-      'ffmpeg',
-      'ffmpegKill',
       'input',
     ]
 
@@ -571,8 +564,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       sendToAgent,
       startTask,
       stopTask,
-      ffmpeg,
-      ffmpegKill,
       input,
     ]
 

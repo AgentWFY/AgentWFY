@@ -1,0 +1,10 @@
+{
+  "name": "agentwfy-plugin-ffmpeg",
+  "version": "1.0.0",
+  "description": "Run ffmpeg processes with streaming output via event bus",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "license": "MIT"
+}

@@ -472,7 +472,7 @@ export class CommandPaletteManager {
     const mainWindow = this.deps.getMainWindow();
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Install Plugin',
-      filters: [{ name: 'Plugin Package', extensions: ['sqlite'] }],
+      filters: [{ name: 'Plugin Package', extensions: ['plugins.awfy'] }],
       properties: ['openFile'],
     });
 

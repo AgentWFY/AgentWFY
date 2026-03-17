@@ -97,7 +97,7 @@ async function showMessageBox(parentWindow: BrowserWindow | null, options: Elect
 // --- Public dialog flows ---
 
 /**
- * Prompt user to choose between default install or from .awfy file.
+ * Prompt user to choose between default install or from .agent.awfy file.
  * Returns the agentRoot path on success, or null on cancel.
  */
 async function promptInstallChoice(dirPath: string, parentWindow: BrowserWindow | null): Promise<string | null> {
@@ -106,7 +106,7 @@ async function promptInstallChoice(dirPath: string, parentWindow: BrowserWindow 
     title: 'Install Agent',
     message: `Install agent in "${path.basename(dirPath)}"?`,
     detail: 'Choose how to initialize:',
-    buttons: ['Default Agent', 'From File (.awfy)', 'Cancel'],
+    buttons: ['Default Agent', 'From File (.agent.awfy)', 'Cancel'],
     defaultId: 0,
     cancelId: 2,
   });
@@ -122,7 +122,7 @@ async function promptInstallChoice(dirPath: string, parentWindow: BrowserWindow 
   const fileResult = await showOpenDialog(parentWindow, {
     properties: ['openFile'],
     title: 'Select Agent File',
-    filters: [{ name: 'Agent Files', extensions: ['awfy'] }],
+    filters: [{ name: 'Agent Files', extensions: ['agent.awfy'] }],
   });
   if (fileResult.canceled || fileResult.filePaths.length === 0) return null;
 
