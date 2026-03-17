@@ -266,9 +266,37 @@ function buildAndSetMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// --- CLI argument parsing ---
+
+function getAgentPathFromArgs(): string | null {
+  // Skip electron binary and app path; look for --agent-path=<path> or --agent-path <path>
+  const args = process.argv.slice(1);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('--agent-path=')) {
+      return args[i].split('=').slice(1).join('=');
+    }
+    if (args[i] === '--agent-path' && i + 1 < args.length) {
+      return args[i + 1];
+    }
+  }
+  return null;
+}
+
 // --- Initial window creation ---
 
 async function createInitialWindow() {
+  // Check for --agent-path CLI argument first
+  const cliAgentPath = getAgentPathFromArgs();
+  if (cliAgentPath) {
+    const resolved = path.resolve(cliAgentPath);
+    if (isAgentDir(resolved)) {
+      await windowManager.createWindow(resolved, { skipRecents: true });
+      buildAndSetMenu();
+      return;
+    }
+    console.error(`[main] --agent-path "${cliAgentPath}" is not a valid agent directory (missing .agentwfy/)`);
+  }
+
   // Try most recent agent on fresh launch
   const recents = getRecentAgents();
   const agentRoot = recents[0] && isAgentDir(recents[0].path) ? recents[0].path : null;
