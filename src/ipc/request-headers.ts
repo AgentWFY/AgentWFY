@@ -19,6 +19,14 @@ const requestIdToTid = new Map<number, string>();
 // WebSocket URL → HeaderEntry queue (Chromium can't redirect WS, so we match by URL)
 const pendingWsHeaders: Map<string, HeaderEntry[]> = new Map();
 
+// Normalize WebSocket URLs to HTTP(S) so stored keys match details.url regardless
+// of whether Chromium reports the original wss:// or the internal https:// scheme.
+function normalizeWsUrl(url: string): string {
+  if (url.startsWith('wss://')) return 'https://' + url.slice(6);
+  if (url.startsWith('ws://')) return 'http://' + url.slice(5);
+  return url;
+}
+
 function purgeStale(): void {
   const now = Date.now();
   for (const [tid, entry] of registeredHeaders) {
@@ -47,10 +55,11 @@ export function registerRequestHeadersHandlers(): void {
     purgeStale();
     const entry: HeaderEntry = { headers: request.headers, createdAt: Date.now() };
     if (request.url) {
-      // WebSocket: store by URL only (Chromium can't redirect WS to strip query params)
-      const queue = pendingWsHeaders.get(request.url) || [];
+      // WebSocket: store by normalized URL (Chromium can't redirect WS to strip query params)
+      const key = normalizeWsUrl(request.url);
+      const queue = pendingWsHeaders.get(key) || [];
       queue.push(entry);
-      pendingWsHeaders.set(request.url, queue);
+      pendingWsHeaders.set(key, queue);
     } else {
       // Fetch: store by tid (matched via _awfy_id redirect)
       registeredHeaders.set(request.tid, entry);
@@ -62,8 +71,10 @@ export function registerRequestHeadersHandlers(): void {
 export function installWebRequestHooks(): void {
   const ses = session.defaultSession;
 
+  const urlFilter = { urls: ['*://*/*', 'ws://*/*', 'wss://*/*'] };
+
   // For non-WS requests with _awfy_id: extract tid, store mapping, redirect to clean URL
-  ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+  ses.webRequest.onBeforeRequest(urlFilter, (details, callback) => {
     if (details.resourceType === 'webSocket' || !details.url.includes('_awfy_id=')) {
       return callback({});
     }
@@ -80,8 +91,8 @@ export function installWebRequestHooks(): void {
     callback({ redirectURL: url.toString() });
   });
 
-  // Inject registered headers for both fetch (via requestIdToTid) and WebSocket (via URL param)
-  ses.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, callback) => {
+  // Inject registered headers for both fetch (via requestIdToTid) and WebSocket (via URL)
+  ses.webRequest.onBeforeSendHeaders(urlFilter, (details, callback) => {
     // Fast exit: nothing registered
     if (registeredHeaders.size === 0 && pendingWsHeaders.size === 0) {
       return callback({ requestHeaders: details.requestHeaders });
@@ -95,12 +106,12 @@ export function installWebRequestHooks(): void {
       requestIdToTid.delete(details.id);
     }
 
-    // For WebSocket: match by URL (Chromium can't redirect WS to strip query params)
+    // For WebSocket: match by normalized URL (Chromium can't redirect WS to strip query params)
     if (!tid && details.resourceType === 'webSocket') {
-      const queue = pendingWsHeaders.get(details.url);
+      const queue = pendingWsHeaders.get(normalizeWsUrl(details.url));
       if (queue && queue.length > 0) {
         const wsEntry = queue.shift()!;
-        if (queue.length === 0) pendingWsHeaders.delete(details.url);
+        if (queue.length === 0) pendingWsHeaders.delete(normalizeWsUrl(details.url));
         const requestHeaders = { ...details.requestHeaders };
         for (const [key, value] of Object.entries(wsEntry.headers)) {
           requestHeaders[key] = value;
