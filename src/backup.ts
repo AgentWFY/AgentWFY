@@ -38,11 +38,11 @@ function getMetaPath(agentRoot: string): string {
 }
 
 function getIntervalHours(agentRoot: string): number {
-  return getConfigValue(agentRoot, 'backup.intervalHours') as number;
+  return getConfigValue(agentRoot, 'system.backup.intervalHours', 24) as number;
 }
 
 function getMaxCount(agentRoot: string): number {
-  return getConfigValue(agentRoot, 'backup.maxCount') as number;
+  return getConfigValue(agentRoot, 'system.backup.maxCount', 5) as number;
 }
 
 function fileHash(filePath: string): string {

@@ -3,11 +3,11 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
+import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { installFromPackage, uninstallPlugin } from '../plugins/installer.js';
-import { ALL_SETTINGS, type SettingDefinition } from '../settings/registry.js';
 import { storeSet } from '../ipc/store.js';
-import { getConfigResolved, setAgentConfig, removeAgentConfig } from '../settings/config.js';
+import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
   getRecentAgents,
   showOpenAgentDialog,
@@ -224,17 +224,28 @@ export class CommandPaletteManager {
 
     const rows = await listViews(agentRoot);
 
-    const viewItems: CommandPaletteItem[] = rows.map((row) => ({
-      id: `view:${row.id}`,
-      title: row.name,
-      group: 'Views',
-      action: {
-        type: 'open-view',
-        viewId: String(row.id),
-        title: row.name,
-        viewUpdatedAt: row.updated_at ?? null,
-      },
-    }));
+    const viewItems: CommandPaletteItem[] = rows.map((row) => {
+      const displayTitle = row.title || row.name;
+      let group: CommandPaletteItem['group'];
+      if (row.name.startsWith('system.')) {
+        group = 'System';
+      } else if (row.name.startsWith('plugin.')) {
+        group = 'Plugins';
+      } else {
+        group = 'Views';
+      }
+      return {
+        id: `view:${row.id}`,
+        title: displayTitle,
+        group,
+        action: {
+          type: 'open-view',
+          viewId: String(row.id),
+          title: displayTitle,
+          viewUpdatedAt: row.updated_at ?? null,
+        },
+      };
+    });
 
     const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
     const actionItems: CommandPaletteItem[] = [
@@ -325,63 +336,45 @@ export class CommandPaletteManager {
     return [...actionItems, ...viewItems];
   }
 
-  buildSettingsItems(): CommandPaletteItem[] {
+  async buildSettingsItems(): Promise<CommandPaletteItem[]> {
     const agentRoot = this.deps.getAgentRoot();
-    return ALL_SETTINGS.map((def) => {
-      const resolved = getConfigResolved(agentRoot, def.key);
+    const rows = await listConfig(agentRoot);
+    return rows.map((row) => {
+      let group: CommandPaletteItem['group'];
+      if (row.name.startsWith('system.')) group = 'System';
+      else if (row.name.startsWith('plugin.')) group = 'Plugins';
+      else group = 'Settings';
       return {
-        id: `setting:${def.key}`,
-        title: def.label,
-        subtitle: def.description,
-        group: 'Settings' as const,
-        settingValue: String(resolved.value),
-        settingSource: resolved.source,
-        settingType: def.type,
+        id: `setting:${row.name}`,
+        title: row.name,
+        subtitle: row.description,
+        group,
+        settingValue: row.value ?? '',
         action: {
           type: 'edit-setting' as const,
-          settingKey: def.key,
-          settingLabel: def.label,
+          settingKey: row.name,
+          settingLabel: row.name,
         },
       };
     });
   }
 
-  private coerceAndValidate(def: SettingDefinition, rawValue: unknown): { success: boolean; value?: unknown; error?: string } {
-    let coerced: unknown = rawValue;
-    if (def.type === 'number') {
-      coerced = Number(rawValue);
-      if (!isFinite(coerced as number)) {
-        return { success: false, error: 'Must be a valid number' };
-      }
-    } else if (def.type === 'boolean') {
-      coerced = rawValue === true || rawValue === 'true';
-    }
-
-    if (def.validate) {
-      const error = def.validate(coerced);
-      if (error) return { success: false, error };
-    }
-
-    return { success: true, value: coerced };
-  }
-
-  updateSetting(key: string, rawValue: unknown, scope?: 'agent' | 'global'): { success: boolean; error?: string } {
-    const def = ALL_SETTINGS.find((s) => s.key === key);
-    if (!def) return { success: false, error: 'Unknown setting' };
-
-    const result = this.coerceAndValidate(def, rawValue);
-    if (!result.success) return { success: false, error: result.error };
-
+  updateSetting(name: string, rawValue: unknown, scope?: 'agent' | 'global'): { success: boolean; error?: string } {
     if (scope === 'agent') {
-      setAgentConfig(this.deps.getAgentRoot(), key, result.value);
+      setAgentConfig(this.deps.getAgentRoot(), name, rawValue);
     } else {
-      storeSet(key, result.value);
+      storeSet(name, rawValue);
     }
     return { success: true };
   }
 
-  clearAgentOverride(key: string): void {
-    removeAgentConfig(this.deps.getAgentRoot(), key);
+  clearAgentOverride(name: string): void {
+    // system.* and plugin.* rows can't be deleted — set value to NULL instead
+    if (name.startsWith('system.') || name.startsWith('plugin.')) {
+      clearAgentConfig(this.deps.getAgentRoot(), name);
+    } else {
+      removeAgentConfig(this.deps.getAgentRoot(), name);
+    }
   }
 
   buildRecentAgentItems(): CommandPaletteItem[] {
