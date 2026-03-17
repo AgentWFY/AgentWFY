@@ -7,6 +7,7 @@ export interface ModelConfig {
   name: string
   reasoning?: boolean
   adaptiveThinking?: boolean
+  contextWindow?: number
 }
 
 export interface ProviderConfig {
@@ -132,6 +133,7 @@ export function getModels(config: ModelsConfig | undefined, providerId: string):
     name: mc.name,
     reasoning: mc.reasoning ?? false,
     adaptiveThinking: mc.adaptiveThinking ?? false,
+    contextWindow: mc.contextWindow ?? 200000,
     provider,
   }))
 }

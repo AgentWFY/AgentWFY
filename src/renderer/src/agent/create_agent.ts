@@ -38,7 +38,9 @@ import {
   isContextOverflow,
   getLastAssistantMessage,
   generateCompactionSummary,
+  estimateMessagesTokens,
 } from './session_compaction.js'
+import { CONTEXT_RESERVE_TOKENS } from './truncate.js'
 
 export { COMPACTION_SUMMARY_CUSTOM_TYPE } from './session_compaction.js'
 export { toUserMessage } from './session_compaction.js'
@@ -284,6 +286,11 @@ export class AgentWFYAgent {
       sessionIdRef,
       persistSessions
     })
+
+    // Wire up the proactive compaction hook — called before every LLM API call
+    // so we can compact context before hitting the limit (avoiding wasted requests).
+    agent.beforeStream = (contextMessages) =>
+      instance.proactiveCompact(contextMessages)
 
     if (options.sessionFile) {
       await instance.switchSession(sessionFile)
@@ -588,6 +595,47 @@ export class AgentWFYAgent {
       return { compacted: true }
     } finally {
       this.isCompacting = false
+    }
+  }
+
+  /**
+   * Proactive compaction — called via the beforeStream hook before every LLM API call.
+   * Estimates total context tokens and compacts if we're approaching the model's
+   * context window limit. Returns compacted messages if compaction happened, or
+   * void to keep the current messages unchanged.
+   */
+  private async proactiveCompact(contextMessages: AgentMessage[]): Promise<AgentMessage[] | void> {
+    if (this.isCompacting) return
+
+    const model = this.model
+    if (!model) return
+
+    const contextWindow = model.contextWindow ?? 200000
+    const systemPromptTokens = Math.ceil(this.infoData.systemPromptChars / 4)
+    const messageTokens = estimateMessagesTokens(contextMessages)
+    const totalTokens = systemPromptTokens + messageTokens
+
+    if (totalTokens <= contextWindow - CONTEXT_RESERVE_TOKENS) {
+      return // Plenty of room
+    }
+
+    if (contextMessages.length <= SESSION_SUMMARY_TAIL_MESSAGES) {
+      return // Too few messages to compact
+    }
+
+    console.log(
+      `[AgentWFYAgent] proactive compaction: ~${totalTokens} tokens estimated, ` +
+      `context window ${contextWindow}, reserve ${CONTEXT_RESERVE_TOKENS}`
+    )
+
+    try {
+      const result = await this.compact()
+      if (result.compacted) {
+        // compact() already created a fresh array via replaceMessages, no need to copy again
+        return this.messages
+      }
+    } catch (err) {
+      console.warn('[AgentWFYAgent] proactive compaction failed, continuing without', err)
     }
   }
 

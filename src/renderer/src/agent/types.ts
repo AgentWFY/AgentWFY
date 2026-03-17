@@ -78,6 +78,7 @@ export interface Model {
   name: string
   reasoning: boolean
   adaptiveThinking: boolean
+  contextWindow?: number
   provider: Provider
 }
 

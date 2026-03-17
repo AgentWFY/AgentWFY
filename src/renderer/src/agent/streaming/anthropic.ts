@@ -130,6 +130,25 @@ function getAdaptiveEffort(level: string | undefined): string {
   }
 }
 
+/**
+ * Add cache_control breakpoints to the last user/tool_result message.
+ * This tells Anthropic to cache the conversation prefix up to that point,
+ * so subsequent turns only pay for new/changed content.
+ */
+function addCacheBreakpoints(messages: unknown[]): void {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as Record<string, unknown>
+    if (msg.role === 'user') {
+      const content = msg.content as unknown[]
+      if (content && content.length > 0) {
+        const lastBlock = content[content.length - 1] as Record<string, unknown>
+        lastBlock.cache_control = { type: 'ephemeral' }
+      }
+      break
+    }
+  }
+}
+
 export async function streamAnthropic(
   stream: MessageStream,
   model: Model,
@@ -171,18 +190,25 @@ export async function streamAnthropic(
 
   let maxTokens = options.maxTokens ?? 16384
 
-  // OAuth requires the Claude Code identity prefix as the first system block
+  // Always use array format for system prompt to support cache_control breakpoints.
+  // The cache_control on the last block tells Anthropic to cache everything up to
+  // and including that block, so the system prompt is only billed once per cache window.
   const system: unknown = isOAuth
     ? [
         { type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." },
-        { type: 'text', text: context.systemPrompt },
+        { type: 'text', text: context.systemPrompt, cache_control: { type: 'ephemeral' } },
       ]
-    : context.systemPrompt
+    : [
+        { type: 'text', text: context.systemPrompt, cache_control: { type: 'ephemeral' } },
+      ]
+
+  const convertedMessages = convertMessages(context.messages)
+  addCacheBreakpoints(convertedMessages)
 
   const body: Record<string, unknown> = {
     model: model.id,
     system,
-    messages: convertMessages(context.messages),
+    messages: convertedMessages,
     stream: true,
   }
 

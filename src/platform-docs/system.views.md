@@ -64,8 +64,8 @@ await runSql({
 ```
 
 **Guidelines:**
-- For small views (under ~150000 characters), read/write the full content normally.
-- For large views, always check `LENGTH(content)` first. If it exceeds ~150000 characters, use `SUBSTR()` to read in chunks.
+- For small views (under ~40000 characters), read/write the full content normally.
+- For large views, always check `LENGTH(content)` first. If it exceeds ~40000 characters, use `SUBSTR()` to read in chunks.
 - Prefer `REPLACE()` edits over full content updates. Only include enough surrounding context in `oldText` to ensure a unique match.
 - For multiple edits, chain them in separate `runSql` calls — each `REPLACE()` should target a unique string.
 - Always `reloadTab` after updating view content.
