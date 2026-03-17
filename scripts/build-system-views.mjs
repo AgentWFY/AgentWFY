@@ -22,5 +22,5 @@ export function buildSystemViews(distDir) {
   }
 
   writeFileSync(outPath, JSON.stringify(views))
-  console.log(`[system-views] Built ${views.length} views → ${outPath}`)
+  console.log(`[system-views] Built ${views.length} views`)
 }

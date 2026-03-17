@@ -18,5 +18,5 @@ export function buildSystemDocs(distDir) {
   }
 
   writeFileSync(outPath, JSON.stringify(docs))
-  console.log(`[system-docs] Built ${docs.length} docs → ${outPath}`)
+  console.log(`[system-docs] Built ${docs.length} docs`)
 }

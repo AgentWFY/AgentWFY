@@ -12,5 +12,5 @@ export function buildSystemConfig(distDir) {
   const items = JSON.parse(data)
 
   writeFileSync(outPath, JSON.stringify(items))
-  console.log(`[system-config] Built ${items.length} config entries → ${outPath}`)
+  console.log(`[system-config] Built ${items.length} config entries`)
 }
