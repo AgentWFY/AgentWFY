@@ -14,6 +14,7 @@ import type {
   ToolResultMessage,
 } from './types.js'
 import { createStream } from './streaming/types.js'
+import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
 /**
  * Lightweight tool argument validation against JSON Schema.
@@ -59,6 +60,7 @@ export interface AgentOptions {
   convertToLlm?: (messages: AgentMessage[]) => Message[] | Promise<Message[]>
   sessionId?: string
   getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined
+  beforeStream?: (contextMessages: AgentMessage[]) => Promise<AgentMessage[] | void>
 }
 
 export class Agent {
@@ -84,6 +86,7 @@ export class Agent {
 
   sessionId?: string
   getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined
+  beforeStream?: (contextMessages: AgentMessage[]) => Promise<AgentMessage[] | void>
 
   constructor(opts: AgentOptions = {}) {
     if (opts.initialState) {
@@ -92,6 +95,7 @@ export class Agent {
     this.convertToLlm = opts.convertToLlm || defaultConvertToLlm
     this.sessionId = opts.sessionId
     this.getApiKey = opts.getApiKey
+    this.beforeStream = opts.beforeStream
   }
 
   get state(): AgentState {
@@ -376,6 +380,22 @@ export class Agent {
     contextMessages: AgentMessage[],
     signal: AbortSignal,
   ): Promise<AssistantMessage> {
+    // Proactive context optimization hook — allows the wrapper (AgentWFYAgent)
+    // to compact messages before each LLM call to avoid wasting tokens on
+    // requests that would overflow.
+    if (this.beforeStream) {
+      try {
+        const compacted = await this.beforeStream(contextMessages)
+        if (compacted) {
+          contextMessages.length = 0
+          contextMessages.push(...compacted)
+          this._state.messages = contextMessages.slice()
+        }
+      } catch (err) {
+        console.warn('[Agent] beforeStream hook failed, continuing without compaction', err)
+      }
+    }
+
     for (let attempt = 0; ; attempt++) {
       const result = await this.attemptStream(contextMessages, signal)
 
@@ -601,11 +621,21 @@ export class Agent {
         isError,
       })
 
+      // Truncate large text blocks before adding to LLM context.
+      // The original result (with full content) is preserved in the event above
+      // for UI display; only the context-bound copy is truncated.
+      const contextContent = result.content.map((c) => {
+        if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
+          return { ...c, text: truncateHead(c.text) }
+        }
+        return c
+      })
+
       const toolResultMessage: ToolResultMessage = {
         role: 'toolResult',
         toolCallId: toolCall.id,
         toolName: toolCall.name,
-        content: result.content as ToolResultMessage['content'],
+        content: contextContent as ToolResultMessage['content'],
         details: result.details,
         isError,
         timestamp: Date.now(),
