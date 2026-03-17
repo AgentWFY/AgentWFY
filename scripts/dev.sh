@@ -28,4 +28,4 @@ while [ ! -f "$ROOT_DIR/dist/client/index.js" ]; do
   sleep 0.2
 done
 
-NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR"
+NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR" "$@"
