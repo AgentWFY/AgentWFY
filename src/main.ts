@@ -12,6 +12,7 @@ import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerFfmpegHandlers, killAllFfmpegProcesses } from './ipc/ffmpeg.js';
+import { registerPluginHandlers } from './ipc/plugins.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
   showAgentPickerDialog,
@@ -33,7 +34,7 @@ app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommuni
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
 // calls and are already propagated to the renderer as rejected promises.
-const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'headers:', 'ffmpeg:'];
+const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'headers:', 'ffmpeg:', 'plugin:'];
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
   const first = args[0]
@@ -94,6 +95,10 @@ registerTaskRunnerHandlers(
 registerFfmpegHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getWindowForEvent(e),
+);
+registerPluginHandlers(
+  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
 );
 
 ipcMain.handle('app:getAgentRoot', (event) => {

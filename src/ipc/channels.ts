@@ -83,4 +83,10 @@ export const Channels = {
     run: 'ffmpeg:run',
     kill: 'ffmpeg:kill',
   },
+  plugins: {
+    call: 'plugin:call',
+    methods: 'plugin:methods',
+    install: 'plugin:install',
+    uninstall: 'plugin:uninstall',
+  },
 } as const;

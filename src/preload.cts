@@ -85,6 +85,12 @@ const Channels = {
     run: 'ffmpeg:run',
     kill: 'ffmpeg:kill',
   },
+  plugins: {
+    call: 'plugin:call',
+    methods: 'plugin:methods',
+    install: 'plugin:install',
+    uninstall: 'plugin:uninstall',
+  },
 } as const;
 
 // --- Helpers ---
@@ -382,6 +388,20 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
       },
     },
+    plugins: {
+      call(method: string, params: unknown): Promise<unknown> {
+        return ipcRenderer.invoke(Channels.plugins.call, method, params);
+      },
+      methods(): Promise<string[]> {
+        return ipcRenderer.invoke(Channels.plugins.methods);
+      },
+      install(packagePath: string): Promise<{ installed: string[] }> {
+        return ipcRenderer.invoke(Channels.plugins.install, packagePath);
+      },
+      uninstall(pluginName: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.plugins.uninstall, pluginName);
+      },
+    },
     tasks: {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
@@ -422,6 +442,13 @@ if (isAgentView) {
   const agentTabs = buildAgentTabsApi();
   const busAgent = buildBusAgentApi();
 
+  // Query plugin method names synchronously so they can be exposed as flat methods
+  const pluginMethodNames: string[] = ipcRenderer.sendSync(Channels.plugins.methods) ?? [];
+  const pluginFunctions: Record<string, Function> = {};
+  for (const name of pluginMethodNames) {
+    pluginFunctions[name] = (params: unknown) => ipcRenderer.invoke(Channels.plugins.call, name, params);
+  }
+
   contextBridge.exposeInMainWorld('agentwfy', {
     ...files,
     runSql(request: RunSqlRequest): Promise<unknown[]> {
@@ -450,5 +477,6 @@ if (isAgentView) {
     ffmpegKill(id: string): Promise<void> {
       return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
     },
+    ...pluginFunctions,
   });
 }

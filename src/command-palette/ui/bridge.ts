@@ -14,5 +14,9 @@ export interface CommandPaletteBridge {
   listRecentAgents(): Promise<CommandPaletteItem[]>
   listBackups(): Promise<CommandPaletteItem[]>
   listTasks(): Promise<CommandPaletteItem[]>
+  listPlugins(): Promise<CommandPaletteItem[]>
+  installPlugin(): Promise<{ installed: string[] }>
+  uninstallPlugin(pluginName: string): Promise<void>
+  togglePlugin(pluginName: string, enabled: boolean): Promise<void>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
 }

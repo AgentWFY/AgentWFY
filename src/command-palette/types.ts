@@ -60,6 +60,17 @@ export type CommandPaletteAction =
     type: 'enter-tasks'
   }
   | {
+    type: 'enter-plugins'
+  }
+  | {
+    type: 'install-plugin'
+  }
+  | {
+    type: 'toggle-plugin'
+    pluginName: string
+    enabled: boolean
+  }
+  | {
     type: 'restore-agent-db-confirm'
     backupVersion: number
   }
@@ -69,7 +80,7 @@ export interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -92,4 +103,8 @@ export const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',
+  LIST_PLUGINS: 'app:command-palette:list-plugins',
+  INSTALL_PLUGIN: 'app:command-palette:install-plugin',
+  UNINSTALL_PLUGIN: 'app:command-palette:uninstall-plugin',
+  TOGGLE_PLUGIN: 'app:command-palette:toggle-plugin',
 } as const

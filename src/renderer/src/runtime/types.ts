@@ -285,6 +285,7 @@ export interface WorkerExecuteRequestMessage {
   code: string
   timeoutMs: number
   input?: unknown
+  pluginMethods?: string[]
 }
 
 export interface WorkerCancelRequestMessage {

@@ -45,6 +45,17 @@ CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS plugins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  version TEXT NOT NULL DEFAULT '1.0.0',
+  code TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 `;
 
 const CHANGE_TRACKING_SQL = `
@@ -99,28 +110,65 @@ END;
 CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.rowid, 'delete');
 END;
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_insert AFTER INSERT ON plugins BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.id, 'insert');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_update AFTER UPDATE ON plugins BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.id, 'update');
+END;
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_delete AFTER DELETE ON plugins BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', OLD.id, 'delete');
+END;
 `;
 
-// Block agent from writing to system.* docs (created as TEMP so they don't
-// interfere with our own upserts on next launch)
+// Block agent from writing to system.* and plugin.* docs (created as TEMP so
+// they don't interfere with our own upserts on next launch)
 const SYSTEM_DOCS_GUARD_SQL = `
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_insert BEFORE INSERT ON docs
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%'
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
 END;
 
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_update BEFORE UPDATE ON docs
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
+  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
 END;
 
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_delete BEFORE DELETE ON docs
-WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%'
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
 END;
+`;
+
+// Block agent from writing to plugins table
+const PLUGINS_TABLE_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_insert BEFORE INSERT ON plugins
+BEGIN
+  SELECT RAISE(ABORT, 'plugins table is read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_update BEFORE UPDATE ON plugins
+BEGIN
+  SELECT RAISE(ABORT, 'plugins table is read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_delete BEFORE DELETE ON plugins
+BEGIN
+  SELECT RAISE(ABORT, 'plugins table is read-only');
+END;
+`;
+
+const DROP_GUARDS_SQL = `
+DROP TRIGGER IF EXISTS plugins_guard_insert;
+DROP TRIGGER IF EXISTS plugins_guard_update;
+DROP TRIGGER IF EXISTS plugins_guard_delete;
+DROP TRIGGER IF EXISTS _docs_system_guard_insert;
+DROP TRIGGER IF EXISTS _docs_system_guard_update;
+DROP TRIGGER IF EXISTS _docs_system_guard_delete;
 `;
 
 interface PlatformDoc {
@@ -177,6 +225,80 @@ class AgentDb {
 
     this.db.exec(CHANGE_TRACKING_SQL);
     this.db.exec(SYSTEM_DOCS_GUARD_SQL);
+    this.db.exec(PLUGINS_TABLE_GUARD_SQL);
+  }
+
+  getEnabledPlugins(): Array<{ name: string; description: string; version: string; code: string }> {
+    return this.db.prepare(
+      'SELECT name, description, version, code FROM plugins WHERE enabled = 1'
+    ).all() as Array<{ name: string; description: string; version: string; code: string }>;
+  }
+
+  listPlugins(): Array<{ name: string; description: string; version: string; enabled: number }> {
+    return this.db.prepare(
+      'SELECT name, description, version, enabled FROM plugins ORDER BY name'
+    ).all() as Array<{ name: string; description: string; version: string; enabled: number }>;
+  }
+
+  togglePlugin(name: string, enabled: boolean): void {
+    this.adminWrite(() => {
+      this.db.prepare(
+        'UPDATE plugins SET enabled = ?, updated_at = unixepoch() WHERE name = ?'
+      ).run(enabled ? 1 : 0, name);    });
+  }
+
+  installPlugins(
+    plugins: Array<{ name: string; description: string; version: string; code: string }>,
+    docs: Array<{ name: string; content: string }>,
+  ): void {
+    this.adminWrite(() => {
+      const upsertPlugin = this.db.prepare(`
+        INSERT INTO plugins (name, description, version, code, updated_at)
+          VALUES (?, ?, ?, ?, unixepoch())
+          ON CONFLICT(name) DO UPDATE SET
+            description = excluded.description,
+            version = excluded.version,
+            code = excluded.code,
+            updated_at = unixepoch()
+      `);
+      const upsertDoc = this.db.prepare(`
+        INSERT INTO docs (name, content, updated_at)
+          VALUES (?, ?, unixepoch())
+          ON CONFLICT(name) DO UPDATE SET
+            content = excluded.content,
+            updated_at = unixepoch()
+      `);
+
+      this.db.exec('BEGIN');
+      for (const p of plugins) {
+        upsertPlugin.run(p.name, p.description, p.version, p.code);
+      }
+      for (const d of docs) {
+        upsertDoc.run(d.name, d.content);
+      }
+      this.db.exec('COMMIT');
+    });
+  }
+
+  uninstallPlugin(name: string): void {
+    this.adminWrite(() => {
+      this.db.exec('BEGIN');
+      this.db.prepare('DELETE FROM plugins WHERE name = ?').run(name);
+      this.db.prepare(
+        "DELETE FROM docs WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.exec('COMMIT');
+    });
+  }
+
+  private adminWrite(fn: () => void): void {
+    this.db.exec(DROP_GUARDS_SQL);
+    try {
+      fn();
+    } finally {
+      this.db.exec(SYSTEM_DOCS_GUARD_SQL);
+      this.db.exec(PLUGINS_TABLE_GUARD_SQL);
+    }
   }
 
   run(request: SqlExecutionRequest, onDbChange?: OnDbChange): unknown[] {

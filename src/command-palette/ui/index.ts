@@ -4,6 +4,7 @@ import { PaletteController } from './palette.js'
 import { NormalScreen } from './screens/normal.js'
 import { SettingsScreen } from './screens/settings.js'
 import { RestoreScreen } from './screens/restore.js'
+import { PluginsScreen } from './screens/plugins.js'
 import { TaskDetailScreen } from './screens/task-detail.js'
 import type { TaskDetailParams } from './screens/task-detail.js'
 
@@ -17,6 +18,7 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
   'normal': (bridge, params) => new NormalScreen(bridge, params?.filter as string | undefined),
   'settings': (bridge) => new SettingsScreen(bridge),
   'restore': (bridge) => new RestoreScreen(bridge),
+  'plugins': (bridge) => new PluginsScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
 }
 

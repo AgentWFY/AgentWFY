@@ -73,6 +73,7 @@ function getIpc() {
 
 export class JsRuntime {
   private readonly workers = new Map<string, WorkerEntry>()
+  private pluginMethods: string[] | null = null
 
   ensureWorker(sessionId: string): void {
     const normalizedSessionId = normalizeSessionId(sessionId)
@@ -140,6 +141,17 @@ export class JsRuntime {
       throw new Error(`Failed to create session worker for ${normalizedSessionId}`)
     }
 
+    // Lazy-load plugin method names
+    if (this.pluginMethods === null) {
+      try {
+        const ipc = getIpc()
+        this.pluginMethods = await ipc.plugins.methods()
+      } catch (err) {
+        console.warn('[plugins] Failed to load plugin methods:', err)
+        this.pluginMethods = []
+      }
+    }
+
     const timeout = Number.isFinite(timeoutMs) && (timeoutMs as number) > 0
       ? Math.floor(timeoutMs as number)
       : DEFAULT_EXEC_TIMEOUT_MS
@@ -188,6 +200,7 @@ export class JsRuntime {
         code,
         timeoutMs: timeout,
         input,
+        pluginMethods: this.pluginMethods ?? undefined,
       } satisfies HostToWorkerMessage)
     })
   }
@@ -604,8 +617,14 @@ export class JsRuntime {
         await ipc.ffmpeg.kill(request.id)
         return undefined as WorkerHostMethodMap[M]['result']
       }
-      default:
-        throw new Error(`Unsupported worker host method: ${String(method)}`)
+      default: {
+        const methodStr = String(method)
+        if (methodStr.startsWith('plugin:')) {
+          const ipc = getIpc()
+          return await ipc.plugins.call(methodStr.slice(7), params) as WorkerHostMethodMap[M]['result']
+        }
+        throw new Error(`Unsupported worker host method: ${methodStr}`)
+      }
     }
   }
 

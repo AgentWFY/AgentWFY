@@ -19,7 +19,10 @@ import {
 import { runCleanup } from './cleanup.js';
 import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
 import type { AgentDbChange } from './db/sqlite.js';
-import { closeAgentDb } from './db/agent-db.js';
+import { closeAgentDb, getOrCreateAgentDb } from './db/agent-db.js';
+import { loadPlugins } from './plugins/loader.js';
+import { forwardBusPublish } from './ipc/bus.js';
+import type { PluginRegistry } from './plugins/registry.js';
 
 export interface AppWindowContext {
   window: BrowserWindow;
@@ -29,6 +32,7 @@ export interface AppWindowContext {
   commandPalette: CommandPaletteManager;
   httpApi: HttpApiServer | null;
   triggerEngine: TriggerEngine | null;
+  pluginRegistry: PluginRegistry | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   tabTools: {
@@ -53,6 +57,17 @@ class WindowManager {
     await ensureAgentRuntimeBootstrap(agentRoot);
     addToRecentAgents(agentRoot);
 
+    // Init DB (creates schema, syncs platform docs, generates system.plugins)
+    getOrCreateAgentDb(agentRoot);
+
+    // Load plugins from DB — window doesn't exist yet, so publish defers via a mutable ref
+    let winRef: BrowserWindow | null = null;
+    const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
+      if (winRef && !winRef.isDestroyed()) {
+        forwardBusPublish(winRef, topic, data);
+      }
+    });
+
     const window = new BrowserWindow({
       show: false,
       title: agentRoot,
@@ -71,6 +86,8 @@ class WindowManager {
         webSecurity: false,
       },
     });
+
+    winRef = window;
 
     const rendererBridge = new RendererBridge({
       getMainWindow: () => window,
@@ -115,6 +132,7 @@ class WindowManager {
       commandPalette,
       httpApi: null,
       triggerEngine: null,
+      pluginRegistry,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
       tabTools: {
@@ -243,6 +261,7 @@ class WindowManager {
       ctx.dbChangeDebounceTimer = null;
     }
 
+    ctx.pluginRegistry?.deactivateAll();
     ctx.commandPalette.destroy();
     ctx.tabViewManager.destroyAllTabViews();
     ctx.tabViewManager.clearTrackedViewWebContents();

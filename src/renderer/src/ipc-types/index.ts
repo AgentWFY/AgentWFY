@@ -34,6 +34,13 @@ export interface FfmpegApi {
   kill(id: string): Promise<void>
 }
 
+export interface PluginsApi {
+  call(method: string, params: unknown): Promise<unknown>
+  methods(): Promise<string[]>
+  install(packagePath: string): Promise<{ installed: string[] }>
+  uninstall(pluginName: string): Promise<void>
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
@@ -46,6 +53,7 @@ export interface AppIpc {
   tasks: TasksApi
   net: NetApi
   ffmpeg: FfmpegApi
+  plugins: PluginsApi
   commandPalette: CommandPaletteApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>

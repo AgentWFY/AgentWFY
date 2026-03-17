@@ -1,8 +1,10 @@
-import { BrowserWindow, nativeTheme, shell } from 'electron';
+import { BrowserWindow, dialog, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
+import { getOrCreateAgentDb } from '../db/agent-db.js';
+import { installFromPackage, uninstallPlugin } from '../plugins/installer.js';
 import { ALL_SETTINGS, type SettingDefinition } from '../settings/registry.js';
 import { storeSet } from '../ipc/store.js';
 import { getConfigResolved, setAgentConfig, removeAgentConfig } from '../settings/config.js';
@@ -312,6 +314,12 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'enter-tasks' },
       },
+      {
+        id: 'action:plugins',
+        title: 'Plugins...',
+        group: 'Actions',
+        action: { type: 'enter-plugins' },
+      },
     ];
 
     return [...actionItems, ...viewItems];
@@ -428,6 +436,62 @@ export class CommandPaletteManager {
     });
   }
 
+  buildPluginItems(): CommandPaletteItem[] {
+    const agentRoot = this.deps.getAgentRoot();
+    const db = getOrCreateAgentDb(agentRoot);
+    const plugins = db.listPlugins();
+
+    const items: CommandPaletteItem[] = [
+      {
+        id: 'plugin:install',
+        title: 'Install Plugin...',
+        group: 'Plugins',
+        action: { type: 'install-plugin' },
+      },
+    ];
+
+    for (const p of plugins) {
+      items.push({
+        id: `plugin:${p.name}`,
+        title: p.name,
+        subtitle: p.description,
+        group: 'Plugins',
+        settingValue: p.enabled ? 'enabled' : 'disabled',
+        action: {
+          type: 'toggle-plugin',
+          pluginName: p.name,
+          enabled: !p.enabled,
+        },
+      });
+    }
+
+    return items;
+  }
+
+  async installPluginFromDialog(): Promise<{ installed: string[] }> {
+    const mainWindow = this.deps.getMainWindow();
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Install Plugin',
+      filters: [{ name: 'Plugin Package', extensions: ['sqlite'] }],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { installed: [] };
+    }
+
+    return installFromPackage(this.deps.getAgentRoot(), result.filePaths[0]);
+  }
+
+  uninstallPluginByName(pluginName: string): void {
+    uninstallPlugin(this.deps.getAgentRoot(), pluginName);
+  }
+
+  togglePluginEnabled(pluginName: string, enabled: boolean): void {
+    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    db.togglePlugin(pluginName, enabled);
+  }
+
   openSettingsFile(): void {
     shell.openPath(this.deps.getStorePath());
   }
@@ -486,8 +550,15 @@ export class CommandPaletteManager {
       case 'enter-settings':
       case 'enter-recent-agents':
       case 'enter-tasks':
+      case 'enter-plugins':
         // Handled entirely in the palette UI
         return;
+
+      case 'install-plugin': {
+        this.hide({ focusMain: true });
+        await this.installPluginFromDialog();
+        return;
+      }
 
       case 'edit-setting':
         // Handled entirely in the palette UI
