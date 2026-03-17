@@ -228,9 +228,9 @@ export class CommandPaletteManager {
       const displayTitle = row.title || row.name;
       let group: CommandPaletteItem['group'];
       if (row.name.startsWith('system.')) {
-        group = 'System';
+        group = 'System Views';
       } else if (row.name.startsWith('plugin.')) {
-        group = 'Plugins';
+        group = 'Plugin Views';
       } else {
         group = 'Views';
       }

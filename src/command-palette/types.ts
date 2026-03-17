@@ -78,7 +78,7 @@ export interface CommandPaletteItem {
   title: string
   subtitle?: string
   shortcut?: string
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
