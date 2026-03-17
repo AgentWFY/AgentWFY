@@ -81,10 +81,6 @@ const Channels = {
     forwardStop: 'tasks:forwardStop',
     forwardStopResult: 'tasks:forwardStopResult',
   },
-  ffmpeg: {
-    run: 'ffmpeg:run',
-    kill: 'ffmpeg:kill',
-  },
   plugins: {
     call: 'plugin:call',
     methods: 'plugin:methods',
@@ -380,14 +376,6 @@ if (isApp) {
     getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null> {
       return ipcRenderer.invoke('app:getDefaultView');
     },
-    ffmpeg: {
-      run(args: string[]): Promise<{ id: string }> {
-        return ipcRenderer.invoke(Channels.ffmpeg.run, args);
-      },
-      kill(id: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
-      },
-    },
     plugins: {
       call(method: string, params: unknown): Promise<unknown> {
         return ipcRenderer.invoke(Channels.plugins.call, method, params);
@@ -470,12 +458,6 @@ if (isAgentView) {
     },
     stopTask(runId: string): Promise<void> {
       return ipcRenderer.invoke(Channels.tasks.stop, runId);
-    },
-    ffmpeg(args: string[]): Promise<{ id: string }> {
-      return ipcRenderer.invoke(Channels.ffmpeg.run, args);
-    },
-    ffmpegKill(id: string): Promise<void> {
-      return ipcRenderer.invoke(Channels.ffmpeg.kill, id);
     },
     ...pluginFunctions,
   });

@@ -1,15 +1,12 @@
 const shouldSignMac = !!process.env.APPLE_TEAM_ID;
 const shouldSignWindows = !!process.env.WINDOWS_CERTIFICATE_FILE;
 
-const ffmpegBinary = `ffmpeg-${process.platform}-${process.arch}${process.platform === 'win32' ? '.exe' : ''}`;
-
 module.exports = {
   packagerConfig: {
     name: 'AgentWFY',
     appBundleId: 'app.agentwfy',
     icon: './icons/icon',
     asar: true,
-    extraResource: [`./resources/bin/${ffmpegBinary}`],
     ignore: (file) => {
       // Include the root directory
       if (file === '') return false;
@@ -63,8 +60,6 @@ module.exports = {
     generateAssets: async () => {
       const { execSync } = require('child_process');
       execSync('npm run build', { stdio: 'inherit' });
-      const platform = `${process.platform}-${process.arch}`;
-      execSync(`node scripts/download-ffmpeg.mjs ${platform}`, { stdio: 'inherit' });
     },
   },
 };

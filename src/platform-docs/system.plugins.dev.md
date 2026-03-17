@@ -71,7 +71,7 @@ The handler runs in the main process with full Node.js access (child_process, fs
 
 ## Plugin Package Format
 
-Plugins are distributed as `.sqlite` files with three tables:
+Plugins are distributed as `.plugins.awfy` files with three tables:
 
 ```sql
 plugins (name TEXT, description TEXT, version TEXT, code TEXT)  — 1..N rows
@@ -108,7 +108,7 @@ module.exports = {
 }
 ```
 
-Package `.sqlite` contents:
+Package `.plugins.awfy` contents:
 ```sql
 INSERT INTO plugins VALUES ('echo', 'Echo test plugin', '1.0.0', '<code above>');
 INSERT INTO docs VALUES ('plugin.echo', '# plugin.echo\n\n## echoTest(params)\n\nReturns { echoed: params }.');

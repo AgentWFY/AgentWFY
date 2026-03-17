@@ -10,7 +10,7 @@ const BUILT_IN_METHODS = new Set([
   'find', 'grep', 'getTabs', 'openTab', 'closeTab', 'selectTab', 'reloadTab',
   'captureTab', 'getTabConsoleLogs', 'execTabJs', 'publish', 'waitFor',
   'fetch', 'WebSocket', 'spawnAgent', 'sendToAgent', 'startTask', 'stopTask',
-  'ffmpeg', 'ffmpegKill', 'input',
+  'input',
 ])
 
 export function loadPlugins(agentRoot: string, publish: (topic: string, data: unknown) => void): PluginRegistry {

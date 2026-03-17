@@ -6,7 +6,7 @@ Plugins add new functions to the execJs runtime and views. They are installed, e
 
 Open the command palette and select **Plugins...** to:
 
-- **Install** — Select "Install Plugin..." and pick a `.sqlite` package file. The package is validated before installation.
+- **Install** — Select "Install Plugin..." and pick a `.plugins.awfy` package file. The package is validated before installation.
 - **Enable / Disable** — Select a plugin, then choose "Enable" or "Disable".
 - **Uninstall** — Select a plugin, then choose "Uninstall" to remove it and its docs.
 

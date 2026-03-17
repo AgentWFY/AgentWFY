@@ -1,0 +1,10 @@
+{
+  "name": "agentwfy-plugin-echo",
+  "version": "1.0.0",
+  "description": "Echo test plugin for AgentWFY — verifies plugin connectivity",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "license": "MIT"
+}

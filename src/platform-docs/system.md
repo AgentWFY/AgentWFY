@@ -116,5 +116,4 @@ Available reference sections (load when needed):
 - `system.triggers` — trigger types, config format, cron syntax
 - `system.agents` — agent spawning, interactive agent messaging
 - `system.config` — config keys, resolution order, how to read/write settings
-- `system.ffmpeg` — ffmpeg process spawning, streaming output, kill support
 - `system.plugins` — plugin system overview, references to plugin sub-docs

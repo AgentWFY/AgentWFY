@@ -2,7 +2,7 @@
 
 Plugins add new functions to the execJs runtime and views. Plugin functions appear as flat top-level globals, indistinguishable from built-ins.
 
-Plugins are stored in the `plugins` table in agent.db and distributed as `.sqlite` package files. The `plugins` table is read-only — managed through the command palette.
+Plugins are stored in the `plugins` table in agent.db and distributed as `.plugins.awfy` package files. The `plugins` table is read-only — managed through the command palette.
 
 ## Installed plugins
 
