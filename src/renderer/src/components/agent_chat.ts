@@ -567,8 +567,21 @@ export class TlAgentChat extends HTMLElement {
     try {
       const ipc = window.ipc
       if (!ipc?.providers) return
-      const providerId = this._activeProviderId || 'openai-compatible'
-      this.configStatusLine = await ipc.providers.getStatusLine(providerId)
+
+      // Load active provider ID from config if not yet known
+      if (!this._activeProviderId) {
+        try {
+          const rows = await ipc.sql.run({
+            target: 'agent',
+            sql: "SELECT value FROM config WHERE name = 'system.provider'",
+          }) as Array<{ value: string }>
+          this._activeProviderId = rows[0]?.value ? JSON.parse(rows[0].value) : 'openai-compatible'
+        } catch {
+          this._activeProviderId = 'openai-compatible'
+        }
+      }
+
+      this.configStatusLine = await ipc.providers.getStatusLine(this._activeProviderId)
     } catch {
       this.configStatusLine = ''
     }

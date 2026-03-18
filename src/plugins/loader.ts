@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { PluginRegistry } from './registry.js'
 import type { PluginApi } from './registry.js'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
+import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderFactory } from '../renderer/src/agent/provider_types.js'
 
@@ -60,6 +61,12 @@ export function loadPlugins(
             return
           }
           registry.functions.set(name, { pluginName: row.name, handler })
+        },
+        getConfig(name: string, fallback?: unknown): unknown {
+          return getConfigValue(agentRoot, name, fallback)
+        },
+        setConfig(name: string, value: unknown): void {
+          setAgentConfig(agentRoot, name, value)
         },
         registerProvider(factory: Parameters<PluginApi['registerProvider']>[0]) {
           if (!providerRegistry) {

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "plugin.anthropic-provider.oauthAccess",
+    "value": null,
+    "description": "OAuth access token (managed by login flow)"
+  },
+  {
+    "name": "plugin.anthropic-provider.oauthRefresh",
+    "value": null,
+    "description": "OAuth refresh token (managed by login flow)"
+  },
+  {
+    "name": "plugin.anthropic-provider.oauthExpires",
+    "value": null,
+    "description": "OAuth token expiry timestamp (managed by login flow)"
+  },
+  {
+    "name": "plugin.anthropic-provider.modelId",
+    "value": "\"claude-sonnet-4-6\"",
+    "description": "Model ID (default: claude-sonnet-4-6)"
+  },
+  {
+    "name": "plugin.anthropic-provider.maxTokens",
+    "value": "16384",
+    "description": "Max output tokens (default: 16384)"
+  }
+]

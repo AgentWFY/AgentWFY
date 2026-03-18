@@ -483,5 +483,8 @@ if (isAgentView) {
       return ipcRenderer.invoke(Channels.tasks.stop, runId);
     },
     ...pluginFunctions,
+    openExternal(url: string): Promise<void> {
+      return ipcRenderer.invoke(Channels.dialog.openExternal, url);
+    },
   });
 }

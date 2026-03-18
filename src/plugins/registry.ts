@@ -10,6 +10,8 @@ export interface PluginApi {
   publish: (topic: string, data: unknown) => void
   registerFunction(name: string, handler: (params: unknown) => Promise<unknown>): void
   registerProvider(factory: { id: string; name: string; createSession(config: unknown): unknown; restoreSession(messages: unknown[], config: unknown): unknown }): void
+  getConfig(name: string, fallback?: unknown): unknown
+  setConfig(name: string, value: unknown): void
 }
 
 interface RegisteredFunction {

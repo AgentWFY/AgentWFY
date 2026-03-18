@@ -1,5 +1,5 @@
 import { AgentWFYAgent } from './create_agent.js'
-import { createIpcProviderSession } from './ipc_provider_session.js'
+import { createIpcProviderSession, restoreIpcProviderSession } from './ipc_provider_session.js'
 import { ensureWorker, terminateWorker } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
 import type { AgentMessage } from './types.js'
@@ -8,6 +8,7 @@ import {
   createSessionFileName,
   requireSessionStorageTools,
   parseStoredSession,
+  displayMessagesToAgentMessages,
 } from './session_persistence.js'
 
 function extractTextContent(content: unknown): string {
@@ -179,15 +180,16 @@ export class AgentSessionManager {
   }
 
   async loadSessionFromDisk(file: string): Promise<void> {
-    // Read messages from disk without creating an agent
+    // Read display messages from disk and convert for UI rendering
     const tools = requireSessionStorageTools()
     const raw = await tools.read(file)
     const stored = parseStoredSession(raw, file)
+    const agentMessages = displayMessagesToAgentMessages(stored.messages)
 
     this._activeSessionFile = file
     this._activeSessionId = null
-    this._activeMessages = stored.messages
-    this._activeLabel = extractFirstUserMessage(stored.messages, 60) ?? 'Session'
+    this._activeMessages = agentMessages
+    this._activeLabel = extractFirstUserMessage(agentMessages, 60) ?? 'Session'
     this._activeNotifyOnFinish = false
     this.notify()
   }
@@ -361,6 +363,7 @@ export class AgentSessionManager {
     } catch {}
     return AgentWFYAgent.create({
       createProviderSession: (config) => createIpcProviderSession(providerId, config),
+      restoreProviderSession: (messages, config) => restoreIpcProviderSession(providerId, messages, config),
       ...(opts.sessionFile ? { sessionFile: opts.sessionFile } : {}),
     })
   }
@@ -469,8 +472,22 @@ function extractFirstUserMessage(messages: unknown, maxLen: number): string | nu
   for (const msg of messages) {
     const m = msg as Record<string, unknown>
     if (m?.role !== 'user') continue
-    const trimmed = extractTextContent(m.content).trim()
-    if (trimmed) return trimmed.slice(0, maxLen)
+
+    // Support both DisplayMessage (blocks) and AgentMessage (content)
+    const blocks = m.blocks as unknown[] | undefined
+    const content = m.content as unknown
+
+    if (Array.isArray(blocks)) {
+      for (const b of blocks) {
+        const block = b as Record<string, unknown>
+        if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+          return block.text.trim().slice(0, maxLen)
+        }
+      }
+    } else {
+      const trimmed = extractTextContent(content).trim()
+      if (trimmed) return trimmed.slice(0, maxLen)
+    }
   }
 
   return null
