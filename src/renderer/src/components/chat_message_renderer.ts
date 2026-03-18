@@ -1,5 +1,5 @@
 import { renderMarkdown } from '../markdown.js'
-import type { AgentMessage, RetryInfo } from '../agent/types.js'
+import type { AgentMessage } from '../agent/types.js'
 import { COMPACTION_SUMMARY_CUSTOM_TYPE } from '../agent/create_agent.js'
 import { escapeHtml } from './chat_utils.js'
 import type { TlJson } from './json_view.js'
@@ -224,11 +224,8 @@ function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<st
   return ''
 }
 
-function renderIndicatorHtml(isStreaming: boolean, retryInfo: RetryInfo | null): string {
+function renderIndicatorHtml(isStreaming: boolean): string {
   if (!isStreaming) return ''
-  if (retryInfo) {
-    return `<div class="retry-indicator"><span class="retry-dot"></span> Reconnecting (${retryInfo.attempt}/${retryInfo.maxAttempts})...</div>`
-  }
   return '<div class="thinking-dots"><span></span><span></span><span></span></div>'
 }
 
@@ -252,7 +249,6 @@ export function updateMessagesEl(
   blocks: DisplayBlock[],
   openToolSet: Set<string>,
   isStreaming: boolean,
-  retryInfo: RetryInfo | null
 ): void {
   // Ensure indicator and anchor exist as persistent sentinel elements
   let indicator = container.querySelector<HTMLElement>('#streaming-indicator')
@@ -297,7 +293,7 @@ export function updateMessagesEl(
   }
 
   // Update streaming indicator
-  const indicatorHtml = renderIndicatorHtml(isStreaming, retryInfo)
+  const indicatorHtml = renderIndicatorHtml(isStreaming)
   if (_indicatorCache.get(indicator) !== indicatorHtml) {
     indicator.innerHTML = indicatorHtml
     _indicatorCache.set(indicator, indicatorHtml)

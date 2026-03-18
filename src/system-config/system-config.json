@@ -22,5 +22,25 @@
   {
     "name": "system.httpApi.port",
     "description": "Preferred port for the local HTTP API server, restart required (default: 9877)"
+  },
+  {
+    "name": "system.provider",
+    "description": "Active provider ID (default: openai-compatible)"
+  },
+  {
+    "name": "system.openai-compatible-provider.apiKey",
+    "description": "API key for the built-in OpenAI-compatible provider"
+  },
+  {
+    "name": "system.openai-compatible-provider.modelId",
+    "description": "Model ID for the built-in provider (default: moonshotai/kimi-k2.5)"
+  },
+  {
+    "name": "system.openai-compatible-provider.baseUrl",
+    "description": "Base URL for the built-in provider (default: https://openrouter.ai/api)"
+  },
+  {
+    "name": "system.openai-compatible-provider.reasoning",
+    "description": "Reasoning effort level: off, minimal, low, medium, high, xhigh (default: off)"
   }
 ]

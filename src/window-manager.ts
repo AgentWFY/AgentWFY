@@ -7,6 +7,7 @@ import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palett
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
 import { getConfigValue } from './settings/config.js';
+import { DEFAULT_BASE_URL, DEFAULT_MODEL_ID, type OpenAIProviderConfig } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { forwardStartTask } from './task-runner/ipc.js';
@@ -23,6 +24,9 @@ import { closeAgentDb, getOrCreateAgentDb } from './db/agent-db.js';
 import { loadPlugins } from './plugins/loader.js';
 import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
+import { ProviderRegistry } from './providers/registry.js';
+import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
+import { disposeProviderSessionsForWindow } from './ipc/providers.js';
 
 export interface AppWindowContext {
   window: BrowserWindow;
@@ -33,6 +37,7 @@ export interface AppWindowContext {
   httpApi: HttpApiServer | null;
   triggerEngine: TriggerEngine | null;
   pluginRegistry: PluginRegistry | null;
+  providerRegistry: ProviderRegistry;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   tabTools: {
@@ -60,13 +65,21 @@ class WindowManager {
     // Init DB (creates schema, syncs platform docs, generates system.plugins)
     getOrCreateAgentDb(agentRoot);
 
+    const providerRegistry = new ProviderRegistry()
+    providerRegistry.register(createOpenAICompatibleFactory((): OpenAIProviderConfig => ({
+      baseUrl: getConfigValue(agentRoot, 'system.openai-compatible-provider.baseUrl', DEFAULT_BASE_URL) as string,
+      modelId: getConfigValue(agentRoot, 'system.openai-compatible-provider.modelId', DEFAULT_MODEL_ID) as string,
+      apiKey: getConfigValue(agentRoot, 'system.openai-compatible-provider.apiKey', '') as string,
+      reasoning: getConfigValue(agentRoot, 'system.openai-compatible-provider.reasoning', undefined) as string | undefined,
+    })))
+
     // Load plugins from DB — window doesn't exist yet, so publish defers via a mutable ref
     let winRef: BrowserWindow | null = null;
     const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
       if (winRef && !winRef.isDestroyed()) {
         forwardBusPublish(winRef, topic, data);
       }
-    });
+    }, providerRegistry);
 
     const window = new BrowserWindow({
       show: false,
@@ -133,6 +146,7 @@ class WindowManager {
       httpApi: null,
       triggerEngine: null,
       pluginRegistry,
+      providerRegistry,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
       tabTools: {
@@ -254,6 +268,8 @@ class WindowManager {
   destroyWindow(windowId: number): void {
     const ctx = this.windows.get(windowId);
     if (!ctx) return;
+
+    disposeProviderSessionsForWindow(windowId);
 
     // Clear debounce timers
     if (ctx.dbChangeDebounceTimer) {

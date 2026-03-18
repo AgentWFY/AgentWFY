@@ -1,6 +1,4 @@
-import type { AgentMessage, RetryInfo } from '../agent/types.js'
-import type { AgentAuthConfig } from '../agent/agent_auth.js'
-import { loadAuthConfig } from '../agent/agent_auth.js'
+import type { AgentMessage } from '../agent/types.js'
 import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
 import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
 import {
@@ -460,7 +458,6 @@ export class TlAgentChat extends HTMLElement {
   private inputValue = ''
   private activePanel: 'settings' | 'sessions' | null = null
   private isInitializing = true
-  private authConfig: AgentAuthConfig | null = null
   private notifyOnFinish = false
   private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
@@ -468,7 +465,7 @@ export class TlAgentChat extends HTMLElement {
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
   private userScrolledUp = false
-  private retryInfo: RetryInfo | null = null
+  private configStatusLine = ''
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
@@ -519,9 +516,35 @@ export class TlAgentChat extends HTMLElement {
     this._renderMode = null
   }
 
+  private async loadConfigStatusLine() {
+    try {
+      const ipc = window.ipc
+      if (!ipc) return
+      const rows = await ipc.sql.run({
+        target: 'agent',
+        sql: "SELECT name, value FROM config WHERE name IN ('system.openai-compatible-provider.modelId', 'system.openai-compatible-provider.reasoning')",
+        description: 'Load provider status line config',
+      }) as Array<{ name: string; value: string | null }>
+
+      const config: Record<string, string> = {}
+      for (const row of rows) {
+        if (row.value) config[row.name] = JSON.parse(row.value)
+      }
+
+      const parts: string[] = []
+      const modelId = config['system.openai-compatible-provider.modelId']
+      if (modelId) parts.push(modelId)
+      const reasoning = config['system.openai-compatible-provider.reasoning']
+      if (reasoning && reasoning !== 'off') parts.push(reasoning)
+      this.configStatusLine = parts.join(' · ')
+    } catch {
+      this.configStatusLine = ''
+    }
+  }
+
   private async init() {
     try {
-      this.authConfig = await loadAuthConfig()
+      await this.loadConfigStatusLine()
       const mgr = getSessionManager()
       if (mgr) {
         this.manager = mgr
@@ -549,16 +572,7 @@ export class TlAgentChat extends HTMLElement {
     this.isStreaming = this.manager.activeIsStreaming
     this.notifyOnFinish = this.manager.activeNotifyOnFinish
     const agent = this.manager.activeAgent
-    this.retryInfo = agent?.state.retryInfo ?? null
     this.render()
-  }
-
-  private handleConfigChange(e: Event) {
-    const detail = (e as CustomEvent<AgentAuthConfig>).detail
-    this.authConfig = detail
-    if (this.manager) {
-      this.manager.updateAuthConfig(this.authConfig)
-    }
   }
 
   private async handleReconnect() {
@@ -568,19 +582,12 @@ export class TlAgentChat extends HTMLElement {
     this.render()
     try {
       this.managerUnsub?.()
-      const mgr = await reconnectManager(this.authConfig!)
+      await this.loadConfigStatusLine()
+      const mgr = await reconnectManager()
       this.manager = mgr
-      if (mgr) {
-        this.managerUnsub = mgr.subscribe(() => this.refreshState())
-        this.refreshState()
-        this.activePanel = keepInlineSettingsOpen ? 'settings' : null
-      } else {
-        this.managerUnsub = null
-        this.messages = []
-        this.isStreaming = false
-        this.sessionListItems = []
-        this.activePanel = 'settings'
-      }
+      this.managerUnsub = mgr.subscribe(() => this.refreshState())
+      this.refreshState()
+      this.activePanel = keepInlineSettingsOpen ? 'settings' : null
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -692,7 +699,7 @@ export class TlAgentChat extends HTMLElement {
     if (!this.containerEl) return
 
     const mode = this.isInitializing ? 'initializing'
-      : (!this.manager && this.authConfig) ? 'setup'
+      : !this.manager ? 'setup'
       : 'chat'
 
     if (mode === 'initializing') {
@@ -904,7 +911,7 @@ export class TlAgentChat extends HTMLElement {
 
     // 1. Messages area
     if (this.messagesEl) {
-      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.isStreaming, this.retryInfo)
+      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.isStreaming)
 
       // Auto-scroll
       if (!this.userScrolledUp) {
@@ -951,33 +958,12 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 7. Model info
+    // 7. Model info — from provider status line, or config defaults
     if (this._modelInfo) {
-      const modelId = this.authConfig?.modelId ?? ''
-      const parts: string[] = [modelId]
-
-      // Thinking level
-      const thinking = this.authConfig?.thinkingLevel
-      if (thinking && thinking !== 'off') {
-        parts.push(thinking)
-      }
-
-      // Context size from last assistant message with usage data
-      const lastAssistant = [...this.messages].reverse().find(m =>
-        m.role === 'assistant' && (m as unknown as { usage?: { input: number } }).usage?.input
-      ) as (typeof this.messages[number] & { usage?: { input: number; cacheRead?: number; cacheWrite?: number } }) | undefined
-      if (lastAssistant?.usage?.input) {
-        const u = lastAssistant.usage
-        const tokens = u.input + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0)
-        const formatted = tokens >= 1000 ? (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(tokens)
-        parts.push(formatted)
-      }
-
-      const html = parts
-        .map((p, i) => i === 0 ? escapeHtml(p) : `<span class="separator">·</span><span class="meta">${escapeHtml(p)}</span>`)
-        .join('')
-      if (this._modelInfo.innerHTML !== html) {
-        this._modelInfo.innerHTML = html
+      const agent = this.manager?.activeAgent
+      const statusLine = agent?.state.statusLine || this.configStatusLine
+      if (this._modelInfo.textContent !== statusLine) {
+        this._modelInfo.textContent = statusLine
       }
     }
 
@@ -1000,17 +986,15 @@ export class TlAgentChat extends HTMLElement {
 
   private updateSettingsPanel() {
     if (!this._settingsPanel) return
-    if (this.activePanel === 'settings' && this.authConfig) {
+    if (this.activePanel === 'settings') {
       this._settingsPanel.style.display = ''
-      let settingsEl = this._settingsPanel.querySelector('awfy-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean } | null
+      let settingsEl = this._settingsPanel.querySelector('awfy-agent-settings') as HTMLElement & { disabled?: boolean } | null
       if (!settingsEl) {
-        settingsEl = document.createElement('awfy-agent-settings') as HTMLElement & { authConfig?: AgentAuthConfig; disabled?: boolean }
+        settingsEl = document.createElement('awfy-agent-settings') as HTMLElement & { disabled?: boolean }
         settingsEl.id = 'inline-settings'
-        settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))
         settingsEl.addEventListener('reconnect', () => this.handleReconnect())
         this._settingsPanel.appendChild(settingsEl)
       }
-      settingsEl.authConfig = this.authConfig!
       settingsEl.disabled = this.isStreaming
     } else {
       this._settingsPanel.style.display = 'none'
@@ -1018,10 +1002,8 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private attachSetupSettingsListeners() {
-    const settingsEl = this.containerEl.querySelector('#setup-settings') as HTMLElement & { authConfig?: AgentAuthConfig } | null
-    if (settingsEl && this.authConfig) {
-      settingsEl.authConfig = this.authConfig
-      settingsEl.addEventListener('config-change', (e: Event) => this.handleConfigChange(e))
+    const settingsEl = this.containerEl.querySelector('#setup-settings') as HTMLElement | null
+    if (settingsEl) {
       settingsEl.addEventListener('reconnect', () => this.handleReconnect())
     }
   }

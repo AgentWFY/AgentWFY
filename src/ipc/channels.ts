@@ -33,11 +33,6 @@ export const Channels = {
     read: 'sessions:read',
     write: 'sessions:write',
   },
-  auth: {
-    readConfig: 'auth:readConfig',
-    writeConfig: 'auth:writeConfig',
-    readLegacyKey: 'auth:readLegacyKey',
-  },
   store: {
     get: 'store:get',
     set: 'store:set',
@@ -84,5 +79,13 @@ export const Channels = {
     methods: 'plugin:methods',
     install: 'plugin:install',
     uninstall: 'plugin:uninstall',
+  },
+  providers: {
+    list: 'provider:list',
+    createSession: 'provider:create-session',
+    restoreSession: 'provider:restore-session',
+    send: 'provider:send',
+    event: 'provider:event',
+    getDisplayMessages: 'provider:get-display-messages',
   },
 } as const;

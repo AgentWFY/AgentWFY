@@ -1,18 +1,11 @@
-import type { AgentMessage, ThinkingLevel } from './types.js'
+import type { AgentMessage } from './types.js'
 import { requireIpc } from './tool_utils.js'
 
 export const SESSION_VERSION = 1
 
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
-
 export interface StoredSession {
   version: number
   sessionId: string
-  model?: {
-    provider: string
-    id: string
-  }
-  thinkingLevel: ThinkingLevel
   messages: AgentMessage[]
   updatedAt: number
 }
@@ -48,10 +41,6 @@ export function normalizeSessionFileName(sessionFile: string): string {
   return fileName
 }
 
-export function isThinkingLevel(value: unknown): value is ThinkingLevel {
-  return typeof value === 'string' && THINKING_LEVELS.includes(value as ThinkingLevel)
-}
-
 export function requireSessionStorageTools() {
   return requireIpc().sessions
 }
@@ -70,19 +59,10 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
     throw new Error(`Session file "${sessionFile}" does not contain a JSON object`)
   }
 
-  const messages = Array.isArray(parsed.messages) ? parsed.messages : []
-
   return {
     version: typeof parsed.version === 'number' ? parsed.version : 0,
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
-    model: parsed.model && typeof parsed.model === 'object' && typeof (parsed.model as Record<string, unknown>).provider === 'string' && typeof (parsed.model as Record<string, unknown>).id === 'string'
-      ? {
-        provider: (parsed.model as Record<string, unknown>).provider as string,
-        id: (parsed.model as Record<string, unknown>).id as string
-      }
-      : undefined,
-    thinkingLevel: isThinkingLevel(parsed.thinkingLevel) ? parsed.thinkingLevel : 'off',
-    messages,
+    messages: Array.isArray(parsed.messages) ? parsed.messages : [],
     updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
   }
 }

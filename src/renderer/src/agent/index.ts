@@ -3,71 +3,27 @@ import type {
   AgentMessage,
   AgentState,
   AgentTool,
-  AgentToolResult,
   AssistantMessage,
   ImageContent,
-  JsonSchema,
-  Message,
-  Model,
-  ThinkingLevel,
-  ToolCall,
+  TextContent,
   ToolResultMessage,
+  UserMessage,
 } from './types.js'
-import { createStream } from './streaming/types.js'
+import type {
+  ProviderSession,
+  ProviderOutput,
+} from './provider_types.js'
 import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
-
-/**
- * Lightweight tool argument validation against JSON Schema.
- * Checks required fields and basic type constraints without a full validator like AJV.
- */
-function validateToolArguments(tool: AgentTool, args: Record<string, unknown>): string | null {
-  const schema = tool.parameters as Record<string, unknown>
-  const required = schema.required as string[] | undefined
-  if (required) {
-    const missing = required.filter((key) => !(key in args))
-    if (missing.length > 0) {
-      return `Missing required arguments: ${missing.join(', ')}`
-    }
-  }
-
-  const properties = schema.properties as Record<string, JsonSchema> | undefined
-  if (properties) {
-    for (const [key, propSchema] of Object.entries(properties)) {
-      if (!(key in args)) continue
-      const value = args[key]
-      const expectedType = propSchema.type as string | undefined
-      if (!expectedType || value === null || value === undefined) continue
-
-      const actualType = Array.isArray(value) ? 'array' : typeof value
-      if (expectedType === 'integer' && typeof value === 'number') continue
-      if (actualType !== expectedType) {
-        return `Argument "${key}" expected type "${expectedType}" but got "${actualType}"`
-      }
-    }
-  }
-
-  return null
-}
-
-function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
-  return messages.filter(
-    (m) => m.role === 'user' || m.role === 'assistant' || m.role === 'toolResult',
-  ) as Message[]
-}
 
 export interface AgentOptions {
   initialState?: Partial<AgentState>
-  convertToLlm?: (messages: AgentMessage[]) => Message[] | Promise<Message[]>
+  providerSession: ProviderSession
   sessionId?: string
-  getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined
-  beforeStream?: (contextMessages: AgentMessage[]) => Promise<AgentMessage[] | void>
 }
 
 export class Agent {
   private _state: AgentState = {
     systemPrompt: '',
-    model: undefined as unknown as Model,
-    thinkingLevel: 'off',
     tools: [],
     messages: [],
     isStreaming: false,
@@ -77,25 +33,20 @@ export class Agent {
   }
 
   private listeners = new Set<(e: AgentEvent) => void>()
-  private abortController?: AbortController
-  private convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>
+  private providerSession: ProviderSession
   private steeringQueue: AgentMessage[] = []
   private followUpQueue: AgentMessage[] = []
   private runningPrompt?: Promise<void>
   private resolveRunningPrompt?: () => void
 
   sessionId?: string
-  getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined
-  beforeStream?: (contextMessages: AgentMessage[]) => Promise<AgentMessage[] | void>
 
-  constructor(opts: AgentOptions = {}) {
+  constructor(opts: AgentOptions) {
     if (opts.initialState) {
       Object.assign(this._state, opts.initialState)
     }
-    this.convertToLlm = opts.convertToLlm || defaultConvertToLlm
+    this.providerSession = opts.providerSession
     this.sessionId = opts.sessionId
-    this.getApiKey = opts.getApiKey
-    this.beforeStream = opts.beforeStream
   }
 
   get state(): AgentState {
@@ -105,14 +56,6 @@ export class Agent {
   subscribe(fn: (e: AgentEvent) => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
-  }
-
-  setModel(m: Model): void {
-    this._state.model = m
-  }
-
-  setThinkingLevel(l: ThinkingLevel): void {
-    this._state.thinkingLevel = l
   }
 
   replaceMessages(ms: AgentMessage[]): void {
@@ -136,7 +79,7 @@ export class Agent {
   }
 
   abort(): void {
-    this.abortController?.abort()
+    this.providerSession.send({ type: 'abort' })
   }
 
   waitForIdle(): Promise<void> {
@@ -187,7 +130,7 @@ export class Agent {
     if (messages[messages.length - 1].role === 'assistant') {
       const steering = this.dequeueSteeringMessages()
       if (steering.length > 0) {
-        await this.runLoop(steering, { skipInitialSteeringPoll: true })
+        await this.runLoop(steering)
         return
       }
       const followUps = this.dequeueFollowUpMessages()
@@ -216,156 +159,217 @@ export class Agent {
     return this.dequeueOne('followUpQueue')
   }
 
-  private async runLoop(
-    inputMessages?: AgentMessage[],
-    options?: { skipInitialSteeringPoll?: boolean },
-  ): Promise<void> {
+  private async runLoop(inputMessages?: AgentMessage[]): Promise<void> {
     this.runningPrompt = new Promise((resolve) => {
       this.resolveRunningPrompt = resolve
     })
-    this.abortController = new AbortController()
     this._state.isStreaming = true
     this._state.streamMessage = null
     this._state.error = undefined
 
-    const contextMessages = this._state.messages.slice()
     const newMessages: AgentMessage[] = []
+    const session = this.providerSession
 
     try {
       this.emit({ type: 'agent_start' })
 
-      // Add input messages to context
+      // Extract text and images from input messages
+      let userText = ''
+      let userImages: ImageContent[] | undefined
       if (inputMessages) {
         for (const msg of inputMessages) {
-          contextMessages.push(msg)
           newMessages.push(msg)
+          this.appendMessage(msg)
           this.emit({ type: 'message_start', message: msg })
           this.emit({ type: 'message_end', message: msg })
+
+          if (msg.role === 'user') {
+            for (const c of (msg as UserMessage).content) {
+              if (c.type === 'text') userText += c.text
+              if (c.type === 'image') {
+                if (!userImages) userImages = []
+                userImages.push(c)
+              }
+            }
+          }
         }
-        this._state.messages = contextMessages.slice()
       }
 
-      let skipInitialSteeringPoll = options?.skipInitialSteeringPoll === true
-      let pendingMessages = skipInitialSteeringPoll
-        ? []
-        : this.dequeueSteeringMessages()
-      skipInitialSteeringPoll = false
+      // Send user message to provider and process events
+      await new Promise<void>((resolve) => {
+        let currentAssistantText = ''
+        let currentThinkingText = ''
+        const pendingExecJs = new Map<string, { code: string }>()
 
-      // Outer loop: continues when follow-up messages arrive
-      outer: while (true) {
-        let hasMoreToolCalls = true
-        let steeringAfterTools: AgentMessage[] | null = null
+        const handleOutput = (event: ProviderOutput) => {
+          switch (event.type) {
+            case 'start':
+              this.emit({ type: 'turn_start' })
+              currentAssistantText = ''
+              currentThinkingText = ''
+              break
 
-        // Inner loop: process tool calls and steering messages
-        while (hasMoreToolCalls || pendingMessages.length > 0) {
-          this.emit({ type: 'turn_start' })
-
-          // Inject pending messages before next LLM call
-          if (pendingMessages.length > 0) {
-            for (const msg of pendingMessages) {
-              this.emit({ type: 'message_start', message: msg })
-              this.emit({ type: 'message_end', message: msg })
-              contextMessages.push(msg)
-              newMessages.push(msg)
+            case 'text_delta': {
+              currentAssistantText += event.delta
+              const partialMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
+              this._state.streamMessage = partialMsg
+              this.emit({
+                type: 'message_update',
+                streamEvent: {
+                  type: 'text_delta',
+                  contentIndex: 0,
+                  delta: event.delta,
+                  partial: partialMsg,
+                },
+                message: partialMsg,
+              })
+              break
             }
-            this._state.messages = contextMessages.slice()
-            pendingMessages = []
-          }
 
-          // Stream assistant response
-          const assistantMessage = await this.streamAssistantResponse(
-            contextMessages,
-            this.abortController.signal,
-          )
-          newMessages.push(assistantMessage)
-
-          if (assistantMessage.stopReason === 'error' || assistantMessage.stopReason === 'aborted') {
-            this.emit({ type: 'turn_end', message: assistantMessage, toolResults: [] })
-            this.emit({ type: 'agent_end', messages: newMessages })
-            break outer
-          }
-
-          // Check for tool calls
-          const toolCalls = assistantMessage.content.filter(
-            (c): c is ToolCall => c.type === 'toolCall',
-          )
-          const toolResults: ToolResultMessage[] = []
-
-          if (assistantMessage.stopReason === 'maxTokens' && toolCalls.length > 0) {
-            // Response was truncated — tool call arguments are likely incomplete
-            // (parsed as empty {}). Return error results so the LLM can retry
-            // with a smaller output instead of executing broken tool calls.
-            hasMoreToolCalls = true
-            for (const tc of toolCalls) {
-              const skipped = this.skipToolCall(tc, contextMessages, newMessages,
-                'Your response was cut off because it exceeded the output token limit. '
-                + 'The tool call arguments were incomplete and could not be executed. '
-                + 'Please break your work into smaller steps.')
-              toolResults.push(skipped)
+            case 'thinking_delta': {
+              currentThinkingText += event.delta
+              const partialMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
+              this._state.streamMessage = partialMsg
+              this.emit({
+                type: 'message_update',
+                streamEvent: {
+                  type: 'thinking_delta',
+                  contentIndex: 0,
+                  delta: event.delta,
+                  partial: partialMsg,
+                },
+                message: partialMsg,
+              })
+              break
             }
-          } else {
-            hasMoreToolCalls = toolCalls.length > 0
-            if (hasMoreToolCalls) {
-              const execution = await this.executeToolCalls(
-                toolCalls,
-                contextMessages,
-                newMessages,
-                this.abortController.signal,
-              )
-              toolResults.push(...execution.toolResults)
-              steeringAfterTools = execution.steeringMessages ?? null
+
+            case 'exec_js_start':
+              pendingExecJs.set(event.id, { code: '' })
+              this.emit({
+                type: 'tool_execution_start',
+                toolCallId: event.id,
+                toolName: 'execJs',
+                args: {},
+              })
+              break
+
+            case 'exec_js_delta': {
+              const entry = pendingExecJs.get(event.id)
+              if (entry) entry.code += event.delta
+              break
             }
-          }
 
-          this.emit({ type: 'turn_end', message: assistantMessage, toolResults })
+            case 'exec_js_end': {
+              const entry = pendingExecJs.get(event.id)
+              const code = entry?.code ?? ''
 
-          // Get steering messages after turn completes
-          if (steeringAfterTools && steeringAfterTools.length > 0) {
-            pendingMessages = steeringAfterTools
-            steeringAfterTools = null
-          } else {
-            pendingMessages = this.dequeueSteeringMessages()
+              const tool = this._state.tools.find(t => t.name === 'execJs')
+              if (!tool) {
+                session.send({
+                  type: 'exec_js_result',
+                  id: event.id,
+                  content: [{ type: 'text', text: 'execJs tool not available' }],
+                  isError: true,
+                })
+                break
+              }
+
+              tool.execute(event.id, { code, description: 'Executing code' })
+                .then((result) => {
+                  this.emit({
+                    type: 'tool_execution_end',
+                    toolCallId: event.id,
+                    toolName: 'execJs',
+                    result,
+                    isError: false,
+                  })
+
+                  const contextContent = result.content.map(c => {
+                    if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
+                      return { ...c, text: truncateHead(c.text) }
+                    }
+                    return c
+                  }) as (TextContent | ImageContent)[]
+
+                  session.send({
+                    type: 'exec_js_result',
+                    id: event.id,
+                    content: contextContent,
+                    isError: false,
+                  })
+                })
+                .catch((err) => {
+                  const errorText = err instanceof Error ? err.message : String(err)
+                  this.emit({
+                    type: 'tool_execution_end',
+                    toolCallId: event.id,
+                    toolName: 'execJs',
+                    result: { content: [{ type: 'text', text: errorText }], details: {} },
+                    isError: true,
+                  })
+                  session.send({
+                    type: 'exec_js_result',
+                    id: event.id,
+                    content: [{ type: 'text', text: errorText }],
+                    isError: true,
+                  })
+                })
+              break
+            }
+
+            case 'done': {
+              session.off(handleOutput)
+              const finalMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
+              finalMsg.stopReason = 'end'
+              this._state.streamMessage = null
+              this.appendMessage(finalMsg)
+              this.emit({ type: 'message_start', message: finalMsg })
+              this.emit({ type: 'message_end', message: finalMsg })
+              newMessages.push(finalMsg)
+              this.emit({ type: 'turn_end', message: finalMsg, toolResults: [] })
+              this.emit({ type: 'agent_end', messages: newMessages })
+              resolve()
+              break
+            }
+
+            case 'error': {
+              session.off(handleOutput)
+              const errorMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
+              errorMsg.stopReason = 'error'
+              errorMsg.errorMessage = event.error
+              this._state.streamMessage = null
+              this._state.error = event.error
+              this.appendMessage(errorMsg)
+              this.emit({ type: 'message_start', message: errorMsg })
+              this.emit({ type: 'message_end', message: errorMsg })
+              newMessages.push(errorMsg)
+              this.emit({ type: 'turn_end', message: errorMsg, toolResults: [] })
+              this.emit({ type: 'agent_end', messages: newMessages })
+              resolve()
+              break
+            }
+
+            case 'status_line':
+              this._state.statusLine = event.text
+              this.emit({ type: 'status_line', text: event.text })
+              break
           }
         }
 
-        // Agent would stop. Check for follow-up messages.
-        const followUpMessages = this.dequeueFollowUpMessages()
-        if (followUpMessages.length > 0) {
-          pendingMessages = followUpMessages
-          continue
-        }
-
-        // No more messages, exit
-        this.emit({ type: 'agent_end', messages: newMessages })
-        break
-      }
+        session.on(handleOutput)
+        session.send({
+          type: 'user_message',
+          text: userText,
+          images: userImages,
+        })
+      })
     } catch (err) {
-      const model = this._state.model
-      const errorMsg: AssistantMessage = {
-        role: 'assistant',
-        content: [{ type: 'text', text: '' }],
-        provider: model?.provider?.id ?? '',
-        model: model?.id ?? '',
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-        },
-        stopReason: this.abortController?.signal.aborted ? 'aborted' : 'error',
-        errorMessage: (err as Error)?.message || String(err),
-        timestamp: Date.now(),
-      }
-      this.appendMessage(errorMsg)
       this._state.error = (err as Error)?.message || String(err)
-      this.emit({ type: 'agent_end', messages: [errorMsg] })
+      this.emit({ type: 'agent_end', messages: newMessages })
     } finally {
       this._state.isStreaming = false
       this._state.streamMessage = null
       this._state.pendingToolCalls = new Set()
-      this._state.retryInfo = undefined
-      this.abortController = undefined
       this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
       this.runningPrompt = undefined
@@ -373,339 +377,23 @@ export class Agent {
     }
   }
 
-  private static readonly MAX_RETRIES = 3
-  private static readonly RETRY_BASE_DELAY_MS = 1000
-
-  private async streamAssistantResponse(
-    contextMessages: AgentMessage[],
-    signal: AbortSignal,
-  ): Promise<AssistantMessage> {
-    // Proactive context optimization hook — allows the wrapper (AgentWFYAgent)
-    // to compact messages before each LLM call to avoid wasting tokens on
-    // requests that would overflow.
-    if (this.beforeStream) {
-      try {
-        const compacted = await this.beforeStream(contextMessages)
-        if (compacted) {
-          contextMessages.length = 0
-          contextMessages.push(...compacted)
-          this._state.messages = contextMessages.slice()
-        }
-      } catch (err) {
-        console.warn('[Agent] beforeStream hook failed, continuing without compaction', err)
-      }
+  private buildPartialMessage(text: string, thinking: string): AssistantMessage {
+    const content: AssistantMessage['content'] = []
+    if (thinking) {
+      content.push({ type: 'thinking', thinking })
     }
-
-    for (let attempt = 0; ; attempt++) {
-      const result = await this.attemptStream(contextMessages, signal)
-
-      // Success, abort, or non-retryable error — return immediately
-      if (
-        result.message.stopReason !== 'error' ||
-        !result.retryable ||
-        attempt >= Agent.MAX_RETRIES ||
-        signal.aborted
-      ) {
-        // For retryable errors that won't be retried (max retries exhausted or
-        // aborted), attemptStream skipped adding the message to context and
-        // emitting events (expecting a retry). Finalize the error message now
-        // so it appears in the UI and gets persisted to the session.
-        if (result.retryable && result.message.stopReason === 'error') {
-          if (result.addedPartial) {
-            contextMessages[contextMessages.length - 1] = result.message
-          } else {
-            contextMessages.push(result.message)
-          }
-          this._state.streamMessage = null
-          this._state.messages = contextMessages.slice()
-          if (!result.addedPartial) {
-            this.emit({ type: 'message_start', message: { ...result.message } })
-          }
-          this.emit({ type: 'message_end', message: result.message })
-        }
-        return result.message
-      }
-
-      // Retryable error — clean up any partial message added during streaming
-      if (result.addedPartial) {
-        contextMessages.pop()
-        this._state.messages = contextMessages.slice()
-      }
-
-      const delay = Agent.RETRY_BASE_DELAY_MS * Math.pow(2, attempt)
-      const retryInfo = {
-        attempt: attempt + 1,
-        maxAttempts: Agent.MAX_RETRIES,
-        error: result.message.errorMessage || 'Connection error',
-      }
-      this._state.retryInfo = retryInfo
-      this.emit({
-        type: 'retry',
-        ...retryInfo,
-        delayMs: delay,
-      })
-
-      // Wait with abort support
-      await new Promise<void>((resolve) => {
-        const onAbort = () => { clearTimeout(timer); resolve() }
-        const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve() }, delay)
-        signal.addEventListener('abort', onAbort, { once: true })
-      })
-
-      if (signal.aborted) {
-        return result.message
-      }
+    if (text || content.length === 0) {
+      content.push({ type: 'text', text: text || '' })
     }
-  }
-
-  private async attemptStream(
-    contextMessages: AgentMessage[],
-    signal: AbortSignal,
-  ): Promise<{ message: AssistantMessage; addedPartial: boolean; retryable: boolean }> {
-    this._state.retryInfo = undefined
-    const llmMessages = await this.convertToLlm(contextMessages)
-
-    const reasoning = this._state.thinkingLevel === 'off' ? undefined : this._state.thinkingLevel
-    const resolvedApiKey = this.getApiKey
-      ? await this.getApiKey(this._state.model.provider.id)
-      : undefined
-
-    const response = createStream(this._state.model, {
-      systemPrompt: this._state.systemPrompt,
-      messages: llmMessages,
-      tools: this._state.tools,
-    }, {
-      reasoning,
-      sessionId: this.sessionId,
-      apiKey: resolvedApiKey,
-      signal,
-    })
-
-    let partialMessage: AssistantMessage | null = null
-    let addedPartial = false
-
-    for await (const event of response) {
-      switch (event.type) {
-        case 'start':
-          partialMessage = event.partial
-          contextMessages.push(partialMessage)
-          addedPartial = true
-          this._state.streamMessage = partialMessage
-          this._state.messages = contextMessages.slice()
-          this.emit({ type: 'message_start', message: { ...partialMessage } })
-          break
-
-        case 'text_delta':
-        case 'thinking_delta':
-        case 'toolcall_start':
-        case 'toolcall_delta':
-        case 'toolcall_end':
-          if (partialMessage) {
-            partialMessage = event.partial
-            contextMessages[contextMessages.length - 1] = partialMessage
-            this._state.streamMessage = partialMessage
-            this._state.messages = contextMessages.slice()
-            this.emit({
-              type: 'message_update',
-              streamEvent: event,
-              message: { ...partialMessage },
-            })
-          }
-          break
-
-        case 'done': {
-          const finalMessage = await response.result()
-          if (addedPartial) {
-            contextMessages[contextMessages.length - 1] = finalMessage
-          } else {
-            contextMessages.push(finalMessage)
-          }
-          this._state.streamMessage = null
-          this._state.messages = contextMessages.slice()
-          if (!addedPartial) {
-            this.emit({ type: 'message_start', message: { ...finalMessage } })
-          }
-          this.emit({ type: 'message_end', message: finalMessage })
-          return { message: finalMessage, addedPartial, retryable: false }
-        }
-
-        case 'error': {
-          const finalMessage = await response.result()
-          const retryable = !!event.retryable
-
-          // For retryable errors, don't emit message events or push to context —
-          // the retry loop will handle cleanup and re-attempt.
-          if (retryable) {
-            this._state.streamMessage = null
-            return { message: finalMessage, addedPartial, retryable }
-          }
-
-          if (addedPartial) {
-            contextMessages[contextMessages.length - 1] = finalMessage
-          } else {
-            contextMessages.push(finalMessage)
-          }
-          this._state.streamMessage = null
-          this._state.messages = contextMessages.slice()
-          if (!addedPartial) {
-            this.emit({ type: 'message_start', message: { ...finalMessage } })
-          }
-          this.emit({ type: 'message_end', message: finalMessage })
-          return { message: finalMessage, addedPartial, retryable: false }
-        }
-      }
-    }
-
-    // Shouldn't reach here normally, but handle gracefully
-    const msg = await response.result()
-    return { message: msg, addedPartial, retryable: false }
-  }
-
-  private async executeToolCalls(
-    toolCalls: ToolCall[],
-    contextMessages: AgentMessage[],
-    newMessages: AgentMessage[],
-    signal: AbortSignal,
-  ): Promise<{ toolResults: ToolResultMessage[]; steeringMessages?: AgentMessage[] }> {
-    const results: ToolResultMessage[] = []
-    let steeringMessages: AgentMessage[] | undefined
-
-    for (let i = 0; i < toolCalls.length; i++) {
-      const toolCall = toolCalls[i]
-      const tool = this._state.tools.find((t) => t.name === toolCall.name)
-
-      this.emit({
-        type: 'tool_execution_start',
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        args: toolCall.arguments,
-      })
-
-      const pendingSet = new Set(this._state.pendingToolCalls)
-      pendingSet.add(toolCall.id)
-      this._state.pendingToolCalls = pendingSet
-
-      let result: AgentToolResult
-      let isError = false
-
-      try {
-        if (!tool) throw new Error(`Tool ${toolCall.name} not found`)
-        const validationError = validateToolArguments(tool, toolCall.arguments)
-        if (validationError) throw new Error(`Invalid arguments for tool "${toolCall.name}": ${validationError}`)
-        result = await tool.execute(toolCall.id, toolCall.arguments, signal, (partialResult) => {
-          this.emit({
-            type: 'tool_execution_update',
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args: toolCall.arguments,
-            partialResult,
-          })
-        })
-      } catch (e) {
-        result = {
-          content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }],
-          details: {},
-        }
-        isError = true
-      }
-
-      const doneSet = new Set(this._state.pendingToolCalls)
-      doneSet.delete(toolCall.id)
-      this._state.pendingToolCalls = doneSet
-
-      this.emit({
-        type: 'tool_execution_end',
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        result,
-        isError,
-      })
-
-      // Truncate large text blocks before adding to LLM context.
-      // The original result (with full content) is preserved in the event above
-      // for UI display; only the context-bound copy is truncated.
-      const contextContent = result.content.map((c) => {
-        if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
-          return { ...c, text: truncateHead(c.text) }
-        }
-        return c
-      })
-
-      const toolResultMessage: ToolResultMessage = {
-        role: 'toolResult',
-        toolCallId: toolCall.id,
-        toolName: toolCall.name,
-        content: contextContent as ToolResultMessage['content'],
-        details: result.details,
-        isError,
-        timestamp: Date.now(),
-      }
-      results.push(toolResultMessage)
-      contextMessages.push(toolResultMessage)
-      newMessages.push(toolResultMessage)
-      this._state.messages = contextMessages.slice()
-
-      this.emit({ type: 'message_start', message: toolResultMessage })
-      this.emit({ type: 'message_end', message: toolResultMessage })
-
-      // Check for steering messages — skip remaining tools if user interrupted
-      const steering = this.dequeueSteeringMessages()
-      if (steering.length > 0) {
-        steeringMessages = steering
-        // Skip remaining tool calls
-        for (const skipped of toolCalls.slice(i + 1)) {
-          const skippedResult = this.skipToolCall(skipped, contextMessages, newMessages)
-          results.push(skippedResult)
-        }
-        break
-      }
-    }
-
-    return { toolResults: results, steeringMessages }
-  }
-
-  private skipToolCall(
-    toolCall: ToolCall,
-    contextMessages: AgentMessage[],
-    newMessages: AgentMessage[],
-    reason = 'Skipped due to queued user message.',
-  ): ToolResultMessage {
-    const result = {
-      content: [{ type: 'text' as const, text: reason }],
-      details: {},
-    }
-
-    this.emit({
-      type: 'tool_execution_start',
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      args: toolCall.arguments,
-    })
-    this.emit({
-      type: 'tool_execution_end',
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      result,
-      isError: true,
-    })
-
-    const toolResultMessage: ToolResultMessage = {
-      role: 'toolResult',
-      toolCallId: toolCall.id,
-      toolName: toolCall.name,
-      content: result.content,
-      details: {},
-      isError: true,
+    return {
+      role: 'assistant',
+      content,
+      provider: '',
+      model: '',
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      stopReason: 'end',
       timestamp: Date.now(),
     }
-    contextMessages.push(toolResultMessage)
-    newMessages.push(toolResultMessage)
-    this._state.messages = contextMessages.slice()
-
-    this.emit({ type: 'message_start', message: toolResultMessage })
-    this.emit({ type: 'message_end', message: toolResultMessage })
-
-    return toolResultMessage
   }
 
   private emit(e: AgentEvent): void {

@@ -9,7 +9,6 @@ import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
 import { initBusBridge } from './bus-bridge.js'
 import { initSessionManager } from './agent/session_manager.js'
-import { loadAuthConfig, hasValidAuth } from './agent/agent_auth.js'
 import { initTaskRunner } from './tasks/task_runner.js'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
@@ -29,10 +28,7 @@ async function init() {
   defineElement('awfy-task-panel', TlTaskPanel)
   defineElement('awfy-app', TlApp)
 
-  const authConfig = await loadAuthConfig()
-  if (hasValidAuth(authConfig)) {
-    await initSessionManager(authConfig)
-  }
+  await initSessionManager()
 
   initTaskRunner()
   initBusBridge()
