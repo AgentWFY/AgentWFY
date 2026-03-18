@@ -1,18 +1,15 @@
 import type {
   AgentEvent,
-  AgentMessage,
   AgentState,
   AgentTool,
-  AssistantMessage,
   ImageContent,
   TextContent,
-  ToolResultMessage,
-  UserMessage,
 } from './types.js'
 import type {
   ProviderSession,
   ProviderOutput,
   DisplayMessage,
+  Block,
 } from './provider_types.js'
 import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
@@ -28,15 +25,14 @@ export class Agent {
     tools: [],
     messages: [],
     isStreaming: false,
-    streamMessage: null,
-    pendingToolCalls: new Set(),
+    streamingMessage: null,
     error: undefined,
   }
 
   private listeners = new Set<(e: AgentEvent) => void>()
   private providerSession: ProviderSession
-  private steeringQueue: AgentMessage[] = []
-  private followUpQueue: AgentMessage[] = []
+  private steeringQueue: string[] = []
+  private followUpQueue: string[] = []
   private runningPrompt?: Promise<void>
   private resolveRunningPrompt?: () => void
 
@@ -67,24 +63,20 @@ export class Agent {
     return await this.providerSession.getDisplayMessages() as DisplayMessage[]
   }
 
-  replaceMessages(ms: AgentMessage[]): void {
+  replaceMessages(ms: DisplayMessage[]): void {
     this._state.messages = ms.slice()
-  }
-
-  appendMessage(m: AgentMessage): void {
-    this._state.messages = [...this._state.messages, m]
   }
 
   clearMessages(): void {
     this._state.messages = []
   }
 
-  steer(m: AgentMessage): void {
-    this.steeringQueue.push(m)
+  steer(text: string): void {
+    this.steeringQueue.push(text)
   }
 
-  followUp(m: AgentMessage): void {
-    this.followUpQueue.push(m)
+  followUp(text: string): void {
+    this.followUpQueue.push(text)
   }
 
   abort(): void {
@@ -98,178 +90,93 @@ export class Agent {
   reset(): void {
     this._state.messages = []
     this._state.isStreaming = false
-    this._state.streamMessage = null
-    this._state.pendingToolCalls = new Set()
+    this._state.streamingMessage = null
     this._state.error = undefined
     this.steeringQueue = []
     this.followUpQueue = []
   }
 
-  async prompt(input: AgentMessage | AgentMessage[] | string, images?: ImageContent[]): Promise<void> {
+  async prompt(text: string, images?: ImageContent[]): Promise<void> {
     if (this._state.isStreaming) {
-      throw new Error('Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.')
+      throw new Error('Agent is already processing a prompt.')
     }
-
-    let msgs: AgentMessage[]
-    if (Array.isArray(input)) {
-      msgs = input
-    } else if (typeof input === 'string') {
-      const content: (ImageContent | { type: 'text'; text: string })[] = [{ type: 'text', text: input }]
-      if (images && images.length > 0) {
-        content.push(...images)
-      }
-      msgs = [{ role: 'user', content, timestamp: Date.now() }]
-    } else {
-      msgs = [input]
-    }
-
-    await this.runLoop(msgs)
+    await this.runLoop(text, images)
   }
 
-  async continue(): Promise<void> {
-    if (this._state.isStreaming) {
-      throw new Error('Agent is already processing. Wait for completion before continuing.')
-    }
-
-    const messages = this._state.messages
-    if (messages.length === 0) {
-      throw new Error('No messages to continue from')
-    }
-
-    if (messages[messages.length - 1].role === 'assistant') {
-      const steering = this.dequeueSteeringMessages()
-      if (steering.length > 0) {
-        await this.runLoop(steering)
-        return
-      }
-      const followUps = this.dequeueFollowUpMessages()
-      if (followUps.length > 0) {
-        await this.runLoop(followUps)
-        return
-      }
-      throw new Error('Cannot continue from message role: assistant')
-    }
-
-    await this.runLoop(undefined)
+  private dequeueSteering(): string | undefined {
+    return this.steeringQueue.shift()
   }
 
-  private dequeueOne(queue: 'steeringQueue' | 'followUpQueue'): AgentMessage[] {
-    if (this[queue].length === 0) return []
-    const [first, ...rest] = this[queue]
-    this[queue] = rest
-    return [first]
+  private dequeueFollowUp(): string | undefined {
+    return this.followUpQueue.shift()
   }
 
-  private dequeueSteeringMessages(): AgentMessage[] {
-    return this.dequeueOne('steeringQueue')
-  }
-
-  private dequeueFollowUpMessages(): AgentMessage[] {
-    return this.dequeueOne('followUpQueue')
-  }
-
-  private async runLoop(inputMessages?: AgentMessage[]): Promise<void> {
+  private async runLoop(text: string, images?: ImageContent[]): Promise<void> {
     this.runningPrompt = new Promise((resolve) => {
       this.resolveRunningPrompt = resolve
     })
     this._state.isStreaming = true
-    this._state.streamMessage = null
+    this._state.streamingMessage = null
     this._state.error = undefined
 
-    const newMessages: AgentMessage[] = []
     const session = this.providerSession
 
     try {
       this.emit({ type: 'agent_start' })
 
-      // Extract text and images from input messages
-      let userText = ''
-      let userImages: ImageContent[] | undefined
-      if (inputMessages) {
-        for (const msg of inputMessages) {
-          newMessages.push(msg)
-          this.appendMessage(msg)
-          this.emit({ type: 'message_start', message: msg })
-          this.emit({ type: 'message_end', message: msg })
-
-          if (msg.role === 'user') {
-            for (const c of (msg as UserMessage).content) {
-              if (c.type === 'text') userText += c.text
-              if (c.type === 'image') {
-                if (!userImages) userImages = []
-                userImages.push(c)
-              }
-            }
-          }
+      // Add user message to local display
+      const userBlocks: Block[] = [{ type: 'text', text }]
+      if (images) {
+        for (const img of images) {
+          userBlocks.push({ type: 'image', mimeType: img.mimeType, data: img.data })
         }
       }
+      this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
 
-      // Send user message to provider and process events
+      // Send to provider and process events
       await new Promise<void>((resolve) => {
-        let currentAssistantText = ''
-        let currentThinkingText = ''
-        const pendingExecJs = new Map<string, { code: string }>()
+        let streamingBlocks: Block[] = []
 
         const handleOutput = (event: ProviderOutput) => {
           switch (event.type) {
             case 'start':
-              this.emit({ type: 'turn_start' })
-              currentAssistantText = ''
-              currentThinkingText = ''
+              streamingBlocks = []
+              this._state.streamingMessage = { role: 'assistant', blocks: streamingBlocks, timestamp: Date.now() }
+              this.emit({ type: 'stream_update' })
               break
 
             case 'text_delta': {
-              currentAssistantText += event.delta
-              const partialMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
-              this._state.streamMessage = partialMsg
-              this.emit({
-                type: 'message_update',
-                streamEvent: {
-                  type: 'text_delta',
-                  contentIndex: 0,
-                  delta: event.delta,
-                  partial: partialMsg,
-                },
-                message: partialMsg,
-              })
+              const last = streamingBlocks[streamingBlocks.length - 1]
+              if (last && last.type === 'text') {
+                last.text += event.delta
+              } else {
+                streamingBlocks.push({ type: 'text', text: event.delta })
+              }
+              this.emit({ type: 'stream_update' })
               break
             }
 
             case 'thinking_delta': {
-              currentThinkingText += event.delta
-              const partialMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
-              this._state.streamMessage = partialMsg
-              this.emit({
-                type: 'message_update',
-                streamEvent: {
-                  type: 'thinking_delta',
-                  contentIndex: 0,
-                  delta: event.delta,
-                  partial: partialMsg,
-                },
-                message: partialMsg,
-              })
+              const last = streamingBlocks[streamingBlocks.length - 1]
+              if (last && last.type === 'thinking') {
+                last.text += event.delta
+              } else {
+                streamingBlocks.push({ type: 'thinking', text: event.delta })
+              }
+              this.emit({ type: 'stream_update' })
               break
             }
 
             case 'exec_js_start':
-              pendingExecJs.set(event.id, { code: '' })
-              this.emit({
-                type: 'tool_execution_start',
-                toolCallId: event.id,
-                toolName: 'execJs',
-                args: {},
-              })
+              this.emit({ type: 'tool_execution_start', toolCallId: event.id })
               break
 
-            case 'exec_js_delta': {
-              const entry = pendingExecJs.get(event.id)
-              if (entry) entry.code += event.delta
+            case 'exec_js_delta':
               break
-            }
 
             case 'exec_js_end': {
               const code = event.code
+              streamingBlocks.push({ type: 'exec_js', id: event.id, code })
 
               const tool = this._state.tools.find(t => t.name === 'execJs')
               if (!tool) {
@@ -284,13 +191,7 @@ export class Agent {
 
               tool.execute(event.id, { code, description: 'Executing code' })
                 .then((result) => {
-                  this.emit({
-                    type: 'tool_execution_end',
-                    toolCallId: event.id,
-                    toolName: 'execJs',
-                    result,
-                    isError: false,
-                  })
+                  this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: false })
 
                   const contextContent = result.content.map(c => {
                     if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
@@ -308,13 +209,7 @@ export class Agent {
                 })
                 .catch((err) => {
                   const errorText = err instanceof Error ? err.message : String(err)
-                  this.emit({
-                    type: 'tool_execution_end',
-                    toolCallId: event.id,
-                    toolName: 'execJs',
-                    result: { content: [{ type: 'text', text: errorText }], details: {} },
-                    isError: true,
-                  })
+                  this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: true })
                   session.send({
                     type: 'exec_js_result',
                     id: event.id,
@@ -322,37 +217,38 @@ export class Agent {
                     isError: true,
                   })
                 })
+              this.emit({ type: 'stream_update' })
               break
             }
 
             case 'done': {
               session.off(handleOutput)
-              const finalMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
-              finalMsg.stopReason = 'end'
-              this._state.streamMessage = null
-              this.appendMessage(finalMsg)
-              this.emit({ type: 'message_start', message: finalMsg })
-              this.emit({ type: 'message_end', message: finalMsg })
-              newMessages.push(finalMsg)
-              this.emit({ type: 'turn_end', message: finalMsg, toolResults: [] })
-              this.emit({ type: 'agent_end', messages: newMessages })
+              const finalMessage: DisplayMessage = {
+                role: 'assistant',
+                blocks: streamingBlocks,
+                timestamp: Date.now(),
+              }
+              this._state.streamingMessage = null
+              this._state.messages = [...this._state.messages, finalMessage]
+              this.emit({ type: 'agent_end' })
               resolve()
               break
             }
 
             case 'error': {
               session.off(handleOutput)
-              const errorMsg = this.buildPartialMessage(currentAssistantText, currentThinkingText)
-              errorMsg.stopReason = 'error'
-              errorMsg.errorMessage = event.error
-              this._state.streamMessage = null
+              this._state.streamingMessage = null
               this._state.error = event.error
-              this.appendMessage(errorMsg)
-              this.emit({ type: 'message_start', message: errorMsg })
-              this.emit({ type: 'message_end', message: errorMsg })
-              newMessages.push(errorMsg)
-              this.emit({ type: 'turn_end', message: errorMsg, toolResults: [] })
-              this.emit({ type: 'agent_end', messages: newMessages })
+              // Still save partial content if any
+              if (streamingBlocks.length > 0) {
+                const partialMessage: DisplayMessage = {
+                  role: 'assistant',
+                  blocks: streamingBlocks,
+                  timestamp: Date.now(),
+                }
+                this._state.messages = [...this._state.messages, partialMessage]
+              }
+              this.emit({ type: 'agent_end' })
               resolve()
               break
             }
@@ -367,40 +263,20 @@ export class Agent {
         session.on(handleOutput)
         session.send({
           type: 'user_message',
-          text: userText,
-          images: userImages,
+          text,
+          images,
         })
       })
     } catch (err) {
       this._state.error = (err as Error)?.message || String(err)
-      this.emit({ type: 'agent_end', messages: newMessages })
+      this.emit({ type: 'agent_end' })
     } finally {
       this._state.isStreaming = false
-      this._state.streamMessage = null
-      this._state.pendingToolCalls = new Set()
+      this._state.streamingMessage = null
       this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
       this.runningPrompt = undefined
       this.resolveRunningPrompt = undefined
-    }
-  }
-
-  private buildPartialMessage(text: string, thinking: string): AssistantMessage {
-    const content: AssistantMessage['content'] = []
-    if (thinking) {
-      content.push({ type: 'thinking', thinking })
-    }
-    if (text || content.length === 0) {
-      content.push({ type: 'text', text: text || '' })
-    }
-    return {
-      role: 'assistant',
-      content,
-      provider: '',
-      model: '',
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-      stopReason: 'end',
-      timestamp: Date.now(),
     }
   }
 

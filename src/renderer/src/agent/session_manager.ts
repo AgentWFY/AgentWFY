@@ -2,35 +2,23 @@ import { AgentWFYAgent } from './create_agent.js'
 import { createIpcProviderSession, restoreIpcProviderSession } from './ipc_provider_session.js'
 import { ensureWorker, terminateWorker } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
-import type { AgentMessage } from './types.js'
-import { stringifyUnknown } from './tool_utils.js'
+import type { DisplayMessage } from './provider_types.js'
 import {
   createSessionFileName,
   requireSessionStorageTools,
   parseStoredSession,
-  displayMessagesToAgentMessages,
 } from './session_persistence.js'
 
-function extractTextContent(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map((item: Record<string, unknown>) => {
-        if (item?.type === 'text' && typeof item.text === 'string') return item.text
-        if (item?.type === 'image') return '[image]'
-        return ''
-      })
-      .filter((line: string) => line.length > 0)
-      .join('\n')
-  }
-  return stringifyUnknown(content)
+function getTextFromDisplayMessage(msg: DisplayMessage): string {
+  return msg.blocks
+    .filter(b => b.type === 'text')
+    .map(b => (b as { type: 'text'; text: string }).text)
+    .join('\n')
 }
 
-function getLastAssistantMessage(messages: AgentMessage[]): AgentMessage | undefined {
+function getLastAssistantMessage(messages: DisplayMessage[]): DisplayMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if ((messages[i] as unknown as { role: string }).role === 'assistant') {
-      return messages[i]
-    }
+    if (messages[i].role === 'assistant') return messages[i]
   }
   return undefined
 }
@@ -66,7 +54,7 @@ export class AgentSessionManager {
   // Cached state for the active (displayed) session
   private _activeSessionFile: string | null = null
   private _activeSessionId: string | null = null
-  private _activeMessages: AgentMessage[] = []
+  private _activeMessages: DisplayMessage[] = []
   private _activeLabel: string = ''
   private _activeNotifyOnFinish = false
 
@@ -79,7 +67,7 @@ export class AgentSessionManager {
     return this.sessions.get(this._activeSessionId)?.agent ?? null
   }
 
-  get activeMessages(): AgentMessage[] {
+  get activeMessages(): DisplayMessage[] {
     const agent = this.activeAgent
     if (agent) return agent.messages
     return this._activeMessages
@@ -180,16 +168,14 @@ export class AgentSessionManager {
   }
 
   async loadSessionFromDisk(file: string): Promise<void> {
-    // Read display messages from disk and convert for UI rendering
     const tools = requireSessionStorageTools()
     const raw = await tools.read(file)
     const stored = parseStoredSession(raw, file)
-    const agentMessages = displayMessagesToAgentMessages(stored.messages)
 
     this._activeSessionFile = file
     this._activeSessionId = null
-    this._activeMessages = agentMessages
-    this._activeLabel = extractFirstUserMessage(agentMessages, 60) ?? 'Session'
+    this._activeMessages = stored.messages
+    this._activeLabel = extractFirstUserMessage(stored.messages, 60) ?? 'Session'
     this._activeNotifyOnFinish = false
     this.notify()
   }
@@ -404,7 +390,7 @@ export class AgentSessionManager {
     // Auto-publish response for spawned/sendToAgent agents
     if (entry.autoPublishResponse) {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
-      const lastText = lastMsg ? extractTextContent(lastMsg.content) : ''
+      const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
       const agentId = entry.agent.sessionFile
       if (agentId) {
         bus.publish(`agent:response:${agentId}`, { agentId, response: lastText })
@@ -466,30 +452,12 @@ export async function reconnectManager(): Promise<AgentSessionManager> {
   return instance
 }
 
-function extractFirstUserMessage(messages: unknown, maxLen: number): string | null {
-  if (!Array.isArray(messages)) return null
-
+function extractFirstUserMessage(messages: DisplayMessage[], maxLen: number): string | null {
   for (const msg of messages) {
-    const m = msg as Record<string, unknown>
-    if (m?.role !== 'user') continue
-
-    // Support both DisplayMessage (blocks) and AgentMessage (content)
-    const blocks = m.blocks as unknown[] | undefined
-    const content = m.content as unknown
-
-    if (Array.isArray(blocks)) {
-      for (const b of blocks) {
-        const block = b as Record<string, unknown>
-        if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-          return block.text.trim().slice(0, maxLen)
-        }
-      }
-    } else {
-      const trimmed = extractTextContent(content).trim()
-      if (trimmed) return trimmed.slice(0, maxLen)
-    }
+    if (msg.role !== 'user') continue
+    const text = getTextFromDisplayMessage(msg).trim()
+    if (text) return text.slice(0, maxLen)
   }
-
   return null
 }
 

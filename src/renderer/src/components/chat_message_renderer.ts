@@ -1,86 +1,55 @@
 import { renderMarkdown } from '../markdown.js'
-import type { AgentMessage } from '../agent/types.js'
+import type { DisplayMessage, Block } from '../agent/provider_types.js'
 import { escapeHtml } from './chat_utils.js'
-import type { TlJson } from './json_view.js'
 
 interface ToolPair {
-  name: string
   id: string
-  arguments: unknown
+  code: string
   result: unknown
   isError: boolean
 }
 
-interface DisplayBlock {
-  type: 'user' | 'assistant' | 'custom' | 'compaction'
+interface RenderBlock {
+  type: 'user' | 'assistant'
   text: string
   tools: ToolPair[]
-  compactionBeforeCount?: number
-  raw: Record<string, unknown>
+  ref: DisplayMessage
 }
 
-function getTextFromContent(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((block: Record<string, unknown>) => block?.type === 'text')
-      .map((block: Record<string, unknown>) => block.text as string)
-      .join('')
-  }
-  return ''
-}
+export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
+  const blocks: RenderBlock[] = []
 
-function getToolCalls(content: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(content)) return []
-  return content.filter((block: Record<string, unknown>) => block?.type === 'toolCall')
-}
-
-export function buildDisplayBlocks(msgs: AgentMessage[]): DisplayBlock[] {
-  const blocks: DisplayBlock[] = []
-  let i = 0
-  while (i < msgs.length) {
-    const msg = msgs[i] as unknown as Record<string, unknown>
+  for (const msg of msgs) {
     if (msg.role === 'user') {
-      blocks.push({ type: 'user', text: getTextFromContent(msg.content), tools: [], raw: msg })
-      i++
+      const text = msg.blocks
+        .filter(b => b.type === 'text')
+        .map(b => (b as { type: 'text'; text: string }).text)
+        .join('')
+      blocks.push({ type: 'user', text, tools: [], ref: msg })
     } else if (msg.role === 'assistant') {
-      const text = getTextFromContent(msg.content)
-      const toolCallsList = getToolCalls(msg.content)
+      const textParts: string[] = []
       const tools: ToolPair[] = []
-      let j = i + 1
-      for (const tc of toolCallsList) {
-        const pair: ToolPair = { name: tc.name as string, id: tc.id as string, arguments: tc.arguments, result: null, isError: false }
-        const nextMsg = j < msgs.length ? (msgs[j] as unknown as Record<string, unknown>) : null
-        if (nextMsg && nextMsg.role === 'toolResult' && nextMsg.toolCallId === tc.id) {
-          pair.result = nextMsg.content
-          pair.isError = nextMsg.isError as boolean
-          j++
+
+      for (const block of msg.blocks) {
+        if (block.type === 'text') {
+          textParts.push(block.text)
+        } else if (block.type === 'exec_js') {
+          const resultBlock = msg.blocks.find(
+            b => b.type === 'exec_js_result' && (b as Block & { type: 'exec_js_result' }).id === block.id
+          )
+          tools.push({
+            id: block.id,
+            code: block.code,
+            result: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.content : null,
+            isError: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.isError : false,
+          })
         }
-        tools.push(pair)
       }
-      blocks.push({ type: 'assistant', text, tools, raw: msg })
-      i = j
-    } else if (msg.role === 'toolResult') {
-      i++
-    } else if (msg.role === 'custom') {
-      if (msg.customType === 'compactionSummary') {
-        const details = msg.details && typeof msg.details === 'object' ? msg.details as Record<string, unknown> : null
-        const beforeCount = typeof details?.beforeCount === 'number' ? details.beforeCount : undefined
-        blocks.push({
-          type: 'compaction',
-          text: getTextFromContent(msg.content),
-          tools: [],
-          compactionBeforeCount: beforeCount,
-          raw: msg
-        })
-      } else {
-        blocks.push({ type: 'custom', text: '', tools: [], raw: msg })
-      }
-      i++
-    } else {
-      i++
+
+      blocks.push({ type: 'assistant', text: textParts.join(''), tools, ref: msg })
     }
   }
+
   return blocks
 }
 
@@ -99,21 +68,6 @@ function extractImagesFromResult(result: unknown): { images: Array<{ data: strin
   return { images, filteredResult: filtered }
 }
 
-function getToolDescription(args: unknown): string {
-  if (!args || typeof args !== 'object') return 'Executing code'
-  const argsObj = args as Record<string, unknown>
-  if (typeof argsObj.description === 'string' && argsObj.description.trim()) {
-    return argsObj.description.trim()
-  }
-  return 'Executing code'
-}
-
-function getToolCode(args: unknown): string {
-  if (!args || typeof args !== 'object') return ''
-  const argsObj = args as Record<string, unknown>
-  return typeof argsObj.code === 'string' ? argsObj.code : ''
-}
-
 function formatToolResult(result: unknown): { text: string; images: Array<{ data: string; mimeType: string }> } {
   const { images, filteredResult } = extractImagesFromResult(result)
   if (!Array.isArray(filteredResult)) {
@@ -127,16 +81,14 @@ function formatToolResult(result: unknown): { text: string; images: Array<{ data
 }
 
 function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
-  const description = getToolDescription(tool.arguments)
   let html = `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${escapeHtml(tool.id)}">
-    <span class="tool-description">${escapeHtml(description)}</span>
+    <span class="tool-description">${escapeHtml('Executing code')}</span>
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
   if (isOpen) {
-    const code = getToolCode(tool.arguments)
     const { text: resultText, images } = formatToolResult(tool.result)
     html += '<div class="tool-body">'
-    if (code) html += `<pre>${escapeHtml(code)}</pre>`
+    if (tool.code) html += `<pre>${escapeHtml(tool.code)}</pre>`
     if (resultText) html += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${escapeHtml(resultText)}</pre>`
     if (images.length > 0) html += images.map(img => `<img src="data:${escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
     html += '</div>'
@@ -147,22 +99,19 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
 // --- Incremental DOM rendering ---
 
 interface BlockCacheEntry {
-  raw: Record<string, unknown>
+  ref: DisplayMessage
   textLen: number
   toolCount: number
   toolResultCount: number
   toolOpenState: string
 }
 
-/** Cache block identity per wrapper to skip re-rendering stable blocks entirely */
 const _blockCache = new WeakMap<HTMLElement, BlockCacheEntry>()
-
-/** Cache last-set HTML for the streaming indicator element */
 const _indicatorCache = new WeakMap<HTMLElement, string>()
 
-function blockCacheEntry(block: DisplayBlock, openToolSet: Set<string>): BlockCacheEntry {
+function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCacheEntry {
   return {
-    raw: block.raw,
+    ref: block.ref,
     textLen: block.text.length,
     toolCount: block.tools.length,
     toolResultCount: block.tools.reduce((n, t) => n + (t.result !== null ? 1 : 0), 0),
@@ -173,21 +122,19 @@ function blockCacheEntry(block: DisplayBlock, openToolSet: Set<string>): BlockCa
 }
 
 function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
-  return a.raw === b.raw
+  return a.ref === b.ref
     && a.textLen === b.textLen
     && a.toolCount === b.toolCount
     && a.toolResultCount === b.toolResultCount
     && a.toolOpenState === b.toolOpenState
 }
 
-function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<string>): string {
+function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
   if (block.type === 'user') {
     return `<div class="block block-user">${renderMarkdown(block.text)}</div>`
   }
   if (block.type === 'assistant') {
-    const rawMsg = block.raw as { stopReason?: string; errorMessage?: string }
-    const hasError = rawMsg.stopReason === 'error' && rawMsg.errorMessage
-    if (!block.text.trim() && block.tools.length === 0 && !hasError) return ''
+    if (!block.text.trim() && block.tools.length === 0) return ''
     let html = '<div class="block block-assistant">'
     if (block.text) {
       html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
@@ -199,26 +146,8 @@ function renderBlockHtml(block: DisplayBlock, index: number, openToolSet: Set<st
       }
       html += '</div>'
     }
-    if (hasError) {
-      html += `<div class="error-banner">${escapeHtml(rawMsg.errorMessage!)}</div>`
-    }
     html += '</div>'
     return html
-  }
-  if (block.type === 'compaction') {
-    let html = '<div class="block block-compaction">'
-    html += '<div class="compaction-label">[compaction]</div>'
-    if (typeof block.compactionBeforeCount === 'number') {
-      html += `<div class="compaction-meta">Compacted ${block.compactionBeforeCount.toLocaleString()} messages</div>`
-    }
-    if (block.text.trim()) {
-      html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
-    }
-    html += '</div>'
-    return html
-  }
-  if (block.type === 'custom') {
-    return `<div class="block block-custom"><awfy-json data-block-idx="${index}"></awfy-json></div>`
   }
   return ''
 }
@@ -228,28 +157,12 @@ function renderIndicatorHtml(isStreaming: boolean): string {
   return '<div class="thinking-dots"><span></span><span></span><span></span></div>'
 }
 
-function setupBlockCustomEl(wrapper: HTMLElement, block: DisplayBlock) {
-  if (block.type !== 'custom') return
-  const jsonEl = wrapper.querySelector('awfy-json') as TlJson | null
-  if (jsonEl) {
-    jsonEl.json = block.raw.content
-    jsonEl.placeholder = 'custom message'
-  }
-}
-
-/**
- * Incrementally update the messages container DOM.
- * - Stable blocks are skipped entirely (no renderBlockHtml / renderMarkdown call)
- * - Only blocks whose content changed are re-rendered
- * - New blocks are appended, excess blocks removed (compaction)
- */
 export function updateMessagesEl(
   container: HTMLElement,
-  blocks: DisplayBlock[],
+  blocks: RenderBlock[],
   openToolSet: Set<string>,
   isStreaming: boolean,
 ): void {
-  // Ensure indicator and anchor exist as persistent sentinel elements
   let indicator = container.querySelector<HTMLElement>('#streaming-indicator')
   let anchor = container.querySelector<HTMLElement>('#anchor')
   if (!anchor) {
@@ -265,33 +178,27 @@ export function updateMessagesEl(
 
   const wrappers = container.querySelectorAll<HTMLElement>(':scope > [data-msg-idx]')
 
-  // Remove excess wrappers if block count shrank (compaction)
   for (let i = blocks.length; i < wrappers.length; i++) {
     wrappers[i].remove()
   }
 
-  // Update existing wrappers — skip blocks whose identity hasn't changed
   const existingCount = Math.min(wrappers.length, blocks.length)
   for (let i = 0; i < existingCount; i++) {
     const entry = blockCacheEntry(blocks[i], openToolSet)
     const cached = _blockCache.get(wrappers[i])
     if (cached && blockCacheMatches(cached, entry)) continue
-    wrappers[i].innerHTML = renderBlockHtml(blocks[i], i, openToolSet)
+    wrappers[i].innerHTML = renderBlockHtml(blocks[i], openToolSet)
     _blockCache.set(wrappers[i], entry)
-    setupBlockCustomEl(wrappers[i], blocks[i])
   }
 
-  // Append new blocks
   for (let i = wrappers.length; i < blocks.length; i++) {
     const wrapper = document.createElement('div')
     wrapper.dataset.msgIdx = String(i)
-    wrapper.innerHTML = renderBlockHtml(blocks[i], i, openToolSet)
+    wrapper.innerHTML = renderBlockHtml(blocks[i], openToolSet)
     _blockCache.set(wrapper, blockCacheEntry(blocks[i], openToolSet))
     container.insertBefore(wrapper, indicator)
-    setupBlockCustomEl(wrapper, blocks[i])
   }
 
-  // Update streaming indicator
   const indicatorHtml = renderIndicatorHtml(isStreaming)
   if (_indicatorCache.get(indicator) !== indicatorHtml) {
     indicator.innerHTML = indicatorHtml
