@@ -229,6 +229,13 @@ class AnthropicSession {
     this._emit({ type: 'status_line', text: this._buildStatusLine() })
   }
 
+  _emitError(error, retryable, partialBlocks) {
+    const blocks = partialBlocks ? [...partialBlocks] : []
+    blocks.push({ type: 'error', text: error })
+    this._displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
+    this._emit({ type: 'error', error, retryable })
+  }
+
   _emit(event) {
     for (const listener of this._listeners) {
       listener(event)
@@ -295,7 +302,7 @@ class AnthropicSession {
 
     const apiKey = await this._providerConfig.getApiKey()
     if (!apiKey) {
-      this._emit({ type: 'error', error: 'Not authenticated. Open provider settings to log in.' })
+      this._emitError('Not authenticated. Open provider settings to log in.', false)
       return
     }
 
@@ -356,22 +363,14 @@ class AnthropicSession {
         this._emit({ type: 'done' })
         return
       }
-      this._emit({
-        type: 'error',
-        error: err instanceof Error ? err.message : String(err),
-        retryable: true,
-      })
+      this._emitError(err instanceof Error ? err.message : String(err), true)
       return
     }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
       const retryable = response.status === 429 || response.status >= 500
-      this._emit({
-        type: 'error',
-        error: `Anthropic API error (${response.status}): ${text || response.statusText}`,
-        retryable,
-      })
+      this._emitError(`Anthropic API error (${response.status}): ${text || response.statusText}`, retryable)
       return
     }
 
@@ -490,7 +489,10 @@ class AnthropicSession {
           case 'error': {
             const error = data.error
             const msg = (error && error.message) ? error.message : 'Unknown Anthropic API error'
-            this._emit({ type: 'error', error: msg, retryable: true })
+            const partialBlocks = []
+            if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
+            if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
+            this._emitError(msg, true, partialBlocks)
             return
           }
         }
@@ -500,11 +502,10 @@ class AnthropicSession {
         this._emit({ type: 'done' })
         return
       }
-      this._emit({
-        type: 'error',
-        error: err instanceof Error ? err.message : String(err),
-        retryable: true,
-      })
+      const partialBlocks = []
+      if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
+      if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
+      this._emitError(err instanceof Error ? err.message : String(err), true, partialBlocks)
       return
     }
 

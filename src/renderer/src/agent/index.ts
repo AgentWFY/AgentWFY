@@ -245,17 +245,14 @@ export class Agent {
 
             case 'error': {
               session.off(handleOutput)
-              this._state.streamingMessage = null
-              this._state.error = event.error
-              // Still save partial content if any
-              if (streamingBlocks.length > 0) {
-                const partialMessage: DisplayMessage = {
-                  role: 'assistant',
-                  blocks: streamingBlocks,
-                  timestamp: Date.now(),
-                }
-                this._state.messages = [...this._state.messages, partialMessage]
+              streamingBlocks.push({ type: 'error', text: event.error })
+              const errorMessage: DisplayMessage = {
+                role: 'assistant',
+                blocks: streamingBlocks,
+                timestamp: Date.now(),
               }
+              this._state.streamingMessage = null
+              this._state.messages = [...this._state.messages, errorMessage]
               this.emit({ type: 'agent_end' })
               resolve()
               break
