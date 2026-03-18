@@ -287,14 +287,12 @@ class OpenAICompatibleSession implements ProviderSession {
             if (!entry) {
               entry = { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' }
               toolCalls.set(tc.index, entry)
-              this.emit({ type: 'exec_js_start', id: entry.id })
             } else {
               if (tc.id) entry.id = tc.id
               if (tc.function?.name) entry.name += tc.function.name
             }
             if (tc.function?.arguments) {
               entry.arguments += tc.function.arguments
-              this.emit({ type: 'exec_js_delta', id: entry.id, delta: tc.function.arguments })
             }
           }
         }
@@ -329,7 +327,7 @@ class OpenAICompatibleSession implements ProviderSession {
       })
     }
 
-    // Build and push assistant internal message BEFORE emitting exec_js_end.
+    // Build and push assistant internal message BEFORE emitting exec_js.
     // The core may execute tools and send exec_js_result back quickly,
     // which calls _stream() again — the assistant message must already be
     // in the history so the next API call includes it.
@@ -370,9 +368,9 @@ class OpenAICompatibleSession implements ProviderSession {
       this.emitStatusLine()
     }
 
-    // Emit exec_js_end after assistant message is committed
+    // Emit exec_js after assistant message is committed
     for (const pt of pendingTools) {
-      this.emit({ type: 'exec_js_end', id: pt.id, description: pt.description, code: pt.code })
+      this.emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
     }
 
     // If there are pending tool calls, don't emit done — wait for tool results

@@ -132,9 +132,7 @@ class MySession {
     //   { type: 'start' }
     //   { type: 'text_delta', delta: string }
     //   { type: 'thinking_delta', delta: string }
-    //   { type: 'exec_js_start', id: string }
-    //   { type: 'exec_js_delta', id, delta: string }
-    //   { type: 'exec_js_end', id: string }
+    //   { type: 'exec_js', id: string, description: string, code: string }
     //   { type: 'done' }
     //   { type: 'error', error: string, retryable?: boolean }
     //   { type: 'status_line', text: string }
@@ -159,9 +157,7 @@ User types message
   → provider streams response via listener:
       { type: 'start' }
       { type: 'text_delta', delta } (repeated)
-      { type: 'exec_js_start', id }
-      { type: 'exec_js_delta', id, delta } (repeated)
-      { type: 'exec_js_end', id }
+      { type: 'exec_js', id, description, code }
   → core executes the tool, then sends result:
       { type: 'exec_js_result', id, content, isError }
   → provider continues streaming (or emits done):

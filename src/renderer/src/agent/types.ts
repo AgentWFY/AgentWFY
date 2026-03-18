@@ -56,6 +56,4 @@ export type AgentEvent =
   | { type: 'agent_end' }
   | { type: 'agent_idle' }
   | { type: 'stream_update' }
-  | { type: 'tool_execution_start'; toolCallId: string }
-  | { type: 'tool_execution_end'; toolCallId: string; isError: boolean }
   | { type: 'status_line'; text: string }

@@ -177,14 +177,7 @@ export class Agent {
               break
             }
 
-            case 'exec_js_start':
-              this.emit({ type: 'tool_execution_start', toolCallId: event.id })
-              break
-
-            case 'exec_js_delta':
-              break
-
-            case 'exec_js_end': {
+            case 'exec_js': {
               const code = event.code
               const description = event.description || 'Executing code'
               streamingBlocks.push({ type: 'exec_js', id: event.id, description, code })
@@ -202,8 +195,6 @@ export class Agent {
 
               tool.execute(event.id, { code, description })
                 .then((result) => {
-                  this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: false })
-
                   const contextContent = result.content.map(c => {
                     if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
                       return { ...c, text: truncateHead(c.text) }
@@ -223,7 +214,6 @@ export class Agent {
                 })
                 .catch((err) => {
                   const errorText = err instanceof Error ? err.message : String(err)
-                  this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: true })
 
                   streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: [{ type: 'text', text: errorText }], isError: true })
                   this.emit({ type: 'stream_update' })

@@ -423,7 +423,6 @@ class AnthropicSession {
               const name = block.name || ''
               assistantContent.push({ type: 'tool_use', id, name, input: {} })
               toolCalls.set(currentBlockIndex, { id, name, arguments: '' })
-              this._emit({ type: 'exec_js_start', id })
             }
             break
           }
@@ -451,7 +450,6 @@ class AnthropicSession {
               const entry = toolCalls.get(contentIndex)
               if (entry) {
                 entry.arguments += delta.partial_json
-                this._emit({ type: 'exec_js_delta', id: entry.id, delta: delta.partial_json })
               }
             }
             break
@@ -510,7 +508,7 @@ class AnthropicSession {
       return
     }
 
-    // Push assistant message BEFORE emitting exec_js_end events.
+    // Push assistant message BEFORE emitting exec_js events.
     // The core may execute tools and call _handleExecJsResult synchronously
     // (or near-synchronously), which calls _stream() again — the assistant
     // message must already be in _messages so the next API call includes it.
@@ -530,11 +528,11 @@ class AnthropicSession {
       this._emitStatusLine()
     }
 
-    // Now emit exec_js_end events — this may trigger tool execution and
+    // Now emit exec_js events — this may trigger tool execution and
     // a subsequent _stream() call, so it must happen after the assistant
     // message is committed above.
     for (const pt of pendingTools) {
-      this._emit({ type: 'exec_js_end', id: pt.id, description: pt.description, code: pt.code })
+      this._emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
     }
 
     if (pendingTools.length > 0) return

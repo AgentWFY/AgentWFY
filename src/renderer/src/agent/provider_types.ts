@@ -38,9 +38,7 @@ export type ProviderOutput =
   | { type: 'start' }
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
-  | { type: 'exec_js_start'; id: string }
-  | { type: 'exec_js_delta'; id: string; delta: string }
-  | { type: 'exec_js_end'; id: string; description: string; code: string }
+  | { type: 'exec_js'; id: string; description: string; code: string }
   | { type: 'done' }
   | { type: 'error'; error: string; retryable?: boolean }
   | { type: 'status_line'; text: string }
