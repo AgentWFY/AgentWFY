@@ -182,7 +182,7 @@ class OpenAICompatibleSession implements ProviderSession {
     const signal = this.abortController.signal
 
     const apiKey = this.providerConfig.apiKey ?? ''
-    const baseUrl = this.providerConfig.baseUrl
+    const baseUrl = this.providerConfig.baseUrl.replace(/\/v1\/?$/, '')
     const modelId = this.providerConfig.modelId
     const url = `${baseUrl}/v1/chat/completions`
 
