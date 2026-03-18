@@ -9,6 +9,7 @@ export interface PluginApi {
   assetsDir: string
   publish: (topic: string, data: unknown) => void
   registerFunction(name: string, handler: (params: unknown) => Promise<unknown>): void
+  registerProvider(factory: { id: string; name: string; createSession(config: unknown): unknown; restoreSession(messages: unknown[], config: unknown): unknown }): void
 }
 
 interface RegisteredFunction {

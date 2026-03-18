@@ -5,13 +5,13 @@ import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
-import { registerAuthHandlers } from './ipc/auth.js';
 import { registerBusHandlers } from './ipc/bus.js';
 import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
+import { registerProviderHandlers } from './ipc/providers.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
   showAgentPickerDialog,
@@ -82,7 +82,6 @@ registerSqlHandlers(
 );
 registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTools);
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
-registerAuthHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerRequestHeadersHandlers();
 registerBusHandlers((e) => windowManager.getWindowForEvent(e));
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
@@ -94,6 +93,10 @@ registerTaskRunnerHandlers(
 registerPluginHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
+);
+registerProviderHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
+  (e) => windowManager.getWindowForEvent(e),
 );
 
 ipcMain.handle('app:getAgentRoot', (event) => {

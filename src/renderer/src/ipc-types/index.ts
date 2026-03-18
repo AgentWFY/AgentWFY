@@ -2,7 +2,6 @@ export type { FilesApi } from './files.js'
 export type { SqlApi } from './sql.js'
 export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent } from './tabs.js'
 export type { SessionsApi } from './sessions.js'
-export type { AuthApi } from './auth.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
 export type { BusApi, AgentDbChange } from './bus.js'
@@ -12,7 +11,6 @@ import type { FilesApi } from './files.js'
 import type { SqlApi } from './sql.js'
 import type { TabsApi } from './tabs.js'
 import type { SessionsApi } from './sessions.js'
-import type { AuthApi } from './auth.js'
 import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { BusApi } from './bus.js'
@@ -36,18 +34,27 @@ export interface PluginsApi {
   uninstall(pluginName: string): Promise<void>
 }
 
+export interface ProvidersApi {
+  list(): Promise<Array<{ id: string; name: string }>>
+  createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string>
+  restoreSession(providerId: string, messages: unknown[], config: { sessionId: string; systemPrompt: string }): Promise<string>
+  send(handle: string, input: unknown): Promise<void>
+  getDisplayMessages(handle: string): Promise<unknown[]>
+  onEvent(callback: (handle: string, output: unknown) => void): () => void
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
   tabs: TabsApi
   sessions: SessionsApi
-  auth: AuthApi
   store: StoreApi
   dialog: DialogApi
   bus: BusApi
   tasks: TasksApi
   net: NetApi
   plugins: PluginsApi
+  providers: ProvidersApi
   commandPalette: CommandPaletteApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>

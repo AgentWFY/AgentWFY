@@ -1,9 +1,8 @@
 import { AgentWFYAgent } from './create_agent.js'
-import type { AgentAuthConfig } from './agent_auth.js'
-import { getEffectiveApiKey, hasValidAuth } from './agent_auth.js'
+import { createIpcProviderSession } from './ipc_provider_session.js'
 import { ensureWorker, terminateWorker } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
-import type { AgentMessage, ThinkingLevel } from './types.js'
+import type { AgentMessage } from './types.js'
 import {
   createSessionFileName,
   requireSessionStorageTools,
@@ -40,7 +39,6 @@ export interface SessionListItem {
 
 export class AgentSessionManager {
   private sessions = new Map<string, SessionEntry>()
-  private authConfig: AgentAuthConfig
   private listeners = new Set<() => void>()
 
   // Cached state for the active (displayed) session
@@ -49,10 +47,6 @@ export class AgentSessionManager {
   private _activeMessages: AgentMessage[] = []
   private _activeLabel: string = ''
   private _activeNotifyOnFinish = false
-
-  constructor(authConfig: AgentAuthConfig) {
-    this.authConfig = authConfig
-  }
 
   get activeSessionFile(): string | null {
     return this._activeSessionFile
@@ -80,10 +74,6 @@ export class AgentSessionManager {
 
   get activeNotifyOnFinish(): boolean {
     return this._activeNotifyOnFinish
-  }
-
-  get currentAuthConfig(): AgentAuthConfig {
-    return this.authConfig
   }
 
   get streamingSessionsCount(): number {
@@ -271,10 +261,6 @@ export class AgentSessionManager {
     await agent.prompt(message)
   }
 
-  updateAuthConfig(config: AgentAuthConfig): void {
-    this.authConfig = config
-  }
-
   async disposeAll(): Promise<void> {
     for (const [, entry] of this.sessions) {
       if (entry.agent.isStreaming) {
@@ -344,17 +330,8 @@ export class AgentSessionManager {
   }
 
   private async createAgentInstance(opts: { sessionFile?: string }): Promise<AgentWFYAgent> {
-    const config = this.authConfig
-    const apiKey = await getEffectiveApiKey(config)
-
     return AgentWFYAgent.create({
-      provider: config.provider,
-      modelId: config.modelId,
-      thinkingLevel: config.thinkingLevel as ThinkingLevel,
-      ...(config.authMethod === 'api-key'
-        ? { apiKey }
-        : { getApiKey: () => getEffectiveApiKey(config) }
-      ),
+      createProviderSession: (config) => createIpcProviderSession('openai-compatible', config),
       ...(opts.sessionFile ? { sessionFile: opts.sessionFile } : {}),
     })
   }
@@ -439,24 +416,20 @@ export function getSessionManager(): AgentSessionManager | null {
   return instance
 }
 
-export async function initSessionManager(config: AgentAuthConfig): Promise<AgentSessionManager> {
+export async function initSessionManager(): Promise<AgentSessionManager> {
   if (instance) {
     await instance.disposeAll()
   }
-  instance = new AgentSessionManager(config)
+  instance = new AgentSessionManager()
   await instance.createSession()
   return instance
 }
 
-export async function reconnectManager(config: AgentAuthConfig): Promise<AgentSessionManager | null> {
+export async function reconnectManager(): Promise<AgentSessionManager> {
   if (instance) {
     await instance.disposeAll()
-    instance = null
   }
-  if (!hasValidAuth(config)) {
-    return null
-  }
-  instance = new AgentSessionManager(config)
+  instance = new AgentSessionManager()
   await instance.createSession()
   return instance
 }

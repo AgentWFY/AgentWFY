@@ -3,18 +3,8 @@ import type {
   AgentEvent,
   AgentMessage,
   AgentState,
-  AssistantMessage,
   ImageContent,
-  Model,
-  ThinkingLevel,
 } from './types.js'
-import {
-  getModel,
-  getModels,
-  getModelsConfigSync,
-  getProviderIds,
-  loadModelsConfig,
-} from './models.js'
 import { createExecJsTool } from './exec_js.js'
 import { requireIpc } from './tool_utils.js'
 import {
@@ -23,41 +13,24 @@ import {
   createSessionId,
   createSessionFileName,
   normalizeSessionFileName,
-  isThinkingLevel,
   requireSessionStorageTools,
   parseStoredSession,
 } from './session_persistence.js'
+import type { ProviderSession, ProviderSessionConfig } from './provider_types.js'
 import {
   COMPACTION_SUMMARY_CUSTOM_TYPE,
-  SESSION_SUMMARY_TAIL_MESSAGES,
-  AUTO_COMPACTION_MAX_RETRIES,
-  AUTO_COMPACTION_INSTRUCTIONS,
   toUserMessage,
-  toCompactionSummaryMessage,
-  convertAgentMessagesToLlm,
-  isContextOverflow,
-  getLastAssistantMessage,
-  generateCompactionSummary,
-  estimateMessagesTokens,
 } from './session_compaction.js'
-import { CONTEXT_RESERVE_TOKENS } from './truncate.js'
 
 export { COMPACTION_SUMMARY_CUSTOM_TYPE } from './session_compaction.js'
 export { toUserMessage } from './session_compaction.js'
 
-export const DEFAULT_PROVIDER = 'openrouter'
-export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
 const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
 export interface AgentWFYAgentOptions {
-  provider?: string
-  modelId?: string
-  apiKey?: string
-  getApiKey?: () => Promise<string | undefined> | string | undefined
-  thinkingLevel?: ThinkingLevel
-  sessionDir?: string
+  createProviderSession: (config: ProviderSessionConfig) => ProviderSession | Promise<ProviderSession>
   sessionFile?: string
   persistSessions?: boolean
 }
@@ -78,53 +51,6 @@ export type AgentWFYAgentEvent = AgentEvent | {
 }
 
 export type AgentWFYAgentEventListener = (event: AgentWFYAgentEvent) => void
-
-interface AgentWFYAgentCreateArgs {
-  agent: Agent
-  provider: string
-  modelId: string
-  systemPromptChars: number
-  apiKey?: string
-  sessionDir: string
-  sessionFile?: string
-  sessionId: string
-  sessionIdRef: { current: string }
-  persistSessions: boolean
-}
-
-function normalizeThinkingLevel(level: unknown, model?: Model): ThinkingLevel {
-  const fallback: ThinkingLevel = model?.reasoning ? 'minimal' : 'off'
-  if (!isThinkingLevel(level)) {
-    return fallback
-  }
-
-  if (!model?.reasoning) {
-    return 'off'
-  }
-
-  return level
-}
-
-function resolveModel(provider: string, modelId: string): Model {
-  const config = getModelsConfigSync()
-  const model = getModel(config, provider, modelId)
-  if (model) {
-    return model
-  }
-
-  const availableModels = getModels(config, provider)
-  if (availableModels.length === 0) {
-    const availableProviders = getProviderIds(config)
-    throw new Error(
-      `Unknown provider "${provider}". Configure one of ${availableProviders.join(', ')} or add a provider to .agentwfy/models.json.`
-    )
-  }
-
-  const modelIds = availableModels.slice(0, 20).map((entry) => entry.id)
-  throw new Error(
-    `Model "${modelId}" was not found for provider "${provider}". Available models: ${modelIds.join(', ')}`
-  )
-}
 
 function parsePreloadDocRows(rows: unknown): Array<{ name: string; content: string }> {
   if (!Array.isArray(rows)) {
@@ -188,47 +114,35 @@ function createTools(sessionIdRef: { current: string }) {
 export class AgentWFYAgent {
   readonly agent: Agent
 
-  private readonly infoData: {
-    provider: string
-    modelId: string
-    systemPromptChars: number
-  }
-
   private readonly listeners = new Set<AgentWFYAgentEventListener>()
   private readonly unsubscribeFromAgent: () => void
   private readonly sessionDirPath: string
   private readonly persistSessionsToDisk: boolean
   private readonly sessionIdRef: { current: string }
 
-  private apiKey?: string
   private sessionWritePromise: Promise<void> = Promise.resolve()
-  private isCompacting = false
-  private compactionAbort?: AbortController
   private disposed = false
 
   private _sessionId: string
   private _sessionFile?: string
 
-  private constructor(args: AgentWFYAgentCreateArgs) {
-    this.agent = args.agent
-    this.infoData = {
-      provider: args.provider,
-      modelId: args.modelId,
-      systemPromptChars: args.systemPromptChars
-    }
-    this.apiKey = args.apiKey
-    this.sessionDirPath = args.sessionDir
-    this.persistSessionsToDisk = args.persistSessions
-    this.sessionIdRef = args.sessionIdRef
-    this._sessionFile = args.sessionFile
-    this._sessionId = args.sessionId
+  private constructor(
+    agent: Agent,
+    sessionDir: string,
+    sessionFile: string | undefined,
+    sessionId: string,
+    sessionIdRef: { current: string },
+    persistSessions: boolean,
+  ) {
+    this.agent = agent
+    this.sessionDirPath = sessionDir
+    this.persistSessionsToDisk = persistSessions
+    this.sessionIdRef = sessionIdRef
+    this._sessionFile = sessionFile
+    this._sessionId = sessionId
 
     this.sessionIdRef.current = this._sessionId
     this.agent.sessionId = this._sessionId
-
-    if (this.apiKey) {
-      this.agent.getApiKey = () => this.apiKey
-    }
 
     this.unsubscribeFromAgent = this.agent.subscribe((event) => {
       this.emit(event)
@@ -239,58 +153,40 @@ export class AgentWFYAgent {
     })
   }
 
-  static async create(options: AgentWFYAgentOptions = {}): Promise<AgentWFYAgent> {
-    await loadModelsConfig()
-
-    const provider = options.provider ?? DEFAULT_PROVIDER
-    const modelId = options.modelId ?? DEFAULT_MODEL_ID
+  static async create(options: AgentWFYAgentOptions): Promise<AgentWFYAgent> {
     const sessionDir = DEFAULT_SESSION_DIR
     const persistSessions = options.persistSessions ?? true
 
     const sessionId = createSessionId()
     const sessionIdRef = { current: sessionId }
-    const model = resolveModel(provider, modelId)
     const systemPrompt = await loadSystemPrompt()
     const tools = createTools(sessionIdRef)
     const sessionFile = options.sessionFile
       ? normalizeSessionFileName(options.sessionFile)
       : (persistSessions ? createSessionFileName() : undefined)
 
-    const getApiKeyFn = options.getApiKey
-      ? options.getApiKey
-      : options.apiKey
-        ? () => options.apiKey
-        : undefined
+    const providerSession = await options.createProviderSession({
+      sessionId,
+      systemPrompt,
+    })
 
     const agent = new Agent({
       initialState: {
         systemPrompt,
-        model,
-        thinkingLevel: normalizeThinkingLevel(options.thinkingLevel ?? 'off', model),
-        tools
+        tools,
       },
+      providerSession,
       sessionId,
-      convertToLlm: convertAgentMessagesToLlm,
-      getApiKey: getApiKeyFn
     })
 
-    const instance = new AgentWFYAgent({
+    const instance = new AgentWFYAgent(
       agent,
-      provider,
-      modelId,
-      systemPromptChars: systemPrompt.length,
-      apiKey: options.apiKey,
       sessionDir,
       sessionFile,
       sessionId,
       sessionIdRef,
-      persistSessions
-    })
-
-    // Wire up the proactive compaction hook — called before every LLM API call
-    // so we can compact context before hitting the limit (avoiding wasted requests).
-    agent.beforeStream = (contextMessages) =>
-      instance.proactiveCompact(contextMessages)
+      persistSessions,
+    )
 
     if (options.sessionFile) {
       await instance.switchSession(sessionFile)
@@ -315,14 +211,6 @@ export class AgentWFYAgent {
 
   get persistSessions(): boolean {
     return this.persistSessionsToDisk
-  }
-
-  get model(): Model | undefined {
-    return this.agent.state.model
-  }
-
-  get thinkingLevel(): ThinkingLevel {
-    return this.agent.state.thinkingLevel
   }
 
   get messages(): AgentMessage[] {
@@ -355,7 +243,7 @@ export class AgentWFYAgent {
       return
     }
 
-    await this.promptWithAutoCompaction(toUserMessage(text, options.images))
+    await this.agent.prompt(toUserMessage(text, options.images))
     await this.persistSession()
   }
 
@@ -378,25 +266,6 @@ export class AgentWFYAgent {
   subscribe(listener: AgentWFYAgentEventListener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
-  }
-
-  async setModel(model: Model): Promise<void> {
-    this.agent.setModel(model)
-
-    if (!model.reasoning) {
-      this.agent.setThinkingLevel('off')
-    }
-
-    await this.persistSession()
-  }
-
-  setThinkingLevel(level: ThinkingLevel): void {
-    const normalized = normalizeThinkingLevel(level, this.model)
-    if (normalized === this.thinkingLevel) {
-      return
-    }
-    this.agent.setThinkingLevel(normalized)
-    void this.persistSession()
   }
 
   async newSession(): Promise<boolean> {
@@ -427,24 +296,6 @@ export class AgentWFYAgent {
     const rawSession = await tools.read(sessionFileName)
     const storedSession = parseStoredSession(rawSession, sessionFileName)
 
-    if (storedSession.version !== SESSION_VERSION) {
-      console.warn(
-        `[AgentWFYAgent] Loading session version ${storedSession.version} (expected ${SESSION_VERSION}). Attempting best-effort restore.`
-      )
-    }
-
-    if (storedSession.model) {
-      try {
-        const model = resolveModel(storedSession.model.provider, storedSession.model.id)
-        this.agent.setModel(model)
-      } catch (error) {
-        console.warn(
-          `[AgentWFYAgent] Failed to restore model ${storedSession.model.provider}/${storedSession.model.id}: ${error instanceof Error ? error.message : String(error)}`
-        )
-      }
-    }
-
-    this.agent.setThinkingLevel(normalizeThinkingLevel(storedSession.thinkingLevel, this.model))
     this.agent.replaceMessages(storedSession.messages)
 
     this._sessionFile = sessionFileName
@@ -460,14 +311,8 @@ export class AgentWFYAgent {
   }
 
   async abort(): Promise<void> {
-    this.compactionAbort?.abort()
     this.agent.abort()
     await this.agent.waitForIdle()
-  }
-
-  setApiKey(apiKey: string): void {
-    this.apiKey = apiKey
-    this.agent.getApiKey = () => this.apiKey
   }
 
   clearMessages(): void {
@@ -481,7 +326,6 @@ export class AgentWFYAgent {
     }
 
     this.disposed = true
-    this.compactionAbort?.abort()
     this.listeners.clear()
     this.unsubscribeFromAgent()
   }
@@ -502,154 +346,10 @@ export class AgentWFYAgent {
     })
   }
 
-  private async promptWithAutoCompaction(message: AgentMessage): Promise<void> {
-    let shouldContinue = false
-
-    for (let retryCount = 0; retryCount <= AUTO_COMPACTION_MAX_RETRIES; retryCount += 1) {
-      if (shouldContinue) {
-        await this.agent.continue()
-      } else {
-        await this.agent.prompt(message)
-      }
-
-      const overflowMessage = this.getLastOverflowAssistantMessage()
-      if (!overflowMessage) {
-        return
-      }
-
-      if (retryCount >= AUTO_COMPACTION_MAX_RETRIES) {
-        return
-      }
-
-      const compactResult = await this.compact(AUTO_COMPACTION_INSTRUCTIONS)
-      if (!compactResult.compacted) {
-        return
-      }
-
-      this.dropTrailingOverflowAssistant()
-      shouldContinue = true
-    }
-  }
-
-  private getLastOverflowAssistantMessage(): AssistantMessage | undefined {
-    const lastAssistant = getLastAssistantMessage(this.messages) as AssistantMessage | undefined
-    if (!lastAssistant) {
-      return undefined
-    }
-
-    if (!isContextOverflow(lastAssistant)) {
-      return undefined
-    }
-
-    return lastAssistant
-  }
-
-  private dropTrailingOverflowAssistant(): void {
-    const messages = this.messages
-    if (messages.length === 0) {
-      return
-    }
-
-    const lastMessage = messages[messages.length - 1] as AssistantMessage
-    if (lastMessage?.role !== 'assistant') {
-      return
-    }
-
-    if (!isContextOverflow(lastMessage)) {
-      return
-    }
-
-    this.agent.replaceMessages(messages.slice(0, -1))
-  }
-
-  private async compact(customInstructions?: string): Promise<{ compacted: boolean }> {
-    if (this.isCompacting) {
-      throw new Error('Compaction is already running')
-    }
-
-    const beforeCount = this.messages.length
-    if (beforeCount <= SESSION_SUMMARY_TAIL_MESSAGES) {
-      return { compacted: false }
-    }
-
-    this.isCompacting = true
-
-    try {
-      const summarySource = this.messages.slice(0, beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-      const keepMessages = this.messages.slice(beforeCount - SESSION_SUMMARY_TAIL_MESSAGES)
-
-      this.compactionAbort = new AbortController()
-      const summary = await generateCompactionSummary(summarySource, customInstructions, {
-        model: this.model,
-        getApiKey: this.agent.getApiKey
-          ? (providerId: string) => this.agent.getApiKey!(providerId)
-          : undefined,
-        fallbackApiKey: this.apiKey,
-        signal: this.compactionAbort.signal,
-      })
-      const summaryMessage = toCompactionSummaryMessage(summary, beforeCount)
-
-      this.agent.replaceMessages([summaryMessage, ...keepMessages])
-      await this.persistSession()
-
-      return { compacted: true }
-    } finally {
-      this.isCompacting = false
-    }
-  }
-
-  /**
-   * Proactive compaction — called via the beforeStream hook before every LLM API call.
-   * Estimates total context tokens and compacts if we're approaching the model's
-   * context window limit. Returns compacted messages if compaction happened, or
-   * void to keep the current messages unchanged.
-   */
-  private async proactiveCompact(contextMessages: AgentMessage[]): Promise<AgentMessage[] | void> {
-    if (this.isCompacting) return
-
-    const model = this.model
-    if (!model) return
-
-    const contextWindow = model.contextWindow ?? 200000
-    const systemPromptTokens = Math.ceil(this.infoData.systemPromptChars / 4)
-    const messageTokens = estimateMessagesTokens(contextMessages)
-    const totalTokens = systemPromptTokens + messageTokens
-
-    if (totalTokens <= contextWindow - CONTEXT_RESERVE_TOKENS) {
-      return // Plenty of room
-    }
-
-    if (contextMessages.length <= SESSION_SUMMARY_TAIL_MESSAGES) {
-      return // Too few messages to compact
-    }
-
-    console.log(
-      `[AgentWFYAgent] proactive compaction: ~${totalTokens} tokens estimated, ` +
-      `context window ${contextWindow}, reserve ${CONTEXT_RESERVE_TOKENS}`
-    )
-
-    try {
-      const result = await this.compact()
-      if (result.compacted) {
-        // compact() already created a fresh array via replaceMessages, no need to copy again
-        return this.messages
-      }
-    } catch (err) {
-      console.warn('[AgentWFYAgent] proactive compaction failed, continuing without', err)
-    }
-  }
-
   private buildStoredSession(): StoredSession {
     return {
       version: SESSION_VERSION,
       sessionId: this._sessionId,
-      model: this.model
-        ? {
-          provider: this.model.provider.id,
-          id: this.model.id
-        }
-        : undefined,
-      thinkingLevel: this.thinkingLevel,
       messages: this.messages,
       updatedAt: Date.now()
     }

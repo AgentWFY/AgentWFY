@@ -1,16 +1,3 @@
-import { getProviderIds } from '../agent/models.js'
-import type { ThinkingLevel } from '../agent/types.js'
-import type { AgentAuthConfig, AuthMethod } from '../agent/agent_auth.js'
-import {
-  safeGetModels,
-  saveAuthConfig,
-  getAvailableOAuthProviders,
-  performOAuthLogin,
-  isOAuthConnected,
-  getProviderForAuthMethod,
-  normalizeAuthConfig,
-  logoutOAuth,
-} from '../agent/agent_auth.js'
 import { escapeHtml } from './chat_utils.js'
 
 const STYLES = `
@@ -21,130 +8,79 @@ const STYLES = `
     padding: 4px 0;
     font-size: 13px;
   }
-
-  /* ── Sections ── */
-
   .section {
     padding: 10px 0;
   }
   .section + .section {
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--color-divider);
   }
   .section-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
   }
-
-  /* ── Grid and fields ── */
-
-  .field-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
   .field {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    min-width: 0;
   }
   .field-label {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--color-text2);
+    text-transform: uppercase;
     letter-spacing: 0.3px;
   }
-
-  /* ── API key row ── */
-
+  .field input {
+    padding: 5px 8px;
+    border: 1px solid var(--color-input-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-input-bg);
+    font-size: 13px;
+    outline: none;
+  }
+  .field input:focus {
+    border-color: var(--color-focus-border);
+  }
   .key-row {
     display: flex;
     gap: 6px;
-    align-items: center;
+    align-items: stretch;
   }
   .key-row input {
     flex: 1;
     min-width: 0;
   }
-  .key-row .btn {
-    flex-shrink: 0;
-  }
-
-  /* ── OAuth ── */
-
-  .oauth-status-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .btn {
+    padding: 4px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg3);
+    cursor: pointer;
     font-size: 12px;
-    color: var(--color-text2);
+    color: var(--color-text3);
+    white-space: nowrap;
   }
-  .oauth-error-row {
-    font-size: 12px;
-    color: var(--color-red-fg);
+  .btn:hover { background: var(--color-item-hover); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-accent {
+    background: var(--color-accent);
+    color: var(--color-bg1);
+    border-color: var(--color-accent);
   }
-  .oauth-link {
-    font-size: 11px;
-    color: var(--color-accent);
-    word-break: break-all;
-  }
-  .oauth-link a { color: inherit; }
-  .connected-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .connected-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-green-fg);
-    flex-shrink: 0;
-  }
-  .connected-text {
-    font-size: 12px;
-    color: var(--color-green-fg);
-    font-weight: 500;
-  }
-
+  .btn-accent:hover { opacity: 0.9; }
 `
 
-const oauthProviders = getAvailableOAuthProviders()
-const authMethods: { id: AuthMethod; label: string }[] = [
-  { id: 'api-key', label: 'API Key' },
-  ...oauthProviders.map(p => ({ id: p.id, label: p.name })),
-]
-const thinkingLevels: ThinkingLevel[] = ['off' as ThinkingLevel, 'minimal', 'low', 'medium', 'high', 'xhigh']
-
-function getModelIdForProvider(provider: string, currentModelId: string): string {
-  const models = safeGetModels(provider)
-  if (models.some((model) => model.id === currentModelId)) {
-    return currentModelId
-  }
-  return models.length > 0 ? models[0].id : ''
-}
-
+/**
+ * Minimal settings component that reads/writes provider config
+ * from the config table via SQL.
+ */
 export class TlAgentSettings extends HTMLElement {
-  private _authConfig!: AgentAuthConfig
   private _disabled = false
   private apiKeyInput = ''
-  private oauthStatus = ''
-  private oauthError = ''
-  private isLoggingIn = false
-  private oauthAuthUrl = ''
-  private oauthCodeInput = ''
-  private oauthInstructions = ''
-  private awaitingCode = false
-  private resolveCodePromise: ((code: string) => void) | null = null
-
+  private modelIdInput = ''
+  private baseUrlInput = ''
+  private loaded = false
   private _renderQueued = false
-
-  get authConfig(): AgentAuthConfig { return this._authConfig }
-  set authConfig(val: AgentAuthConfig) {
-    this._authConfig = normalizeAuthConfig(val)
-    this.apiKeyInput = val.apiKey ?? ''
-    this.queueRender()
-  }
 
   get disabled(): boolean { return this._disabled }
   set disabled(val: boolean) {
@@ -153,7 +89,7 @@ export class TlAgentSettings extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render()
+    this.loadConfig()
   }
 
   private queueRender() {
@@ -165,322 +101,121 @@ export class TlAgentSettings extends HTMLElement {
     })
   }
 
-  private get isOAuth() {
-    return this._authConfig?.authMethod !== 'api-key'
-  }
+  private async loadConfig() {
+    try {
+      const ipc = window.ipc
+      if (!ipc) return
 
-  private get connected() {
-    return this._authConfig ? isOAuthConnected(this._authConfig) : false
-  }
+      const rows = await ipc.sql.run({
+        target: 'agent',
+        sql: "SELECT name, value FROM config WHERE name LIKE 'system.openai-compatible-provider.%'",
+        description: 'Load provider config',
+      }) as Array<{ name: string; value: string | null }>
 
-  private get lockedProvider() {
-    return this.isOAuth ? getProviderForAuthMethod(this._authConfig.authMethod) : ''
-  }
-
-  private get activeProvider() {
-    return this.isOAuth ? this.lockedProvider : this._authConfig?.provider ?? ''
-  }
-
-  private get availableProviders() {
-    return getProviderIds()
-  }
-
-  private get availableModels() {
-    return safeGetModels(this.activeProvider)
-  }
-
-  private async update(partial: Partial<AgentAuthConfig>) {
-    this._authConfig = normalizeAuthConfig({ ...this._authConfig, ...partial })
-    await saveAuthConfig(this._authConfig)
-    this.dispatchEvent(new CustomEvent('config-change', {
-      detail: this._authConfig,
-      bubbles: true,
-      composed: true,
-    }))
-  }
-
-  private async handleAuthMethodChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value as AuthMethod
-    const providerOverride = getProviderForAuthMethod(value)
-    const partial: Partial<AgentAuthConfig> = { authMethod: value }
-    if (providerOverride) {
-      partial.provider = providerOverride
-      partial.modelId = getModelIdForProvider(providerOverride, this._authConfig.modelId)
+      for (const row of rows) {
+        const val = row.value ? JSON.parse(row.value) : ''
+        switch (row.name) {
+          case 'system.openai-compatible-provider.apiKey': this.apiKeyInput = val; break
+          case 'system.openai-compatible-provider.modelId': this.modelIdInput = val; break
+          case 'system.openai-compatible-provider.baseUrl': this.baseUrlInput = val; break
+        }
+      }
+    } catch {
+      // Config not set yet
     }
-    await this.update(partial)
-    this.oauthStatus = ''
-    this.oauthError = ''
-    this.queueRender()
+    this.loaded = true
+    this.render()
+  }
+
+  private async saveConfigValue(name: string, value: string) {
+    const ipc = window.ipc
+    if (!ipc) return
+
+    const jsonValue = JSON.stringify(value)
+    await ipc.sql.run({
+      target: 'agent',
+      sql: `INSERT INTO config (name, value) VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+      params: [name, jsonValue],
+      description: `Save config ${name}`,
+    })
   }
 
   private async handleSaveApiKey() {
     const key = this.apiKeyInput.trim()
     if (!key) return
-    await this.update({ apiKey: key })
+    await this.saveConfigValue('system.openai-compatible-provider.apiKey', key)
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
   }
 
-  private async handleOAuthLogin() {
-    this.isLoggingIn = true
-    this.oauthError = ''
-    this.oauthStatus = 'Starting login...'
-    this.oauthAuthUrl = ''
-    this.oauthCodeInput = ''
-    this.awaitingCode = false
-    this.queueRender()
-
-    try {
-      const creds = await performOAuthLogin(this._authConfig.authMethod, {
-        onAuth: (info) => {
-          this.oauthAuthUrl = info.url
-          this.oauthInstructions = info.instructions ?? ''
-          this.oauthStatus = 'Waiting for authorization...'
-          const ipc = window.ipc
-          if (ipc) {
-            ipc.dialog.openExternal(info.url).catch((err) => {
-              console.warn('[agent_settings] Failed to open external browser, falling back to window.open', err)
-              window.open(info.url, '_blank', 'noopener')
-            })
-          } else {
-            window.open(info.url, '_blank', 'noopener')
-          }
-          this.queueRender()
-        },
-        onPrompt: (prompt) => {
-          this.oauthStatus = prompt.message || 'Enter the code:'
-          this.awaitingCode = true
-          this.queueRender()
-          return new Promise<string>((resolve) => {
-            this.resolveCodePromise = resolve
-          })
-        },
-        onProgress: (msg) => {
-          this.oauthStatus = msg
-          this.queueRender()
-        },
-      })
-
-      const updatedCreds = { ...this._authConfig.oauthCredentials, [this._authConfig.authMethod]: creds }
-      await this.update({ oauthCredentials: updatedCreds })
-      this.oauthStatus = 'Connected'
-      this.awaitingCode = false
-      this.oauthAuthUrl = ''
-      this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
-    } catch (err) {
-      this.oauthError = err instanceof Error ? err.message : String(err)
-      this.oauthStatus = ''
-    } finally {
-      this.isLoggingIn = false
-      this.awaitingCode = false
-      this.resolveCodePromise = null
-      this.queueRender()
-    }
-  }
-
-  private handleSubmitCode() {
-    if (this.resolveCodePromise && this.oauthCodeInput.trim()) {
-      this.resolveCodePromise(this.oauthCodeInput.trim())
-      this.resolveCodePromise = null
-      this.awaitingCode = false
-      this.oauthCodeInput = ''
-      this.oauthStatus = 'Verifying...'
-      this.queueRender()
-    }
-  }
-
-  private async handleLogout() {
-    this._authConfig = await logoutOAuth(this._authConfig)
-    this.oauthStatus = ''
-    this.dispatchEvent(new CustomEvent('config-change', {
-      detail: this._authConfig,
-      bubbles: true,
-      composed: true,
-    }))
-    this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
-    this.queueRender()
-  }
-
-  private async handleProviderChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value
-    const models = safeGetModels(value)
-    const firstModelId = models.length > 0 ? models[0].id : ''
-    await this.update({ provider: value, modelId: firstModelId })
-    this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
-    this.queueRender()
-  }
-
-  private async handleModelChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value
-    await this.update({ modelId: value })
+  private async handleSaveModel() {
+    const modelId = this.modelIdInput.trim()
+    if (!modelId) return
+    await this.saveConfigValue('system.openai-compatible-provider.modelId', modelId)
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
   }
 
-  private async handleThinkingChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value
-    await this.update({ thinkingLevel: value })
+  private async handleSaveBaseUrl() {
+    const baseUrl = this.baseUrlInput.trim()
+    await this.saveConfigValue('system.openai-compatible-provider.baseUrl', baseUrl || 'https://openrouter.ai/api')
     this.dispatchEvent(new CustomEvent('reconnect', { bubbles: true, composed: true }))
-  }
-
-
-  private buildOptions(items: { value: string; label: string }[], selected: string): string {
-    return items
-      .map(i => `<option value="${escapeHtml(i.value)}"${i.value === selected ? ' selected' : ''}>${escapeHtml(i.label)}</option>`)
-      .join('')
   }
 
   render() {
-    if (!this._authConfig) return
+    if (!this.loaded) {
+      this.innerHTML = ''
+      return
+    }
 
-    const config = this._authConfig
     const disabled = this._disabled
     const disabledAttr = disabled ? 'disabled' : ''
-
-    // ── Section 1: Connection ──
-
-    const authMethodOpts = this.buildOptions(
-      authMethods.map(m => ({ value: m.id, label: m.label })),
-      config.authMethod,
-    )
-
-    let credentialHtml = ''
-
-    if (config.authMethod === 'api-key') {
-      const saveDisabled = disabled || !this.apiKeyInput.trim() ? 'disabled' : ''
-      credentialHtml = `
-        <div class="field">
-          <span class="field-label">API Key</span>
-          <div class="key-row">
-            <input
-              type="password"
-              value="${escapeHtml(this.apiKeyInput)}"
-              placeholder="sk-..."
-              ${disabledAttr}
-              data-action="api-key-input"
-            >
-            <button class="btn btn-accent" ${saveDisabled} data-action="save-api-key">Save</button>
-          </div>
-        </div>`
-    } else if (this.connected) {
-      credentialHtml = `
-        <div class="connected-row">
-          <span class="connected-dot"></span>
-          <span class="connected-text">Connected</span>
-          <button class="btn" style="margin-left:auto;" ${disabledAttr} data-action="logout">Logout</button>
-        </div>`
-    } else if (this.awaitingCode) {
-      if (this.oauthAuthUrl) {
-        credentialHtml += `<div class="oauth-link"><a href="${escapeHtml(this.oauthAuthUrl)}" target="_blank" rel="noopener">${escapeHtml(this.oauthAuthUrl)}</a></div>`
-      }
-      if (this.oauthStatus) {
-        credentialHtml += `<div class="oauth-status-row">${escapeHtml(this.oauthStatus)}</div>`
-      }
-      const submitDisabled = !this.oauthCodeInput.trim() ? 'disabled' : ''
-      credentialHtml += `
-        <div class="field">
-          <span class="field-label">Code</span>
-          <div class="key-row">
-            <input
-              type="text"
-              value="${escapeHtml(this.oauthCodeInput)}"
-              placeholder="Paste code here"
-              data-action="oauth-code-input"
-            >
-            <button class="btn btn-accent" ${submitDisabled} data-action="submit-code">Submit</button>
-          </div>
-        </div>`
-    } else {
-      const loginDisabled = disabled || this.isLoggingIn ? 'disabled' : ''
-      const loginLabel = this.isLoggingIn ? 'Logging in...' : 'Login'
-      credentialHtml = `
-        <button class="btn btn-accent" style="width:100%;" ${loginDisabled} data-action="oauth-login">${loginLabel}</button>`
-      if (this.oauthStatus) {
-        credentialHtml += `<div class="oauth-status-row">${escapeHtml(this.oauthStatus)}</div>`
-      }
-    }
-
-    if (this.oauthError) {
-      credentialHtml += `<div class="oauth-error-row">${escapeHtml(this.oauthError)}</div>`
-    }
-
-    const connectionHtml = `
-      <div class="section">
-        <div class="section-body">
-          <div class="field">
-            <span class="field-label">Auth</span>
-            <awfy-select value="${escapeHtml(config.authMethod)}" ${disabledAttr} data-action="auth-method-picker">${authMethodOpts}</awfy-select>
-          </div>
-          ${credentialHtml}
-        </div>
-      </div>`
-
-    // ── Section 2: Model ──
-
-    let modelSectionBody = ''
-
-    if (!this.isOAuth) {
-      const providerOpts = this.buildOptions(
-        this.availableProviders.map(p => ({ value: p, label: p })),
-        config.provider,
-      )
-      const modelOpts = this.buildOptions(
-        this.availableModels.map((m: { id: string; name?: string }) => ({ value: m.id, label: m.name || m.id })),
-        config.modelId,
-      )
-      const thinkingOpts = this.buildOptions(
-        thinkingLevels.map(l => ({ value: l, label: l })),
-        config.thinkingLevel,
-      )
-
-      modelSectionBody = `
-        <div class="field-grid">
-          <div class="field">
-            <span class="field-label">Provider</span>
-            <awfy-select value="${escapeHtml(config.provider)}" ${disabledAttr} data-action="provider-picker">${providerOpts}</awfy-select>
-          </div>
-          <div class="field">
-            <span class="field-label">Thinking</span>
-            <awfy-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</awfy-select>
-          </div>
-        </div>
-        <div class="field">
-          <span class="field-label">Model</span>
-          <awfy-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</awfy-select>
-        </div>`
-    } else {
-      const modelOpts = this.buildOptions(
-        this.availableModels.map((m: { id: string; name?: string }) => ({ value: m.id, label: m.name || m.id })),
-        config.modelId,
-      )
-      const thinkingOpts = this.buildOptions(
-        thinkingLevels.map(l => ({ value: l, label: l })),
-        config.thinkingLevel,
-      )
-
-      modelSectionBody = `
-        <div class="field-grid">
-          <div class="field">
-            <span class="field-label">Model</span>
-            <awfy-select value="${escapeHtml(config.modelId)}" ${disabledAttr} data-action="model-picker">${modelOpts}</awfy-select>
-          </div>
-          <div class="field">
-            <span class="field-label">Thinking</span>
-            <awfy-select value="${escapeHtml(config.thinkingLevel)}" ${disabledAttr} data-action="thinking-picker">${thinkingOpts}</awfy-select>
-          </div>
-        </div>`
-    }
-
-    const modelHtml = `
-      <div class="section">
-        <div class="section-body">
-          ${modelSectionBody}
-        </div>
-      </div>`
 
     this.innerHTML = `
       <style>${STYLES}</style>
       <div class="settings">
-        ${connectionHtml}
-        ${modelHtml}
+        <div class="section">
+          <div class="section-body">
+            <div class="field">
+              <span class="field-label">API Key</span>
+              <div class="key-row">
+                <input
+                  type="password"
+                  value="${escapeHtml(this.apiKeyInput)}"
+                  placeholder="sk-..."
+                  ${disabledAttr}
+                  data-action="api-key-input"
+                >
+                <button class="btn btn-accent" ${disabledAttr} data-action="save-api-key">Save</button>
+              </div>
+            </div>
+            <div class="field">
+              <span class="field-label">Model</span>
+              <div class="key-row">
+                <input
+                  type="text"
+                  value="${escapeHtml(this.modelIdInput)}"
+                  placeholder="moonshotai/kimi-k2.5"
+                  ${disabledAttr}
+                  data-action="model-input"
+                >
+                <button class="btn" ${disabledAttr} data-action="save-model">Save</button>
+              </div>
+            </div>
+            <div class="field">
+              <span class="field-label">Base URL</span>
+              <div class="key-row">
+                <input
+                  type="text"
+                  value="${escapeHtml(this.baseUrlInput)}"
+                  placeholder="https://openrouter.ai/api"
+                  ${disabledAttr}
+                  data-action="base-url-input"
+                >
+                <button class="btn" ${disabledAttr} data-action="save-base-url">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>`
 
     this.attachListeners()
@@ -488,11 +223,6 @@ export class TlAgentSettings extends HTMLElement {
 
   private attachListeners() {
     const q = (sel: string) => this.querySelector(sel)
-
-    const authPicker = q('[data-action="auth-method-picker"]')
-    if (authPicker) {
-      authPicker.addEventListener('change', (e) => this.handleAuthMethodChange(e))
-    }
 
     const apiKeyInput = q('[data-action="api-key-input"]') as HTMLInputElement | null
     if (apiKeyInput) {
@@ -509,45 +239,34 @@ export class TlAgentSettings extends HTMLElement {
       saveBtn.addEventListener('click', () => this.handleSaveApiKey())
     }
 
-    const oauthLoginBtn = q('[data-action="oauth-login"]')
-    if (oauthLoginBtn) {
-      oauthLoginBtn.addEventListener('click', () => this.handleOAuthLogin())
-    }
-
-    const oauthCodeInput = q('[data-action="oauth-code-input"]') as HTMLInputElement | null
-    if (oauthCodeInput) {
-      oauthCodeInput.addEventListener('input', (e: Event) => {
-        this.oauthCodeInput = (e.target as HTMLInputElement).value
+    const modelInput = q('[data-action="model-input"]') as HTMLInputElement | null
+    if (modelInput) {
+      modelInput.addEventListener('input', (e: Event) => {
+        this.modelIdInput = (e.target as HTMLInputElement).value
       })
-      oauthCodeInput.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Enter') this.handleSubmitCode()
+      modelInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') this.handleSaveModel()
       })
     }
 
-    const submitCodeBtn = q('[data-action="submit-code"]')
-    if (submitCodeBtn) {
-      submitCodeBtn.addEventListener('click', () => this.handleSubmitCode())
+    const saveModelBtn = q('[data-action="save-model"]')
+    if (saveModelBtn) {
+      saveModelBtn.addEventListener('click', () => this.handleSaveModel())
     }
 
-    const logoutBtn = q('[data-action="logout"]')
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', () => this.handleLogout())
+    const baseUrlInput = q('[data-action="base-url-input"]') as HTMLInputElement | null
+    if (baseUrlInput) {
+      baseUrlInput.addEventListener('input', (e: Event) => {
+        this.baseUrlInput = (e.target as HTMLInputElement).value
+      })
+      baseUrlInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') this.handleSaveBaseUrl()
+      })
     }
 
-    const providerPicker = q('[data-action="provider-picker"]')
-    if (providerPicker) {
-      providerPicker.addEventListener('change', (e) => this.handleProviderChange(e))
+    const saveBaseUrlBtn = q('[data-action="save-base-url"]')
+    if (saveBaseUrlBtn) {
+      saveBaseUrlBtn.addEventListener('click', () => this.handleSaveBaseUrl())
     }
-
-    const modelPicker = q('[data-action="model-picker"]')
-    if (modelPicker) {
-      modelPicker.addEventListener('change', (e) => this.handleModelChange(e))
-    }
-
-    const thinkingPicker = q('[data-action="thinking-picker"]')
-    if (thinkingPicker) {
-      thinkingPicker.addEventListener('change', (e) => this.handleThinkingChange(e))
-    }
-
   }
 }

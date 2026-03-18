@@ -87,6 +87,14 @@ const Channels = {
     install: 'plugin:install',
     uninstall: 'plugin:uninstall',
   },
+  providers: {
+    list: 'provider:list',
+    createSession: 'provider:create-session',
+    restoreSession: 'provider:restore-session',
+    send: 'provider:send',
+    event: 'provider:event',
+    getDisplayMessages: 'provider:get-display-messages',
+  },
 } as const;
 
 // --- Helpers ---
@@ -254,17 +262,6 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.sessions.write, sessionFileName, content);
       },
     },
-    auth: {
-      readConfig(): Promise<string> {
-        return ipcRenderer.invoke(Channels.auth.readConfig);
-      },
-      writeConfig(content: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.auth.writeConfig, content);
-      },
-      readLegacyKey(): Promise<string> {
-        return ipcRenderer.invoke(Channels.auth.readLegacyKey);
-      },
-    },
     store: {
       get(key: string): Promise<unknown> {
         return ipcRenderer.invoke(Channels.store.get, key);
@@ -418,6 +415,28 @@ if (isApp) {
       },
       forwardStopTaskResult(waiterId: string, result: unknown): void {
         ipcRenderer.send(Channels.tasks.forwardStopResult, { waiterId, result });
+      },
+    },
+    providers: {
+      list(): Promise<Array<{ id: string; name: string }>> {
+        return ipcRenderer.invoke(Channels.providers.list);
+      },
+      createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string> {
+        return ipcRenderer.invoke(Channels.providers.createSession, providerId, config);
+      },
+      restoreSession(providerId: string, messages: unknown[], config: { sessionId: string; systemPrompt: string }): Promise<string> {
+        return ipcRenderer.invoke(Channels.providers.restoreSession, providerId, messages, config);
+      },
+      send(handle: string, input: unknown): Promise<void> {
+        return ipcRenderer.invoke(Channels.providers.send, handle, input);
+      },
+      getDisplayMessages(handle: string): Promise<unknown[]> {
+        return ipcRenderer.invoke(Channels.providers.getDisplayMessages, handle);
+      },
+      onEvent(callback: (handle: string, output: unknown) => void): () => void {
+        const handler = (_event: unknown, handle: string, output: unknown) => callback(handle, output);
+        ipcRenderer.on(Channels.providers.event, handler);
+        return () => ipcRenderer.removeListener(Channels.providers.event, handler);
       },
     },
   });

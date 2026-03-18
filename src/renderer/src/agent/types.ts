@@ -60,28 +60,6 @@ export interface ToolResultMessage {
 
 export type Message = UserMessage | AssistantMessage | ToolResultMessage
 
-// ── Model & Provider ──
-
-export type ApiType = 'openai-completions' | 'anthropic-messages' | 'openai-codex-responses'
-export type AuthType = 'api-key' | 'oauth-anthropic' | 'oauth-openai-codex'
-
-export interface Provider {
-  id: string
-  name: string
-  baseUrl: string
-  api: ApiType
-  auth: AuthType
-}
-
-export interface Model {
-  id: string
-  name: string
-  reasoning: boolean
-  adaptiveThinking: boolean
-  contextWindow?: number
-  provider: Provider
-}
-
 // ── Tool ──
 
 export type JsonSchema = Record<string, unknown>
@@ -139,21 +117,13 @@ export type AgentMessage = Message | CustomMessage
 
 export interface AgentState {
   systemPrompt: string
-  model: Model
-  thinkingLevel: ThinkingLevel
   tools: AgentTool[]
   messages: AgentMessage[]
   isStreaming: boolean
   streamMessage: AgentMessage | null
   pendingToolCalls: Set<string>
   error?: string
-  retryInfo?: RetryInfo
-}
-
-export interface RetryInfo {
-  attempt: number
-  maxAttempts: number
-  error: string
+  statusLine?: string
 }
 
 // ── Agent Events ──
@@ -180,4 +150,4 @@ export type AgentEvent =
   | { type: 'tool_execution_start'; toolCallId: string; toolName: string; args: unknown }
   | { type: 'tool_execution_update'; toolCallId: string; toolName: string; args: unknown; partialResult: unknown }
   | { type: 'tool_execution_end'; toolCallId: string; toolName: string; result: unknown; isError: boolean }
-  | ({ type: 'retry'; delayMs: number } & RetryInfo)
+  | { type: 'status_line'; text: string }

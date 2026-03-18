@@ -4,6 +4,8 @@ import { createRequire } from 'node:module'
 import { PluginRegistry } from './registry.js'
 import type { PluginApi } from './registry.js'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
+import type { ProviderRegistry } from '../providers/registry.js'
+import type { ProviderFactory } from '../renderer/src/agent/provider_types.js'
 
 // Use Node's real require (not esbuild's bundled version) so plugins can
 // require built-in modules like child_process, crypto, etc.
@@ -18,7 +20,11 @@ const BUILT_IN_METHODS = new Set([
   'input',
 ])
 
-export function loadPlugins(agentRoot: string, publish: (topic: string, data: unknown) => void): PluginRegistry {
+export function loadPlugins(
+  agentRoot: string,
+  publish: (topic: string, data: unknown) => void,
+  providerRegistry?: ProviderRegistry,
+): PluginRegistry {
   const registry = new PluginRegistry()
   const db = getOrCreateAgentDb(agentRoot)
   const rows = db.getEnabledPlugins()
@@ -54,6 +60,18 @@ export function loadPlugins(agentRoot: string, publish: (topic: string, data: un
             return
           }
           registry.functions.set(name, { pluginName: row.name, handler })
+        },
+        registerProvider(factory: Parameters<PluginApi['registerProvider']>[0]) {
+          if (!providerRegistry) {
+            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — provider registry not available`)
+            return
+          }
+          if (providerRegistry.has(factory.id)) {
+            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — already registered`)
+            return
+          }
+          providerRegistry.register(factory as unknown as ProviderFactory)
+          console.log(`[plugins] ${row.name}: registered provider '${factory.id}'`)
         },
       }
 
