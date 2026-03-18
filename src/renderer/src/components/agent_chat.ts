@@ -1,8 +1,8 @@
-import type { AgentMessage } from '../agent/types.js'
+import type { DisplayMessage } from '../agent/provider_types.js'
 import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
 import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
 import {
-  buildDisplayBlocks,
+  buildRenderBlocks,
   updateMessagesEl
 } from './chat_message_renderer.js'
 import { escapeHtml } from './chat_utils.js'
@@ -496,7 +496,7 @@ const STYLES = `
 export class TlAgentChat extends HTMLElement {
   private manager: AgentSessionManager | null = null
   private managerUnsub: (() => void) | null = null
-  private messages: AgentMessage[] = []
+  private messages: DisplayMessage[] = []
   private isStreaming = false
   private error: string | null = null
   private inputValue = ''
@@ -976,7 +976,11 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private updateChat() {
-    const displayBlocks = buildDisplayBlocks(this.messages)
+    // Combine completed messages + streaming message for rendering
+    const allMessages = this.isStreaming && this.manager?.activeAgent?.state.streamingMessage
+      ? [...this.messages, this.manager.activeAgent.state.streamingMessage]
+      : this.messages
+    const displayBlocks = buildRenderBlocks(allMessages)
 
     // 1. Messages area
     if (this.messagesEl) {

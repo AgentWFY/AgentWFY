@@ -1,10 +1,5 @@
 import { Agent } from './index.js'
-import type {
-  AgentEvent,
-  AgentMessage,
-  AgentState,
-  ImageContent,
-} from './types.js'
+import type { AgentEvent, AgentState, ImageContent } from './types.js'
 import { createExecJsTool } from './exec_js.js'
 import { requireIpc } from './tool_utils.js'
 import {
@@ -15,17 +10,8 @@ import {
   normalizeSessionFileName,
   requireSessionStorageTools,
   parseStoredSession,
-  displayMessagesToAgentMessages,
 } from './session_persistence.js'
 import type { ProviderSession, DisplayMessage } from './provider_types.js'
-
-function toUserMessage(text: string, images?: ImageContent[]): AgentMessage {
-  const content: (ImageContent | { type: 'text'; text: string })[] = [{ type: 'text', text }]
-  if (images && images.length > 0) {
-    content.push(...images)
-  }
-  return { role: 'user', content, timestamp: Date.now() } as AgentMessage
-}
 
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
@@ -167,7 +153,7 @@ export class AgentWFYAgent {
     this.unsubscribeFromAgent = this.agent.subscribe((event) => {
       this.emit(event)
 
-      if (event.type === 'message_end') {
+      if (event.type === 'agent_end') {
         void this.persistSession()
       }
     })
@@ -188,7 +174,7 @@ export class AgentWFYAgent {
     // If restoring from file, use restoreProviderSession with saved messages.
     // Otherwise, create a fresh provider session.
     let providerSession: ProviderSession
-    let initialMessages: AgentMessage[] = []
+    let initialMessages: DisplayMessage[] = []
 
     if (options.sessionFile) {
       const storageTools = requireSessionStorageTools()
@@ -199,7 +185,7 @@ export class AgentWFYAgent {
         sessionId: stored.sessionId || sessionId,
         systemPrompt,
       })
-      initialMessages = displayMessagesToAgentMessages(stored.messages)
+      initialMessages = stored.messages
     } else {
       providerSession = await options.createProviderSession({
         sessionId,
@@ -258,7 +244,7 @@ export class AgentWFYAgent {
     return this.persistSessionsToDisk
   }
 
-  get messages(): AgentMessage[] {
+  get messages(): DisplayMessage[] {
     return this.agent.state.messages
   }
 
@@ -288,7 +274,7 @@ export class AgentWFYAgent {
       return
     }
 
-    await this.agent.prompt(toUserMessage(text, options.images))
+    await this.agent.prompt(text, options.images)
     await this.persistSession()
   }
 
@@ -297,7 +283,7 @@ export class AgentWFYAgent {
       throw new Error('Steering message cannot be empty')
     }
 
-    this.agent.steer(toUserMessage(text))
+    this.agent.steer(text)
   }
 
   async followUp(text: string): Promise<void> {
@@ -305,7 +291,7 @@ export class AgentWFYAgent {
       throw new Error('Follow-up message cannot be empty')
     }
 
-    this.agent.followUp(toUserMessage(text))
+    this.agent.followUp(text)
   }
 
   subscribe(listener: AgentWFYAgentEventListener): () => void {
@@ -358,7 +344,7 @@ export class AgentWFYAgent {
     this.agent.setProviderSession(providerSession)
 
     // Convert display messages to agent messages for the UI
-    this.agent.replaceMessages(displayMessagesToAgentMessages(stored.messages))
+    this.agent.replaceMessages(stored.messages)
 
     this._sessionFile = sessionFileName
     this.updateSessionId(restoredSessionId)
