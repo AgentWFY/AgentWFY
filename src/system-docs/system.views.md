@@ -52,19 +52,30 @@ Dark: bg1=#1e1e1e, bg2=#252526, bg3=#1a1a1a, surface=#2d2d2d, border=#3d3d3d, te
 
 ## Working with Large Views
 
-When a view's content is too large to read or write in a single call, use chunked SQL operations instead of reading/writing the full content.
+For small views (under ~40000 characters), read/write the full content normally. For large views, use targeted reads and surgical edits instead of loading everything.
 
-**Reading in chunks** — use `SUBSTR()` to read portions of the content:
+**Structure views with sections** — use `<style id="...">` and `<script id="...">` tags to create named sections. Add a SECTIONS comment at the top of `<head>` listing all IDs with one-line descriptions. Split CSS by concern (layout, components, page-specific) and JS by concern (state, API, rendering, init). This lets you read just the TOC (~500 chars) to understand the view, then load only the section you need.
+
+**Reading a section** — use `INSTR()` to find a section, `SUBSTR()` to read it:
 ```js
-// Read 2000 characters starting at position 1
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) FROM views WHERE id = ?', params: [1, 2000, viewId] })
-// Read the next chunk
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) FROM views WHERE id = ?', params: [2001, 2000, viewId] })
-// Check total length first
-await runSql({ target: 'agent', sql: 'SELECT LENGTH(content) FROM views WHERE id = ?', params: [viewId] })
+// Read the TOC
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, 1, 500) as head FROM views WHERE id = ?', params: [viewId] })
+
+// Read a specific section
+const [{start}] = await runSql({
+  target: 'agent',
+  sql: `SELECT INSTR(content, '<script id="script-chart">') as start FROM views WHERE id = ?`,
+  params: [viewId]
+})
+const [{end}] = await runSql({
+  target: 'agent',
+  sql: `SELECT INSTR(SUBSTR(content, ?), '</script>') + ? - 1 + 9 as end FROM views WHERE id = ?`,
+  params: [start, start, viewId]
+})
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) as s FROM views WHERE id = ?', params: [start, end - start, viewId] })
 ```
 
-**Editing surgically** — use `REPLACE()` to modify specific parts without rewriting the full content:
+**Surgical edits** — use `REPLACE()` with enough context in `oldText` to match uniquely (`REPLACE()` replaces all occurrences):
 ```js
 await runSql({
   target: 'agent',
@@ -73,12 +84,7 @@ await runSql({
 })
 ```
 
-**Guidelines:**
-- For small views (under ~40000 characters), read/write the full content normally.
-- For large views, always check `LENGTH(content)` first. If it exceeds ~40000 characters, use `SUBSTR()` to read in chunks.
-- Prefer `REPLACE()` edits over full content updates. Only include enough surrounding context in `oldText` to ensure a unique match.
-- For multiple edits, chain them in separate `runSql` calls — each `REPLACE()` should target a unique string.
-- Always `reloadTab` after updating view content.
+`reloadTab` after updating view content when presenting the result to the user or when you need to interact with the tab.
 
 ## Debugging Views
 
