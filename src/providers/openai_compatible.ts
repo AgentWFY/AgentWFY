@@ -34,6 +34,7 @@ interface ToolCallEntry {
 interface PendingToolCall {
   id: string
   name: string
+  description: string
   code: string
 }
 
@@ -323,6 +324,7 @@ class OpenAICompatibleSession implements ProviderSession {
       pendingTools.push({
         id: entry.id,
         name: entry.name,
+        description: typeof args.description === 'string' ? args.description : 'Executing code',
         code: typeof args.code === 'string' ? args.code : '',
       })
     }
@@ -356,7 +358,7 @@ class OpenAICompatibleSession implements ProviderSession {
       blocks.push({ type: 'text', text: assistantText })
     }
     for (const pt of pendingTools) {
-      blocks.push({ type: 'exec_js', id: pt.id, code: pt.code })
+      blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
     }
 
     // Create or append to display message
@@ -370,7 +372,7 @@ class OpenAICompatibleSession implements ProviderSession {
 
     // Emit exec_js_end after assistant message is committed
     for (const pt of pendingTools) {
-      this.emit({ type: 'exec_js_end', id: pt.id, code: pt.code })
+      this.emit({ type: 'exec_js_end', id: pt.id, description: pt.description, code: pt.code })
     }
 
     // If there are pending tool calls, don't emit done — wait for tool results
@@ -439,7 +441,7 @@ export function createOpenAICompatibleFactory(
               toolCallsList.push({
                 id: block.id,
                 type: 'function',
-                function: { name: 'execJs', arguments: JSON.stringify({ code: block.code }) },
+                function: { name: 'execJs', arguments: JSON.stringify({ description: block.description, code: block.code }) },
               })
             } else if (block.type === 'exec_js_result') {
               const textParts = block.content

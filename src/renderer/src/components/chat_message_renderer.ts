@@ -4,6 +4,7 @@ import { escapeHtml } from './chat_utils.js'
 
 interface ToolPair {
   id: string
+  description: string
   code: string
   result: unknown
   isError: boolean
@@ -12,6 +13,7 @@ interface ToolPair {
 interface RenderBlock {
   type: 'user' | 'assistant'
   text: string
+  thinking: string
   tools: ToolPair[]
   ref: DisplayMessage
 }
@@ -25,20 +27,24 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         .filter(b => b.type === 'text')
         .map(b => (b as { type: 'text'; text: string }).text)
         .join('')
-      blocks.push({ type: 'user', text, tools: [], ref: msg })
+      blocks.push({ type: 'user', text, thinking: '', tools: [], ref: msg })
     } else if (msg.role === 'assistant') {
       const textParts: string[] = []
+      const thinkingParts: string[] = []
       const tools: ToolPair[] = []
 
       for (const block of msg.blocks) {
         if (block.type === 'text') {
           textParts.push(block.text)
+        } else if (block.type === 'thinking') {
+          thinkingParts.push(block.text)
         } else if (block.type === 'exec_js') {
           const resultBlock = msg.blocks.find(
             b => b.type === 'exec_js_result' && (b as Block & { type: 'exec_js_result' }).id === block.id
           )
           tools.push({
             id: block.id,
+            description: block.description || 'Executing code',
             code: block.code,
             result: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.content : null,
             isError: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.isError : false,
@@ -46,7 +52,7 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         }
       }
 
-      blocks.push({ type: 'assistant', text: textParts.join(''), tools, ref: msg })
+      blocks.push({ type: 'assistant', text: textParts.join(''), thinking: thinkingParts.join(''), tools, ref: msg })
     }
   }
 
@@ -82,7 +88,7 @@ function formatToolResult(result: unknown): { text: string; images: Array<{ data
 
 function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
   let html = `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${escapeHtml(tool.id)}">
-    <span class="tool-description">${escapeHtml('Executing code')}</span>
+    <span class="tool-description">${escapeHtml(tool.description)}</span>
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
   if (isOpen) {
@@ -101,6 +107,7 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
 interface BlockCacheEntry {
   ref: DisplayMessage
   textLen: number
+  thinkingLen: number
   toolCount: number
   toolResultCount: number
   toolOpenState: string
@@ -113,6 +120,7 @@ function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCac
   return {
     ref: block.ref,
     textLen: block.text.length,
+    thinkingLen: block.thinking.length,
     toolCount: block.tools.length,
     toolResultCount: block.tools.reduce((n, t) => n + (t.result !== null ? 1 : 0), 0),
     toolOpenState: block.tools.length > 0
@@ -124,6 +132,7 @@ function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCac
 function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
   return a.ref === b.ref
     && a.textLen === b.textLen
+    && a.thinkingLen === b.thinkingLen
     && a.toolCount === b.toolCount
     && a.toolResultCount === b.toolResultCount
     && a.toolOpenState === b.toolOpenState
@@ -134,8 +143,11 @@ function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
     return `<div class="block block-user">${renderMarkdown(block.text)}</div>`
   }
   if (block.type === 'assistant') {
-    if (!block.text.trim() && block.tools.length === 0) return ''
+    if (!block.text.trim() && !block.thinking.trim() && block.tools.length === 0) return ''
     let html = '<div class="block block-assistant">'
+    if (block.thinking) {
+      html += `<div class="thinking-text">${renderMarkdown(block.thinking)}</div>`
+    }
     if (block.text) {
       html += `<div class="assistant-text">${renderMarkdown(block.text)}</div>`
     }

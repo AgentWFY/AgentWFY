@@ -469,6 +469,7 @@ class AnthropicSession {
                 pendingTools.push({
                   id: entry.id,
                   name: entry.name,
+                  description: typeof args.description === 'string' ? args.description : 'Executing code',
                   code: typeof args.code === 'string' ? args.code : '',
                 })
               }
@@ -520,7 +521,7 @@ class AnthropicSession {
     if (thinkingText) blocks.push({ type: 'thinking', text: thinkingText })
     if (assistantText) blocks.push({ type: 'text', text: assistantText })
     for (const pt of pendingTools) {
-      blocks.push({ type: 'exec_js', id: pt.id, code: pt.code })
+      blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
     }
     this._displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
 
@@ -533,7 +534,7 @@ class AnthropicSession {
     // a subsequent _stream() call, so it must happen after the assistant
     // message is committed above.
     for (const pt of pendingTools) {
-      this._emit({ type: 'exec_js_end', id: pt.id, code: pt.code })
+      this._emit({ type: 'exec_js_end', id: pt.id, description: pt.description, code: pt.code })
     }
 
     if (pendingTools.length > 0) return
@@ -599,7 +600,7 @@ function createFactory(getConfig, setConfig) {
                 type: 'tool_use',
                 id: block.id,
                 name: 'execJs',
-                input: { code: block.code },
+                input: { description: block.description || 'Executing code', code: block.code },
               })
             } else if (block.type === 'exec_js_result') {
               const resultContent = block.content.map(c => {

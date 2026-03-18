@@ -140,6 +140,16 @@ export class Agent {
         const handleOutput = (event: ProviderOutput) => {
           switch (event.type) {
             case 'start':
+              // If there are existing streaming blocks (from a previous turn with tool calls),
+              // commit them as a completed message before starting a new streaming message.
+              if (streamingBlocks.length > 0) {
+                const completedMessage: DisplayMessage = {
+                  role: 'assistant',
+                  blocks: streamingBlocks,
+                  timestamp: Date.now(),
+                }
+                this._state.messages = [...this._state.messages, completedMessage]
+              }
               streamingBlocks = []
               this._state.streamingMessage = { role: 'assistant', blocks: streamingBlocks, timestamp: Date.now() }
               this.emit({ type: 'stream_update' })
@@ -176,7 +186,8 @@ export class Agent {
 
             case 'exec_js_end': {
               const code = event.code
-              streamingBlocks.push({ type: 'exec_js', id: event.id, code })
+              const description = event.description || 'Executing code'
+              streamingBlocks.push({ type: 'exec_js', id: event.id, description, code })
 
               const tool = this._state.tools.find(t => t.name === 'execJs')
               if (!tool) {
@@ -189,7 +200,7 @@ export class Agent {
                 break
               }
 
-              tool.execute(event.id, { code, description: 'Executing code' })
+              tool.execute(event.id, { code, description })
                 .then((result) => {
                   this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: false })
 
@@ -199,6 +210,9 @@ export class Agent {
                     }
                     return c
                   }) as (TextContent | ImageContent)[]
+
+                  streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: contextContent, isError: false })
+                  this.emit({ type: 'stream_update' })
 
                   session.send({
                     type: 'exec_js_result',
@@ -210,6 +224,10 @@ export class Agent {
                 .catch((err) => {
                   const errorText = err instanceof Error ? err.message : String(err)
                   this.emit({ type: 'tool_execution_end', toolCallId: event.id, isError: true })
+
+                  streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: [{ type: 'text', text: errorText }], isError: true })
+                  this.emit({ type: 'stream_update' })
+
                   session.send({
                     type: 'exec_js_result',
                     id: event.id,

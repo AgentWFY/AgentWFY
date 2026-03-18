@@ -162,6 +162,15 @@ const STYLES = `
     color: var(--color-text4);
   }
   .assistant-text { padding: 2px 0; }
+  .thinking-text {
+    padding: 2px 0;
+    color: var(--color-text2);
+    font-style: italic;
+    font-size: 12px;
+    border-left: 2px solid var(--color-border);
+    padding-left: 8px;
+    margin-bottom: 4px;
+  }
   .tools-group {
     margin-top: 2px;
   }
