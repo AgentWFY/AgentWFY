@@ -1,12 +1,12 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 import type { ProviderRegistry } from '../providers/registry.js'
-import type {
-  ProviderInput,
-  ProviderOutput,
-  ProviderSession,
-  ProviderSessionConfig,
-  DisplayMessage,
-  ProviderInfo,
+import {
+  EXECJS_TOOL_DEFINITION,
+  type ProviderInput,
+  type ProviderOutput,
+  type ProviderSession,
+  type DisplayMessage,
+  type ProviderInfo,
 } from '../renderer/src/agent/provider_types.js'
 import { Channels } from './channels.js'
 
@@ -68,15 +68,17 @@ export function registerProviderHandlers(
     return factory.getStatusLine()
   })
 
-  ipcMain.handle(Channels.providers.createSession, (event, providerId: string, config: ProviderSessionConfig): string => {
+  ipcMain.handle(Channels.providers.createSession, (event, providerId: string, rendererConfig: { sessionId: string; systemPrompt: string }): string => {
     const factory = getRegistry(event).get(providerId)
     if (!factory) throw new Error(`Provider '${providerId}' not found`)
+    const config = { ...rendererConfig, tools: [EXECJS_TOOL_DEFINITION] }
     return trackSession(factory.createSession(config), providerId, getWindow(event))
   })
 
-  ipcMain.handle(Channels.providers.restoreSession, (event, providerId: string, messages: DisplayMessage[], config: ProviderSessionConfig): string => {
+  ipcMain.handle(Channels.providers.restoreSession, (event, providerId: string, messages: DisplayMessage[], rendererConfig: { sessionId: string; systemPrompt: string }): string => {
     const factory = getRegistry(event).get(providerId)
     if (!factory) throw new Error(`Provider '${providerId}' not found`)
+    const config = { ...rendererConfig, tools: [EXECJS_TOOL_DEFINITION] }
     return trackSession(factory.restoreSession(messages, config), providerId, getWindow(event))
   })
 

@@ -1,0 +1,10 @@
+ {
+  "name": "agentwfy-plugin-anthropic-provider",
+ "version": "1.0.0",
+  "description": "Anthropic Messages API provider with streaming, extended thinking, and cache control",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "license": "MIT"
+}

@@ -12,6 +12,7 @@ import type {
 import type {
   ProviderSession,
   ProviderOutput,
+  DisplayMessage,
 } from './provider_types.js'
 import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
@@ -56,6 +57,14 @@ export class Agent {
   subscribe(fn: (e: AgentEvent) => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
+  }
+
+  setProviderSession(session: ProviderSession): void {
+    this.providerSession = session
+  }
+
+  async getProviderDisplayMessages(): Promise<DisplayMessage[]> {
+    return await this.providerSession.getDisplayMessages() as DisplayMessage[]
   }
 
   replaceMessages(ms: AgentMessage[]): void {
@@ -260,8 +269,7 @@ export class Agent {
             }
 
             case 'exec_js_end': {
-              const entry = pendingExecJs.get(event.id)
-              const code = entry?.code ?? ''
+              const code = event.code
 
               const tool = this._state.tools.find(t => t.name === 'execJs')
               if (!tool) {

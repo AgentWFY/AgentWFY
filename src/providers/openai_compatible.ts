@@ -183,16 +183,12 @@ class OpenAICompatibleSession implements ProviderSession {
       Authorization: `Bearer ${apiKey}`,
     }
 
-    const tools = this.providerConfig.tools
     const body: Record<string, unknown> = {
       model: modelId,
       messages: this.messages,
+      tools: this.config.tools.map(t => ({ type: 'function', function: t })),
       stream: true,
       stream_options: { include_usage: true },
-    }
-
-    if (tools && tools.length > 0) {
-      body.tools = tools
     }
 
     if (this.providerConfig.reasoning) {
@@ -324,8 +320,6 @@ class OpenAICompatibleSession implements ProviderSession {
         // empty
       }
 
-      this.emit({ type: 'exec_js_end', id: entry.id })
-
       pendingTools.push({
         id: entry.id,
         name: entry.name,
@@ -333,7 +327,10 @@ class OpenAICompatibleSession implements ProviderSession {
       })
     }
 
-    // Build assistant internal message
+    // Build and push assistant internal message BEFORE emitting exec_js_end.
+    // The core may execute tools and send exec_js_result back quickly,
+    // which calls _stream() again — the assistant message must already be
+    // in the history so the next API call includes it.
     const assistantMsg: InternalMessage = { role: 'assistant' }
     if (assistantText) {
       assistantMsg.content = assistantText
@@ -371,6 +368,11 @@ class OpenAICompatibleSession implements ProviderSession {
       this.emitStatusLine()
     }
 
+    // Emit exec_js_end after assistant message is committed
+    for (const pt of pendingTools) {
+      this.emit({ type: 'exec_js_end', id: pt.id, code: pt.code })
+    }
+
     // If there are pending tool calls, don't emit done — wait for tool results
     if (pendingTools.length > 0) {
       return
@@ -391,7 +393,6 @@ export interface OpenAIProviderConfig {
   modelId: string
   apiKey?: string
   reasoning?: string
-  tools?: unknown[]
 }
 
 export function createOpenAICompatibleFactory(

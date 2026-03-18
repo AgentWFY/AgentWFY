@@ -37,6 +37,7 @@ const STYLES = `
     background: var(--color-input-bg);
     font-size: 13px;
     outline: none;
+    box-sizing: border-box;
   }
   .field input:focus {
     border-color: var(--color-focus-border);
