@@ -14,7 +14,7 @@ export type Block =
   | { type: 'thinking'; text: string }
   | { type: 'image'; mimeType: string; data: string }
   | { type: 'attachment'; label: string; size: number; content: string }
-  | { type: 'exec_js'; id: string; code: string }
+  | { type: 'exec_js'; id: string; description: string; code: string }
   | { type: 'exec_js_result'; id: string; content: (TextContent | ImageContent)[]; isError: boolean }
 
 // ── Provider session config ──
@@ -40,7 +40,7 @@ export type ProviderOutput =
   | { type: 'thinking_delta'; delta: string }
   | { type: 'exec_js_start'; id: string }
   | { type: 'exec_js_delta'; id: string; delta: string }
-  | { type: 'exec_js_end'; id: string; code: string }
+  | { type: 'exec_js_end'; id: string; description: string; code: string }
   | { type: 'done' }
   | { type: 'error'; error: string; retryable?: boolean }
   | { type: 'status_line'; text: string }
