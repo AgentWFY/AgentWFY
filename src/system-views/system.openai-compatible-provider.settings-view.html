@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OpenAI Provider Settings</title>
+  <style>
+    body {
+      padding: 24px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--color-text4);
+      margin: 0 0 20px;
+    }
+    .fields {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .field-label {
+      font-size: 11px;
+      color: var(--color-text2);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .field-row {
+      display: flex;
+      gap: 6px;
+      align-items: stretch;
+    }
+    .field-row input, .field-row select {
+      flex: 1;
+      min-width: 0;
+    }
+    input, select {
+      padding: 6px 8px;
+      border: 1px solid var(--color-input-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-input-bg);
+      color: var(--color-text3);
+      font-size: 13px;
+      font-family: var(--font-family);
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--color-focus-border);
+    }
+    .btn {
+      padding: 5px 14px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-bg3);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--color-text3);
+      white-space: nowrap;
+      font-family: var(--font-family);
+    }
+    .btn:hover { background: var(--color-item-hover); }
+    .btn-accent {
+      background: var(--color-accent);
+      color: var(--color-bg1);
+      border-color: var(--color-accent);
+    }
+    .btn-accent:hover { opacity: 0.9; }
+    .status {
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      margin-top: 8px;
+      display: none;
+    }
+    .status.success {
+      display: block;
+      background: var(--color-green-bg);
+      color: var(--color-green-fg);
+    }
+    .status.error {
+      display: block;
+      background: var(--color-red-bg);
+      color: var(--color-red-fg);
+    }
+  </style>
+</head>
+<body>
+  <h1>OpenAI Compatible Provider</h1>
+  <div class="fields">
+    <div class="field">
+      <span class="field-label">API Key</span>
+      <div class="field-row">
+        <input type="password" id="apiKey" placeholder="sk-...">
+        <button class="btn btn-accent" id="saveApiKey">Save</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Model ID</span>
+      <div class="field-row">
+        <input type="text" id="modelId" placeholder="moonshotai/kimi-k2.5">
+        <button class="btn" id="saveModelId">Save</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Base URL</span>
+      <div class="field-row">
+        <input type="text" id="baseUrl" placeholder="https://openrouter.ai/api">
+        <button class="btn" id="saveBaseUrl">Save</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Reasoning Effort</span>
+      <div class="field-row">
+        <select id="reasoning">
+          <option value="off">Off</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <button class="btn" id="saveReasoning">Save</button>
+      </div>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+
+    const KEYS = {
+      apiKey: 'system.openai-compatible-provider.apiKey',
+      modelId: 'system.openai-compatible-provider.modelId',
+      baseUrl: 'system.openai-compatible-provider.baseUrl',
+      reasoning: 'system.openai-compatible-provider.reasoning',
+    };
+
+    function showStatus(msg, type) {
+      const el = $('#status');
+      el.textContent = msg;
+      el.className = 'status ' + type;
+      if (type === 'success') {
+        setTimeout(() => { el.className = 'status'; }, 2000);
+      }
+    }
+
+    async function loadConfig() {
+      try {
+        const rows = await window.agentwfy.runSql({
+          target: 'agent',
+          sql: "SELECT name, value FROM config WHERE name LIKE 'system.openai-compatible-provider.%'",
+        });
+        for (const row of rows) {
+          const val = row.value ? JSON.parse(row.value) : '';
+          if (row.name === KEYS.apiKey) $('#apiKey').value = val;
+          else if (row.name === KEYS.modelId) $('#modelId').value = val;
+          else if (row.name === KEYS.baseUrl) $('#baseUrl').value = val;
+          else if (row.name === KEYS.reasoning) $('#reasoning').value = val || 'off';
+        }
+      } catch (e) {
+        console.error('Failed to load config', e);
+      }
+    }
+
+    async function saveValue(name, value) {
+      try {
+        await window.agentwfy.runSql({
+          target: 'agent',
+          sql: 'UPDATE config SET value = ? WHERE name = ?',
+          params: [JSON.stringify(value), name],
+        });
+        showStatus('Saved', 'success');
+      } catch (e) {
+        showStatus('Error: ' + e.message, 'error');
+      }
+    }
+
+    $('#saveApiKey').addEventListener('click', () => {
+      saveValue(KEYS.apiKey, $('#apiKey').value.trim());
+    });
+    $('#saveModelId').addEventListener('click', () => {
+      saveValue(KEYS.modelId, $('#modelId').value.trim() || 'moonshotai/kimi-k2.5');
+    });
+    $('#saveBaseUrl').addEventListener('click', () => {
+      saveValue(KEYS.baseUrl, $('#baseUrl').value.trim() || 'https://openrouter.ai/api');
+    });
+    $('#saveReasoning').addEventListener('click', () => {
+      saveValue(KEYS.reasoning, $('#reasoning').value);
+    });
+
+    loadConfig();
+  </script>
+</body>
+</html>

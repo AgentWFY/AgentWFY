@@ -82,6 +82,7 @@ export const Channels = {
   },
   providers: {
     list: 'provider:list',
+    getStatusLine: 'provider:get-status-line',
     createSession: 'provider:create-session',
     restoreSession: 'provider:restore-session',
     send: 'provider:send',

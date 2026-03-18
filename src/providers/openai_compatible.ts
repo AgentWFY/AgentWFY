@@ -400,6 +400,14 @@ export function createOpenAICompatibleFactory(
   return {
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
     name: 'OpenAI Compatible',
+    settingsView: 'system.openai-compatible-provider.settings-view',
+
+    getStatusLine(): string {
+      const config = getConfig()
+      const parts: string[] = [config.modelId]
+      if (config.reasoning) parts.push(config.reasoning)
+      return parts.join(' · ')
+    },
 
     createSession(config: ProviderSessionConfig): ProviderSession {
       return new OpenAICompatibleSession(config, getConfig())

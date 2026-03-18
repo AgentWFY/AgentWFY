@@ -18,6 +18,7 @@ export class ProviderRegistry {
     return Array.from(this.factories.values()).map(f => ({
       id: f.id,
       name: f.name,
+      ...(f.settingsView ? { settingsView: f.settingsView } : {}),
     }))
   }
 

@@ -134,9 +134,8 @@ export class TlAgentSettings extends HTMLElement {
     const jsonValue = JSON.stringify(value)
     await ipc.sql.run({
       target: 'agent',
-      sql: `INSERT INTO config (name, value) VALUES (?, ?)
-            ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
-      params: [name, jsonValue],
+      sql: `UPDATE config SET value = ? WHERE name = ?`,
+      params: [jsonValue, name],
       description: `Save config ${name}`,
     })
   }

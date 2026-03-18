@@ -35,7 +35,8 @@ export interface PluginsApi {
 }
 
 export interface ProvidersApi {
-  list(): Promise<Array<{ id: string; name: string }>>
+  list(): Promise<Array<{ id: string; name: string; settingsView?: string }>>
+  getStatusLine(providerId: string): Promise<string>
   createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string>
   restoreSession(providerId: string, messages: unknown[], config: { sessionId: string; systemPrompt: string }): Promise<string>
   send(handle: string, input: unknown): Promise<void>

@@ -3,15 +3,36 @@ import { createIpcProviderSession } from './ipc_provider_session.js'
 import { ensureWorker, terminateWorker } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
 import type { AgentMessage } from './types.js'
+import { stringifyUnknown } from './tool_utils.js'
 import {
   createSessionFileName,
   requireSessionStorageTools,
   parseStoredSession,
 } from './session_persistence.js'
-import {
-  extractTextContent,
-  getLastAssistantMessage,
-} from './session_compaction.js'
+
+function extractTextContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((item: Record<string, unknown>) => {
+        if (item?.type === 'text' && typeof item.text === 'string') return item.text
+        if (item?.type === 'image') return '[image]'
+        return ''
+      })
+      .filter((line: string) => line.length > 0)
+      .join('\n')
+  }
+  return stringifyUnknown(content)
+}
+
+function getLastAssistantMessage(messages: AgentMessage[]): AgentMessage | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if ((messages[i] as unknown as { role: string }).role === 'assistant') {
+      return messages[i]
+    }
+  }
+  return undefined
+}
 
 export interface SessionEntry {
   agent: AgentWFYAgent
@@ -330,8 +351,16 @@ export class AgentSessionManager {
   }
 
   private async createAgentInstance(opts: { sessionFile?: string }): Promise<AgentWFYAgent> {
+    let providerId = 'openai-compatible'
+    try {
+      const rows = await window.ipc!.sql.run({
+        target: 'agent',
+        sql: "SELECT value FROM config WHERE name = 'system.provider'",
+      }) as Array<{ value: string }>
+      if (rows[0]?.value) providerId = JSON.parse(rows[0].value)
+    } catch {}
     return AgentWFYAgent.create({
-      createProviderSession: (config) => createIpcProviderSession('openai-compatible', config),
+      createProviderSession: (config) => createIpcProviderSession(providerId, config),
       ...(opts.sessionFile ? { sessionFile: opts.sessionFile } : {}),
     })
   }
