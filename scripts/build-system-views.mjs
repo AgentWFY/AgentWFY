@@ -14,10 +14,16 @@ export function buildSystemViews(distDir) {
   for (const file of files) {
     const content = readFileSync(join(viewsDir, file), 'utf-8')
     const name = file.replace(/\.html$/, '')
-    // Title = last segment of name capitalized (e.g. system.settings → Settings)
-    const segments = name.split('.')
-    const lastSegment = segments[segments.length - 1]
-    const title = lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1)
+    // Title from <title> tag if present, otherwise last segment capitalized
+    const titleMatch = content.match(/<title>([^<]+)<\/title>/i)
+    let title
+    if (titleMatch) {
+      title = titleMatch[1].trim()
+    } else {
+      const segments = name.split('.')
+      const lastSegment = segments[segments.length - 1]
+      title = lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1)
+    }
     views.push({ name, title, content })
   }
 

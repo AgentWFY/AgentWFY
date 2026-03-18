@@ -62,6 +62,12 @@ export function registerProviderHandlers(
     return getRegistry(event).list()
   })
 
+  ipcMain.handle(Channels.providers.getStatusLine, (event, providerId: string): string => {
+    const factory = getRegistry(event).get(providerId)
+    if (!factory?.getStatusLine) return ''
+    return factory.getStatusLine()
+  })
+
   ipcMain.handle(Channels.providers.createSession, (event, providerId: string, config: ProviderSessionConfig): string => {
     const factory = getRegistry(event).get(providerId)
     if (!factory) throw new Error(`Provider '${providerId}' not found`)

@@ -89,6 +89,7 @@ const Channels = {
   },
   providers: {
     list: 'provider:list',
+    getStatusLine: 'provider:get-status-line',
     createSession: 'provider:create-session',
     restoreSession: 'provider:restore-session',
     send: 'provider:send',
@@ -418,8 +419,11 @@ if (isApp) {
       },
     },
     providers: {
-      list(): Promise<Array<{ id: string; name: string }>> {
+      list(): Promise<Array<{ id: string; name: string; settingsView?: string }>> {
         return ipcRenderer.invoke(Channels.providers.list);
+      },
+      getStatusLine(providerId: string): Promise<string> {
+        return ipcRenderer.invoke(Channels.providers.getStatusLine, providerId);
       },
       createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string> {
         return ipcRenderer.invoke(Channels.providers.createSession, providerId, config);

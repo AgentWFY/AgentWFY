@@ -58,6 +58,8 @@ export interface ProviderSession {
 export interface ProviderFactory {
   id: string
   name: string
+  settingsView?: string
+  getStatusLine?(): string
   createSession(config: ProviderSessionConfig): ProviderSession
   restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig): ProviderSession
 }
@@ -67,4 +69,5 @@ export interface ProviderFactory {
 export interface ProviderInfo {
   id: string
   name: string
+  settingsView?: string
 }

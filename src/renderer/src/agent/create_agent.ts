@@ -17,13 +17,14 @@ import {
   parseStoredSession,
 } from './session_persistence.js'
 import type { ProviderSession, ProviderSessionConfig } from './provider_types.js'
-import {
-  COMPACTION_SUMMARY_CUSTOM_TYPE,
-  toUserMessage,
-} from './session_compaction.js'
 
-export { COMPACTION_SUMMARY_CUSTOM_TYPE } from './session_compaction.js'
-export { toUserMessage } from './session_compaction.js'
+function toUserMessage(text: string, images?: ImageContent[]): AgentMessage {
+  const content: (ImageContent | { type: 'text'; text: string })[] = [{ type: 'text', text }]
+  if (images && images.length > 0) {
+    content.push(...images)
+  }
+  return { role: 'user', content, timestamp: Date.now() } as AgentMessage
+}
 
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 

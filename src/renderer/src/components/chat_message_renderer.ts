@@ -1,6 +1,5 @@
 import { renderMarkdown } from '../markdown.js'
 import type { AgentMessage } from '../agent/types.js'
-import { COMPACTION_SUMMARY_CUSTOM_TYPE } from '../agent/create_agent.js'
 import { escapeHtml } from './chat_utils.js'
 import type { TlJson } from './json_view.js'
 
@@ -64,7 +63,7 @@ export function buildDisplayBlocks(msgs: AgentMessage[]): DisplayBlock[] {
     } else if (msg.role === 'toolResult') {
       i++
     } else if (msg.role === 'custom') {
-      if (msg.customType === COMPACTION_SUMMARY_CUSTOM_TYPE) {
+      if (msg.customType === 'compactionSummary') {
         const details = msg.details && typeof msg.details === 'object' ? msg.details as Record<string, unknown> : null
         const beforeCount = typeof details?.beforeCount === 'number' ? details.beforeCount : undefined
         blocks.push({
