@@ -110,6 +110,7 @@ export class AgentSessionManager {
       this._activeMessages = []
       this._activeLabel = label
       this._activeNotifyOnFinish = false
+
       this.notify()
 
       agent.prompt(opts.prompt).catch((err) => {
@@ -124,6 +125,7 @@ export class AgentSessionManager {
     this._activeSessionId = null
     this._activeMessages = []
     this._activeLabel = label
+
     this._activeNotifyOnFinish = false
     this.notify()
 
@@ -156,6 +158,7 @@ export class AgentSessionManager {
     entry.notifyOnFinish = this._activeNotifyOnFinish
     this._activeSessionId = sessionId
     this._activeSessionFile = agent.sessionFile ?? this._activeSessionFile
+
     this.notify()
 
     await agent.prompt(text)
@@ -177,6 +180,7 @@ export class AgentSessionManager {
     this._activeMessages = stored.messages
     this._activeLabel = extractFirstUserMessage(stored.messages, 60) ?? 'Session'
     this._activeNotifyOnFinish = false
+
     this.notify()
   }
 
@@ -201,6 +205,7 @@ export class AgentSessionManager {
     this._activeMessages = []
     this._activeLabel = ''
     this._activeNotifyOnFinish = false
+
     this.notify()
   }
 

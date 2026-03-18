@@ -14,6 +14,7 @@ interface RenderBlock {
   type: 'user' | 'assistant'
   text: string
   thinking: string
+  error: string
   tools: ToolPair[]
   ref: DisplayMessage
 }
@@ -27,17 +28,20 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         .filter(b => b.type === 'text')
         .map(b => (b as { type: 'text'; text: string }).text)
         .join('')
-      blocks.push({ type: 'user', text, thinking: '', tools: [], ref: msg })
+      blocks.push({ type: 'user', text, thinking: '', error: '', tools: [], ref: msg })
     } else if (msg.role === 'assistant') {
       const textParts: string[] = []
       const thinkingParts: string[] = []
       const tools: ToolPair[] = []
+      let errorText = ''
 
       for (const block of msg.blocks) {
         if (block.type === 'text') {
           textParts.push(block.text)
         } else if (block.type === 'thinking') {
           thinkingParts.push(block.text)
+        } else if (block.type === 'error') {
+          errorText = block.text
         } else if (block.type === 'exec_js') {
           const resultBlock = msg.blocks.find(
             b => b.type === 'exec_js_result' && (b as Block & { type: 'exec_js_result' }).id === block.id
@@ -52,7 +56,7 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         }
       }
 
-      blocks.push({ type: 'assistant', text: textParts.join(''), thinking: thinkingParts.join(''), tools, ref: msg })
+      blocks.push({ type: 'assistant', text: textParts.join(''), thinking: thinkingParts.join(''), error: errorText, tools, ref: msg })
     }
   }
 
@@ -143,7 +147,7 @@ function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
     return `<div class="block block-user">${renderMarkdown(block.text)}</div>`
   }
   if (block.type === 'assistant') {
-    if (!block.text.trim() && !block.thinking.trim() && block.tools.length === 0) return ''
+    if (!block.text.trim() && !block.thinking.trim() && !block.error && block.tools.length === 0) return ''
     let html = '<div class="block block-assistant">'
     if (block.thinking) {
       html += `<div class="thinking-text">${renderMarkdown(block.thinking)}</div>`
@@ -157,6 +161,9 @@ function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
         html += renderToolHtml(tool, openToolSet.has(tool.id))
       }
       html += '</div>'
+    }
+    if (block.error) {
+      html += `<div class="error-banner">${escapeHtml(block.error)}</div>`
     }
     html += '</div>'
     return html

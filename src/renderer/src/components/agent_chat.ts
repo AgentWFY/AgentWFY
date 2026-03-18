@@ -625,7 +625,7 @@ export class TlAgentChat extends HTMLElement {
     this.messages = this.manager.activeMessages
     this.isStreaming = this.manager.activeIsStreaming
     this.notifyOnFinish = this.manager.activeNotifyOnFinish
-    const agent = this.manager.activeAgent
+    this.error = null
     this.render()
   }
 

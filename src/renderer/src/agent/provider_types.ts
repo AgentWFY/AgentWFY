@@ -16,6 +16,7 @@ export type Block =
   | { type: 'attachment'; label: string; size: number; content: string }
   | { type: 'exec_js'; id: string; description: string; code: string }
   | { type: 'exec_js_result'; id: string; content: (TextContent | ImageContent)[]; isError: boolean }
+  | { type: 'error'; text: string }
 
 // ── Provider session config ──
 
