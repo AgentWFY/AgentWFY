@@ -183,9 +183,6 @@ const STYLES = `
     text-underline-offset: 2px;
   }
   .tool-description {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     flex: 1;
     min-width: 0;
   }
