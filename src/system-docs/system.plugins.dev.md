@@ -205,7 +205,7 @@ Also implement `getStatusLine()` on the factory to provide a status line before 
 
 ### Provider config
 
-The active provider is stored in the `system.provider` config key.
+The active provider is stored in the `system.provider` config name.
 
 Plugin providers can store their configuration in the `config` table under plugin config keys (e.g. `plugin.<name>.apiKey`, `plugin.<name>.modelId`). Read config via `api.getConfig(name, fallback)` — this uses the app's shared DB connection. Config rows from the plugin package are synced on install, so defaults can be set in the package's `config` table.
 
