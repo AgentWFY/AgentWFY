@@ -4,7 +4,6 @@ import type {
   ExecJsSerializedError,
   ExecJsLogEntry,
   HostToWorkerMessage,
-  WorkerHostMethod,
   WorkerHostMethodMap,
   WorkerToHostMessage,
   WorkerExecuteRequestMessage,
@@ -177,19 +176,19 @@ function handleHostResult(message: WorkerHostResultMessage): void {
   pending.reject(toError(message.error))
 }
 
-async function callHostMethod<M extends WorkerHostMethod>(
+function callHostMethod(
   requestId: string,
-  method: M,
-  params: WorkerHostMethodMap[M]['params'],
+  method: string,
+  params: unknown,
   signal: AbortSignal
-): Promise<WorkerHostMethodMap[M]['result']> {
+): Promise<unknown> {
   if (signal.aborted) {
-    throw new Error('JavaScript execution aborted')
+    return Promise.reject(new Error('JavaScript execution aborted'))
   }
 
   const callId = createId('host-call')
 
-  return new Promise<WorkerHostMethodMap[M]['result']>((resolve, reject) => {
+  return new Promise<unknown>((resolve, reject) => {
     const onAbort = () => {
       if (!pendingHostCalls.delete(callId)) {
         return
@@ -203,7 +202,7 @@ async function callHostMethod<M extends WorkerHostMethod>(
       requestId,
       resolve: (value) => {
         signal.removeEventListener('abort', onAbort)
-        resolve(value as WorkerHostMethodMap[M]['result'])
+        resolve(value)
       },
       reject: (error) => {
         signal.removeEventListener('abort', onAbort)
@@ -221,8 +220,141 @@ async function callHostMethod<M extends WorkerHostMethod>(
   })
 }
 
+// Built-in wrappers provide ergonomic signatures for known host methods.
+// Each entry maps a host method name to an exposed name and wrapper factory.
+interface BuiltInWrapper {
+  exposedName: string
+  create: (call: (method: string, params: unknown) => Promise<unknown>, capturedImages: ExecJsCapturedImage[]) => Function
+}
+
+const builtInWrappers: Record<string, BuiltInWrapper> = {
+  runSql: {
+    exposedName: 'runSql',
+    create: (call) => (request: WorkerHostMethodMap['runSql']['params']) =>
+      call('runSql', request),
+  },
+  read: {
+    exposedName: 'read',
+    create: (call) => (path: string, offset?: number, limit?: number) =>
+      call('read', { path, offset, limit }),
+  },
+  write: {
+    exposedName: 'write',
+    create: (call) => (path: string, content: string) =>
+      call('write', { path, content }),
+  },
+  writeBinary: {
+    exposedName: 'writeBinary',
+    create: (call) => (path: string, base64: string) =>
+      call('writeBinary', { path, base64 }),
+  },
+  edit: {
+    exposedName: 'edit',
+    create: (call) => (path: string, oldText: string, newText: string) =>
+      call('edit', { path, oldText, newText }),
+  },
+  ls: {
+    exposedName: 'ls',
+    create: (call) => (path?: string, limit?: number) =>
+      call('ls', { path, limit }),
+  },
+  mkdir: {
+    exposedName: 'mkdir',
+    create: (call) => (path: string, recursive?: boolean) =>
+      call('mkdir', { path, recursive }),
+  },
+  remove: {
+    exposedName: 'remove',
+    create: (call) => (path: string, recursive?: boolean) =>
+      call('remove', { path, recursive }),
+  },
+  find: {
+    exposedName: 'find',
+    create: (call) => (pattern: string, path?: string, limit?: number) =>
+      call('find', { pattern, path, limit }),
+  },
+  grep: {
+    exposedName: 'grep',
+    create: (call) => (pattern: string, path?: string, options?: WorkerHostMethodMap['grep']['params']['options']) =>
+      call('grep', { pattern, path, options }),
+  },
+  getTabs: {
+    exposedName: 'getTabs',
+    create: (call) => () =>
+      call('getTabs', {}),
+  },
+  openTab: {
+    exposedName: 'openTab',
+    create: (call) => (request: WorkerHostMethodMap['openTab']['params']) =>
+      call('openTab', request),
+  },
+  closeTab: {
+    exposedName: 'closeTab',
+    create: (call) => (request: WorkerHostMethodMap['closeTab']['params']) =>
+      call('closeTab', request),
+  },
+  selectTab: {
+    exposedName: 'selectTab',
+    create: (call) => (request: WorkerHostMethodMap['selectTab']['params']) =>
+      call('selectTab', request),
+  },
+  reloadTab: {
+    exposedName: 'reloadTab',
+    create: (call) => (request: WorkerHostMethodMap['reloadTab']['params']) =>
+      call('reloadTab', request),
+  },
+  captureTab: {
+    exposedName: 'captureTab',
+    create: (call, capturedImages) => async (request: WorkerHostMethodMap['captureTab']['params']) => {
+      const result = await call('captureTab', request) as WorkerHostMethodMap['captureTab']['result']
+      capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
+      return { captured: true, mimeType: result.mimeType }
+    },
+  },
+  getTabConsoleLogs: {
+    exposedName: 'getTabConsoleLogs',
+    create: (call) => (request: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
+      call('getTabConsoleLogs', request),
+  },
+  execTabJs: {
+    exposedName: 'execTabJs',
+    create: (call) => (request: WorkerHostMethodMap['execTabJs']['params']) =>
+      call('execTabJs', request),
+  },
+  busPublish: {
+    exposedName: 'publish',
+    create: (call) => (topic: string, data: unknown) =>
+      call('busPublish', { topic, data }),
+  },
+  busWaitFor: {
+    exposedName: 'waitFor',
+    create: (call) => (topic: string, timeoutMs?: number) =>
+      call('busWaitFor', { topic, timeoutMs }),
+  },
+  spawnAgent: {
+    exposedName: 'spawnAgent',
+    create: (call) => (prompt: string) =>
+      call('spawnAgent', { prompt }),
+  },
+  sendToAgent: {
+    exposedName: 'sendToAgent',
+    create: (call) => (agentId: string, message: string) =>
+      call('sendToAgent', { agentId, message }),
+  },
+  startTask: {
+    exposedName: 'startTask',
+    create: (call) => (taskId: number, input?: unknown) =>
+      call('startTask', { taskId, input }),
+  },
+  stopTask: {
+    exposedName: 'stopTask',
+    create: (call) => (runId: string) =>
+      call('stopTask', { runId }),
+  },
+}
+
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
-  const { requestId, code, timeoutMs, input, pluginMethods } = message
+  const { requestId, code, timeoutMs, input, methods } = message
   const abortController = new AbortController()
   activeRequests.set(requestId, abortController)
 
@@ -232,159 +364,43 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   try {
     const signal = abortController.signal
 
-    const runSql = (request: WorkerHostMethodMap['runSql']['params']) =>
-      callHostMethod('' + requestId, 'runSql', request, signal)
-    const read = (path: string, offset?: number, limit?: number) =>
-      callHostMethod('' + requestId, 'read', { path, offset, limit }, signal)
-    const write = (path: string, content: string) =>
-      callHostMethod('' + requestId, 'write', { path, content }, signal)
-    const writeBinary = (path: string, base64: string) =>
-      callHostMethod('' + requestId, 'writeBinary', { path, base64 }, signal)
-    const edit = (path: string, oldText: string, newText: string) =>
-      callHostMethod('' + requestId, 'edit', { path, oldText, newText }, signal)
-    const ls = (path?: string, limit?: number) =>
-      callHostMethod('' + requestId, 'ls', { path, limit }, signal)
-    const mkdir = (path: string, recursive?: boolean) =>
-      callHostMethod('' + requestId, 'mkdir', { path, recursive }, signal)
-    const remove = (path: string, recursive?: boolean) =>
-      callHostMethod('' + requestId, 'remove', { path, recursive }, signal)
-    const find = (pattern: string, path?: string, limit?: number) =>
-      callHostMethod('' + requestId, 'find', { pattern, path, limit }, signal)
-    const grep = (pattern: string, path?: string, options?: WorkerHostMethodMap['grep']['params']['options']) =>
-      callHostMethod('' + requestId, 'grep', { pattern, path, options }, signal)
-    const getTabs = () =>
-      callHostMethod('' + requestId, 'getTabs', {}, signal)
-    const openTab = (request: WorkerHostMethodMap['openTab']['params']) =>
-      callHostMethod('' + requestId, 'openTab', request, signal)
-    const closeTab = (request: WorkerHostMethodMap['closeTab']['params']) =>
-      callHostMethod('' + requestId, 'closeTab', request, signal)
-    const selectTab = (request: WorkerHostMethodMap['selectTab']['params']) =>
-      callHostMethod('' + requestId, 'selectTab', request, signal)
-    const reloadTab = (request: WorkerHostMethodMap['reloadTab']['params']) =>
-      callHostMethod('' + requestId, 'reloadTab', request, signal)
-    const captureTab = async (request: WorkerHostMethodMap['captureTab']['params']) => {
-      const result = await callHostMethod('' + requestId, 'captureTab', request, signal)
-      capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
-      return { captured: true, mimeType: result.mimeType }
-    }
-    const getTabConsoleLogs = (request: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
-      callHostMethod('' + requestId, 'getTabConsoleLogs', request, signal)
-    const execTabJs = (request: WorkerHostMethodMap['execTabJs']['params']) =>
-      callHostMethod('' + requestId, 'execTabJs', request, signal)
-    const publish = (topic: string, data: unknown) =>
-      callHostMethod('' + requestId, 'busPublish', { topic, data }, signal)
-    const waitFor = (topic: string, timeoutMs?: number) =>
-      callHostMethod('' + requestId, 'busWaitFor', { topic, timeoutMs }, signal)
-    const spawnAgent = (prompt: string) =>
-      callHostMethod('' + requestId, 'spawnAgent', { prompt }, signal)
-    const sendToAgent = (agentId: string, message: string) =>
-      callHostMethod('' + requestId, 'sendToAgent', { agentId, message }, signal)
-    const startTask = (taskId: number, input?: unknown) =>
-      callHostMethod('' + requestId, 'startTask', { taskId, input }, signal)
-    const stopTask = (runId: string) =>
-      callHostMethod('' + requestId, 'stopTask', { runId }, signal)
-    // Build plugin function wrappers
-    const pluginFnNames: string[] = []
-    const pluginFnValues: Function[] = []
-    for (const name of (pluginMethods ?? [])) {
-      pluginFnNames.push(name)
-      pluginFnValues.push((params: unknown) =>
-        callHostMethod('' + requestId, `plugin:${name}` as WorkerHostMethod, params, signal)
-      )
-    }
+    const call = (method: string, params: unknown) =>
+      callHostMethod('' + requestId, method, params, signal)
 
-    const builtInParamNames = [
-      // Shadow browser globals
-      'window',
-      'self',
-      'globalThis',
-      'document',
-      // Shadow Node.js globals to prevent direct access
-      'require',
-      'global',
-      'Buffer',
-      'module',
-      '__filename',
-      '__dirname',
-      // Host methods
-      'runSql',
-      'read',
-      'write',
-      'writeBinary',
-      'edit',
-      'ls',
-      'mkdir',
-      'remove',
-      'find',
-      'grep',
-      'getTabs',
-      'openTab',
-      'closeTab',
-      'selectTab',
-      'reloadTab',
-      'captureTab',
-      'getTabConsoleLogs',
-      'execTabJs',
-      'publish',
-      'waitFor',
-      'spawnAgent',
-      'sendToAgent',
-      'startTask',
-      'stopTask',
-      'input',
+    // Shadow browser/Node globals
+    const shadowParamNames = [
+      'window', 'self', 'globalThis', 'document',
+      'require', 'global', 'Buffer', 'module', '__filename', '__dirname',
     ]
+    const shadowArgValues: unknown[] = Array(shadowParamNames.length).fill(undefined)
 
-    const builtInArgValues = [
-      // Shadow browser globals
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      // Shadow Node.js globals
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      // Host methods
-      runSql,
-      read,
-      write,
-      writeBinary,
-      edit,
-      ls,
-      mkdir,
-      remove,
-      find,
-      grep,
-      getTabs,
-      openTab,
-      closeTab,
-      selectTab,
-      reloadTab,
-      captureTab,
-      getTabConsoleLogs,
-      execTabJs,
-      publish,
-      waitFor,
-      spawnAgent,
-      sendToAgent,
-      startTask,
-      stopTask,
-      input,
-    ]
+    // Build method wrappers from the methods list
+    const methodParamNames: string[] = []
+    const methodArgValues: Function[] = []
+
+    for (const method of methods) {
+      const wrapper = builtInWrappers[method]
+      if (wrapper) {
+        methodParamNames.push(wrapper.exposedName)
+        methodArgValues.push(wrapper.create(call, capturedImages))
+      } else {
+        methodParamNames.push(method)
+        methodArgValues.push((params: unknown) => call(method, params))
+      }
+    }
 
     const fn = new AsyncFunction(
-      ...builtInParamNames,
-      ...pluginFnNames,
+      ...shadowParamNames,
+      ...methodParamNames,
+      'input',
       `"use strict";\nreturn await (async () => {\n${code}\n})();`
     )
 
     const value = await withTimeoutAndAbort(
       fn(
-        ...builtInArgValues,
-        ...pluginFnValues,
+        ...shadowArgValues,
+        ...methodArgValues,
+        input,
       ),
       timeoutMs,
       abortController.signal

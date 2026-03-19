@@ -28,6 +28,8 @@ import { loadPlugins } from './plugins/loader.js';
 import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
+import { FunctionRegistry } from './runtime/function_registry.js';
+import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
 
 export interface AppWindowContext {
@@ -40,6 +42,7 @@ export interface AppWindowContext {
   triggerEngine: TriggerEngine | null;
   pluginRegistry: PluginRegistry | null;
   providerRegistry: ProviderRegistry;
+  functionRegistry: FunctionRegistry;
   sessionManager: AgentSessionManager;
   taskRunner: TaskRunner;
   jsRuntime: JsRuntime;
@@ -77,13 +80,15 @@ class WindowManager {
       setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
     }))
 
+    const functionRegistry = new FunctionRegistry()
+
     // Load plugins from DB — window doesn't exist yet, so publish defers via a mutable ref
     let winRef: BrowserWindow | null = null;
     const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
       if (winRef && !winRef.isDestroyed()) {
         forwardBusPublish(winRef, topic, data);
       }
-    }, providerRegistry);
+    }, providerRegistry, functionRegistry);
 
     const window = new BrowserWindow({
       show: false,
@@ -153,17 +158,20 @@ class WindowManager {
       execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
     };
 
-    const jsRuntime = getOrCreateRuntime(window, {
+    registerAllBuiltInFunctions(functionRegistry, {
       agentRoot,
       win: window,
       tabTools,
-      pluginRegistry,
       onDbChange: (change) => {
         if (window.isDestroyed()) return;
         window.webContents.send('bus:dbChanged', change);
       },
       getSessionManager: () => ctx.sessionManager,
       getTaskRunner: () => ctx.taskRunner,
+    })
+
+    const jsRuntime = getOrCreateRuntime(window, {
+      functionRegistry,
     })
 
     const sessionManager = new AgentSessionManager({
@@ -189,6 +197,7 @@ class WindowManager {
       triggerEngine: null,
       pluginRegistry,
       providerRegistry,
+      functionRegistry,
       sessionManager,
       taskRunner,
       jsRuntime,

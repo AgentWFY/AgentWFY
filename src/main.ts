@@ -95,7 +95,7 @@ registerTaskRunnerHandlers(
 );
 registerPluginHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
-  (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
+  (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
 );
 registerProviderHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
