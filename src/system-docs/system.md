@@ -5,9 +5,9 @@ You have one tool: execJs.
 
 ## execJs Runtime
 
-execJs runs JavaScript in a dedicated worker. Inside execJs you can call these async host APIs. Views have the same APIs available via `window.agentwfy.<method>(...)`.
+execJs runs JavaScript in a dedicated Node.js process (Electron utilityProcess). Inside execJs you can call these async host APIs. Views have the same APIs available via `window.agentwfy.<method>(...)`.
 
-The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. The worker persists across calls within the same session — variables set on `globalThis` survive between executions. `document` is `undefined` — this is a worker, not a browser page.
+The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — do not rely on `globalThis` or in-memory variables between calls. Use the database or files to persist state. Browser APIs (`document`, `window`) and Node.js globals (`require`, `Buffer`, `module`, `__filename`, `__dirname`) are unavailable.
 
 Default timeout is 5000ms, maximum 120000ms.
 
