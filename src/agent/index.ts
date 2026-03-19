@@ -63,6 +63,20 @@ export class Agent {
     return await this.providerSession.getDisplayMessages() as DisplayMessage[]
   }
 
+  getProviderTitle(): string {
+    if (this.providerSession.getTitle) {
+      return this.providerSession.getTitle()
+    }
+    for (const msg of this._state.messages) {
+      if (msg.role !== 'user') continue
+      const block = msg.blocks.find(b => b.type === 'text')
+      if (block && block.type === 'text' && block.text.trim()) {
+        return block.text.trim().slice(0, 100)
+      }
+    }
+    return ''
+  }
+
   getProviderState(): unknown {
     return this.providerSession.getState()
   }

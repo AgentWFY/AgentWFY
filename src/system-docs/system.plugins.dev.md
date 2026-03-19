@@ -103,13 +103,11 @@ module.exports = {
         return new MySession(config)
       },
 
-      restoreSession(messages, config, state) {
-        // messages — DisplayMessage[] from a previously saved session
+      restoreSession(config, state) {
         // config — same as createSession
-        // state — opaque blob from getState() (may be null for legacy sessions or cross-provider restore)
-        // If state is available, use it to restore internal state directly.
-        // Otherwise reconstruct from display messages.
-        return new MySession(config, messages, state)
+        // state — opaque blob from getState() (null for new sessions)
+        // Use state to restore internal messages and display messages.
+        return new MySession(config, state)
       },
     })
   }
@@ -146,18 +144,22 @@ class MySession {
   }
 
   getDisplayMessages() {
-    // Return DisplayMessage[] — the canonical conversation history.
-    // Used for session persistence.
+    // Return DisplayMessage[] — the conversation as shown in the UI.
+    // The provider controls what is displayed: it can filter thinking
+    // blocks, hide intermediate tool calls, etc. based on config.
+    // Called after each completed turn and when restoring a session.
   }
 
+  // Optional: return a short string for the session list (max ~100 chars).
+  // If not implemented, falls back to first user message text.
+  // Providers can override to summarize or generate titles.
+  // getTitle() { return 'My custom title' }
+
   getState() {
-    // Return an opaque JSON-serializable blob with provider-internal state.
-    // Saved alongside display messages and passed back to restoreSession()
-    // on session restore. Use this to preserve provider-specific data that
-    // cannot be reconstructed from display messages alone (e.g. thinking
-    // signatures, redacted_thinking blocks, internal message structure).
-    // Return null if no extra state is needed.
-    return { messages: this.internalMessages }
+    // Return an opaque JSON-serializable blob with all provider state.
+    // Must include both internal API messages and full (unfiltered)
+    // display messages. Passed back to restoreSession() on restore.
+    return { messages: this.internalMessages, displayMessages: this.displayMessages }
   }
 }
 ```
@@ -239,7 +241,7 @@ class MySession {
   on(listener) { this.listeners.add(listener) }
   off(listener) { this.listeners.delete(listener) }
   getDisplayMessages() { return this.messages }
-  getState() { return { messages: this.internalMessages } }
+  getState() { return { messages: this.internalMessages, displayMessages: this.messages } }
 
   emit(event) {
     for (const l of this.listeners) l(event)
@@ -267,7 +269,7 @@ module.exports = {
       settingsView: 'plugin.my-llm.settings',
       getStatusLine() { return getProviderConfig().modelId },
       createSession(config) { return new MySession(config, getProviderConfig()) },
-      restoreSession(messages, config, state) { return new MySession(config, getProviderConfig(), messages, state) },
+      restoreSession(config, state) { return new MySession(config, getProviderConfig(), state) },
     })
   }
 }

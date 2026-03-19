@@ -208,12 +208,25 @@ export class AgentSessionManager {
     const raw = await readSessionFile(sessionsDir, file)
     const stored = parseStoredSession(raw, file)
 
+    const providerId = stored.providerId || await this.readDefaultProviderId()
+    const factory = this.deps.providerRegistry.get(providerId)
+
+    let messages: DisplayMessage[] = []
+    if (factory && stored.providerState) {
+      const session = factory.restoreSession(
+        { sessionId: stored.sessionId, systemPrompt: '', tools: [] },
+        stored.providerState,
+      )
+      const result = session.getDisplayMessages()
+      messages = result instanceof Promise ? await result : result
+    }
+
     this._activeSessionFile = file
     this._activeSessionId = null
-    this._activeMessages = stored.messages
-    this._activeLabel = extractFirstUserMessage(stored.messages, 60) ?? 'Session'
+    this._activeMessages = messages
+    this._activeLabel = stored.title || 'Session'
     this._activeNotifyOnFinish = false
-    this._activeProviderId = stored.providerId || ''
+    this._activeProviderId = providerId
 
     this.notify()
   }
@@ -441,8 +454,8 @@ export class AgentSessionManager {
       createProviderSession: (config) => {
         return factory.createSession({ ...config, tools: [EXECJS_TOOL_DEFINITION] })
       },
-      restoreProviderSession: (messages, config, state) => {
-        return factory.restoreSession(messages, { ...config, tools: [EXECJS_TOOL_DEFINITION] }, state)
+      restoreProviderSession: (config, state) => {
+        return factory.restoreSession({ ...config, tools: [EXECJS_TOOL_DEFINITION] }, state)
       },
       providerId,
       agentRoot,
@@ -540,10 +553,10 @@ export class AgentSessionManager {
           const raw = await readSessionFile(sessionsDir, session.name)
           const parsed = JSON.parse(raw)
           const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : session.updatedAt
-          const firstUserMessage = extractFirstUserMessage(parsed.messages, 100) ?? ''
+          const title = typeof parsed.title === 'string' ? parsed.title : ''
 
-          if (firstUserMessage) {
-            items.push({ file: session.name, updatedAt, firstUserMessage })
+          if (title) {
+            items.push({ file: session.name, updatedAt, firstUserMessage: title })
           }
         } catch {
           // Skip unparseable files

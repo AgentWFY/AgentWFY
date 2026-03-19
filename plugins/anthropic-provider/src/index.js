@@ -217,11 +217,34 @@ class AnthropicSession {
   }
 
   getDisplayMessages() {
-    return this._displayMessages.slice()
+    const msgs = this._displayMessages
+    if (!this._providerConfig.hideIntermediateSteps && !this._providerConfig.hideThinking) {
+      return msgs.slice()
+    }
+    const result = []
+    for (let i = 0; i < msgs.length; i++) {
+      const msg = msgs[i]
+      if (msg.role === 'user') {
+        result.push(msg)
+        continue
+      }
+      // For assistant messages: skip intermediate steps if enabled
+      if (this._providerConfig.hideIntermediateSteps) {
+        const next = msgs[i + 1]
+        if (next && next.role !== 'user') continue // not the last assistant in this group
+      }
+      // Filter out thinking blocks if enabled
+      if (this._providerConfig.hideThinking && msg.blocks.some(b => b.type === 'thinking')) {
+        result.push({ ...msg, blocks: msg.blocks.filter(b => b.type !== 'thinking') })
+      } else {
+        result.push(msg)
+      }
+    }
+    return result
   }
 
   getState() {
-    return { messages: this._messages }
+    return { messages: this._messages.slice(), displayMessages: this._displayMessages.slice() }
   }
 
   _buildStatusLine() {
@@ -532,7 +555,7 @@ class AnthropicSession {
 
     // Build assistant display message
     const blocks = []
-    if (thinkingText && !this._providerConfig.hideThinking) blocks.push({ type: 'thinking', text: thinkingText })
+    if (thinkingText) blocks.push({ type: 'thinking', text: thinkingText })
     if (assistantText) blocks.push({ type: 'text', text: assistantText })
     for (const pt of pendingTools) {
       blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
@@ -555,23 +578,6 @@ class AnthropicSession {
         this._emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
       }
       return
-    }
-
-    // When hideIntermediateSteps is on, remove intermediate assistant messages
-    // from display, keeping only user messages and the final assistant message
-    if (this._providerConfig.hideIntermediateSteps) {
-      const finalMsg = this._displayMessages[this._displayMessages.length - 1]
-      // Find the last user message index — everything between it and the final message is intermediate
-      let lastUserIdx = -1
-      for (let i = this._displayMessages.length - 2; i >= 0; i--) {
-        if (this._displayMessages[i].role === 'user') {
-          lastUserIdx = i
-          break
-        }
-      }
-      if (lastUserIdx >= 0 && lastUserIdx < this._displayMessages.length - 2) {
-        this._displayMessages.splice(lastUserIdx + 1, this._displayMessages.length - 2 - lastUserIdx)
-      }
     }
 
     this._emit({ type: 'done' })
@@ -601,7 +607,7 @@ function createFactory(getConfig, setConfig) {
       return new AnthropicSession(config, providerConfig)
     },
 
-    restoreSession(messages, config, state) {
+    restoreSession(config, state) {
       const providerConfig = {
         modelId: getConfig(CONFIG_KEYS.modelId, DEFAULT_MODEL_ID),
         maxTokens: getConfig(CONFIG_KEYS.maxTokens, 16384),
@@ -610,75 +616,10 @@ function createFactory(getConfig, setConfig) {
         getApiKey: () => getApiKey(getConfig, setConfig),
       }
 
-      // If we have provider state with internal messages, use them directly
-      // (preserves thinking signatures, redacted_thinking blocks, etc.)
-      if (state && Array.isArray(state.messages)) {
-        return new AnthropicSession(config, providerConfig, state.messages, messages)
-      }
-
-      // Otherwise reconstruct from display messages (cross-provider restore or legacy sessions)
-      const internalMessages = []
-
-      for (const msg of messages) {
-        if (msg.role === 'user') {
-          const textBlock = msg.blocks.find(b => b.type === 'text')
-          const text = textBlock && textBlock.type === 'text' ? textBlock.text : ''
-          const images = msg.blocks
-            .filter(b => b.type === 'image')
-            .map(b => ({
-              type: 'image',
-              source: { type: 'base64', media_type: b.mimeType, data: b.data },
-            }))
-          const content = [{ type: 'text', text }]
-          content.push(...images)
-          internalMessages.push({ role: 'user', content })
-        } else if (msg.role === 'assistant') {
-          const assistantContent = []
-          const toolResults = []
-
-          for (const block of msg.blocks) {
-            if (block.type === 'text') {
-              assistantContent.push({ type: 'text', text: block.text })
-            } else if (block.type === 'thinking') {
-              assistantContent.push({ type: 'thinking', thinking: block.text })
-            } else if (block.type === 'exec_js') {
-              assistantContent.push({
-                type: 'tool_use',
-                id: block.id,
-                name: 'execJs',
-                input: { description: block.description || 'Executing code', code: block.code },
-              })
-            } else if (block.type === 'exec_js_result') {
-              const resultContent = block.content.map(c => {
-                if (c.type === 'text') return { type: 'text', text: c.text }
-                if (c.type === 'image') {
-                  return {
-                    type: 'image',
-                    source: { type: 'base64', media_type: c.mimeType, data: c.data },
-                  }
-                }
-                return { type: 'text', text: '' }
-              })
-              toolResults.push({
-                role: 'user',
-                content: [{
-                  type: 'tool_result',
-                  tool_use_id: block.id,
-                  content: resultContent,
-                  is_error: block.isError,
-                }],
-              })
-            }
-          }
-
-          if (assistantContent.length > 0) {
-            internalMessages.push({ role: 'assistant', content: assistantContent })
-          }
-          internalMessages.push(...toolResults)
-        }
-      }
-
-      return new AnthropicSession(config, providerConfig, internalMessages, messages)
+      const s = state || {}
+      const apiMessages = Array.isArray(s.messages) ? s.messages : []
+      const displayMessages = Array.isArray(s.displayMessages) ? s.displayMessages : []
+      return new AnthropicSession(config, providerConfig, apiMessages, displayMessages)
     },
   }
 }
