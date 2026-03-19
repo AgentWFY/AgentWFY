@@ -134,7 +134,7 @@ class MySession {
     //   { type: 'thinking_delta', delta: string }
     //   { type: 'exec_js', id: string, description: string, code: string }
     //   { type: 'done' }
-    //   { type: 'error', error: string, retryable?: boolean }
+    //   { type: 'error', error: string }
     //   { type: 'status_line', text: string }
   }
 
