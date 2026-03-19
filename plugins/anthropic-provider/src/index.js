@@ -383,10 +383,11 @@ class AnthropicSession {
     let outputTokens = 0
     let currentBlockType = null
     let currentBlockIndex = -1
+    let streamDone = false
 
     try {
       for await (const sseEvent of parseSSE(response)) {
-        if (signal.aborted) break
+        if (signal.aborted || streamDone) break
 
         let data
         try {
@@ -484,6 +485,7 @@ class AnthropicSession {
           }
 
           case 'message_stop':
+            streamDone = true
             break
 
           case 'error': {
