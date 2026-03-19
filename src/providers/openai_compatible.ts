@@ -115,11 +115,11 @@ class OpenAICompatibleSession implements ProviderSession {
     this.emit({ type: 'status_line', text: this.buildStatusLine() })
   }
 
-  private emitError(error: string, retryable: boolean, partialBlocks?: Block[]): void {
+  private emitError(error: string, partialBlocks?: Block[]): void {
     const blocks: Block[] = partialBlocks ? [...partialBlocks] : []
     blocks.push({ type: 'error', text: error })
     this.displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
-    this.emit({ type: 'error', error, retryable })
+    this.emit({ type: 'error', error })
   }
 
   private emit(event: ProviderOutput): void {
@@ -219,14 +219,13 @@ class OpenAICompatibleSession implements ProviderSession {
         this.emit({ type: 'done' })
         return
       }
-      this.emitError(err instanceof Error ? err.message : String(err), true)
+      this.emitError(err instanceof Error ? err.message : String(err))
       return
     }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      const retryable = response.status === 429 || response.status >= 500
-      this.emitError(`OpenAI API error (${response.status}): ${text || response.statusText}`, retryable)
+      this.emitError(`OpenAI API error (${response.status}): ${text || response.statusText}`)
       return
     }
 
@@ -304,7 +303,7 @@ class OpenAICompatibleSession implements ProviderSession {
       const partialBlocks: Block[] = []
       if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
       if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
-      this.emitError(err instanceof Error ? err.message : String(err), true, partialBlocks)
+      this.emitError(err instanceof Error ? err.message : String(err), partialBlocks)
       return
     }
 

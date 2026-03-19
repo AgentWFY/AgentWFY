@@ -229,11 +229,11 @@ class AnthropicSession {
     this._emit({ type: 'status_line', text: this._buildStatusLine() })
   }
 
-  _emitError(error, retryable, partialBlocks) {
+  _emitError(error, partialBlocks) {
     const blocks = partialBlocks ? [...partialBlocks] : []
     blocks.push({ type: 'error', text: error })
     this._displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
-    this._emit({ type: 'error', error, retryable })
+    this._emit({ type: 'error', error })
   }
 
   _emit(event) {
@@ -302,7 +302,7 @@ class AnthropicSession {
 
     const apiKey = await this._providerConfig.getApiKey()
     if (!apiKey) {
-      this._emitError('Not authenticated. Open provider settings to log in.', false)
+      this._emitError('Not authenticated. Open provider settings to log in.')
       return
     }
 
@@ -363,14 +363,13 @@ class AnthropicSession {
         this._emit({ type: 'done' })
         return
       }
-      this._emitError(err instanceof Error ? err.message : String(err), true)
+      this._emitError(err instanceof Error ? err.message : String(err))
       return
     }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
-      const retryable = response.status === 429 || response.status >= 500
-      this._emitError(`Anthropic API error (${response.status}): ${text || response.statusText}`, retryable)
+      this._emitError(`Anthropic API error (${response.status}): ${text || response.statusText}`)
       return
     }
 
@@ -494,7 +493,7 @@ class AnthropicSession {
             const partialBlocks = []
             if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
             if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
-            this._emitError(msg, true, partialBlocks)
+            this._emitError(msg, partialBlocks)
             return
           }
         }
@@ -507,7 +506,7 @@ class AnthropicSession {
       const partialBlocks = []
       if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
       if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
-      this._emitError(err instanceof Error ? err.message : String(err), true, partialBlocks)
+      this._emitError(err instanceof Error ? err.message : String(err), partialBlocks)
       return
     }
 
