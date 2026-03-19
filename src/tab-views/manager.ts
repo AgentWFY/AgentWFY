@@ -4,13 +4,13 @@ import { isViewDocumentRequest, parseViewId } from '../protocol/view-document.js
 
 // --- Types & Constants ---
 
-export interface ViewConsoleLogEntry {
+interface ViewConsoleLogEntry {
   level: string
   message: string
   timestamp: number
 }
 
-export interface ViewRuntimeEntry {
+interface ViewRuntimeEntry {
   webContentsId: number
   webContents: WebContents
   viewId: string
@@ -21,7 +21,7 @@ export interface ViewRuntimeEntry {
   logs: ViewConsoleLogEntry[]
 }
 
-export interface TabViewState {
+interface TabViewState {
   tabId: string
   viewId: string
   currentSrc: string | null
@@ -29,7 +29,7 @@ export interface TabViewState {
   logs: ViewConsoleLogEntry[]
 }
 
-export type TabType = 'view' | 'file' | 'url'
+type TabType = 'view' | 'file' | 'url'
 
 interface TabViewBoundsPayload {
   x: number
@@ -67,20 +67,20 @@ interface TabContextMenuPayload {
 
 type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
 
-export const VIEW_LOG_BUFFER_MAX = 1000;
+const VIEW_LOG_BUFFER_MAX = 1000;
 const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 const FALLBACK_VIEW_WIDTH = 1280;
 const FALLBACK_VIEW_HEIGHT = 720;
 
-export const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
+const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
   info: 'info',
   warning: 'warning',
   error: 'error',
 };
 
-export const GET_TABS_QUERY = `(() => {
+const GET_TABS_QUERY = `(() => {
   const tabsEl = document.querySelector('awfy-tabs');
   if (!tabsEl) return { tabs: [] };
   const selectedTabId = typeof tabsEl.selectedTabId === 'string' ? tabsEl.selectedTabId : null;
@@ -130,7 +130,7 @@ function normalizeTabContextMenuPayload(raw: unknown): TabContextMenuPayload {
   };
 }
 
-export function normalizeTabViewBounds(raw: unknown): Rectangle {
+function normalizeTabViewBounds(raw: unknown): Rectangle {
   const input = (raw && typeof raw === 'object') ? raw as Partial<TabViewBoundsPayload> : {};
   return {
     x: normalizeTabViewNumber(input.x),
@@ -181,7 +181,7 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 
 // --- TabViewManager ---
 
-export interface TabViewManagerDeps {
+interface TabViewManagerDeps {
   getMainWindow: () => BrowserWindow | null;
   toggleCommandPalette: () => void;
   focusMainRendererWindow: () => void;

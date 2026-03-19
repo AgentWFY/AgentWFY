@@ -27,7 +27,7 @@ export function removeLockfile(agentRoot: string): void {
   }
 }
 
-export function readLockfile(agentRoot: string): { port: number; pid: number } | null {
+function readLockfile(agentRoot: string): { port: number; pid: number } | null {
   try {
     const raw = JSON.parse(fs.readFileSync(lockfilePath(agentRoot), 'utf-8'));
     if (typeof raw?.port === 'number' && typeof raw?.pid === 'number') {

@@ -33,11 +33,4 @@ export class PluginRegistry {
     this.deactivators.clear()
     this.plugins.clear()
   }
-
-  getPluginList(): Array<{ name: string; description: string }> {
-    return Array.from(this.plugins.values()).map(p => ({
-      name: p.name,
-      description: p.description,
-    }))
-  }
 }

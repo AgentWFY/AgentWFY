@@ -2,7 +2,7 @@ import type { PaletteScreen, ScreenResult } from '../screen.js'
 import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
 
-export interface EditingParams {
+interface EditingParams {
   key: string
   label: string
   type: string

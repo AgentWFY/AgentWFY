@@ -1,7 +1,6 @@
 import type {
   AgentEvent,
   AgentState,
-  AgentTool,
   ImageContent,
   TextContent,
 } from './types.js'
@@ -13,7 +12,7 @@ import type {
 } from './provider_types.js'
 import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
-export interface AgentOptions {
+interface AgentOptions {
   initialState?: Partial<AgentState>
   providerSession: ProviderSession
   sessionId?: string
@@ -56,10 +55,6 @@ export class Agent {
 
   setProviderSession(session: ProviderSession): void {
     this.providerSession = session
-  }
-
-  async getProviderDisplayMessages(): Promise<DisplayMessage[]> {
-    return await this.providerSession.getDisplayMessages() as DisplayMessage[]
   }
 
   getProviderTitle(): string {

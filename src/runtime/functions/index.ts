@@ -11,7 +11,7 @@ import { registerEvents } from './events.js'
 import { registerAgent } from './agent.js'
 import { registerTasks } from './tasks.js'
 
-export interface BuiltInFunctionDeps {
+interface BuiltInFunctionDeps {
   agentRoot: string
   win: BrowserWindow
   tabTools: AgentTabTools

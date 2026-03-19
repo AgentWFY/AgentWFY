@@ -13,7 +13,7 @@ export function getAgentDir(agentRoot: string): string {
   return path.join(agentRoot, AGENT_DIR_NAME);
 }
 
-export async function ensureAgentDir(agentRoot: string): Promise<void> {
+async function ensureAgentDir(agentRoot: string): Promise<void> {
   const agentDir = getAgentDir(agentRoot);
   try {
     await mkdir(agentDir, { recursive: true });
@@ -43,7 +43,7 @@ export function isAgentDir(dirPath: string): boolean {
   }
 }
 
-export async function initAgent(dirPath: string, sourceDbPath?: string): Promise<void> {
+async function initAgent(dirPath: string, sourceDbPath?: string): Promise<void> {
   if (sourceDbPath) {
     const agentDir = path.join(dirPath, AGENT_DIR_NAME);
     fs.mkdirSync(agentDir, { recursive: true });
@@ -52,7 +52,7 @@ export async function initAgent(dirPath: string, sourceDbPath?: string): Promise
   await ensureAgentRuntimeBootstrap(dirPath);
 }
 
-export interface RecentAgent {
+interface RecentAgent {
   path: string;
   openedAt: number;
 }

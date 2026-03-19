@@ -247,7 +247,6 @@ class OpenAICompatibleSession implements ProviderSession {
     const toolCalls = new Map<number, ToolCallEntry>()
     const pendingTools: PendingToolCall[] = []
     let inputTokens = 0
-    let outputTokens = 0
 
     try {
       for await (const sseEvent of parseSSE(response)) {
@@ -264,7 +263,6 @@ class OpenAICompatibleSession implements ProviderSession {
         if (chunk.usage) {
           const u = chunk.usage as Record<string, unknown>
           inputTokens = (u.prompt_tokens as number) ?? 0
-          outputTokens = (u.completion_tokens as number) ?? 0
         }
 
         const choices = chunk.choices as Array<{ delta: Record<string, unknown>; finish_reason?: string }> | undefined
@@ -393,13 +391,13 @@ class OpenAICompatibleSession implements ProviderSession {
 
 // ── Provider config and factory ──
 
-export const OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
-export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
-export const DEFAULT_BASE_URL = 'https://openrouter.ai/api'
+const OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
+const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
+const DEFAULT_BASE_URL = 'https://openrouter.ai/api'
 
 const CONFIG_PREFIX = 'system.openai-compatible-provider'
 
-export interface ConfigAccessors {
+interface ConfigAccessors {
   getConfig(key: string, fallback?: unknown): unknown
   setConfig(key: string, value: unknown): void
 }

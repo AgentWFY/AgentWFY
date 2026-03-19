@@ -2,7 +2,7 @@ import path from 'path';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 
-export function getMimeType(filename: string): string {
+function getMimeType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   const mimeMap: Record<string, string> = {
     '.mp4': 'video/mp4',
@@ -21,7 +21,7 @@ export function getMimeType(filename: string): string {
   return mimeMap[ext] || 'application/octet-stream';
 }
 
-export const nodeStreamToWeb = (nodeStream: import('fs').ReadStream) => {
+const nodeStreamToWeb = (nodeStream: import('fs').ReadStream) => {
   nodeStream.pause();
   let closed = false;
 

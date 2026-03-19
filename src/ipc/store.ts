@@ -45,15 +45,6 @@ export function getStorePath(): string {
   return storePath;
 }
 
-type ChangeListener = (newValue: unknown, oldValue: unknown) => void;
-const changeListeners: Map<string, ChangeListener[]> = new Map();
-
-export function onDidChange(key: string, listener: ChangeListener): void {
-  const listeners = changeListeners.get(key) ?? [];
-  listeners.push(listener);
-  changeListeners.set(key, listeners);
-}
-
 type AnyChangeListener = (key: string, newValue: unknown) => void;
 const anyChangeListeners: AnyChangeListener[] = [];
 
@@ -61,10 +52,7 @@ export function onAnyChange(listener: AnyChangeListener): void {
   anyChangeListeners.push(listener);
 }
 
-function fireChangeListeners(key: string, newValue: unknown, oldValue: unknown): void {
-  for (const listener of changeListeners.get(key) ?? []) {
-    listener(newValue, oldValue);
-  }
+function fireChangeListeners(key: string, newValue: unknown, _oldValue: unknown): void {
   for (const listener of anyChangeListeners) {
     listener(key, newValue);
   }

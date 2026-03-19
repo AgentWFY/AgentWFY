@@ -35,11 +35,6 @@ const Channels = {
     read: 'sessions:read',
     write: 'sessions:write',
   },
-  auth: {
-    readConfig: 'auth:readConfig',
-    writeConfig: 'auth:writeConfig',
-    readLegacyKey: 'auth:readLegacyKey',
-  },
   store: {
     get: 'store:get',
     set: 'store:set',

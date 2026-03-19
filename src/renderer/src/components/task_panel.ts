@@ -688,37 +688,6 @@ export class TlTaskPanel extends HTMLElement {
     }
   }
 
-  private updateRunningRuns() {
-    const runs: TaskRun[] = [] // TODO: Stream running task state from main process
-    for (const run of runs) {
-      if (run.status !== 'running') continue
-
-      const header = this.shadow.querySelector(`.run-header[data-run-id="${run.runId}"]`)
-      if (!header) continue
-      const timeEl = header.querySelector('.run-time')
-      if (timeEl) {
-        timeEl.textContent = formatElapsed(Date.now() - run.startedAt)
-      }
-
-      if (!this.expandedRunIds.has(run.runId)) continue
-      const logsEl = header.nextElementSibling
-      if (!logsEl) continue
-
-      const rendered = this.renderedLogCounts.get(run.runId) ?? 0
-      if (run.logs.length > rendered) {
-        for (let i = rendered; i < run.logs.length; i++) {
-          const log = run.logs[i]
-          const cls = logLevelClass(log.level)
-          const div = document.createElement('div')
-          div.className = `log-entry${cls}`
-          div.textContent = log.message
-          logsEl.appendChild(div)
-        }
-        this.renderedLogCounts.set(run.runId, run.logs.length)
-      }
-    }
-  }
-
   private renderRunLogs(run: TaskRun): string {
     let html = ''
     for (const log of run.logs) {

@@ -1,5 +1,5 @@
 /**
- * Tool result truncation and token estimation utilities.
+ * Tool result truncation utilities.
  *
  * Keeps tool results small to reduce context window consumption and API costs.
  * All LLM-bound text content passes through these limits before entering the
@@ -10,21 +10,7 @@
 export const TOOL_RESULT_MAX_CHARS = 50_000
 
 /** Max lines for a single tool result text block. */
-export const TOOL_RESULT_MAX_LINES = 2000
-
-/** Max characters per message line when building compaction summaries. */
-export const COMPACTION_TOOL_RESULT_MAX_CHARS = 2000
-
-/** Reserve tokens to keep available for model output. */
-export const CONTEXT_RESERVE_TOKENS = 16_384
-
-/**
- * Estimate token count from text using the chars/4 heuristic.
- * Images are estimated separately (~1200 tokens each).
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
+const TOOL_RESULT_MAX_LINES = 2000
 
 /**
  * Truncate text keeping the beginning (head), with line and char limits.

@@ -4,7 +4,6 @@ import crypto from 'crypto'
 import type {
   ExecJsDetails,
   ExecJsSerializedError,
-  ExecJsLogEntry,
   HostToWorkerMessage,
   WorkerHostCallMessage,
   WorkerToHostMessage,
@@ -18,7 +17,6 @@ type PendingExecution = {
   resolve: (details: ExecJsDetails) => void
   reject: (error: unknown) => void
   cleanup?: () => void
-  onLog?: (entry: ExecJsLogEntry) => void
 }
 
 type ChildEntry = {
@@ -183,43 +181,6 @@ export class JsRuntime {
     })
   }
 
-  cancelExecution(sessionId: string): void {
-    const normalizedSessionId = normalizeSessionId(sessionId)
-    const entry = this.workers.get(normalizedSessionId)
-    if (!entry) return
-
-    // Cancel all pending executions
-    for (const [, pending] of entry.pendingExecutions) {
-      entry.child.postMessage({
-        type: 'exec:cancel',
-        requestId: pending.requestId,
-      } satisfies HostToWorkerMessage)
-    }
-  }
-
-  watchLogs(sessionId: string, onLog: (entry: ExecJsLogEntry) => void): void {
-    this.setLogWatch(sessionId, onLog)
-  }
-
-  unwatchLogs(sessionId: string): void {
-    this.setLogWatch(sessionId, undefined)
-  }
-
-  private setLogWatch(sessionId: string, onLog: ((entry: ExecJsLogEntry) => void) | undefined): void {
-    const normalizedSessionId = normalizeSessionId(sessionId)
-    const entry = this.workers.get(normalizedSessionId)
-    if (!entry) return
-
-    const pending = entry.pendingExecutions.values().next().value
-    if (!pending) return
-
-    pending.onLog = onLog
-    entry.child.postMessage({
-      type: onLog ? 'exec:watch' : 'exec:unwatch',
-      requestId: pending.requestId,
-    } satisfies HostToWorkerMessage)
-  }
-
   disposeAll(): void {
     for (const entry of this.workers.values()) {
       this.disposeEntry(entry, new Error(`Session worker disposed for ${entry.sessionId}`))
@@ -241,13 +202,6 @@ export class JsRuntime {
         entry.pendingExecutions.delete(message.requestId)
         pending.cleanup?.()
         pending.resolve(message.details)
-        return
-      }
-      case 'exec:log': {
-        const pending = entry.pendingExecutions.get(message.requestId)
-        if (pending?.onLog) {
-          pending.onLog(message.logEntry)
-        }
         return
       }
       case 'host:call': {
