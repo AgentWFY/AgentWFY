@@ -99,7 +99,6 @@ function captureConsole(requestId: string): { logs: ExecJsLogEntry[]; restore: (
       if (watchedRequests.has(requestId)) {
         postToHost({ type: 'exec:log', requestId, logEntry: entry })
       }
-      original(...args)
     }
   })
 
