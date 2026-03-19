@@ -1,4 +1,4 @@
-import type { ProviderFactory, ProviderInfo } from '../renderer/src/agent/provider_types.js'
+import type { ProviderFactory, ProviderInfo } from '../agent/provider_types.js'
 
 export class ProviderRegistry {
   private factories = new Map<string, ProviderFactory>()

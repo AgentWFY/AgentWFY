@@ -1,5 +1,5 @@
 import { renderMarkdown } from '../markdown.js'
-import type { DisplayMessage, Block } from '../agent/provider_types.js'
+import type { DisplayMessage, Block } from '../../../agent/provider_types.js'
 import { escapeHtml } from './chat_utils.js'
 
 interface ToolPair {

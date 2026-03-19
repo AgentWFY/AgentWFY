@@ -1,15 +1,13 @@
 import type { AgentTool, AgentToolResult, ImageContent, TextContent } from './types.js'
-import type { ExecJsDetails } from '../../../runtime/types.js'
+import type { ExecJsDetails } from '../runtime/types.js'
+import type { JsRuntime } from '../runtime/js_runtime.js'
+import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import { stringifyUnknown } from './tool_utils.js'
 
 interface CreateExecJsToolArgs {
   getSessionId: () => string
+  getJsRuntime: () => JsRuntime
 }
-
-export const EXECJS_TOOL_DESCRIPTION = [
-  'Execute JavaScript in a dedicated session worker and return result + captured console output.',
-  'Runtime API and agentview workflow details are defined in the system prompt sections [execjs.runtime] and [agentviews].',
-].join('\n')
 
 function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text
@@ -62,47 +60,19 @@ function buildToolResult(details: ExecJsDetails): AgentToolResult<ExecJsDetails>
 
 export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
   return {
-    name: 'execJs',
+    name: EXECJS_TOOL_DEFINITION.name,
     label: 'Execute JavaScript',
-    description: EXECJS_TOOL_DESCRIPTION,
-    parameters: {
-      type: 'object',
-      properties: {
-        description: {
-          type: 'string',
-          description: 'Short human-readable description of what this code does (shown to the user).',
-        },
-        code: {
-          type: 'string',
-          description: 'JavaScript code to execute. Use explicit return for result values.',
-        },
-        timeoutMs: {
-          type: 'integer',
-          minimum: 1,
-          maximum: 120000,
-          description: 'Execution timeout in milliseconds (default 5000).',
-        },
-      },
-      required: ['description', 'code'],
-      additionalProperties: false,
-    },
+    description: EXECJS_TOOL_DEFINITION.description,
+    parameters: EXECJS_TOOL_DEFINITION.parameters as Record<string, unknown>,
     execute: async (_toolCallId, params, signal) => {
       const typedParams = params as { code: string; timeoutMs?: number }
       const timeoutMs = typedParams.timeoutMs ?? 5000
 
       try {
-        const ipc = window.ipc
-        if (!ipc) throw new Error('window.ipc is not available')
-
+        const runtime = args.getJsRuntime()
         const sessionId = args.getSessionId()
 
-        // Set up abort handling
-        if (signal) {
-          const onAbort = () => ipc.execJs.cancel(sessionId)
-          signal.addEventListener('abort', onAbort, { once: true })
-        }
-
-        const details = await ipc.execJs.execute(sessionId, typedParams.code, timeoutMs) as ExecJsDetails
+        const details = await runtime.executeExecJs(sessionId, typedParams.code, timeoutMs, signal) as ExecJsDetails
         return buildToolResult(details)
       } catch (error) {
         const details = toFailureDetails(error, timeoutMs)

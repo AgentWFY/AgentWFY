@@ -13,8 +13,8 @@ import type {
   Block,
   TextContent,
   ImageContent,
-} from '../renderer/src/agent/provider_types.js'
-import { parseSSE } from '../renderer/src/agent/streaming/sse.js'
+} from '../agent/provider_types.js'
+import { parseSSE } from '../agent/streaming/sse.js'
 
 // ── Internal message types (OpenAI format) ──
 

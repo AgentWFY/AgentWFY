@@ -1,5 +1,12 @@
 import { escapeHtml, formatDate } from './chat_utils.js'
-import type { SessionListItem } from '../agent/session_manager.js'
+interface SessionListItem {
+  label: string
+  updatedAt: number
+  isActive: boolean
+  isStreaming: boolean
+  file: string | null
+  sessionId: string | null
+}
 
 export function renderSessionPanelHtml(items: SessionListItem[]): string {
   let html = ''

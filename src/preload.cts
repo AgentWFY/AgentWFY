@@ -58,22 +58,9 @@ const Channels = {
     forwardSubscribe: 'bus:forwardSubscribe',
     forwardUnsubscribe: 'bus:forwardUnsubscribe',
     subscribeEvent: 'bus:subscribeEvent',
-    forwardSpawnAgent: 'bus:forwardSpawnAgent',
-    spawnAgentResult: 'bus:spawnAgentResult',
     spawnAgent: 'bus:spawnAgent',
-    forwardSendToAgent: 'bus:forwardSendToAgent',
-    sendToAgentResult: 'bus:sendToAgentResult',
     sendToAgent: 'bus:sendToAgent',
     dbChanged: 'bus:dbChanged',
-  },
-  execJs: {
-    ensureWorker: 'execJs:ensureWorker',
-    terminateWorker: 'execJs:terminateWorker',
-    execute: 'execJs:execute',
-    cancel: 'execJs:cancel',
-    watchLogs: 'execJs:watchLogs',
-    unwatchLogs: 'execJs:unwatchLogs',
-    log: 'execJs:log',
   },
   tasks: {
     start: 'tasks:start',
@@ -82,10 +69,6 @@ const Channels = {
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
-    forwardStart: 'tasks:forwardStart',
-    forwardStartResult: 'tasks:forwardStartResult',
-    forwardStop: 'tasks:forwardStop',
-    forwardStopResult: 'tasks:forwardStopResult',
   },
   plugins: {
     call: 'plugin:call',
@@ -96,11 +79,20 @@ const Channels = {
   providers: {
     list: 'provider:list',
     getStatusLine: 'provider:get-status-line',
-    createSession: 'provider:create-session',
-    restoreSession: 'provider:restore-session',
-    send: 'provider:send',
-    event: 'provider:event',
-    getDisplayMessages: 'provider:get-display-messages',
+  },
+  agent: {
+    createSession: 'agent:createSession',
+    sendMessage: 'agent:sendMessage',
+    abort: 'agent:abort',
+    closeSession: 'agent:closeSession',
+    loadSession: 'agent:loadSession',
+    switchTo: 'agent:switchTo',
+    getSessionList: 'agent:getSessionList',
+    setNotifyOnFinish: 'agent:setNotifyOnFinish',
+    reconnect: 'agent:reconnect',
+    getSnapshot: 'agent:getSnapshot',
+    snapshot: 'agent:snapshot',
+    streaming: 'agent:streaming',
   },
 } as const;
 
@@ -294,31 +286,6 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.dialog.openExternal, url);
       },
     },
-    execJs: {
-      ensureWorker(sessionId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.execJs.ensureWorker, sessionId);
-      },
-      terminateWorker(sessionId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.execJs.terminateWorker, sessionId);
-      },
-      execute(sessionId: string, code: string, timeoutMs?: number, input?: unknown): Promise<unknown> {
-        return ipcRenderer.invoke(Channels.execJs.execute, sessionId, code, timeoutMs, input);
-      },
-      cancel(sessionId: string): void {
-        ipcRenderer.send(Channels.execJs.cancel, sessionId);
-      },
-      watchLogs(sessionId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.execJs.watchLogs, sessionId);
-      },
-      unwatchLogs(sessionId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.execJs.unwatchLogs, sessionId);
-      },
-      onLog(callback: (sessionId: string, entry: { level: string; message: string; timestamp: number }) => void): () => void {
-        const handler = (_event: unknown, sessionId: string, entry: { level: string; message: string; timestamp: number }) => callback(sessionId, entry);
-        ipcRenderer.on(Channels.execJs.log, handler);
-        return () => ipcRenderer.removeListener(Channels.execJs.log, handler);
-      },
-    },
     bus: {
       ...busAgent,
       onForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void {
@@ -351,28 +318,6 @@ if (isApp) {
         const handler = (_event: unknown, detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
         ipcRenderer.on(Channels.bus.dbChanged, handler);
         return () => ipcRenderer.removeListener(Channels.bus.dbChanged, handler);
-      },
-      onForwardSpawnAgent(callback: (detail: { waiterId: string; prompt: string }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; prompt: string }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardSpawnAgent, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardSpawnAgent, handler);
-      },
-      spawnAgentResult(waiterId: string, result: unknown): void {
-        ipcRenderer.send(Channels.bus.spawnAgentResult, { waiterId, result });
-      },
-      spawnAgent(prompt: string): Promise<{ agentId: string }> {
-        return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
-      },
-      onForwardSendToAgent(callback: (detail: { waiterId: string; agentId: string; message: string }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; agentId: string; message: string }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardSendToAgent, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardSendToAgent, handler);
-      },
-      sendToAgentResult(waiterId: string, result: unknown): void {
-        ipcRenderer.send(Channels.bus.sendToAgentResult, { waiterId, result });
-      },
-      sendToAgent(agentId: string, message: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.bus.sendToAgent, agentId, message);
       },
     },
     commandPalette: {
@@ -413,6 +358,12 @@ if (isApp) {
       },
     },
     tasks: {
+      start(taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
+        return ipcRenderer.invoke(Channels.tasks.start, taskId, input, origin);
+      },
+      stop(runId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.tasks.stop, runId);
+      },
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
       },
@@ -425,22 +376,6 @@ if (isApp) {
       writeLog(logFileName: string, content: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
       },
-      onForwardStartTask(callback: (detail: { waiterId: string; taskId: number; input?: unknown; origin?: unknown }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; taskId: number; input?: unknown; origin?: unknown }) => callback(detail);
-        ipcRenderer.on(Channels.tasks.forwardStart, handler);
-        return () => ipcRenderer.removeListener(Channels.tasks.forwardStart, handler);
-      },
-      forwardStartTaskResult(waiterId: string, result: unknown): void {
-        ipcRenderer.send(Channels.tasks.forwardStartResult, { waiterId, result });
-      },
-      onForwardStopTask(callback: (detail: { waiterId: string; runId: string }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; runId: string }) => callback(detail);
-        ipcRenderer.on(Channels.tasks.forwardStop, handler);
-        return () => ipcRenderer.removeListener(Channels.tasks.forwardStop, handler);
-      },
-      forwardStopTaskResult(waiterId: string, result: unknown): void {
-        ipcRenderer.send(Channels.tasks.forwardStopResult, { waiterId, result });
-      },
     },
     providers: {
       list(): Promise<Array<{ id: string; name: string; settingsView?: string }>> {
@@ -449,22 +384,47 @@ if (isApp) {
       getStatusLine(providerId: string): Promise<string> {
         return ipcRenderer.invoke(Channels.providers.getStatusLine, providerId);
       },
-      createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string> {
-        return ipcRenderer.invoke(Channels.providers.createSession, providerId, config);
+    },
+    agent: {
+      createSession(opts?: { label?: string; prompt?: string }): Promise<string> {
+        return ipcRenderer.invoke(Channels.agent.createSession, opts);
       },
-      restoreSession(providerId: string, messages: unknown[], config: { sessionId: string; systemPrompt: string }): Promise<string> {
-        return ipcRenderer.invoke(Channels.providers.restoreSession, providerId, messages, config);
+      sendMessage(text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.sendMessage, text, options);
       },
-      send(handle: string, input: unknown): Promise<void> {
-        return ipcRenderer.invoke(Channels.providers.send, handle, input);
+      abort(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.abort);
       },
-      getDisplayMessages(handle: string): Promise<unknown[]> {
-        return ipcRenderer.invoke(Channels.providers.getDisplayMessages, handle);
+      closeSession(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.closeSession);
       },
-      onEvent(callback: (handle: string, output: unknown) => void): () => void {
-        const handler = (_event: unknown, handle: string, output: unknown) => callback(handle, output);
-        ipcRenderer.on(Channels.providers.event, handler);
-        return () => ipcRenderer.removeListener(Channels.providers.event, handler);
+      loadSession(file: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.loadSession, file);
+      },
+      switchTo(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.switchTo, sessionId);
+      },
+      getSessionList(): Promise<unknown[]> {
+        return ipcRenderer.invoke(Channels.agent.getSessionList);
+      },
+      setNotifyOnFinish(value: boolean): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.setNotifyOnFinish, value);
+      },
+      reconnect(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.reconnect);
+      },
+      getSnapshot(): Promise<unknown> {
+        return ipcRenderer.invoke(Channels.agent.getSnapshot);
+      },
+      onSnapshot(callback: (snapshot: unknown) => void): () => void {
+        const handler = (_event: unknown, snapshot: unknown) => callback(snapshot);
+        ipcRenderer.on(Channels.agent.snapshot, handler);
+        return () => ipcRenderer.removeListener(Channels.agent.snapshot, handler);
+      },
+      onStreaming(callback: (data: unknown) => void): () => void {
+        const handler = (_event: unknown, data: unknown) => callback(data);
+        ipcRenderer.on(Channels.agent.streaming, handler);
+        return () => ipcRenderer.removeListener(Channels.agent.streaming, handler);
       },
     },
   });

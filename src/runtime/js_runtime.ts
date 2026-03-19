@@ -28,8 +28,9 @@ import {
   DEFAULT_FIND_LIMIT,
   DEFAULT_LS_LIMIT,
 } from '../ipc/files.js'
-import { forwardBusPublish, forwardBusWaitFor, forwardSpawnAgent, forwardSendToAgent } from '../ipc/bus.js'
-import { forwardStartTask, forwardStopTask } from '../task-runner/ipc.js'
+import { forwardBusPublish, forwardBusWaitFor } from '../ipc/bus.js'
+import type { AgentSessionManager } from '../agent/session_manager.js'
+import type { TaskRunner } from '../task-runner/task_runner.js'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 5000
 const MAX_READ_LINES = 2000
@@ -57,6 +58,8 @@ export interface JsRuntimeDeps {
   tabTools: AgentTabTools
   pluginRegistry: PluginRegistry | null
   onDbChange?: OnDbChange
+  getSessionManager?: () => AgentSessionManager
+  getTaskRunner?: () => TaskRunner
 }
 
 function createId(prefix: string): string {
@@ -725,7 +728,9 @@ export class JsRuntime {
         if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
           throw new Error('spawnAgent requires a non-empty prompt string')
         }
-        const result = await forwardSpawnAgent(win, request.prompt)
+        const sessionManager = this.deps.getSessionManager?.()
+        if (!sessionManager) throw new Error('AgentSessionManager not available')
+        const result = await sessionManager.spawnSession(request.prompt)
         return result as WorkerHostMethodMap[M]['result']
       }
       case 'sendToAgent': {
@@ -736,7 +741,9 @@ export class JsRuntime {
         if (typeof request.message !== 'string' || request.message.trim().length === 0) {
           throw new Error('sendToAgent requires a non-empty message string')
         }
-        await forwardSendToAgent(win, request.agentId, request.message)
+        const sessionMgr = this.deps.getSessionManager?.()
+        if (!sessionMgr) throw new Error('AgentSessionManager not available')
+        await sessionMgr.sendToAgent(request.agentId, request.message)
         return undefined as WorkerHostMethodMap[M]['result']
       }
       case 'startTask': {
@@ -744,15 +751,19 @@ export class JsRuntime {
         if (!request || typeof request.taskId !== 'number') {
           throw new Error('startTask requires a taskId number')
         }
-        const result = await forwardStartTask(win, request.taskId, request.input, { type: 'agent' })
-        return result as WorkerHostMethodMap[M]['result']
+        const taskRunner = this.deps.getTaskRunner?.()
+        if (!taskRunner) throw new Error('TaskRunner not available')
+        const runId = await taskRunner.startTask(request.taskId, request.input, { type: 'agent' })
+        return { runId } as WorkerHostMethodMap[M]['result']
       }
       case 'stopTask': {
         const request = params as WorkerHostMethodMap['stopTask']['params']
         if (!request || typeof request.runId !== 'string' || request.runId.trim().length === 0) {
           throw new Error('stopTask requires a non-empty runId string')
         }
-        await forwardStopTask(win, request.runId)
+        const taskRunnerForStop = this.deps.getTaskRunner?.()
+        if (!taskRunnerForStop) throw new Error('TaskRunner not available')
+        taskRunnerForStop.stopTask(request.runId)
         return undefined as WorkerHostMethodMap[M]['result']
       }
       default: {

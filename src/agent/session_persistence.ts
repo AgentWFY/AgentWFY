@@ -1,5 +1,7 @@
+import fs from 'fs/promises'
+import path from 'path'
+import crypto from 'crypto'
 import type { DisplayMessage } from './provider_types.js'
-import { requireIpc } from './tool_utils.js'
 
 export const SESSION_VERSION = 1
 
@@ -11,11 +13,7 @@ export interface StoredSession {
 }
 
 export function createSessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return crypto.randomUUID()
 }
 
 export function createSessionFileName(): string {
@@ -41,10 +39,6 @@ export function normalizeSessionFileName(sessionFile: string): string {
   return fileName
 }
 
-export function requireSessionStorageTools() {
-  return requireIpc().sessions
-}
-
 export function parseStoredSession(raw: string, sessionFile: string): StoredSession {
   let parsed: Record<string, unknown>
 
@@ -64,5 +58,47 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
     messages: Array.isArray(parsed.messages) ? parsed.messages : [],
     updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
+  }
+}
+
+export async function readSessionFile(sessionsDir: string, fileName: string): Promise<string> {
+  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
+  return fs.readFile(filePath, 'utf-8')
+}
+
+export async function ensureSessionsDir(sessionsDir: string): Promise<void> {
+  await fs.mkdir(sessionsDir, { recursive: true })
+}
+
+export async function writeSessionFile(sessionsDir: string, fileName: string, content: string): Promise<void> {
+  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
+  await fs.writeFile(filePath, content, 'utf-8')
+}
+
+export async function listSessionFiles(sessionsDir: string, limit: number): Promise<Array<{ name: string; updatedAt: number }>> {
+  try {
+    await fs.mkdir(sessionsDir, { recursive: true })
+  } catch {
+    return []
+  }
+
+  try {
+    const entries = await fs.readdir(sessionsDir, { withFileTypes: true })
+    const sessions: Array<{ name: string; updatedAt: number }> = []
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue
+      try {
+        const stats = await fs.stat(path.join(sessionsDir, entry.name))
+        sessions.push({ name: entry.name, updatedAt: Math.floor(stats.mtimeMs) })
+      } catch {
+        continue
+      }
+    }
+
+    sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    return sessions.slice(0, limit)
+  } catch {
+    return []
   }
 }

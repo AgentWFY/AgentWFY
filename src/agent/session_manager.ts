@@ -1,10 +1,15 @@
-import { AgentWFYAgent } from './create_agent.js'
-import { createIpcProviderSession, restoreIpcProviderSession } from './ipc_provider_session.js'
-import { bus } from '../event-bus.js'
+import { Notification, type BrowserWindow } from 'electron'
+import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
+import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
+import type { ProviderRegistry } from '../providers/registry.js'
+import type { JsRuntime } from '../runtime/js_runtime.js'
+import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
+import { forwardBusPublish } from '../ipc/bus.js'
 import {
   createSessionFileName,
-  requireSessionStorageTools,
+  readSessionFile,
+  listSessionFiles,
   parseStoredSession,
 } from './session_persistence.js'
 
@@ -20,6 +25,15 @@ function getLastAssistantMessage(messages: DisplayMessage[]): DisplayMessage | u
     if (messages[i].role === 'assistant') return messages[i]
   }
   return undefined
+}
+
+function extractFirstUserMessage(messages: DisplayMessage[], maxLen: number): string | null {
+  for (const msg of messages) {
+    if (msg.role !== 'user') continue
+    const text = getTextFromDisplayMessage(msg).trim()
+    if (text) return text.slice(0, maxLen)
+  }
+  return null
 }
 
 export interface SessionEntry {
@@ -46,9 +60,18 @@ export interface SessionListItem {
   sessionId: string | null
 }
 
+export interface AgentSessionManagerDeps {
+  agentRoot: string
+  win: BrowserWindow
+  providerRegistry: ProviderRegistry
+  getJsRuntime: () => JsRuntime
+}
+
 export class AgentSessionManager {
   private sessions = new Map<string, SessionEntry>()
   private listeners = new Set<() => void>()
+  private readonly deps: AgentSessionManagerDeps
+  private readonly sessionsDir: string
 
   // Cached state for the active (displayed) session
   private _activeSessionFile: string | null = null
@@ -56,6 +79,11 @@ export class AgentSessionManager {
   private _activeMessages: DisplayMessage[] = []
   private _activeLabel: string = ''
   private _activeNotifyOnFinish = false
+
+  constructor(deps: AgentSessionManagerDeps) {
+    this.deps = deps
+    this.sessionsDir = `${deps.agentRoot}/${DEFAULT_SESSION_DIR}`
+  }
 
   get activeSessionFile(): string | null {
     return this._activeSessionFile
@@ -101,7 +129,7 @@ export class AgentSessionManager {
       // Create agent immediately and start streaming
       const agent = await this.createAgentInstance({ sessionFile })
       const sessionId = agent.sessionId
-      void window.ipc?.execJs.ensureWorker(sessionId)
+      this.deps.getJsRuntime().ensureWorker(sessionId)
 
       const entry = this.trackSession(sessionId, agent, label)
       this._activeSessionFile = agent.sessionFile ?? sessionFile
@@ -151,7 +179,7 @@ export class AgentSessionManager {
       hasExistingSession ? { sessionFile: this._activeSessionFile } : {}
     )
     const sessionId = agent.sessionId
-    void window.ipc?.execJs.ensureWorker(sessionId)
+    this.deps.getJsRuntime().ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, this._activeLabel)
     entry.notifyOnFinish = this._activeNotifyOnFinish
@@ -170,8 +198,8 @@ export class AgentSessionManager {
   }
 
   async loadSessionFromDisk(file: string): Promise<void> {
-    const tools = requireSessionStorageTools()
-    const raw = await tools.read(file)
+    const sessionsDir = this.sessionsDir
+    const raw = await readSessionFile(sessionsDir, file)
     const stored = parseStoredSession(raw, file)
 
     this._activeSessionFile = file
@@ -190,7 +218,7 @@ export class AgentSessionManager {
         await agent.abort()
       }
       const sessionId = this._activeSessionId!
-      void window.ipc?.execJs.terminateWorker(sessionId)
+      this.deps.getJsRuntime().terminateWorker(sessionId)
       const entry = this.sessions.get(sessionId)
       if (entry) {
         entry.unsubscribe()
@@ -238,7 +266,7 @@ export class AgentSessionManager {
   async spawnSession(prompt: string): Promise<{ agentId: string }> {
     const agent = await this.createAgentInstance({})
     const sessionId = agent.sessionId
-    void window.ipc?.execJs.ensureWorker(sessionId)
+    this.deps.getJsRuntime().ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, 'Spawned agent')
     entry.autoPublishResponse = true
@@ -265,7 +293,7 @@ export class AgentSessionManager {
     // Load from disk and send
     const agent = await this.createAgentInstance({ sessionFile: agentId })
     const sessionId = agent.sessionId
-    void window.ipc?.execJs.ensureWorker(sessionId)
+    this.deps.getJsRuntime().ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, 'sendToAgent')
     entry.autoPublishResponse = true
@@ -279,7 +307,7 @@ export class AgentSessionManager {
       if (entry.agent.isStreaming) {
         await entry.agent.abort()
       }
-      void window.ipc?.execJs.terminateWorker(entry.agent.sessionId)
+      this.deps.getJsRuntime().terminateWorker(entry.agent.sessionId)
       entry.unsubscribe()
       entry.agent.dispose()
     }
@@ -296,7 +324,7 @@ export class AgentSessionManager {
   async getSessionList(): Promise<SessionListItem[]> {
     let history: SessionHistoryItem[] = []
     try {
-      history = await listSessionHistory()
+      history = await this.listSessionHistory()
     } catch {
       history = []
     }
@@ -342,18 +370,53 @@ export class AgentSessionManager {
     return items
   }
 
+  // --- Snapshot for IPC ---
+
+  getSnapshot(): {
+    messages: DisplayMessage[]
+    isStreaming: boolean
+    label: string
+    streamingSessionsCount: number
+    notifyOnFinish: boolean
+    streamingMessage: DisplayMessage | null
+    statusLine: string | undefined
+  } {
+    const agent = this.activeAgent
+    return {
+      messages: this.activeMessages,
+      isStreaming: this.activeIsStreaming,
+      label: this._activeLabel,
+      streamingSessionsCount: this.streamingSessionsCount,
+      notifyOnFinish: this._activeNotifyOnFinish,
+      streamingMessage: agent?.state.streamingMessage ?? null,
+      statusLine: agent?.state.statusLine,
+    }
+  }
+
   private async createAgentInstance(opts: { sessionFile?: string }): Promise<AgentWFYAgent> {
+    const { agentRoot, providerRegistry, getJsRuntime } = this.deps
     let providerId = 'openai-compatible'
     try {
-      const rows = await window.ipc!.sql.run({
+      const parsed = parseRunSqlRequest({
         target: 'agent',
         sql: "SELECT value FROM config WHERE name = 'system.provider'",
-      }) as Array<{ value: string }>
+      })
+      const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ value: string }>
       if (rows[0]?.value) providerId = JSON.parse(rows[0].value)
     } catch {}
+
+    const factory = providerRegistry.get(providerId)
+    if (!factory) throw new Error(`Provider '${providerId}' not found`)
+
     return AgentWFYAgent.create({
-      createProviderSession: (config) => createIpcProviderSession(providerId, config),
-      restoreProviderSession: (messages, config) => restoreIpcProviderSession(providerId, messages, config),
+      createProviderSession: (config) => {
+        return factory.createSession({ ...config, tools: [EXECJS_TOOL_DEFINITION] })
+      },
+      restoreProviderSession: (messages, config) => {
+        return factory.restoreSession(messages, { ...config, tools: [EXECJS_TOOL_DEFINITION] })
+      },
+      agentRoot,
+      getJsRuntime,
       ...(opts.sessionFile ? { sessionFile: opts.sessionFile } : {}),
     })
   }
@@ -385,7 +448,7 @@ export class AgentSessionManager {
   private handleStreamingFinished(sessionId: string, entry: SessionEntry): void {
     if (entry.notifyOnFinish) {
       try {
-        new Notification('Agent finished', { body: entry.label })
+        new Notification({ title: 'Agent finished', body: entry.label }).show()
       } catch {
         // Notifications may not be supported
       }
@@ -396,8 +459,8 @@ export class AgentSessionManager {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
       const agentId = entry.agent.sessionFile
-      if (agentId) {
-        bus.publish(`agent:response:${agentId}`, { agentId, response: lastText })
+      if (agentId && !this.deps.win.isDestroyed()) {
+        forwardBusPublish(this.deps.win, `agent:response:${agentId}`, { agentId, response: lastText })
       }
     }
 
@@ -408,7 +471,7 @@ export class AgentSessionManager {
     }
 
     // Dispose
-    void window.ipc?.execJs.terminateWorker(sessionId)
+    this.deps.getJsRuntime().terminateWorker(sessionId)
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
@@ -419,7 +482,7 @@ export class AgentSessionManager {
   private notify(): void {
     if (this._notifyScheduled) return
     this._notifyScheduled = true
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       this._notifyScheduled = false
       for (const listener of this.listeners) {
         try {
@@ -428,77 +491,39 @@ export class AgentSessionManager {
           console.error('[AgentSessionManager] listener error', err)
         }
       }
-    })
+    }, 0)
   }
-}
 
-let instance: AgentSessionManager | null = null
+  private async listSessionHistory(): Promise<SessionHistoryItem[]> {
+    const sessionsDir = this.sessionsDir
 
-export function getSessionManager(): AgentSessionManager | null {
-  return instance
-}
+    try {
+      const sessions = await listSessionFiles(sessionsDir, 200)
+      if (sessions.length === 0) return []
 
-export async function initSessionManager(): Promise<AgentSessionManager> {
-  if (instance) {
-    await instance.disposeAll()
-  }
-  instance = new AgentSessionManager()
-  await instance.createSession()
-  return instance
-}
+      const items: SessionHistoryItem[] = []
 
-export async function reconnectManager(): Promise<AgentSessionManager> {
-  if (instance) {
-    await instance.disposeAll()
-  }
-  instance = new AgentSessionManager()
-  await instance.createSession()
-  return instance
-}
+      for (const session of sessions) {
+        if (!session.name.endsWith('.json')) continue
 
-function extractFirstUserMessage(messages: DisplayMessage[], maxLen: number): string | null {
-  for (const msg of messages) {
-    if (msg.role !== 'user') continue
-    const text = getTextFromDisplayMessage(msg).trim()
-    if (text) return text.slice(0, maxLen)
-  }
-  return null
-}
+        try {
+          const raw = await readSessionFile(sessionsDir, session.name)
+          const parsed = JSON.parse(raw)
+          const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : session.updatedAt
+          const firstUserMessage = extractFirstUserMessage(parsed.messages, 100) ?? ''
 
-export async function listSessionHistory(): Promise<SessionHistoryItem[]> {
-  const ipc = window.ipc
-  if (!ipc) return []
-
-  try {
-    const sessions = await ipc.sessions.list(200)
-    if (!Array.isArray(sessions) || sessions.length === 0) return []
-
-    const items: SessionHistoryItem[] = []
-
-    for (const session of sessions) {
-      if (!session || typeof session.name !== 'string' || !session.name.endsWith('.json')) {
-        continue
-      }
-      const file = session.name
-
-      try {
-        const raw = await ipc.sessions.read(file)
-        const parsed = JSON.parse(raw)
-        const fallbackUpdatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0
-        const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : fallbackUpdatedAt
-        const firstUserMessage = extractFirstUserMessage(parsed.messages, 100) ?? ''
-
-        if (firstUserMessage) {
-          items.push({ file, updatedAt, firstUserMessage })
+          if (firstUserMessage) {
+            items.push({ file: session.name, updatedAt, firstUserMessage })
+          }
+        } catch {
+          // Skip unparseable files
         }
-      } catch {
-        // Skip unparseable files
       }
-    }
 
-    items.sort((a, b) => b.updatedAt - a.updatedAt)
-    return items.slice(0, 50)
-  } catch {
-    return []
+      items.sort((a, b) => b.updatedAt - a.updatedAt)
+      return items.slice(0, 50)
+    } catch {
+      return []
+    }
   }
 }

@@ -1,12 +1,29 @@
-import type { DisplayMessage } from '../agent/provider_types.js'
-import { getSessionManager, reconnectManager } from '../agent/session_manager.js'
-import type { AgentSessionManager, SessionListItem } from '../agent/session_manager.js'
+import type { DisplayMessage } from '../../../agent/provider_types.js'
 import {
   buildRenderBlocks,
   updateMessagesEl
 } from './chat_message_renderer.js'
 import { escapeHtml } from './chat_utils.js'
 import { renderSessionPanelHtml } from './chat_session_panel.js'
+
+interface SessionListItem {
+  label: string
+  updatedAt: number
+  isActive: boolean
+  isStreaming: boolean
+  file: string | null
+  sessionId: string | null
+}
+
+interface AgentSnapshot {
+  messages: DisplayMessage[]
+  isStreaming: boolean
+  label: string
+  streamingSessionsCount: number
+  notifyOnFinish: boolean
+  streamingMessage: DisplayMessage | null
+  statusLine: string | undefined
+}
 
 const STYLES = `
   awfy-agent-chat {
@@ -503,14 +520,16 @@ const STYLES = `
 `
 
 export class TlAgentChat extends HTMLElement {
-  private manager: AgentSessionManager | null = null
-  private managerUnsub: (() => void) | null = null
+  private snapshotUnsub: (() => void) | null = null
+  private streamingUnsub: (() => void) | null = null
   private messages: DisplayMessage[] = []
+  private streamingMessage: DisplayMessage | null = null
   private isStreaming = false
   private error: string | null = null
   private inputValue = ''
   private activePanel: 'providers' | 'sessions' | null = null
   private isInitializing = true
+  private ready = false
   private notifyOnFinish = false
   private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
@@ -519,6 +538,7 @@ export class TlAgentChat extends HTMLElement {
   private styleEl!: HTMLStyleElement
   private userScrolledUp = false
   private configStatusLine = ''
+  private statusLine = ''
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
@@ -562,9 +582,10 @@ export class TlAgentChat extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.managerUnsub?.()
-    this.managerUnsub = null
-    this.manager = null
+    this.snapshotUnsub?.()
+    this.snapshotUnsub = null
+    this.streamingUnsub?.()
+    this.streamingUnsub = null
     this.messages = []
     this.isStreaming = false
     this.sessionListItems = []
@@ -599,13 +620,44 @@ export class TlAgentChat extends HTMLElement {
   private async init() {
     try {
       await this.loadConfigStatusLine()
-      const mgr = getSessionManager()
-      if (mgr) {
-        this.manager = mgr
-        this.managerUnsub = mgr.subscribe(() => this.refreshState())
-        this.refreshState()
-      } else {
+
+      const ipc = window.ipc
+      if (!ipc?.agent) {
         this.activePanel = 'providers'
+        this.isInitializing = false
+        this.render()
+        return
+      }
+
+      // Subscribe to state from main process
+      this.snapshotUnsub = ipc.agent.onSnapshot((snapshot: unknown) => {
+        const s = snapshot as AgentSnapshot
+        this.messages = s.messages
+        this.isStreaming = s.isStreaming
+        this.notifyOnFinish = s.notifyOnFinish
+        this.streamingMessage = s.streamingMessage
+        this.statusLine = s.statusLine || ''
+        this.error = null
+        this.ready = true
+        this.render()
+      })
+
+      this.streamingUnsub = ipc.agent.onStreaming((data: unknown) => {
+        const d = data as { message: DisplayMessage | null; statusLine?: string }
+        this.streamingMessage = d.message
+        if (d.statusLine) this.statusLine = d.statusLine
+        this.render()
+      })
+
+      // Get initial snapshot
+      const snapshot = await ipc.agent.getSnapshot() as AgentSnapshot | null
+      if (snapshot) {
+        this.messages = snapshot.messages
+        this.isStreaming = snapshot.isStreaming
+        this.notifyOnFinish = snapshot.notifyOnFinish
+        this.streamingMessage = snapshot.streamingMessage
+        this.statusLine = snapshot.statusLine || ''
+        this.ready = true
       }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -615,32 +667,14 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
-  private refreshState() {
-    if (!this.manager) {
-      this.messages = []
-      this.isStreaming = false
-      this.render()
-      return
-    }
-    this.messages = this.manager.activeMessages
-    this.isStreaming = this.manager.activeIsStreaming
-    this.notifyOnFinish = this.manager.activeNotifyOnFinish
-    this.error = null
-    this.render()
-  }
-
   private async handleReconnect() {
     this.error = null
-    const keepPanelOpen = !!this.manager && this.activePanel === 'providers'
+    const keepPanelOpen = this.ready && this.activePanel === 'providers'
     this.isInitializing = true
     this.render()
     try {
-      this.managerUnsub?.()
       await this.loadConfigStatusLine()
-      const mgr = await reconnectManager()
-      this.manager = mgr
-      this.managerUnsub = mgr.subscribe(() => this.refreshState())
-      this.refreshState()
+      await window.ipc?.agent.reconnect()
       this.activePanel = keepPanelOpen ? 'providers' : null
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -651,9 +685,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleStop() {
-    if (!this.manager || !this.isStreaming) return
+    if (!this.isStreaming) return
     try {
-      await this.manager.abortActive()
+      await window.ipc?.agent.abort()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -661,10 +695,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleNewSession() {
-    if (!this.manager) return
     this.activePanel = null
     try {
-      await this.manager.createSession()
+      await window.ipc?.agent.createSession()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -677,9 +710,12 @@ export class TlAgentChat extends HTMLElement {
       this.render()
       return
     }
-    if (!this.manager) return
 
-    this.sessionListItems = await this.manager.getSessionList()
+    try {
+      this.sessionListItems = (await window.ipc?.agent.getSessionList() ?? []) as SessionListItem[]
+    } catch {
+      this.sessionListItems = []
+    }
     this.activePanel = 'sessions'
     this._sessionPanelDirty = true
     this.render()
@@ -688,10 +724,13 @@ export class TlAgentChat extends HTMLElement {
   private handleSessionClick(item: SessionListItem) {
     if (item.isActive) return
     this.activePanel = null
-    if (item.sessionId && this.manager) {
-      this.manager.switchTo(item.sessionId)
-    } else if (item.file && this.manager) {
-      this.manager.loadSessionFromDisk(item.file).catch(e => {
+    if (item.sessionId) {
+      window.ipc?.agent.switchTo(item.sessionId).catch(e => {
+        this.error = e instanceof Error ? e.message : String(e)
+        this.render()
+      })
+    } else if (item.file) {
+      window.ipc?.agent.loadSession(item.file).catch(e => {
         this.error = e instanceof Error ? e.message : String(e)
         this.render()
       })
@@ -700,7 +739,7 @@ export class TlAgentChat extends HTMLElement {
 
   private async sendMessage() {
     const text = this.inputValue.trim()
-    if (!text || !this.manager) return
+    if (!text) return
 
     this.inputValue = ''
     if (this._textarea) {
@@ -712,9 +751,9 @@ export class TlAgentChat extends HTMLElement {
 
     try {
       if (this.isStreaming) {
-        await this.manager.sendMessage(text, { streamingBehavior: 'followUp' })
+        await window.ipc?.agent.sendMessage(text, { streamingBehavior: 'followUp' })
       } else {
-        await this.manager.sendMessage(text)
+        await window.ipc?.agent.sendMessage(text)
       }
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -753,7 +792,7 @@ export class TlAgentChat extends HTMLElement {
     if (!this.containerEl) return
 
     const mode = this.isInitializing ? 'initializing'
-      : !this.manager ? 'setup'
+      : !this.ready ? 'setup'
       : 'chat'
 
     if (mode === 'initializing') {
@@ -949,9 +988,7 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 4 3.5 4 5.5c0 3-1.5 4.5-2 5h12c-.5-.5-2-2-2-5 0-2-1.5-4-4-4z"/><path d="M6.5 12.5c.3.6.9 1 1.5 1s1.2-.4 1.5-1"/></svg>'
     this._notifyBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      if (this.manager) {
-        this.manager.setNotifyOnFinish(!this.notifyOnFinish)
-      }
+      window.ipc?.agent.setNotifyOnFinish(!this.notifyOnFinish)
     })
     actionsDiv.appendChild(this._notifyBtn)
 
@@ -986,8 +1023,8 @@ export class TlAgentChat extends HTMLElement {
 
   private updateChat() {
     // Combine completed messages + streaming message for rendering
-    const allMessages = this.isStreaming && this.manager?.activeAgent?.state.streamingMessage
-      ? [...this.messages, this.manager.activeAgent.state.streamingMessage]
+    const allMessages = this.isStreaming && this.streamingMessage
+      ? [...this.messages, this.streamingMessage]
       : this.messages
     const displayBlocks = buildRenderBlocks(allMessages)
 
@@ -1042,10 +1079,9 @@ export class TlAgentChat extends HTMLElement {
 
     // 7. Model info — from provider status line, or config defaults
     if (this._modelInfo) {
-      const agent = this.manager?.activeAgent
-      const statusLine = agent?.state.statusLine || this.configStatusLine
-      if (this._modelInfo.textContent !== statusLine) {
-        this._modelInfo.textContent = statusLine
+      const currentStatusLine = this.statusLine || this.configStatusLine
+      if (this._modelInfo.textContent !== currentStatusLine) {
+        this._modelInfo.textContent = currentStatusLine
       }
     }
 

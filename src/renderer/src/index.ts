@@ -8,8 +8,6 @@ import { TlStatusLine } from './components/status_line.js'
 import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
 import { initBusBridge } from './bus-bridge.js'
-import { initSessionManager } from './agent/session_manager.js'
-import { initTaskRunner } from './tasks/task_runner.js'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -28,9 +26,6 @@ async function init() {
   defineElement('awfy-task-panel', TlTaskPanel)
   defineElement('awfy-app', TlApp)
 
-  await initSessionManager()
-
-  initTaskRunner()
   initBusBridge()
 
   document.body.appendChild(document.createElement('awfy-app'))

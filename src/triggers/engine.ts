@@ -24,7 +24,7 @@ interface EventConfig {
   topic: string;
 }
 
-import type { TaskOrigin } from '../renderer/src/tasks/task_runner.js';
+import type { TaskOrigin } from '../task-runner/task_runner.js';
 
 type TriggerOrigin = Extract<TaskOrigin, { type: 'trigger' }>;
 
