@@ -1,5 +1,4 @@
-import type { ExecJsLogEntry } from '../runtime/types.js'
-import { getJsRuntime } from '../runtime/js_runtime.js'
+import type { ExecJsLogEntry, ExecJsDetails } from '../../../runtime/types.js'
 import { bus } from '../event-bus.js'
 
 export type TaskOrigin =
@@ -46,6 +45,7 @@ export class TaskRunner {
   private _runs: TaskRun[] = []
   private listeners = new Set<() => void>()
   private completionWaiters = new Map<string, { resolve: (value: unknown) => void }>()
+  private logUnsubscribe: (() => void) | null = null
 
   get runs(): TaskRun[] {
     return this._runs
@@ -89,8 +89,7 @@ export class TaskRunner {
     this._runs.unshift(run)
     this.notify()
 
-    const runtime = getJsRuntime()
-    runtime.ensureWorker(runId)
+    await ipc.execJs.ensureWorker(runId)
 
     void this.executeRun(run, task.content, timeoutMs, input)
 
@@ -109,8 +108,7 @@ export class TaskRunner {
     const run = this._runs.find(r => r.runId === runId)
     if (!run || run.status !== 'running') return
 
-    const runtime = getJsRuntime()
-    runtime.terminateWorker(runId)
+    void window.ipc?.execJs.terminateWorker(runId)
 
     run.status = 'failed'
     run.error = 'Stopped by user'
@@ -136,15 +134,25 @@ export class TaskRunner {
     if (!run) return
 
     run.logs = []
-    const runtime = getJsRuntime()
-    runtime.watchLogs(runId, (entry) => {
-      run.logs.push(entry)
-    })
+
+    const ipc = window.ipc
+    if (!ipc) return
+
+    // Subscribe to log events for this run
+    if (!this.logUnsubscribe) {
+      this.logUnsubscribe = ipc.execJs.onLog((sessionId, entry) => {
+        const targetRun = this._runs.find(r => r.runId === sessionId && r.status === 'running')
+        if (targetRun) {
+          targetRun.logs.push(entry as ExecJsLogEntry)
+        }
+      })
+    }
+
+    void ipc.execJs.watchLogs(runId)
   }
 
   unwatchRun(runId: string): void {
-    const runtime = getJsRuntime()
-    runtime.unwatchLogs(runId)
+    void window.ipc?.execJs.unwatchLogs(runId)
   }
 
   subscribe(listener: () => void): () => void {
@@ -153,22 +161,32 @@ export class TaskRunner {
   }
 
   dispose(): void {
-    const runtime = getJsRuntime()
     for (const run of this._runs) {
       if (run.status === 'running') {
-        runtime.terminateWorker(run.runId)
+        void window.ipc?.execJs.terminateWorker(run.runId)
       }
     }
     this._runs = []
     this.completionWaiters.clear()
     this.listeners.clear()
+    if (this.logUnsubscribe) {
+      this.logUnsubscribe()
+      this.logUnsubscribe = null
+    }
   }
 
   private async executeRun(run: TaskRun, code: string, timeoutMs: number, input?: unknown): Promise<void> {
-    const runtime = getJsRuntime()
+    const ipc = window.ipc
+    if (!ipc) {
+      run.status = 'failed'
+      run.error = 'window.ipc is not available'
+      run.finishedAt = Date.now()
+      this.notify()
+      return
+    }
 
     try {
-      const details = await runtime.executeExecJs(run.runId, code, timeoutMs, undefined, input)
+      const details = await ipc.execJs.execute(run.runId, code, timeoutMs, input) as ExecJsDetails
 
       run.logs = details.logs ?? []
 
@@ -189,7 +207,7 @@ export class TaskRunner {
       const alreadyFinished = !!run.finishedAt
       if (!alreadyFinished) {
         run.finishedAt = Date.now()
-        runtime.terminateWorker(run.runId)
+        void ipc?.execJs.terminateWorker(run.runId)
         await this.persistLog(run)
         this.notify()
       }

@@ -43,7 +43,7 @@ export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unk
   });
 }
 
-function forwardStopTask(win: BrowserWindow, runId: string): Promise<void> {
+export function forwardStopTask(win: BrowserWindow, runId: string): Promise<void> {
   const waiterId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

@@ -78,13 +78,14 @@ const builds = [
     sourcemap: watch,
     logLevel: 'info',
   },
-  // Web Worker
+  // Exec worker (utilityProcess)
   {
-    entryPoints: [join(src, 'renderer', 'src', 'runtime', 'exec_worker.ts')],
+    entryPoints: [join(src, 'runtime', 'exec_worker.ts')],
     bundle: true,
+    platform: 'node',
     format: 'esm',
-    outdir: clientDist,
-    define: { 'process.env': '{}', 'process.versions': '{}' },
+    outdir: dist,
+    external: ['electron'],
     sourcemap: watch,
     logLevel: 'info',
   },

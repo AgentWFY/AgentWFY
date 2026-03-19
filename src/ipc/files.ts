@@ -11,7 +11,7 @@ export const DEFAULT_GREP_LIMIT = 100;
 export const DEFAULT_FIND_LIMIT = 1000;
 export const DEFAULT_LS_LIMIT = 500;
 
-function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
+export function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
   const lines = text.split('\n');
   const totalLines = lines.length;
 

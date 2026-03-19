@@ -16,10 +16,14 @@ import type { DialogApi } from './dialog.js'
 import type { BusApi } from './bus.js'
 import type { TasksApi } from './tasks.js'
 
-export interface NetApi {
-  headers: {
-    set(request: { tid: string; headers: Record<string, string> }): Promise<void>
-  }
+export interface ExecJsApi {
+  ensureWorker(sessionId: string): Promise<void>
+  terminateWorker(sessionId: string): Promise<void>
+  execute(sessionId: string, code: string, timeoutMs?: number, input?: unknown): Promise<import('../../../runtime/types.js').ExecJsDetails>
+  cancel(sessionId: string): void
+  watchLogs(sessionId: string): Promise<void>
+  unwatchLogs(sessionId: string): Promise<void>
+  onLog(callback: (sessionId: string, entry: import('../../../runtime/types.js').ExecJsLogEntry) => void): () => void
 }
 
 export interface CommandPaletteApi {
@@ -53,7 +57,7 @@ export interface AppIpc {
   dialog: DialogApi
   bus: BusApi
   tasks: TasksApi
-  net: NetApi
+  execJs: ExecJsApi
   plugins: PluginsApi
   providers: ProvidersApi
   commandPalette: CommandPaletteApi

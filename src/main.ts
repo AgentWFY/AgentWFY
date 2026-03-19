@@ -6,7 +6,7 @@ import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerBusHandlers } from './ipc/bus.js';
-import { registerRequestHeadersHandlers, installWebRequestHooks } from './ipc/request-headers.js';
+import { registerExecJsHandlers, getOrCreateRuntime } from './ipc/exec-js.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
@@ -33,7 +33,7 @@ app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommuni
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
 // calls and are already propagated to the renderer as rejected promises.
-const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'headers:', 'plugin:'];
+const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'execJs:', 'plugin:'];
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
   const first = args[0]
@@ -82,7 +82,22 @@ registerSqlHandlers(
 );
 registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTools);
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
-registerRequestHeadersHandlers();
+registerExecJsHandlers(
+  (e) => {
+    const ctx = windowManager.getContextForSender(e.sender.id);
+    return getOrCreateRuntime(ctx.window, {
+      agentRoot: ctx.agentRoot,
+      win: ctx.window,
+      tabTools: ctx.tabTools,
+      pluginRegistry: ctx.pluginRegistry,
+      onDbChange: (change) => {
+        if (ctx.window.isDestroyed()) return;
+        ctx.window.webContents.send('bus:dbChanged', change);
+      },
+    });
+  },
+  (e) => windowManager.getWindowForEvent(e),
+);
 registerBusHandlers((e) => windowManager.getWindowForEvent(e));
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);
@@ -324,7 +339,6 @@ async function createInitialWindow() {
 // --- App lifecycle ---
 
 app.on('ready', async () => {
-  installWebRequestHooks();
   startFileWatcher();
 
   buildAndSetMenu();

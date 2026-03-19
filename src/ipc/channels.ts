@@ -59,8 +59,14 @@ export const Channels = {
     sendToAgent: 'bus:sendToAgent',
     dbChanged: 'bus:dbChanged',
   },
-  headers: {
-    set: 'headers:set',
+  execJs: {
+    ensureWorker: 'execJs:ensureWorker',
+    terminateWorker: 'execJs:terminateWorker',
+    execute: 'execJs:execute',
+    cancel: 'execJs:cancel',
+    watchLogs: 'execJs:watchLogs',
+    unwatchLogs: 'execJs:unwatchLogs',
+    log: 'execJs:log',
   },
   tasks: {
     start: 'tasks:start',
