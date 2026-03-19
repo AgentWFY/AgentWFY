@@ -22,7 +22,7 @@ export function registerAgentSessionHandlers(
     return getManager(event).createSession(opts)
   })
 
-  ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }) => {
+  ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'followUp' }) => {
     await getManager(event).sendMessage(text, options)
   })
 

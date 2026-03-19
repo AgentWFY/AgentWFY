@@ -389,7 +389,7 @@ if (isApp) {
       createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string> {
         return ipcRenderer.invoke(Channels.agent.createSession, opts);
       },
-      sendMessage(text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void> {
+      sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.sendMessage, text, options);
       },
       abort(): Promise<void> {

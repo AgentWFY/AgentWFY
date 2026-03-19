@@ -163,8 +163,8 @@ export class AgentSessionManager {
     return sessionFile
   }
 
-  async sendMessage(text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void> {
-    // If the active session is currently streaming, send as followUp/steer
+  async sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
+    // If the active session is currently streaming, queue as followUp
     const activeAgent = this.activeAgent
     if (activeAgent) {
       const behavior = options?.streamingBehavior ?? (activeAgent.isStreaming ? 'followUp' : undefined)

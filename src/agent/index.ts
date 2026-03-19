@@ -31,7 +31,6 @@ export class Agent {
 
   private listeners = new Set<(e: AgentEvent) => void>()
   private providerSession: ProviderSession
-  private steeringQueue: string[] = []
   private followUpQueue: string[] = []
   private runningPrompt?: Promise<void>
   private resolveRunningPrompt?: () => void
@@ -89,15 +88,13 @@ export class Agent {
     this._state.messages = []
   }
 
-  steer(text: string): void {
-    this.steeringQueue.push(text)
-  }
-
   followUp(text: string): void {
+    if (!text || !text.trim()) return
     this.followUpQueue.push(text)
   }
 
   abort(): void {
+    this.followUpQueue = []
     this.providerSession.send({ type: 'abort' })
   }
 
@@ -110,7 +107,6 @@ export class Agent {
     this._state.isStreaming = false
     this._state.streamingMessage = null
     this._state.error = undefined
-    this.steeringQueue = []
     this.followUpQueue = []
   }
 
@@ -119,14 +115,6 @@ export class Agent {
       throw new Error('Agent is already processing a prompt.')
     }
     await this.runLoop(text, images)
-  }
-
-  private dequeueSteering(): string | undefined {
-    return this.steeringQueue.shift()
-  }
-
-  private dequeueFollowUp(): string | undefined {
-    return this.followUpQueue.shift()
   }
 
   private async runLoop(text: string, images?: ImageContent[]): Promise<void> {
@@ -142,164 +130,175 @@ export class Agent {
     try {
       this.emit({ type: 'agent_start' })
 
-      // Add user message to local display
-      const userBlocks: Block[] = [{ type: 'text', text }]
-      if (images) {
-        for (const img of images) {
-          userBlocks.push({ type: 'image', mimeType: img.mimeType, data: img.data })
+      let currentText = text
+      let currentImages = images
+
+      while (true) {
+        // Add user message to local display
+        const userBlocks: Block[] = [{ type: 'text', text: currentText }]
+        if (currentImages) {
+          for (const img of currentImages) {
+            userBlocks.push({ type: 'image', mimeType: img.mimeType, data: img.data })
+          }
         }
-      }
-      this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
+        this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
 
-      // Send to provider and process events
-      await new Promise<void>((resolve) => {
-        let streamingBlocks: Block[] = []
+        // Send to provider and process events
+        await new Promise<void>((resolve) => {
+          let streamingBlocks: Block[] = []
 
-        const handleOutput = (event: ProviderOutput) => {
-          switch (event.type) {
-            case 'start':
-              // If there are existing streaming blocks (from a previous turn with tool calls),
-              // commit them as a completed message before starting a new streaming message.
-              if (streamingBlocks.length > 0) {
-                const completedMessage: DisplayMessage = {
-                  role: 'assistant',
-                  blocks: streamingBlocks,
-                  timestamp: Date.now(),
+          const handleOutput = (event: ProviderOutput) => {
+            switch (event.type) {
+              case 'start':
+                // If there are existing streaming blocks (from a previous turn with tool calls),
+                // commit them as a completed message before starting a new streaming message.
+                if (streamingBlocks.length > 0) {
+                  const completedMessage: DisplayMessage = {
+                    role: 'assistant',
+                    blocks: streamingBlocks,
+                    timestamp: Date.now(),
+                  }
+                  this._state.messages = [...this._state.messages, completedMessage]
                 }
-                this._state.messages = [...this._state.messages, completedMessage]
-              }
-              streamingBlocks = []
-              this._state.streamingMessage = { role: 'assistant', blocks: streamingBlocks, timestamp: Date.now() }
-              this.emit({ type: 'stream_update' })
-              break
+                streamingBlocks = []
+                this._state.streamingMessage = { role: 'assistant', blocks: streamingBlocks, timestamp: Date.now() }
+                this.emit({ type: 'stream_update' })
+                break
 
-            case 'text_delta': {
-              const last = streamingBlocks[streamingBlocks.length - 1]
-              if (last && last.type === 'text') {
-                last.text += event.delta
-              } else {
-                streamingBlocks.push({ type: 'text', text: event.delta })
-              }
-              this.emit({ type: 'stream_update' })
-              break
-            }
-
-            case 'thinking_delta': {
-              const last = streamingBlocks[streamingBlocks.length - 1]
-              if (last && last.type === 'thinking') {
-                last.text += event.delta
-              } else {
-                streamingBlocks.push({ type: 'thinking', text: event.delta })
-              }
-              this.emit({ type: 'stream_update' })
-              break
-            }
-
-            case 'exec_js': {
-              const code = event.code
-              const description = event.description || 'Executing code'
-              streamingBlocks.push({ type: 'exec_js', id: event.id, description, code })
-
-              const tool = this._state.tools.find(t => t.name === 'execJs')
-              if (!tool) {
-                session.send({
-                  type: 'exec_js_result',
-                  id: event.id,
-                  content: [{ type: 'text', text: 'execJs tool not available' }],
-                  isError: true,
-                })
+              case 'text_delta': {
+                const last = streamingBlocks[streamingBlocks.length - 1]
+                if (last && last.type === 'text') {
+                  last.text += event.delta
+                } else {
+                  streamingBlocks.push({ type: 'text', text: event.delta })
+                }
+                this.emit({ type: 'stream_update' })
                 break
               }
 
-              tool.execute(event.id, { code, description })
-                .then((result) => {
-                  const contextContent = result.content.map(c => {
-                    if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
-                      return { ...c, text: truncateHead(c.text) }
-                    }
-                    return c
-                  }) as (TextContent | ImageContent)[]
+              case 'thinking_delta': {
+                const last = streamingBlocks[streamingBlocks.length - 1]
+                if (last && last.type === 'thinking') {
+                  last.text += event.delta
+                } else {
+                  streamingBlocks.push({ type: 'thinking', text: event.delta })
+                }
+                this.emit({ type: 'stream_update' })
+                break
+              }
 
-                  streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: contextContent, isError: false })
-                  this.emit({ type: 'stream_update' })
+              case 'exec_js': {
+                const code = event.code
+                const description = event.description || 'Executing code'
+                streamingBlocks.push({ type: 'exec_js', id: event.id, description, code })
 
+                const tool = this._state.tools.find(t => t.name === 'execJs')
+                if (!tool) {
                   session.send({
                     type: 'exec_js_result',
                     id: event.id,
-                    content: contextContent,
-                    isError: false,
-                  })
-                })
-                .catch((err) => {
-                  const errorText = err instanceof Error ? err.message : String(err)
-
-                  streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: [{ type: 'text', text: errorText }], isError: true })
-                  this.emit({ type: 'stream_update' })
-
-                  session.send({
-                    type: 'exec_js_result',
-                    id: event.id,
-                    content: [{ type: 'text', text: errorText }],
+                    content: [{ type: 'text', text: 'execJs tool not available' }],
                     isError: true,
                   })
-                })
-              this.emit({ type: 'stream_update' })
-              break
-            }
+                  break
+                }
 
-            case 'done': {
-              session.off(handleOutput)
-              this._state.streamingMessage = null
+                tool.execute(event.id, { code, description })
+                  .then((result) => {
+                    const contextContent = result.content.map(c => {
+                      if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
+                        return { ...c, text: truncateHead(c.text) }
+                      }
+                      return c
+                    }) as (TextContent | ImageContent)[]
 
-              // Provider is the source of truth for committed display messages.
-              // It may have cleaned up intermediate steps or transformed messages.
-              const providerMessages = session.getDisplayMessages()
-              if (providerMessages instanceof Promise) {
-                // Async provider — fall back to locally built messages
-                const finalMessage: DisplayMessage = {
+                    streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: contextContent, isError: false })
+                    this.emit({ type: 'stream_update' })
+
+                    session.send({
+                      type: 'exec_js_result',
+                      id: event.id,
+                      content: contextContent,
+                      isError: false,
+                    })
+                  })
+                  .catch((err) => {
+                    const errorText = err instanceof Error ? err.message : String(err)
+
+                    streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: [{ type: 'text', text: errorText }], isError: true })
+                    this.emit({ type: 'stream_update' })
+
+                    session.send({
+                      type: 'exec_js_result',
+                      id: event.id,
+                      content: [{ type: 'text', text: errorText }],
+                      isError: true,
+                    })
+                  })
+                this.emit({ type: 'stream_update' })
+                break
+              }
+
+              case 'done': {
+                session.off(handleOutput)
+                this._state.streamingMessage = null
+
+                // Provider is the source of truth for committed display messages.
+                // It may have cleaned up intermediate steps or transformed messages.
+                const providerMessages = session.getDisplayMessages()
+                if (providerMessages instanceof Promise) {
+                  // Async provider — fall back to locally built messages
+                  const finalMessage: DisplayMessage = {
+                    role: 'assistant',
+                    blocks: streamingBlocks,
+                    timestamp: Date.now(),
+                  }
+                  this._state.messages = [...this._state.messages, finalMessage]
+                } else {
+                  this._state.messages = providerMessages
+                }
+
+                this.emit({ type: 'agent_end' })
+                resolve()
+                break
+              }
+
+              case 'error': {
+                session.off(handleOutput)
+                streamingBlocks.push({ type: 'error', text: event.error })
+                const errorMessage: DisplayMessage = {
                   role: 'assistant',
                   blocks: streamingBlocks,
                   timestamp: Date.now(),
                 }
-                this._state.messages = [...this._state.messages, finalMessage]
-              } else {
-                this._state.messages = providerMessages
+                this._state.streamingMessage = null
+                this._state.messages = [...this._state.messages, errorMessage]
+                this.emit({ type: 'agent_end' })
+                resolve()
+                break
               }
 
-              this.emit({ type: 'agent_end' })
-              resolve()
-              break
+              case 'status_line':
+                this._state.statusLine = event.text
+                this.emit({ type: 'status_line', text: event.text })
+                break
             }
-
-            case 'error': {
-              session.off(handleOutput)
-              streamingBlocks.push({ type: 'error', text: event.error })
-              const errorMessage: DisplayMessage = {
-                role: 'assistant',
-                blocks: streamingBlocks,
-                timestamp: Date.now(),
-              }
-              this._state.streamingMessage = null
-              this._state.messages = [...this._state.messages, errorMessage]
-              this.emit({ type: 'agent_end' })
-              resolve()
-              break
-            }
-
-            case 'status_line':
-              this._state.statusLine = event.text
-              this.emit({ type: 'status_line', text: event.text })
-              break
           }
-        }
 
-        session.on(handleOutput)
-        session.send({
-          type: 'user_message',
-          text,
-          images,
+          session.on(handleOutput)
+          session.send({
+            type: 'user_message',
+            text: currentText,
+            images: currentImages,
+          })
         })
-      })
+
+        // Check for queued follow-up messages
+        const nextFollowUp = this.followUpQueue.shift()
+        if (!nextFollowUp) break
+        currentText = nextFollowUp
+        currentImages = undefined
+      }
     } catch (err) {
       this._state.error = (err as Error)?.message || String(err)
       this.emit({ type: 'agent_end' })
