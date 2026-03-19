@@ -16,6 +16,8 @@ const CONFIG_KEYS = {
   oauthAccess: 'plugin.anthropic-provider.oauthAccess',
   oauthRefresh: 'plugin.anthropic-provider.oauthRefresh',
   oauthExpires: 'plugin.anthropic-provider.oauthExpires',
+  hideThinking: 'plugin.anthropic-provider.hideThinking',
+  hideIntermediateSteps: 'plugin.anthropic-provider.hideIntermediateSteps',
 }
 
 /** Convert tools from ProviderSessionConfig format to Anthropic API format */
@@ -188,6 +190,7 @@ class AnthropicSession {
     this._listeners = new Set()
     this._abortController = null
     this._lastInputTokens = 0
+    this._pendingToolIds = new Set()
   }
 
   send(event) {
@@ -297,7 +300,10 @@ class AnthropicSession {
       lastAssistant.blocks.push({ type: 'exec_js_result', id, content, isError })
     }
 
-    this._stream()
+    this._pendingToolIds.delete(id)
+    if (this._pendingToolIds.size === 0) {
+      this._stream()
+    }
   }
 
   async _stream() {
@@ -405,7 +411,9 @@ class AnthropicSession {
           case 'message_start': {
             const message = data.message
             if (message && message.usage) {
-              inputTokens = message.usage.input_tokens || 0
+              inputTokens = (message.usage.input_tokens || 0)
+                + (message.usage.cache_read_input_tokens || 0)
+                + (message.usage.cache_creation_input_tokens || 0)
             }
             break
           }
@@ -445,7 +453,9 @@ class AnthropicSession {
               thinkingText += delta.thinking
               const thinkBlock = assistantContent[contentIndex]
               if (thinkBlock) thinkBlock.thinking = (thinkBlock.thinking || '') + delta.thinking
-              this._emit({ type: 'thinking_delta', delta: delta.thinking })
+              if (!this._providerConfig.hideThinking) {
+                this._emit({ type: 'thinking_delta', delta: delta.thinking })
+              }
             } else if (deltaType === 'signature_delta' && typeof delta.signature === 'string') {
               const thinkBlock = assistantContent[contentIndex]
               if (thinkBlock) thinkBlock.signature = (thinkBlock.signature || '') + delta.signature
@@ -522,7 +532,7 @@ class AnthropicSession {
 
     // Build assistant display message
     const blocks = []
-    if (thinkingText) blocks.push({ type: 'thinking', text: thinkingText })
+    if (thinkingText && !this._providerConfig.hideThinking) blocks.push({ type: 'thinking', text: thinkingText })
     if (assistantText) blocks.push({ type: 'text', text: assistantText })
     for (const pt of pendingTools) {
       blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
@@ -537,11 +547,32 @@ class AnthropicSession {
     // Now emit exec_js events — this may trigger tool execution and
     // a subsequent _stream() call, so it must happen after the assistant
     // message is committed above.
-    for (const pt of pendingTools) {
-      this._emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
+    if (pendingTools.length > 0) {
+      for (const pt of pendingTools) {
+        this._pendingToolIds.add(pt.id)
+      }
+      for (const pt of pendingTools) {
+        this._emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
+      }
+      return
     }
 
-    if (pendingTools.length > 0) return
+    // When hideIntermediateSteps is on, remove intermediate assistant messages
+    // from display, keeping only user messages and the final assistant message
+    if (this._providerConfig.hideIntermediateSteps) {
+      const finalMsg = this._displayMessages[this._displayMessages.length - 1]
+      // Find the last user message index — everything between it and the final message is intermediate
+      let lastUserIdx = -1
+      for (let i = this._displayMessages.length - 2; i >= 0; i--) {
+        if (this._displayMessages[i].role === 'user') {
+          lastUserIdx = i
+          break
+        }
+      }
+      if (lastUserIdx >= 0 && lastUserIdx < this._displayMessages.length - 2) {
+        this._displayMessages.splice(lastUserIdx + 1, this._displayMessages.length - 2 - lastUserIdx)
+      }
+    }
 
     this._emit({ type: 'done' })
   }
@@ -563,6 +594,8 @@ function createFactory(getConfig, setConfig) {
       const providerConfig = {
         modelId: getConfig(CONFIG_KEYS.modelId, DEFAULT_MODEL_ID),
         maxTokens: getConfig(CONFIG_KEYS.maxTokens, 16384),
+        hideThinking: getConfig(CONFIG_KEYS.hideThinking, false),
+        hideIntermediateSteps: getConfig(CONFIG_KEYS.hideIntermediateSteps, false),
         getApiKey: () => getApiKey(getConfig, setConfig),
       }
       return new AnthropicSession(config, providerConfig)
@@ -572,6 +605,8 @@ function createFactory(getConfig, setConfig) {
       const providerConfig = {
         modelId: getConfig(CONFIG_KEYS.modelId, DEFAULT_MODEL_ID),
         maxTokens: getConfig(CONFIG_KEYS.maxTokens, 16384),
+        hideThinking: getConfig(CONFIG_KEYS.hideThinking, false),
+        hideIntermediateSteps: getConfig(CONFIG_KEYS.hideIntermediateSteps, false),
         getApiKey: () => getApiKey(getConfig, setConfig),
       }
 
