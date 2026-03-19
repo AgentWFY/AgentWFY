@@ -46,7 +46,7 @@ views (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at INTEGER, upda
 docs (id INTEGER PRIMARY KEY, name TEXT UNIQUE, content TEXT, updated_at INTEGER)
 tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
 triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
-config (key TEXT PRIMARY KEY, value TEXT)
+config (name TEXT PRIMARY KEY, value TEXT, description TEXT NOT NULL DEFAULT '')
 ```
 
 Timestamps are unix epoch seconds (auto-set via `unixepoch()`).
