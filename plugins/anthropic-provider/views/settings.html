@@ -166,7 +166,7 @@
   <!-- Model -->
   <div class="section">
     <div class="section-label">Model</div>
-    <select id="modelId">
+    <select id="modelId" style="width:100%">
       <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
       <option value="claude-opus-4-6">Claude Opus 4.6</option>
       <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
@@ -190,6 +190,21 @@
     </div>
   </div>
 
+  <div class="divider"></div>
+
+  <!-- Display options -->
+  <div class="section">
+    <div class="section-label">Display</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="hideThinking">
+      <span style="font-size:13px;color:var(--color-text3)">Hide thinking messages</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="hideIntermediateSteps">
+      <span style="font-size:13px;color:var(--color-text3)">Hide intermediate steps (show only final answer)</span>
+    </label>
+  </div>
+
   <div class="status" id="status"></div>
 
   <script>
@@ -201,6 +216,8 @@
       oauthAccess: 'plugin.anthropic-provider.oauthAccess',
       oauthRefresh: 'plugin.anthropic-provider.oauthRefresh',
       oauthExpires: 'plugin.anthropic-provider.oauthExpires',
+      hideThinking: 'plugin.anthropic-provider.hideThinking',
+      hideIntermediateSteps: 'plugin.anthropic-provider.hideIntermediateSteps',
     };
 
     const OAUTH = {
@@ -397,6 +414,12 @@
       const val = parseInt($('#maxTokens').value, 10);
       if (await saveValue(KEYS.maxTokens, isNaN(val) ? 16384 : val)) showStatus('Saved', 'success');
     });
+    $('#hideThinking').addEventListener('change', async () => {
+      if (await saveValue(KEYS.hideThinking, $('#hideThinking').checked)) showStatus('Saved', 'success');
+    });
+    $('#hideIntermediateSteps').addEventListener('change', async () => {
+      if (await saveValue(KEYS.hideIntermediateSteps, $('#hideIntermediateSteps').checked)) showStatus('Saved', 'success');
+    });
 
     // ── Load ──
 
@@ -411,6 +434,8 @@
           const val = JSON.parse(row.value);
           if (row.name === KEYS.modelId) $('#modelId').value = val;
           else if (row.name === KEYS.maxTokens) $('#maxTokens').value = val || 16384;
+          else if (row.name === KEYS.hideThinking) $('#hideThinking').checked = !!val;
+          else if (row.name === KEYS.hideIntermediateSteps) $('#hideIntermediateSteps').checked = !!val;
         }
       } catch (e) {
         console.error('Failed to load config', e);

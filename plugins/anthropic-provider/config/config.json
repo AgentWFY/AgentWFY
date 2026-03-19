@@ -23,5 +23,15 @@
     "name": "plugin.anthropic-provider.maxTokens",
     "value": "16384",
     "description": "Max output tokens (default: 16384)"
+  },
+  {
+    "name": "plugin.anthropic-provider.hideThinking",
+    "value": "false",
+    "description": "Hide thinking messages from chat (default: false)"
+  },
+  {
+    "name": "plugin.anthropic-provider.hideIntermediateSteps",
+    "value": "false",
+    "description": "Hide intermediate tool calls, show only final answer (default: false)"
   }
 ]

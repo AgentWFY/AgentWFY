@@ -235,13 +235,23 @@ export class Agent {
 
             case 'done': {
               session.off(handleOutput)
-              const finalMessage: DisplayMessage = {
-                role: 'assistant',
-                blocks: streamingBlocks,
-                timestamp: Date.now(),
-              }
               this._state.streamingMessage = null
-              this._state.messages = [...this._state.messages, finalMessage]
+
+              // Provider is the source of truth for committed display messages.
+              // It may have cleaned up intermediate steps or transformed messages.
+              const providerMessages = session.getDisplayMessages()
+              if (providerMessages instanceof Promise) {
+                // Async provider — fall back to locally built messages
+                const finalMessage: DisplayMessage = {
+                  role: 'assistant',
+                  blocks: streamingBlocks,
+                  timestamp: Date.now(),
+                }
+                this._state.messages = [...this._state.messages, finalMessage]
+              } else {
+                this._state.messages = providerMessages
+              }
+
               this.emit({ type: 'agent_end' })
               resolve()
               break
