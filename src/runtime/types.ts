@@ -265,7 +265,7 @@ export interface WorkerStopTaskRequest {
   runId: string
 }
 
-export type WorkerHostMethod = keyof WorkerHostMethodMap
+export type WorkerHostMethod = string
 
 export interface WorkerExecuteRequestMessage {
   type: 'exec:run'
@@ -273,7 +273,7 @@ export interface WorkerExecuteRequestMessage {
   code: string
   timeoutMs: number
   input?: unknown
-  pluginMethods?: string[]
+  methods: string[]
 }
 
 export interface WorkerCancelRequestMessage {
@@ -311,7 +311,7 @@ export interface WorkerHostCallMessage {
   type: 'host:call'
   requestId: string
   callId: string
-  method: WorkerHostMethod
+  method: string
   params: unknown
 }
 

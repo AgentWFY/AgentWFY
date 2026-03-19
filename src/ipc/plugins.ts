@@ -1,22 +1,18 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import type { PluginRegistry } from '../plugins/registry.js'
+import type { FunctionRegistry } from '../runtime/function_registry.js'
 import { installFromPackage, uninstallPlugin } from '../plugins/installer.js'
 import { Channels } from './channels.js'
 
 export function registerPluginHandlers(
   getRoot: (e: IpcMainInvokeEvent) => string,
-  getRegistry: (e: IpcMainInvokeEvent) => PluginRegistry | null,
+  getFunctionRegistry: (e: IpcMainInvokeEvent) => FunctionRegistry,
 ): void {
   ipcMain.handle(Channels.plugins.call, async (event, methodName: string, params: unknown) => {
     if (typeof methodName !== 'string' || methodName.trim().length === 0) {
       throw new Error('plugin:call requires a non-empty method name')
     }
 
-    const registry = getRegistry(event)
-    if (!registry) {
-      throw new Error('Plugin registry not available')
-    }
-
+    const registry = getFunctionRegistry(event)
     try {
       return await registry.call(methodName, params)
     } catch (err) {
@@ -26,14 +22,14 @@ export function registerPluginHandlers(
 
   // Async handler for renderer invoke()
   ipcMain.handle(Channels.plugins.methods, (event) => {
-    const registry = getRegistry(event)
-    return registry ? registry.getMethodNames() : []
+    const registry = getFunctionRegistry(event)
+    return registry.getPluginMethodNames()
   })
 
   // Sync handler for agentview preload sendSync()
   ipcMain.on(Channels.plugins.methods, (event) => {
-    const registry = getRegistry(event as unknown as IpcMainInvokeEvent)
-    event.returnValue = registry ? registry.getMethodNames() : []
+    const registry = getFunctionRegistry(event as unknown as IpcMainInvokeEvent)
+    event.returnValue = registry.getPluginMethodNames()
   })
 
   ipcMain.handle(Channels.plugins.install, (event, packagePath: string) => {

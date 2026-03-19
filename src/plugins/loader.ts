@@ -7,24 +7,17 @@ import { getOrCreateAgentDb } from '../db/agent-db.js'
 import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderFactory } from '../agent/provider_types.js'
+import type { FunctionRegistry } from '../runtime/function_registry.js'
 
 // Use Node's real require (not esbuild's bundled version) so plugins can
 // require built-in modules like child_process, crypto, etc.
 const nodeRequire = createRequire(import.meta.url)
 
-// Built-in host method names that plugins cannot shadow
-const BUILT_IN_METHODS = new Set([
-  'runSql', 'read', 'write', 'writeBinary', 'edit', 'ls', 'mkdir', 'remove',
-  'find', 'grep', 'getTabs', 'openTab', 'closeTab', 'selectTab', 'reloadTab',
-  'captureTab', 'getTabConsoleLogs', 'execTabJs', 'publish', 'waitFor',
-  'fetch', 'WebSocket', 'spawnAgent', 'sendToAgent', 'startTask', 'stopTask',
-  'input',
-])
-
 export function loadPlugins(
   agentRoot: string,
   publish: (topic: string, data: unknown) => void,
   providerRegistry?: ProviderRegistry,
+  functionRegistry?: FunctionRegistry,
 ): PluginRegistry {
   const registry = new PluginRegistry()
   const db = getOrCreateAgentDb(agentRoot)
@@ -52,15 +45,15 @@ export function loadPlugins(
         assetsDir,
         publish,
         registerFunction(name: string, handler) {
-          if (BUILT_IN_METHODS.has(name)) {
-            console.warn(`[plugins] ${row.name}: cannot register '${name}' — conflicts with built-in method`)
+          if (!functionRegistry) {
+            console.warn(`[plugins] ${row.name}: cannot register '${name}' — function registry not available`)
             return
           }
-          if (registry.functions.has(name)) {
-            console.warn(`[plugins] ${row.name}: cannot register '${name}' — already registered by another plugin`)
+          if (functionRegistry.has(name)) {
+            console.warn(`[plugins] ${row.name}: cannot register '${name}' — already registered`)
             return
           }
-          registry.functions.set(name, { pluginName: row.name, handler })
+          functionRegistry.register(name, handler, row.name)
         },
         getConfig(name: string, fallback?: unknown): unknown {
           return getConfigValue(agentRoot, name, fallback)
