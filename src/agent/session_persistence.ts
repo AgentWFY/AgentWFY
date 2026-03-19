@@ -8,7 +8,9 @@ export const SESSION_VERSION = 1
 export interface StoredSession {
   version: number
   sessionId: string
+  providerId: string
   messages: DisplayMessage[]
+  providerState: unknown
   updatedAt: number
 }
 
@@ -56,7 +58,9 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
   return {
     version: typeof parsed.version === 'number' ? parsed.version : 0,
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
+    providerId: typeof parsed.providerId === 'string' ? parsed.providerId : '',
     messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+    providerState: parsed.providerState ?? null,
     updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
   }
 }

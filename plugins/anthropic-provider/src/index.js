@@ -217,6 +217,10 @@ class AnthropicSession {
     return this._displayMessages.slice()
   }
 
+  getState() {
+    return { messages: this._messages }
+  }
+
   _buildStatusLine() {
     const parts = [this._providerConfig.modelId]
     if (this._lastInputTokens > 0) {
@@ -564,13 +568,20 @@ function createFactory(getConfig, setConfig) {
       return new AnthropicSession(config, providerConfig)
     },
 
-    restoreSession(messages, config) {
+    restoreSession(messages, config, state) {
       const providerConfig = {
         modelId: getConfig(CONFIG_KEYS.modelId, DEFAULT_MODEL_ID),
         maxTokens: getConfig(CONFIG_KEYS.maxTokens, 16384),
         getApiKey: () => getApiKey(getConfig, setConfig),
       }
 
+      // If we have provider state with internal messages, use them directly
+      // (preserves thinking signatures, redacted_thinking blocks, etc.)
+      if (state && Array.isArray(state.messages)) {
+        return new AnthropicSession(config, providerConfig, state.messages, messages)
+      }
+
+      // Otherwise reconstruct from display messages (cross-provider restore or legacy sessions)
       const internalMessages = []
 
       for (const msg of messages) {

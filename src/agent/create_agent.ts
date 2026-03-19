@@ -26,12 +26,14 @@ interface SessionConfig {
 }
 
 type ProviderSessionFactory = (config: SessionConfig) => ProviderSession | Promise<ProviderSession>
-type ProviderSessionRestorer = (messages: DisplayMessage[], config: SessionConfig) => ProviderSession | Promise<ProviderSession>
+type ProviderSessionRestorer = (messages: DisplayMessage[], config: SessionConfig, state: unknown) => ProviderSession | Promise<ProviderSession>
 
 export interface AgentWFYAgentOptions {
   createProviderSession: ProviderSessionFactory
   restoreProviderSession: ProviderSessionRestorer
+  providerId: string
   sessionFile?: string
+  storedSession?: StoredSession
   persistSessions?: boolean
   agentRoot: string
   getJsRuntime: () => JsRuntime
@@ -123,6 +125,7 @@ export class AgentWFYAgent {
   private readonly sessionIdRef: { current: string }
   private readonly createProviderSession: ProviderSessionFactory
   private readonly restoreProviderSession: ProviderSessionRestorer
+  private readonly providerId: string
 
   private systemPrompt: string
   private sessionWritePromise: Promise<void> = Promise.resolve()
@@ -141,6 +144,7 @@ export class AgentWFYAgent {
     systemPrompt: string,
     createProviderSession: ProviderSessionFactory,
     restoreProviderSession: ProviderSessionRestorer,
+    providerId: string,
   ) {
     this.agent = agent
     this.sessionsDir = sessionsDir
@@ -151,6 +155,7 @@ export class AgentWFYAgent {
     this.systemPrompt = systemPrompt
     this.createProviderSession = createProviderSession
     this.restoreProviderSession = restoreProviderSession
+    this.providerId = providerId
 
     this.sessionIdRef.current = this._sessionId
     this.agent.sessionId = this._sessionId
@@ -187,13 +192,13 @@ export class AgentWFYAgent {
     let initialMessages: DisplayMessage[] = []
 
     if (options.sessionFile) {
-      const rawSession = await readSessionFile(sessionsDir, normalizeSessionFileName(options.sessionFile))
-      const stored = parseStoredSession(rawSession, options.sessionFile)
+      const stored = options.storedSession
+        ?? parseStoredSession(await readSessionFile(sessionsDir, normalizeSessionFileName(options.sessionFile)), options.sessionFile)
 
       providerSession = await options.restoreProviderSession(stored.messages, {
         sessionId: stored.sessionId || sessionId,
         systemPrompt,
-      })
+      }, stored.providerState)
       initialMessages = stored.messages
     } else {
       providerSession = await options.createProviderSession({
@@ -222,6 +227,7 @@ export class AgentWFYAgent {
       systemPrompt,
       options.createProviderSession,
       options.restoreProviderSession,
+      options.providerId,
     )
 
     if (options.sessionFile) {
@@ -344,7 +350,7 @@ export class AgentWFYAgent {
     const providerSession = await this.restoreProviderSession(stored.messages, {
       sessionId: restoredSessionId,
       systemPrompt: this.systemPrompt,
-    })
+    }, stored.providerState)
     this.agent.setProviderSession(providerSession)
 
     // Convert display messages to agent messages for the UI
@@ -411,11 +417,14 @@ export class AgentWFYAgent {
 
         // Get display messages from the provider — the source of truth
         const displayMessages = await this.agent.getProviderDisplayMessages()
+        const providerState = this.agent.getProviderState()
 
         const stored: StoredSession = {
           version: SESSION_VERSION,
           sessionId: this._sessionId,
+          providerId: this.providerId,
           messages: displayMessages,
+          providerState,
           updatedAt: Date.now(),
         }
 

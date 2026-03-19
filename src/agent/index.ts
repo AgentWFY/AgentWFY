@@ -63,6 +63,10 @@ export class Agent {
     return await this.providerSession.getDisplayMessages() as DisplayMessage[]
   }
 
+  getProviderState(): unknown {
+    return this.providerSession.getState()
+  }
+
   replaceMessages(ms: DisplayMessage[]): void {
     this._state.messages = ms.slice()
   }

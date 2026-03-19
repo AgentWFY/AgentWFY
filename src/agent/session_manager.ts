@@ -405,6 +405,18 @@ export class AgentSessionManager {
       if (rows[0]?.value) providerId = JSON.parse(rows[0].value)
     } catch {}
 
+    // When restoring a session, read the file once and use the provider that created it
+    let storedSession: ReturnType<typeof parseStoredSession> | undefined
+    if (opts.sessionFile) {
+      try {
+        const raw = await readSessionFile(this.sessionsDir, opts.sessionFile)
+        storedSession = parseStoredSession(raw, opts.sessionFile)
+        if (storedSession.providerId && providerRegistry.get(storedSession.providerId)) {
+          providerId = storedSession.providerId
+        }
+      } catch {}
+    }
+
     const factory = providerRegistry.get(providerId)
     if (!factory) throw new Error(`Provider '${providerId}' not found`)
 
@@ -412,12 +424,13 @@ export class AgentSessionManager {
       createProviderSession: (config) => {
         return factory.createSession({ ...config, tools: [EXECJS_TOOL_DEFINITION] })
       },
-      restoreProviderSession: (messages, config) => {
-        return factory.restoreSession(messages, { ...config, tools: [EXECJS_TOOL_DEFINITION] })
+      restoreProviderSession: (messages, config, state) => {
+        return factory.restoreSession(messages, { ...config, tools: [EXECJS_TOOL_DEFINITION] }, state)
       },
+      providerId,
       agentRoot,
       getJsRuntime,
-      ...(opts.sessionFile ? { sessionFile: opts.sessionFile } : {}),
+      ...(opts.sessionFile ? { sessionFile: opts.sessionFile, storedSession } : {}),
     })
   }
 

@@ -107,6 +107,11 @@ class OpenAICompatibleSession implements ProviderSession {
     return this.displayMessages.slice()
   }
 
+  getState(): unknown {
+    // Exclude the system prompt (first message) — it's re-added on restore
+    return { messages: this.messages.slice(1) }
+  }
+
   private buildStatusLine(): string {
     const parts: string[] = [this.providerConfig.modelId]
     if (this.providerConfig.reasoning) {
@@ -429,7 +434,14 @@ export function createOpenAICompatibleFactory(
       return new OpenAICompatibleSession(config, readProviderConfig())
     },
 
-    restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig): ProviderSession {
+    restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig, state: unknown): ProviderSession {
+      // If we have provider state with internal messages, use them directly
+      const stateObj = state as { messages?: InternalMessage[] } | null
+      if (stateObj?.messages && Array.isArray(stateObj.messages)) {
+        return new OpenAICompatibleSession(config, readProviderConfig(), stateObj.messages, messages)
+      }
+
+      // Otherwise reconstruct from display messages
       const internalMessages: InternalMessage[] = []
 
       for (const msg of messages) {
