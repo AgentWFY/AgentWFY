@@ -23,6 +23,7 @@ interface AgentSnapshot {
   notifyOnFinish: boolean
   streamingMessage: DisplayMessage | null
   statusLine: string | undefined
+  providerId: string
 }
 
 const STYLES = `
@@ -267,6 +268,7 @@ const STYLES = `
   .input-area {
     margin-top: 10px;
     flex-shrink: 0;
+    position: relative;
   }
   .input-container {
     position: relative;
@@ -367,39 +369,26 @@ const STYLES = `
     background: var(--color-text2);
     animation: thinking 1.4s ease-in-out infinite;
   }
-  .model-info {
-    font-size: 11px;
-    color: var(--color-text2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0;
-  }
-  .model-info .separator {
-    margin: 0 5px;
-    opacity: 0.4;
-  }
-  .model-info .meta {
-    opacity: 0.7;
-  }
   .tools-row-actions {
     display: flex;
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
+    margin-left: auto;
   }
   .popup-panel {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
     background: var(--color-bg2);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     max-height: 300px;
     overflow-y: auto;
     box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-    margin-top: 4px;
-    flex-shrink: 0;
+    margin-bottom: 4px;
+    z-index: 10;
   }
   .provider-panel {
     padding: 4px 0;
@@ -491,6 +480,115 @@ const STYLES = `
     color: var(--color-text4);
     background: var(--color-item-hover);
   }
+  .provider-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0;
+    flex: 1;
+    justify-content: center;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .provider-card {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+  .provider-card:hover {
+    background: var(--color-item-hover);
+  }
+  .provider-card.selected {
+    border-color: var(--color-accent);
+  }
+  .provider-card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text4);
+  }
+  .provider-card-status {
+    font-size: 11px;
+    color: var(--color-text2);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .provider-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+    min-height: 22px;
+  }
+  .provider-card-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 6px;
+    margin: -3px -6px;
+    color: var(--color-text2);
+    font-size: 11px;
+    line-height: 1;
+    border-radius: 3px;
+  }
+  .provider-card-settings-btn:hover {
+    color: var(--color-text4);
+    background: var(--color-bg3);
+  }
+  .provider-card-settings-btn svg {
+    flex-shrink: 0;
+  }
+  .default-badge {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--color-accent);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    margin-left: auto;
+  }
+  .set-default-btn {
+    font-size: 10px;
+    color: var(--color-text2);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 2px 8px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  }
+  .provider-card:hover .set-default-btn {
+    opacity: 1;
+  }
+  .set-default-btn:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .provider-info {
+    font-size: 11px;
+    color: var(--color-text2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+  }
+  .provider-info-name {
+    font-weight: 600;
+    color: var(--color-text3);
+  }
   .session-panel-item {
     display: flex;
     align-items: center;
@@ -550,10 +648,14 @@ export class TlAgentChat extends HTMLElement {
   private _providerPanel: HTMLElement | null = null
   private _providerList: Array<{ id: string; name: string; settingsView?: string }> = []
   private _activeProviderId = ''
+  private _defaultProviderId = ''
+  private _selectedProviderId = ''
+  private _providerStatusLines = new Map<string, string>()
   private _providerPanelDirty = false
-  private _modelInfo: HTMLElement | null = null
   private _stopBtn: HTMLElement | null = null
   private _sessionPanelDirty = false
+  private _providerInfo: HTMLElement | null = null
+  private _providerGrid: HTMLElement | null = null
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -598,20 +700,42 @@ export class TlAgentChat extends HTMLElement {
       const ipc = window.ipc
       if (!ipc?.providers) return
 
-      // Load active provider ID from config if not yet known
-      if (!this._activeProviderId) {
-        try {
-          const rows = await ipc.sql.run({
-            target: 'agent',
-            sql: "SELECT value FROM config WHERE name = 'system.provider'",
-          }) as Array<{ value: string }>
-          this._activeProviderId = rows[0]?.value ? JSON.parse(rows[0].value) : 'openai-compatible'
-        } catch {
-          this._activeProviderId = 'openai-compatible'
-        }
+      // Load default provider ID from config
+      try {
+        const rows = await ipc.sql.run({
+          target: 'agent',
+          sql: "SELECT value FROM config WHERE name = 'system.provider'",
+        }) as Array<{ value: string }>
+        this._defaultProviderId = rows[0]?.value ? JSON.parse(rows[0].value) : 'openai-compatible'
+      } catch {
+        this._defaultProviderId = 'openai-compatible'
       }
 
-      this.configStatusLine = await ipc.providers.getStatusLine(this._activeProviderId)
+      if (!this._activeProviderId) {
+        this._activeProviderId = this._defaultProviderId
+      }
+      if (!this._selectedProviderId) {
+        this._selectedProviderId = this._defaultProviderId
+      }
+
+      // Load provider list and status lines
+      try {
+        this._providerList = await ipc.providers.list()
+        const statusLines = await Promise.all(
+          this._providerList.map(async (p) => {
+            try {
+              return [p.id, await ipc.providers.getStatusLine(p.id)] as const
+            } catch {
+              return [p.id, ''] as const
+            }
+          })
+        )
+        this._providerStatusLines = new Map(statusLines)
+      } catch {
+        this._providerList = []
+      }
+
+      this.configStatusLine = this._providerStatusLines.get(this._activeProviderId) || ''
     } catch {
       this.configStatusLine = ''
     }
@@ -637,6 +761,7 @@ export class TlAgentChat extends HTMLElement {
         this.notifyOnFinish = s.notifyOnFinish
         this.streamingMessage = s.streamingMessage
         this.statusLine = s.statusLine || ''
+        if (s.providerId) this._activeProviderId = s.providerId
         this.error = null
         this.ready = true
         this.render()
@@ -657,6 +782,7 @@ export class TlAgentChat extends HTMLElement {
         this.notifyOnFinish = snapshot.notifyOnFinish
         this.streamingMessage = snapshot.streamingMessage
         this.statusLine = snapshot.statusLine || ''
+        if (snapshot.providerId) this._activeProviderId = snapshot.providerId
         this.ready = true
       }
     } catch (e) {
@@ -696,12 +822,15 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleNewSession() {
     this.activePanel = null
+    this._selectedProviderId = this._defaultProviderId
     try {
       await window.ipc?.agent.createSession()
+      // Reload status lines for the provider grid
+      await this.loadConfigStatusLine()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
-      this.render()
     }
+    this.render()
   }
 
   private async toggleSessionPanel() {
@@ -741,6 +870,10 @@ export class TlAgentChat extends HTMLElement {
     const text = this.inputValue.trim()
     if (!text) return
 
+    // If this is the first message (empty session), create session with selected provider
+    const isFirstMessage = this.messages.length === 0 && !this.isStreaming
+    const selectedProvider = this._selectedProviderId
+
     this.inputValue = ''
     if (this._textarea) {
       this._textarea.value = ''
@@ -753,6 +886,10 @@ export class TlAgentChat extends HTMLElement {
       if (this.isStreaming) {
         await window.ipc?.agent.sendMessage(text, { streamingBehavior: 'followUp' })
       } else {
+        if (isFirstMessage && selectedProvider) {
+          // Create session with selected provider, then send message
+          await window.ipc?.agent.createSession({ providerId: selectedProvider })
+        }
         await window.ipc?.agent.sendMessage(text)
       }
     } catch (e) {
@@ -835,8 +972,9 @@ export class TlAgentChat extends HTMLElement {
     this._sessionsBtn = null
     this._settingsBtn = null
     this._providerPanel = null
-    this._modelInfo = null
     this._stopBtn = null
+    this._providerInfo = null
+    this._providerGrid = null
   }
 
   private buildChatLayout() {
@@ -846,6 +984,42 @@ export class TlAgentChat extends HTMLElement {
     const container = document.createElement('div')
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;'
+
+    // Provider grid (shown when no messages)
+    this._providerGrid = document.createElement('div')
+    this._providerGrid.className = 'provider-grid'
+    this._providerGrid.style.display = 'none'
+    this._providerGrid.addEventListener('mousedown', (e) => {
+      const target = e.target as HTMLElement
+
+      // Handle settings button on card
+      const settingsBtn = target.closest('.provider-card-settings-btn[data-settings-view]') as HTMLElement | null
+      if (settingsBtn) {
+        e.preventDefault()
+        e.stopPropagation()
+        this.openProviderSettingsView(settingsBtn.dataset.settingsView!)
+        return
+      }
+
+      // Handle "set as default" button
+      const setDefaultBtn = target.closest('.set-default-btn[data-provider-id]') as HTMLElement | null
+      if (setDefaultBtn) {
+        e.preventDefault()
+        e.stopPropagation()
+        const providerId = setDefaultBtn.dataset.providerId!
+        this.handleSetDefault(providerId)
+        return
+      }
+
+      // Handle card click
+      const card = target.closest('.provider-card[data-provider-id]') as HTMLElement | null
+      if (card) {
+        e.preventDefault()
+        this._selectedProviderId = card.dataset.providerId!
+        this.renderProviderGrid()
+      }
+    })
+    container.appendChild(this._providerGrid)
 
     // Messages area
     this.messagesEl = document.createElement('div')
@@ -876,7 +1050,11 @@ export class TlAgentChat extends HTMLElement {
     this._errorBanner.style.display = 'none'
     container.appendChild(this._errorBanner)
 
-    // Session panel (hidden by default)
+    // Input area
+    const inputArea = document.createElement('div')
+    inputArea.className = 'input-area'
+
+    // Session panel (hidden by default, overlays above input)
     this._sessionPanel = document.createElement('div')
     this._sessionPanel.className = 'popup-panel session-panel'
     this._sessionPanel.style.display = 'none'
@@ -896,9 +1074,9 @@ export class TlAgentChat extends HTMLElement {
         if (item) this.handleSessionClick(item)
       }
     })
-    container.appendChild(this._sessionPanel)
+    inputArea.appendChild(this._sessionPanel)
 
-    // Provider panel (hidden by default)
+    // Provider panel (hidden by default, overlays above input)
     this._providerPanel = document.createElement('div')
     this._providerPanel.className = 'popup-panel provider-panel'
     this._providerPanel.style.display = 'none'
@@ -927,12 +1105,7 @@ export class TlAgentChat extends HTMLElement {
         }
       }
     })
-    container.appendChild(this._providerPanel)
-
-    // Input area
-    const inputArea = document.createElement('div')
-    inputArea.className = 'input-area'
-    inputArea.style.cssText = 'margin-top:10px;flex-shrink:0;'
+    inputArea.appendChild(this._providerPanel)
 
     const inputContainer = document.createElement('div')
     inputContainer.className = 'input-container'
@@ -962,9 +1135,9 @@ export class TlAgentChat extends HTMLElement {
     const toolsRow = document.createElement('div')
     toolsRow.className = 'tools-row'
 
-    this._modelInfo = document.createElement('div')
-    this._modelInfo.className = 'model-info'
-    toolsRow.appendChild(this._modelInfo)
+    this._providerInfo = document.createElement('div')
+    this._providerInfo.className = 'provider-info'
+    toolsRow.appendChild(this._providerInfo)
 
     const actionsDiv = document.createElement('div')
     actionsDiv.className = 'tools-row-actions'
@@ -1010,7 +1183,7 @@ export class TlAgentChat extends HTMLElement {
     this._settingsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
     this._settingsBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      this.toggleProviderPanel()
+      this.openActiveProviderSettings()
     })
     actionsDiv.appendChild(this._settingsBtn)
 
@@ -1022,14 +1195,27 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private updateChat() {
+    const hasMessages = this.messages.length > 0 || this.isStreaming
+
     // Combine completed messages + streaming message for rendering
     const allMessages = this.isStreaming && this.streamingMessage
       ? [...this.messages, this.streamingMessage]
       : this.messages
     const displayBlocks = buildRenderBlocks(allMessages)
 
-    // 1. Messages area
+    // 0. Provider grid vs messages visibility
+    if (this._providerGrid) {
+      this._providerGrid.style.display = hasMessages ? 'none' : ''
+      if (!hasMessages) {
+        this.renderProviderGrid()
+      }
+    }
     if (this.messagesEl) {
+      this.messagesEl.style.display = hasMessages ? '' : 'none'
+    }
+
+    // 1. Messages area
+    if (this.messagesEl && hasMessages) {
       updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.isStreaming)
 
       // Auto-scroll
@@ -1055,18 +1241,36 @@ export class TlAgentChat extends HTMLElement {
 
     // 4. Button states
     if (this._notifyBtn) {
+      this._notifyBtn.style.display = hasMessages ? '' : 'none'
       this._notifyBtn.classList.toggle('active', this.notifyOnFinish)
     }
     if (this._sessionsBtn) {
       this._sessionsBtn.classList.toggle('active', this.activePanel === 'sessions')
     }
-    if (this._settingsBtn) {
-      this._settingsBtn.classList.toggle('active', this.activePanel === 'providers')
+
+    // 5. Provider info in tools row
+    if (this._providerInfo) {
+      if (hasMessages) {
+        const provider = this._providerList.find(p => p.id === this._activeProviderId)
+        const providerName = provider?.name || this._activeProviderId || ''
+        const currentStatusLine = this.statusLine || this.configStatusLine
+        const contentKey = `${providerName}|${currentStatusLine}`
+        if (this._providerInfo.dataset.contentKey !== contentKey) {
+          this._providerInfo.dataset.contentKey = contentKey
+          const sep = providerName && currentStatusLine ? ' · ' : ''
+          this._providerInfo.innerHTML = providerName
+            ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(currentStatusLine)}`
+            : escapeHtml(currentStatusLine)
+        }
+        this._providerInfo.style.display = ''
+      } else {
+        this._providerInfo.style.display = 'none'
+      }
     }
 
-    // 5. New session button visibility
+    // 6. New session button visibility
     if (this._newSessionBtn) {
-      this._newSessionBtn.style.display = this.messages.length > 0 ? '' : 'none'
+      this._newSessionBtn.style.display = hasMessages ? '' : 'none'
     }
 
     // 6. Textarea placeholder
@@ -1077,15 +1281,7 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 7. Model info — from provider status line, or config defaults
-    if (this._modelInfo) {
-      const currentStatusLine = this.statusLine || this.configStatusLine
-      if (this._modelInfo.textContent !== currentStatusLine) {
-        this._modelInfo.textContent = currentStatusLine
-      }
-    }
-
-    // 8. Session panel
+    // 7. Session panel
     if (this._sessionPanel) {
       if (this.activePanel === 'sessions') {
         this._sessionPanel.style.display = ''
@@ -1109,6 +1305,55 @@ export class TlAgentChat extends HTMLElement {
       } else {
         this._providerPanel.style.display = 'none'
       }
+    }
+  }
+
+  private renderProviderGrid() {
+    if (!this._providerGrid) return
+    if (this._providerList.length === 0) {
+      this._providerGrid.innerHTML = '<div style="text-align:center;color:var(--color-text2);font-size:13px;">No providers configured</div>'
+      return
+    }
+
+    const gearSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
+    this._providerGrid.innerHTML = this._providerList.map((p) => {
+      const isSelected = p.id === this._selectedProviderId
+      const isDefault = p.id === this._defaultProviderId
+      const statusLine = this._providerStatusLines.get(p.id) || ''
+      const cardClass = 'provider-card' + (isSelected ? ' selected' : '')
+
+      const settingsBtn = p.settingsView
+        ? `<button class="provider-card-settings-btn" data-settings-view="${escapeHtml(p.settingsView)}">${gearSvg} Settings</button>`
+        : ''
+      const defaultAction = isDefault
+        ? '<span class="default-badge">default</span>'
+        : `<button class="set-default-btn" data-provider-id="${escapeHtml(p.id)}">set default</button>`
+
+      return `<div class="${cardClass}" data-provider-id="${escapeHtml(p.id)}">
+        <div class="provider-card-name">${escapeHtml(p.name)}</div>
+        <div class="provider-card-status">${escapeHtml(statusLine)}</div>
+        <div class="provider-card-footer">${settingsBtn}${defaultAction}</div>
+      </div>`
+    }).join('')
+  }
+
+  private async handleSetDefault(providerId: string) {
+    const ipc = window.ipc
+    if (!ipc) return
+
+    try {
+      await ipc.sql.run({
+        target: 'agent',
+        sql: 'UPDATE config SET value = ? WHERE name = ?',
+        params: [JSON.stringify(providerId), 'system.provider'],
+        description: 'Set default provider',
+      })
+      this._defaultProviderId = providerId
+      this.renderProviderGrid()
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
+      this.render()
     }
   }
 
@@ -1149,11 +1394,21 @@ export class TlAgentChat extends HTMLElement {
         description: 'Set active provider',
       })
       this._activeProviderId = providerId
+      this._defaultProviderId = providerId
       this.activePanel = null
       await this.handleReconnect()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
+    }
+  }
+
+  private openActiveProviderSettings() {
+    // In empty session, use selected provider; in active session, use active provider
+    const providerId = this.messages.length > 0 ? this._activeProviderId : this._selectedProviderId
+    const provider = this._providerList.find(p => p.id === providerId)
+    if (provider?.settingsView) {
+      this.openProviderSettingsView(provider.settingsView)
     }
   }
 

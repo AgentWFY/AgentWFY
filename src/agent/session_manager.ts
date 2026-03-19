@@ -79,6 +79,7 @@ export class AgentSessionManager {
   private _activeMessages: DisplayMessage[] = []
   private _activeLabel: string = ''
   private _activeNotifyOnFinish = false
+  private _activeProviderId: string = ''
 
   constructor(deps: AgentSessionManagerDeps) {
     this.deps = deps
@@ -121,13 +122,14 @@ export class AgentSessionManager {
     return count
   }
 
-  async createSession(opts?: { label?: string; prompt?: string }): Promise<string> {
+  async createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string> {
     const sessionFile = createSessionFileName()
     const label = opts?.label || 'New session'
+    const providerId = opts?.providerId || await this.readDefaultProviderId()
 
     if (opts?.prompt) {
       // Create agent immediately and start streaming
-      const agent = await this.createAgentInstance({ sessionFile })
+      const agent = await this.createAgentInstance({ sessionFile, providerId })
       const sessionId = agent.sessionId
       this.deps.getJsRuntime().ensureWorker(sessionId)
 
@@ -137,6 +139,7 @@ export class AgentSessionManager {
       this._activeMessages = []
       this._activeLabel = label
       this._activeNotifyOnFinish = false
+      this._activeProviderId = providerId
 
       this.notify()
 
@@ -152,6 +155,7 @@ export class AgentSessionManager {
     this._activeSessionId = null
     this._activeMessages = []
     this._activeLabel = label
+    this._activeProviderId = providerId
 
     this._activeNotifyOnFinish = false
     this.notify()
@@ -176,7 +180,9 @@ export class AgentSessionManager {
     // Only pass sessionFile if it exists on disk (has messages)
     const hasExistingSession = this._activeMessages.length > 0
     const agent = await this.createAgentInstance(
-      hasExistingSession ? { sessionFile: this._activeSessionFile } : {}
+      hasExistingSession
+        ? { sessionFile: this._activeSessionFile, providerId: this._activeProviderId || undefined }
+        : { providerId: this._activeProviderId || undefined }
     )
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
@@ -207,6 +213,7 @@ export class AgentSessionManager {
     this._activeMessages = stored.messages
     this._activeLabel = extractFirstUserMessage(stored.messages, 60) ?? 'Session'
     this._activeNotifyOnFinish = false
+    this._activeProviderId = stored.providerId || ''
 
     this.notify()
   }
@@ -232,6 +239,7 @@ export class AgentSessionManager {
     this._activeMessages = []
     this._activeLabel = ''
     this._activeNotifyOnFinish = false
+    this._activeProviderId = ''
 
     this.notify()
   }
@@ -255,6 +263,7 @@ export class AgentSessionManager {
     this._activeSessionFile = entry.agent.sessionFile ?? this._activeSessionFile
     this._activeLabel = entry.label
     this._activeNotifyOnFinish = entry.notifyOnFinish ?? false
+    this._activeProviderId = entry.agent.providerId
     this.notify()
   }
 
@@ -318,6 +327,7 @@ export class AgentSessionManager {
     this._activeMessages = []
     this._activeLabel = ''
     this._activeNotifyOnFinish = false
+    this._activeProviderId = ''
     this.listeners.clear()
   }
 
@@ -380,6 +390,7 @@ export class AgentSessionManager {
     notifyOnFinish: boolean
     streamingMessage: DisplayMessage | null
     statusLine: string | undefined
+    providerId: string
   } {
     const agent = this.activeAgent
     return {
@@ -390,20 +401,26 @@ export class AgentSessionManager {
       notifyOnFinish: this._activeNotifyOnFinish,
       streamingMessage: agent?.state.streamingMessage ?? null,
       statusLine: agent?.state.statusLine,
+      providerId: this._activeProviderId,
     }
   }
 
-  private async createAgentInstance(opts: { sessionFile?: string }): Promise<AgentWFYAgent> {
-    const { agentRoot, providerRegistry, getJsRuntime } = this.deps
-    let providerId = 'openai-compatible'
+  private async readDefaultProviderId(): Promise<string> {
+    const { agentRoot } = this.deps
     try {
       const parsed = parseRunSqlRequest({
         target: 'agent',
         sql: "SELECT value FROM config WHERE name = 'system.provider'",
       })
       const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ value: string }>
-      if (rows[0]?.value) providerId = JSON.parse(rows[0].value)
+      if (rows[0]?.value) return JSON.parse(rows[0].value)
     } catch {}
+    return 'openai-compatible'
+  }
+
+  private async createAgentInstance(opts: { sessionFile?: string; providerId?: string }): Promise<AgentWFYAgent> {
+    const { agentRoot, providerRegistry, getJsRuntime } = this.deps
+    let providerId = opts.providerId || await this.readDefaultProviderId()
 
     // When restoring a session, read the file once and use the provider that created it
     let storedSession: ReturnType<typeof parseStoredSession> | undefined
