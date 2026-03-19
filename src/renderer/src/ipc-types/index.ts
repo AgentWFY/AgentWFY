@@ -35,7 +35,7 @@ export interface ProvidersApi {
 
 export interface AgentApi {
   createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string>
-  sendMessage(text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void>
+  sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void>
   abort(): Promise<void>
   closeSession(): Promise<void>
   loadSession(file: string): Promise<void>

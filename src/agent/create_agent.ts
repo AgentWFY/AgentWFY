@@ -41,7 +41,7 @@ export interface AgentWFYAgentOptions {
 
 export interface AgentWFYAgentPromptOptions {
   images?: ImageContent[]
-  streamingBehavior?: 'steer' | 'followUp'
+  streamingBehavior?: 'followUp'
 }
 
 export type AgentWFYAgentEvent = AgentEvent | {
@@ -277,35 +277,15 @@ export class AgentWFYAgent {
 
     if (this.isStreaming) {
       if (!options.streamingBehavior) {
-        throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+        throw new Error("Agent is already processing. Specify streamingBehavior: 'followUp' to queue the message.")
       }
 
-      if (options.streamingBehavior === 'followUp') {
-        await this.followUp(text)
-      } else {
-        await this.steer(text)
-      }
+      this.agent.followUp(text)
       return
     }
 
     await this.agent.prompt(text, options.images)
     await this.persistSession()
-  }
-
-  async steer(text: string): Promise<void> {
-    if (!text || !text.trim()) {
-      throw new Error('Steering message cannot be empty')
-    }
-
-    this.agent.steer(text)
-  }
-
-  async followUp(text: string): Promise<void> {
-    if (!text || !text.trim()) {
-      throw new Error('Follow-up message cannot be empty')
-    }
-
-    this.agent.followUp(text)
   }
 
   subscribe(listener: AgentWFYAgentEventListener): () => void {
