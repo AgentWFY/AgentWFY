@@ -793,6 +793,7 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleReconnect() {
     this.error = null
+    this.statusLine = ''
     const keepPanelOpen = this.ready && this.activePanel === 'providers'
     this.isInitializing = true
     this.render()

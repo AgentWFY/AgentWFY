@@ -102,6 +102,7 @@ export class Agent {
     this._state.isStreaming = false
     this._state.streamingMessage = null
     this._state.error = undefined
+    this._state.statusLine = undefined
     this.followUpQueue = []
   }
 
