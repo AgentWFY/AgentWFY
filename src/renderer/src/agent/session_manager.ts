@@ -1,6 +1,5 @@
 import { AgentWFYAgent } from './create_agent.js'
 import { createIpcProviderSession, restoreIpcProviderSession } from './ipc_provider_session.js'
-import { ensureWorker, terminateWorker } from '../runtime/js_runtime.js'
 import { bus } from '../event-bus.js'
 import type { DisplayMessage } from './provider_types.js'
 import {
@@ -102,7 +101,7 @@ export class AgentSessionManager {
       // Create agent immediately and start streaming
       const agent = await this.createAgentInstance({ sessionFile })
       const sessionId = agent.sessionId
-      ensureWorker(sessionId)
+      void window.ipc?.execJs.ensureWorker(sessionId)
 
       const entry = this.trackSession(sessionId, agent, label)
       this._activeSessionFile = agent.sessionFile ?? sessionFile
@@ -152,7 +151,7 @@ export class AgentSessionManager {
       hasExistingSession ? { sessionFile: this._activeSessionFile } : {}
     )
     const sessionId = agent.sessionId
-    ensureWorker(sessionId)
+    void window.ipc?.execJs.ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, this._activeLabel)
     entry.notifyOnFinish = this._activeNotifyOnFinish
@@ -191,7 +190,7 @@ export class AgentSessionManager {
         await agent.abort()
       }
       const sessionId = this._activeSessionId!
-      terminateWorker(sessionId)
+      void window.ipc?.execJs.terminateWorker(sessionId)
       const entry = this.sessions.get(sessionId)
       if (entry) {
         entry.unsubscribe()
@@ -239,7 +238,7 @@ export class AgentSessionManager {
   async spawnSession(prompt: string): Promise<{ agentId: string }> {
     const agent = await this.createAgentInstance({})
     const sessionId = agent.sessionId
-    ensureWorker(sessionId)
+    void window.ipc?.execJs.ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, 'Spawned agent')
     entry.autoPublishResponse = true
@@ -266,7 +265,7 @@ export class AgentSessionManager {
     // Load from disk and send
     const agent = await this.createAgentInstance({ sessionFile: agentId })
     const sessionId = agent.sessionId
-    ensureWorker(sessionId)
+    void window.ipc?.execJs.ensureWorker(sessionId)
 
     const entry = this.trackSession(sessionId, agent, 'sendToAgent')
     entry.autoPublishResponse = true
@@ -280,7 +279,7 @@ export class AgentSessionManager {
       if (entry.agent.isStreaming) {
         await entry.agent.abort()
       }
-      terminateWorker(entry.agent.sessionId)
+      void window.ipc?.execJs.terminateWorker(entry.agent.sessionId)
       entry.unsubscribe()
       entry.agent.dispose()
     }
@@ -409,7 +408,7 @@ export class AgentSessionManager {
     }
 
     // Dispose
-    terminateWorker(sessionId)
+    void window.ipc?.execJs.terminateWorker(sessionId)
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)

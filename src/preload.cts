@@ -66,8 +66,14 @@ const Channels = {
     sendToAgent: 'bus:sendToAgent',
     dbChanged: 'bus:dbChanged',
   },
-  headers: {
-    set: 'headers:set',
+  execJs: {
+    ensureWorker: 'execJs:ensureWorker',
+    terminateWorker: 'execJs:terminateWorker',
+    execute: 'execJs:execute',
+    cancel: 'execJs:cancel',
+    watchLogs: 'execJs:watchLogs',
+    unwatchLogs: 'execJs:unwatchLogs',
+    log: 'execJs:log',
   },
   tasks: {
     start: 'tasks:start',
@@ -288,11 +294,29 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.dialog.openExternal, url);
       },
     },
-    net: {
-      headers: {
-        set(request: { tid: string; headers: Record<string, string> }): Promise<void> {
-          return ipcRenderer.invoke(Channels.headers.set, request);
-        },
+    execJs: {
+      ensureWorker(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.execJs.ensureWorker, sessionId);
+      },
+      terminateWorker(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.execJs.terminateWorker, sessionId);
+      },
+      execute(sessionId: string, code: string, timeoutMs?: number, input?: unknown): Promise<unknown> {
+        return ipcRenderer.invoke(Channels.execJs.execute, sessionId, code, timeoutMs, input);
+      },
+      cancel(sessionId: string): void {
+        ipcRenderer.send(Channels.execJs.cancel, sessionId);
+      },
+      watchLogs(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.execJs.watchLogs, sessionId);
+      },
+      unwatchLogs(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.execJs.unwatchLogs, sessionId);
+      },
+      onLog(callback: (sessionId: string, entry: { level: string; message: string; timestamp: number }) => void): () => void {
+        const handler = (_event: unknown, sessionId: string, entry: { level: string; message: string; timestamp: number }) => callback(sessionId, entry);
+        ipcRenderer.on(Channels.execJs.log, handler);
+        return () => ipcRenderer.removeListener(Channels.execJs.log, handler);
       },
     },
     bus: {

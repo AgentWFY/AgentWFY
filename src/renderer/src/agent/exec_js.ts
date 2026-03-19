@@ -1,6 +1,5 @@
 import type { AgentTool, AgentToolResult, ImageContent, TextContent } from './types.js'
-import { getJsRuntime } from '../runtime/js_runtime.js'
-import type { ExecJsDetails } from '../runtime/types.js'
+import type { ExecJsDetails } from '../../../runtime/types.js'
 import { stringifyUnknown } from './tool_utils.js'
 
 interface CreateExecJsToolArgs {
@@ -92,9 +91,18 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
       const timeoutMs = typedParams.timeoutMs ?? 5000
 
       try {
+        const ipc = window.ipc
+        if (!ipc) throw new Error('window.ipc is not available')
+
         const sessionId = args.getSessionId()
-        const manager = getJsRuntime()
-        const details = await manager.executeExecJs(sessionId, typedParams.code, timeoutMs, signal)
+
+        // Set up abort handling
+        if (signal) {
+          const onAbort = () => ipc.execJs.cancel(sessionId)
+          signal.addEventListener('abort', onAbort, { once: true })
+        }
+
+        const details = await ipc.execJs.execute(sessionId, typedParams.code, timeoutMs) as ExecJsDetails
         return buildToolResult(details)
       } catch (error) {
         const details = toFailureDetails(error, timeoutMs)

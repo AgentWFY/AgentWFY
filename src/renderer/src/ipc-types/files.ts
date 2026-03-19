@@ -1,4 +1,4 @@
-import type { WorkerGrepOptions } from '../runtime/types.js'
+import type { WorkerGrepOptions } from '../../../runtime/types.js'
 
 export interface FilesApi {
   read(path: string, offset?: number, limit?: number): Promise<string>
