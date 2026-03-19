@@ -45,18 +45,25 @@ function formatTokens(tokens: number): string {
   return String(tokens)
 }
 
+interface ProviderConfigSnapshot {
+  baseUrl: string
+  modelId: string
+  apiKey: string
+  reasoning: string | undefined
+}
+
 class OpenAICompatibleSession implements ProviderSession {
   private messages: InternalMessage[] = []
   private displayMessages: DisplayMessage[] = []
   private listeners = new Set<(event: ProviderOutput) => void>()
   private abortController: AbortController | null = null
   private config: ProviderSessionConfig
-  private providerConfig: OpenAIProviderConfig
+  private providerConfig: ProviderConfigSnapshot
   private lastInputTokens = 0
 
   constructor(
     config: ProviderSessionConfig,
-    providerConfig: OpenAIProviderConfig,
+    providerConfig: ProviderConfigSnapshot,
     initialMessages?: InternalMessage[],
     initialDisplayMessages?: DisplayMessage[],
   ) {
@@ -385,30 +392,41 @@ export const OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
 export const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
 export const DEFAULT_BASE_URL = 'https://openrouter.ai/api'
 
-export interface OpenAIProviderConfig {
-  baseUrl: string
-  modelId: string
-  apiKey?: string
-  reasoning?: string
+const CONFIG_PREFIX = 'system.openai-compatible-provider'
+
+export interface ConfigAccessors {
+  getConfig(key: string, fallback?: unknown): unknown
+  setConfig(key: string, value: unknown): void
 }
 
 export function createOpenAICompatibleFactory(
-  getConfig: () => OpenAIProviderConfig,
+  configAccessors: ConfigAccessors,
 ): ProviderFactory {
+  const { getConfig } = configAccessors
+
+  function readProviderConfig(): { baseUrl: string; modelId: string; apiKey: string; reasoning: string | undefined } {
+    return {
+      baseUrl: (getConfig(`${CONFIG_PREFIX}.baseUrl`, DEFAULT_BASE_URL) as string),
+      modelId: (getConfig(`${CONFIG_PREFIX}.modelId`, DEFAULT_MODEL_ID) as string),
+      apiKey: (getConfig(`${CONFIG_PREFIX}.apiKey`, '') as string),
+      reasoning: getConfig(`${CONFIG_PREFIX}.reasoning`, undefined) as string | undefined,
+    }
+  }
+
   return {
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
     name: 'OpenAI Compatible',
-    settingsView: 'system.openai-compatible-provider.settings-view',
+    settingsView: `${CONFIG_PREFIX}.settings-view`,
 
     getStatusLine(): string {
-      const config = getConfig()
+      const config = readProviderConfig()
       const parts: string[] = [config.modelId]
       if (config.reasoning) parts.push(config.reasoning)
       return parts.join(' · ')
     },
 
     createSession(config: ProviderSessionConfig): ProviderSession {
-      return new OpenAICompatibleSession(config, getConfig())
+      return new OpenAICompatibleSession(config, readProviderConfig())
     },
 
     restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig): ProviderSession {
@@ -456,7 +474,7 @@ export function createOpenAICompatibleFactory(
         }
       }
 
-      return new OpenAICompatibleSession(config, getConfig(), internalMessages, messages)
+      return new OpenAICompatibleSession(config, readProviderConfig(), internalMessages, messages)
     },
   }
 }

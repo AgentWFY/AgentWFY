@@ -6,8 +6,8 @@ import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
-import { getConfigValue } from './settings/config.js';
-import { DEFAULT_BASE_URL, DEFAULT_MODEL_ID, type OpenAIProviderConfig } from './providers/openai_compatible.js';
+import { getConfigValue, setAgentConfig } from './settings/config.js';
+import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
@@ -28,7 +28,6 @@ import { loadPlugins } from './plugins/loader.js';
 import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
-import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
 
 export interface AppWindowContext {
@@ -73,12 +72,10 @@ class WindowManager {
     getOrCreateAgentDb(agentRoot);
 
     const providerRegistry = new ProviderRegistry()
-    providerRegistry.register(createOpenAICompatibleFactory((): OpenAIProviderConfig => ({
-      baseUrl: getConfigValue(agentRoot, 'system.openai-compatible-provider.baseUrl', DEFAULT_BASE_URL) as string,
-      modelId: getConfigValue(agentRoot, 'system.openai-compatible-provider.modelId', DEFAULT_MODEL_ID) as string,
-      apiKey: getConfigValue(agentRoot, 'system.openai-compatible-provider.apiKey', '') as string,
-      reasoning: getConfigValue(agentRoot, 'system.openai-compatible-provider.reasoning', undefined) as string | undefined,
-    })))
+    providerRegistry.register(createOpenAICompatibleFactory({
+      getConfig: (key, fallback) => getConfigValue(agentRoot, key, fallback),
+      setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
+    }))
 
     // Load plugins from DB — window doesn't exist yet, so publish defers via a mutable ref
     let winRef: BrowserWindow | null = null;
