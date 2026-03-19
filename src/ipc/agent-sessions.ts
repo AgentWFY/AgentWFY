@@ -62,6 +62,7 @@ export function setupAgentStateStreaming(
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
   let prevIsStreaming = false
   let prevMessageCount = 0
+  let prevNotifyOnFinish = false
 
   const unsubscribe = manager.subscribe(() => {
     if (win.isDestroyed()) return
@@ -83,8 +84,9 @@ export function setupAgentStateStreaming(
       }
 
       // Send full snapshot when messages change (new turn committed during
-      // multi-turn tool calling) or on transition into streaming
-      if (!prevIsStreaming || snapshot.messages.length !== prevMessageCount) {
+      // multi-turn tool calling), on transition into streaming, or when
+      // non-streaming state like notifyOnFinish changes
+      if (!prevIsStreaming || snapshot.messages.length !== prevMessageCount || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
         win.webContents.send(Channels.agent.snapshot, snapshot)
       }
     } else {
@@ -94,6 +96,7 @@ export function setupAgentStateStreaming(
 
     prevIsStreaming = snapshot.isStreaming
     prevMessageCount = snapshot.messages.length
+    prevNotifyOnFinish = snapshot.notifyOnFinish
   })
 
   return () => {
