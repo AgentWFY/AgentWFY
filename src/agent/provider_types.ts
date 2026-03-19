@@ -51,6 +51,7 @@ export interface ProviderSession {
   on(listener: (event: ProviderOutput) => void): void
   off(listener: (event: ProviderOutput) => void): void
   getDisplayMessages(): DisplayMessage[] | Promise<DisplayMessage[]>
+  getTitle?(): string
   getState(): unknown
 }
 
@@ -62,7 +63,7 @@ export interface ProviderFactory {
   settingsView?: string
   getStatusLine?(): string
   createSession(config: ProviderSessionConfig): ProviderSession
-  restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig, state: unknown): ProviderSession
+  restoreSession(config: ProviderSessionConfig, state: unknown): ProviderSession
 }
 
 // ── execJs tool definition — the only tool, shared by all providers ──

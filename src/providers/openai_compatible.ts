@@ -109,7 +109,7 @@ class OpenAICompatibleSession implements ProviderSession {
 
   getState(): unknown {
     // Exclude the system prompt (first message) — it's re-added on restore
-    return { messages: this.messages.slice(1) }
+    return { messages: this.messages.slice(1), displayMessages: this.displayMessages.slice() }
   }
 
   private buildStatusLine(): string {
@@ -434,59 +434,11 @@ export function createOpenAICompatibleFactory(
       return new OpenAICompatibleSession(config, readProviderConfig())
     },
 
-    restoreSession(messages: DisplayMessage[], config: ProviderSessionConfig, state: unknown): ProviderSession {
-      // If we have provider state with internal messages, use them directly
-      const stateObj = state as { messages?: InternalMessage[] } | null
-      if (stateObj?.messages && Array.isArray(stateObj.messages)) {
-        return new OpenAICompatibleSession(config, readProviderConfig(), stateObj.messages, messages)
-      }
-
-      // Otherwise reconstruct from display messages
-      const internalMessages: InternalMessage[] = []
-
-      for (const msg of messages) {
-        if (msg.role === 'user') {
-          const textBlock = msg.blocks.find(b => b.type === 'text')
-          const text = textBlock && textBlock.type === 'text' ? textBlock.text : ''
-          const images = msg.blocks
-            .filter((b): b is Block & { type: 'image' } => b.type === 'image')
-            .map(b => ({ type: 'image_url' as const, image_url: { url: `data:${b.mimeType};base64,${b.data}` } }))
-          const content: unknown[] = [{ type: 'text', text }]
-          content.push(...images)
-          internalMessages.push({ role: 'user', content })
-        } else if (msg.role === 'assistant') {
-          const assistantContent: string[] = []
-          const toolCallsList: unknown[] = []
-          const toolResults: InternalMessage[] = []
-
-          for (const block of msg.blocks) {
-            if (block.type === 'text') {
-              assistantContent.push(block.text)
-            } else if (block.type === 'exec_js') {
-              toolCallsList.push({
-                id: block.id,
-                type: 'function',
-                function: { name: 'execJs', arguments: JSON.stringify({ description: block.description, code: block.code }) },
-              })
-            } else if (block.type === 'exec_js_result') {
-              const textParts = block.content
-                .filter((c): c is TextContent => c.type === 'text')
-                .map(c => c.text)
-              toolResults.push({ role: 'tool', tool_call_id: block.id, content: textParts.join('\n') })
-            }
-          }
-
-          if (assistantContent.length > 0 || toolCallsList.length > 0) {
-            const assistantMsg: InternalMessage = { role: 'assistant' }
-            if (assistantContent.length > 0) assistantMsg.content = assistantContent.join('\n')
-            if (toolCallsList.length > 0) assistantMsg.tool_calls = toolCallsList
-            internalMessages.push(assistantMsg)
-          }
-          internalMessages.push(...toolResults)
-        }
-      }
-
-      return new OpenAICompatibleSession(config, readProviderConfig(), internalMessages, messages)
+    restoreSession(config: ProviderSessionConfig, state: unknown): ProviderSession {
+      const stateObj = state as { messages?: InternalMessage[]; displayMessages?: DisplayMessage[] } | null
+      const apiMessages = stateObj?.messages && Array.isArray(stateObj.messages) ? stateObj.messages : []
+      const displayMessages = stateObj?.displayMessages && Array.isArray(stateObj.displayMessages) ? stateObj.displayMessages : []
+      return new OpenAICompatibleSession(config, readProviderConfig(), apiMessages, displayMessages)
     },
   }
 }

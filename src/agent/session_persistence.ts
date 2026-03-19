@@ -1,15 +1,13 @@
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
-import type { DisplayMessage } from './provider_types.js'
-
 export const SESSION_VERSION = 1
 
 export interface StoredSession {
   version: number
   sessionId: string
   providerId: string
-  messages: DisplayMessage[]
+  title: string
   providerState: unknown
   updatedAt: number
 }
@@ -59,7 +57,7 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
     version: typeof parsed.version === 'number' ? parsed.version : 0,
     sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : createSessionId(),
     providerId: typeof parsed.providerId === 'string' ? parsed.providerId : '',
-    messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+    title: typeof parsed.title === 'string' ? parsed.title : '',
     providerState: parsed.providerState ?? null,
     updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
   }
