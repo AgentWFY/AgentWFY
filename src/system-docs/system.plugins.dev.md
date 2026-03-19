@@ -103,10 +103,13 @@ module.exports = {
         return new MySession(config)
       },
 
-      restoreSession(messages, config) {
+      restoreSession(messages, config, state) {
         // messages — DisplayMessage[] from a previously saved session
-        // Reconstruct internal state from display messages
-        return new MySession(config, messages)
+        // config — same as createSession
+        // state — opaque blob from getState() (may be null for legacy sessions or cross-provider restore)
+        // If state is available, use it to restore internal state directly.
+        // Otherwise reconstruct from display messages.
+        return new MySession(config, messages, state)
       },
     })
   }
@@ -145,6 +148,16 @@ class MySession {
   getDisplayMessages() {
     // Return DisplayMessage[] — the canonical conversation history.
     // Used for session persistence.
+  }
+
+  getState() {
+    // Return an opaque JSON-serializable blob with provider-internal state.
+    // Saved alongside display messages and passed back to restoreSession()
+    // on session restore. Use this to preserve provider-specific data that
+    // cannot be reconstructed from display messages alone (e.g. thinking
+    // signatures, redacted_thinking blocks, internal message structure).
+    // Return null if no extra state is needed.
+    return { messages: this.internalMessages }
   }
 }
 ```
@@ -226,6 +239,7 @@ class MySession {
   on(listener) { this.listeners.add(listener) }
   off(listener) { this.listeners.delete(listener) }
   getDisplayMessages() { return this.messages }
+  getState() { return { messages: this.internalMessages } }
 
   emit(event) {
     for (const l of this.listeners) l(event)
@@ -253,7 +267,7 @@ module.exports = {
       settingsView: 'plugin.my-llm.settings',
       getStatusLine() { return getProviderConfig().modelId },
       createSession(config) { return new MySession(config, getProviderConfig()) },
-      restoreSession(messages, config) { return new MySession(config, getProviderConfig(), messages) },
+      restoreSession(messages, config, state) { return new MySession(config, getProviderConfig(), messages, state) },
     })
   }
 }
