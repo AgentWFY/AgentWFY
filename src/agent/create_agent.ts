@@ -1,35 +1,40 @@
 import { Agent } from './index.js'
 import type { AgentEvent, AgentState, ImageContent } from './types.js'
 import { createExecJsTool } from './exec_js.js'
-import { requireIpc } from './tool_utils.js'
 import {
   SESSION_VERSION,
   type StoredSession,
   createSessionId,
   createSessionFileName,
   normalizeSessionFileName,
-  requireSessionStorageTools,
   parseStoredSession,
+  readSessionFile,
+  writeSessionFile,
+  ensureSessionsDir,
 } from './session_persistence.js'
 import type { ProviderSession, DisplayMessage } from './provider_types.js'
+import type { JsRuntime } from '../runtime/js_runtime.js'
+import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
 
 export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
 const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
-interface RendererSessionConfig {
+interface SessionConfig {
   sessionId: string
   systemPrompt: string
 }
 
-type ProviderSessionFactory = (config: RendererSessionConfig) => ProviderSession | Promise<ProviderSession>
-type ProviderSessionRestorer = (messages: DisplayMessage[], config: RendererSessionConfig) => ProviderSession | Promise<ProviderSession>
+type ProviderSessionFactory = (config: SessionConfig) => ProviderSession | Promise<ProviderSession>
+type ProviderSessionRestorer = (messages: DisplayMessage[], config: SessionConfig) => ProviderSession | Promise<ProviderSession>
 
 export interface AgentWFYAgentOptions {
   createProviderSession: ProviderSessionFactory
   restoreProviderSession: ProviderSessionRestorer
   sessionFile?: string
   persistSessions?: boolean
+  agentRoot: string
+  getJsRuntime: () => JsRuntime
 }
 
 export interface AgentWFYAgentPromptOptions {
@@ -76,15 +81,14 @@ function buildDocsPromptSection(rows: Array<{ name: string; content: string }>):
     .trim()
 }
 
-async function loadSystemPrompt(): Promise<string> {
+async function loadSystemPrompt(agentRoot: string): Promise<string> {
   try {
-    const ipc = requireIpc()
-
-    const rows = await ipc.sql.run({
+    const parsed = parseRunSqlRequest({
       target: 'agent',
       sql: "SELECT name, content FROM docs WHERE name NOT LIKE '%.%' ORDER BY name ASC",
-      description: 'Load preload docs for agent system prompt'
+      description: 'Load preload docs for agent system prompt',
     })
+    const rows = await routeSqlRequest(agentRoot, parsed)
     const docs = parsePreloadDocRows(rows)
     const promptSection = buildDocsPromptSection(docs)
 
@@ -100,10 +104,11 @@ async function loadSystemPrompt(): Promise<string> {
   }
 }
 
-function createTools(sessionIdRef: { current: string }) {
+function createTools(sessionIdRef: { current: string }, getJsRuntime: () => JsRuntime) {
   return [
     createExecJsTool({
-      getSessionId: () => sessionIdRef.current
+      getSessionId: () => sessionIdRef.current,
+      getJsRuntime,
     }),
   ]
 }
@@ -113,7 +118,7 @@ export class AgentWFYAgent {
 
   private readonly listeners = new Set<AgentWFYAgentEventListener>()
   private readonly unsubscribeFromAgent: () => void
-  private readonly sessionDirPath: string
+  private readonly sessionsDir: string
   private readonly persistSessionsToDisk: boolean
   private readonly sessionIdRef: { current: string }
   private readonly createProviderSession: ProviderSessionFactory
@@ -128,7 +133,7 @@ export class AgentWFYAgent {
 
   private constructor(
     agent: Agent,
-    sessionDir: string,
+    sessionsDir: string,
     sessionFile: string | undefined,
     sessionId: string,
     sessionIdRef: { current: string },
@@ -138,7 +143,7 @@ export class AgentWFYAgent {
     restoreProviderSession: ProviderSessionRestorer,
   ) {
     this.agent = agent
-    this.sessionDirPath = sessionDir
+    this.sessionsDir = sessionsDir
     this.persistSessionsToDisk = persistSessions
     this.sessionIdRef = sessionIdRef
     this._sessionFile = sessionFile
@@ -160,13 +165,18 @@ export class AgentWFYAgent {
   }
 
   static async create(options: AgentWFYAgentOptions): Promise<AgentWFYAgent> {
-    const sessionDir = DEFAULT_SESSION_DIR
+    const agentRoot = options.agentRoot
+    const sessionsDir = `${agentRoot}/${DEFAULT_SESSION_DIR}`
     const persistSessions = options.persistSessions ?? true
+
+    if (persistSessions) {
+      await ensureSessionsDir(sessionsDir)
+    }
 
     const sessionId = createSessionId()
     const sessionIdRef = { current: sessionId }
-    const systemPrompt = await loadSystemPrompt()
-    const tools = createTools(sessionIdRef)
+    const systemPrompt = await loadSystemPrompt(agentRoot)
+    const tools = createTools(sessionIdRef, options.getJsRuntime)
     const sessionFile = options.sessionFile
       ? normalizeSessionFileName(options.sessionFile)
       : (persistSessions ? createSessionFileName() : undefined)
@@ -177,8 +187,7 @@ export class AgentWFYAgent {
     let initialMessages: DisplayMessage[] = []
 
     if (options.sessionFile) {
-      const storageTools = requireSessionStorageTools()
-      const rawSession = await storageTools.read(normalizeSessionFileName(options.sessionFile))
+      const rawSession = await readSessionFile(sessionsDir, normalizeSessionFileName(options.sessionFile))
       const stored = parseStoredSession(rawSession, options.sessionFile)
 
       providerSession = await options.restoreProviderSession(stored.messages, {
@@ -205,7 +214,7 @@ export class AgentWFYAgent {
 
     const instance = new AgentWFYAgent(
       agent,
-      sessionDir,
+      sessionsDir,
       sessionFile,
       options.sessionFile ? (initialMessages.length > 0 ? sessionId : createSessionId()) : sessionId,
       sessionIdRef,
@@ -234,10 +243,6 @@ export class AgentWFYAgent {
 
   get sessionId(): string {
     return this._sessionId
-  }
-
-  get sessionDir(): string {
-    return this.sessionDirPath
   }
 
   get persistSessions(): boolean {
@@ -331,8 +336,7 @@ export class AgentWFYAgent {
     await this.abort()
 
     const sessionFileName = normalizeSessionFileName(sessionPath)
-    const tools = requireSessionStorageTools()
-    const rawSession = await tools.read(sessionFileName)
+    const rawSession = await readSessionFile(this.sessionsDir, sessionFileName)
     const stored = parseStoredSession(rawSession, sessionFileName)
 
     // Create a provider session restored from saved display messages
@@ -415,8 +419,7 @@ export class AgentWFYAgent {
           updatedAt: Date.now(),
         }
 
-        const tools = requireSessionStorageTools()
-        await tools.write(this._sessionFile, JSON.stringify(stored, null, 2))
+        await writeSessionFile(this.sessionsDir, this._sessionFile, JSON.stringify(stored, null, 2))
 
         this.emit({
           type: 'session_saved',

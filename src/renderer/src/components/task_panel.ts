@@ -1,5 +1,33 @@
-import { getTaskRunner } from '../tasks/task_runner.js'
-import type { TaskRun, TaskLogHistoryItem, TaskOrigin } from '../tasks/task_runner.js'
+// Task types (mirrored from main process)
+type TaskOrigin =
+  | { type: 'command-palette' }
+  | { type: 'task-panel' }
+  | { type: 'agent' }
+  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
+  | { type: 'view' }
+
+interface TaskRun {
+  runId: string
+  taskId: number
+  name: string
+  status: 'running' | 'completed' | 'failed'
+  origin: TaskOrigin
+  input?: unknown
+  startedAt: number
+  finishedAt?: number
+  result?: unknown
+  error?: string
+  logs: Array<{ level: string; message: string; timestamp: number }>
+  logFile?: string
+}
+
+interface TaskLogHistoryItem {
+  file: string
+  updatedAt: number
+  taskName: string
+  status: string
+  origin?: TaskOrigin
+}
 import { escapeHtml } from './chat_utils.js'
 
 interface TaskItem {
@@ -408,11 +436,7 @@ export class TlTaskPanel extends HTMLElement {
   private expandedHistoryFiles = new Set<string>()
   private historyDetails = new Map<string, string>()
   private renderedLogCounts = new Map<string, number>()
-  private runnerUnsub: (() => void) | null = null
-  private runnerPollTimer: ReturnType<typeof setInterval> | null = null
-  private elapsedTimer: ReturnType<typeof setInterval> | null = null
   private searchQuery = ''
-  private prevRunCount = 0
 
   constructor() {
     super()
@@ -421,7 +445,6 @@ export class TlTaskPanel extends HTMLElement {
 
   connectedCallback() {
     this.render()
-    this.subscribeRunner()
     this.loadTasks()
     this.loadTriggers()
     this.loadLogHistory()
@@ -429,36 +452,13 @@ export class TlTaskPanel extends HTMLElement {
     window.addEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.addEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.addEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
-
-    this.elapsedTimer = setInterval(() => {
-      const runner = getTaskRunner()
-      if (runner && runner.runningCount > 0) {
-        this.updateRunningRuns()
-      }
-    }, 1000)
   }
 
   disconnectedCallback() {
-    const runner = getTaskRunner()
-    if (runner) {
-      for (const runId of this.expandedRunIds) {
-        runner.unwatchRun(runId)
-      }
-    }
-    this.runnerUnsub?.()
-    this.runnerUnsub = null
-    if (this.runnerPollTimer) {
-      clearInterval(this.runnerPollTimer)
-      this.runnerPollTimer = null
-    }
     this.renderedLogCounts.clear()
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
-    if (this.elapsedTimer) {
-      clearInterval(this.elapsedTimer)
-      this.elapsedTimer = null
-    }
   }
 
   private onTasksChanged = () => {
@@ -472,10 +472,10 @@ export class TlTaskPanel extends HTMLElement {
   private onRunTaskEvent = (e: CustomEvent<{ taskId: number; input?: string }>) => {
     const taskId = e.detail?.taskId
     if (typeof taskId === 'number') {
-      const runner = getTaskRunner()
-      if (runner) {
+      const ipc = window.ipc
+      if (ipc) {
         const input = e.detail?.input
-        runner.runTask(taskId, input || undefined, { type: 'command-palette' }).catch(err => {
+        ipc.tasks.start(taskId, input || undefined, { type: 'command-palette' } as any).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }
@@ -487,37 +487,6 @@ export class TlTaskPanel extends HTMLElement {
     this.updateContent()
   }
 
-  private subscribeRunner() {
-    const runner = getTaskRunner()
-    if (!runner) {
-      this.runnerPollTimer = setInterval(() => {
-        const r = getTaskRunner()
-        if (r) {
-          clearInterval(this.runnerPollTimer!)
-          this.runnerPollTimer = null
-          this.runnerUnsub = r.subscribe(() => this.onRunnerUpdate())
-          this.updateContent()
-        }
-      }, 500)
-      return
-    }
-    this.runnerUnsub = runner.subscribe(() => this.onRunnerUpdate())
-  }
-
-  private onRunnerUpdate() {
-    const runner = getTaskRunner()
-    if (!runner) return
-
-    const currentRunning = runner.runs.filter(r => r.status === 'running').length
-    const wasRunning = this.prevRunCount
-
-    this.updateContent()
-
-    if (currentRunning < wasRunning) {
-      this.loadLogHistory()
-    }
-    this.prevRunCount = currentRunning
-  }
 
   private async loadTasks() {
     const ipc = window.ipc
@@ -555,11 +524,11 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private async loadLogHistory() {
-    const runner = getTaskRunner()
-    if (!runner) return
+    const ipc = window.ipc
+    if (!ipc) return
 
     try {
-      this.logHistory = await runner.listLogHistory()
+      this.logHistory = await ipc.tasks.listLogHistory() as TaskLogHistoryItem[]
     } catch {
       this.logHistory = []
     }
@@ -578,9 +547,7 @@ export class TlTaskPanel extends HTMLElement {
     const root = this.shadow.querySelector('#root')
     if (!root) return
 
-    const runner = getTaskRunner()
-    const allRuns = runner ? runner.runs : []
-    const activeRuns = allRuns.filter(r => r.status === 'running')
+    const activeRuns: TaskRun[] = []
     const filteredTasks = this.getFilteredTasks()
 
     let html = ''
@@ -722,10 +689,8 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   private updateRunningRuns() {
-    const runner = getTaskRunner()
-    if (!runner) return
-
-    for (const run of runner.runs) {
+    const runs: TaskRun[] = [] // TODO: Stream running task state from main process
+    for (const run of runs) {
       if (run.status !== 'running') continue
 
       const header = this.shadow.querySelector(`.run-header[data-run-id="${run.runId}"]`)
@@ -818,8 +783,7 @@ export class TlTaskPanel extends HTMLElement {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const runId = (btn as HTMLElement).dataset.stopRun!
-        const runner = getTaskRunner()
-        if (runner) runner.stopTask(runId)
+        window.ipc?.tasks.stop(runId).catch(() => {})
       })
     })
 
@@ -827,13 +791,10 @@ export class TlTaskPanel extends HTMLElement {
     this.shadow.querySelectorAll('.run-header[data-run-id]').forEach(el => {
       el.addEventListener('click', () => {
         const runId = (el as HTMLElement).dataset.runId!
-        const runner = getTaskRunner()
         if (this.expandedRunIds.has(runId)) {
           this.expandedRunIds.delete(runId)
-          if (runner) runner.unwatchRun(runId)
         } else {
           this.expandedRunIds.add(runId)
-          if (runner) runner.watchRun(runId)
         }
         this.updateContent()
       })
@@ -868,9 +829,11 @@ export class TlTaskPanel extends HTMLElement {
     if (!taskId) return
     const inputEl = this.shadow.querySelector(`.task-input[data-input-task="${taskId}"]`) as HTMLInputElement | null
     const inputValue = inputEl?.value?.trim() || undefined
-    const runner = getTaskRunner()
-    if (runner) {
-      runner.runTask(taskId, inputValue, { type: 'task-panel' }).catch(err => console.error('[TlTaskPanel] run with input failed', err))
+    const ipc = window.ipc
+    if (ipc) {
+      ipc.tasks.start(taskId, inputValue, { type: 'task-panel' } as any).then(() => {
+        this.loadLogHistory()
+      }).catch(err => console.error('[TlTaskPanel] run with input failed', err))
       if (inputEl) inputEl.value = ''
     }
   }

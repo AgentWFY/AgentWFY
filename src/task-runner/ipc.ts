@@ -1,9 +1,9 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import crypto from 'crypto';
 import { assertPathAllowed } from '../security/path-policy.js';
 import { Channels } from '../ipc/channels.js';
+import type { TaskRunner, TaskOrigin } from './task_runner.js';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
 const MAX_TASK_LOG_LIST_LIMIT = 1000;
@@ -20,42 +20,10 @@ function normalizeTaskLogFileName(value: unknown): string {
   return normalized;
 }
 
-// --- Forwarding state for agentview → renderer task operations ---
-
-type PendingTaskRequest = {
-  resolve: (value: unknown) => void
-  reject: (error: unknown) => void
-  timer: ReturnType<typeof setTimeout>
-}
-
-const pendingStartRequests = new Map<string, PendingTaskRequest>();
-const pendingStopRequests = new Map<string, PendingTaskRequest>();
-
-export function forwardStartTask(win: BrowserWindow, taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
-  const waiterId = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingStartRequests.delete(waiterId);
-      reject(new Error('startTask forwarding timeout'));
-    }, 30_000);
-    pendingStartRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
-    win.webContents.send(Channels.tasks.forwardStart, { waiterId, taskId, input, origin });
-  });
-}
-
-export function forwardStopTask(win: BrowserWindow, runId: string): Promise<void> {
-  const waiterId = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingStopRequests.delete(waiterId);
-      reject(new Error('stopTask forwarding timeout'));
-    }, 30_000);
-    pendingStopRequests.set(waiterId, { resolve: resolve as (value: unknown) => void, reject, timer });
-    win.webContents.send(Channels.tasks.forwardStop, { waiterId, runId });
-  });
-}
-
-export function registerTaskRunnerHandlers(getRoot: (e: IpcMainInvokeEvent) => string, getMainWindow: (e: IpcMainInvokeEvent) => BrowserWindow): void {
+export function registerTaskRunnerHandlers(
+  getRoot: (e: IpcMainInvokeEvent) => string,
+  getTaskRunner: (e: IpcMainInvokeEvent) => TaskRunner,
+): void {
   const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
   const ensureTaskLogsDir = async (event: IpcMainInvokeEvent): Promise<string> => {
@@ -66,48 +34,18 @@ export function registerTaskRunnerHandlers(getRoot: (e: IpcMainInvokeEvent) => s
   const resolveTaskLogPath = (event: IpcMainInvokeEvent, logFileName: string, options?: { allowMissing?: boolean }) =>
     resolvePrivatePath(event, `.agentwfy/task_logs/${normalizeTaskLogFileName(logFileName)}`, options);
 
-  // --- Forwarding handlers for agentview callers ---
+  // --- Direct task execution handlers ---
 
-  ipcMain.handle(Channels.tasks.start, async (event, taskId: number, input?: unknown) => {
-    const win = getMainWindow(event);
-    if (win.isDestroyed()) throw new Error('Main window is not available');
-    return forwardStartTask(win, taskId, input, { type: 'view' });
+  ipcMain.handle(Channels.tasks.start, async (event, taskId: number, input?: unknown, origin?: TaskOrigin) => {
+    const runner = getTaskRunner(event);
+    const effectiveOrigin = origin ?? { type: 'view' as const };
+    const runId = await runner.startTask(taskId, input, effectiveOrigin);
+    return { runId };
   });
 
   ipcMain.handle(Channels.tasks.stop, async (event, runId: string) => {
-    const win = getMainWindow(event);
-    if (win.isDestroyed()) throw new Error('Main window is not available');
-    return forwardStopTask(win, runId);
-  });
-
-  // Renderer resolved a forwarded startTask
-  ipcMain.on(Channels.tasks.forwardStartResult, (_event, payload: { waiterId: string; result: unknown }) => {
-    const pending = pendingStartRequests.get(payload.waiterId);
-    if (pending) {
-      pendingStartRequests.delete(payload.waiterId);
-      clearTimeout(pending.timer);
-      const result = payload.result as Record<string, unknown>;
-      if (result && typeof result === 'object' && 'error' in result) {
-        pending.reject(new Error(result.error as string));
-      } else {
-        pending.resolve(result);
-      }
-    }
-  });
-
-  // Renderer resolved a forwarded stopTask
-  ipcMain.on(Channels.tasks.forwardStopResult, (_event, payload: { waiterId: string; result: unknown }) => {
-    const pending = pendingStopRequests.get(payload.waiterId);
-    if (pending) {
-      pendingStopRequests.delete(payload.waiterId);
-      clearTimeout(pending.timer);
-      const result = payload.result as Record<string, unknown>;
-      if (result && typeof result === 'object' && 'error' in result) {
-        pending.reject(new Error(result.error as string));
-      } else {
-        pending.resolve(undefined);
-      }
-    }
+    const runner = getTaskRunner(event);
+    runner.stopTask(runId);
   });
 
   // --- Log persistence handlers ---

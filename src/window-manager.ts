@@ -10,8 +10,11 @@ import { getConfigValue } from './settings/config.js';
 import { DEFAULT_BASE_URL, DEFAULT_MODEL_ID, type OpenAIProviderConfig } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
-import { forwardStartTask } from './task-runner/ipc.js';
 import { forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
+import { AgentSessionManager } from './agent/session_manager.js';
+import { TaskRunner } from './task-runner/task_runner.js';
+import { getOrCreateRuntime } from './ipc/exec-js.js';
+import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { getStorePath } from './ipc/store.js';
 import {
   ensureAgentRuntimeBootstrap,
@@ -26,7 +29,7 @@ import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
-import { disposeProviderSessionsForWindow } from './ipc/providers.js';
+import type { JsRuntime } from './runtime/js_runtime.js';
 
 export interface AppWindowContext {
   window: BrowserWindow;
@@ -38,6 +41,10 @@ export interface AppWindowContext {
   triggerEngine: TriggerEngine | null;
   pluginRegistry: PluginRegistry | null;
   providerRegistry: ProviderRegistry;
+  sessionManager: AgentSessionManager;
+  taskRunner: TaskRunner;
+  jsRuntime: JsRuntime;
+  agentStateStreamingCleanup: (() => void) | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   tabTools: {
@@ -137,6 +144,44 @@ class WindowManager {
       unregisterSender,
     });
 
+    // Create shared tabTools, JsRuntime, SessionManager, TaskRunner
+    const tabTools = {
+      getTabs: () => tabViewManager.getTabsHandler(),
+      openTab: (req: Parameters<TabViewManager['openTabHandler']>[0]) => tabViewManager.openTabHandler(req),
+      closeTab: (req: Parameters<TabViewManager['closeTabHandler']>[0]) => tabViewManager.closeTabHandler(req),
+      selectTab: (req: Parameters<TabViewManager['selectTabHandler']>[0]) => tabViewManager.selectTabHandler(req),
+      reloadTab: (req: Parameters<TabViewManager['reloadTabHandler']>[0]) => tabViewManager.reloadTabHandler(req),
+      captureTab: (req: Parameters<TabViewManager['captureTabById']>[0]) => tabViewManager.captureTabById(req),
+      getTabConsoleLogs: (req: Parameters<TabViewManager['getTabConsoleLogsById']>[0]) => tabViewManager.getTabConsoleLogsById(req),
+      execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
+    };
+
+    const jsRuntime = getOrCreateRuntime(window, {
+      agentRoot,
+      win: window,
+      tabTools,
+      pluginRegistry,
+      onDbChange: (change) => {
+        if (window.isDestroyed()) return;
+        window.webContents.send('bus:dbChanged', change);
+      },
+      getSessionManager: () => ctx.sessionManager,
+      getTaskRunner: () => ctx.taskRunner,
+    })
+
+    const sessionManager = new AgentSessionManager({
+      agentRoot,
+      win: window,
+      providerRegistry,
+      getJsRuntime: () => jsRuntime,
+    })
+
+    const taskRunner = new TaskRunner({
+      agentRoot,
+      win: window,
+      getJsRuntime: () => jsRuntime,
+    })
+
     const ctx: AppWindowContext = {
       window,
       agentRoot,
@@ -147,18 +192,13 @@ class WindowManager {
       triggerEngine: null,
       pluginRegistry,
       providerRegistry,
+      sessionManager,
+      taskRunner,
+      jsRuntime,
+      agentStateStreamingCleanup: null,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
-      tabTools: {
-        getTabs: () => tabViewManager.getTabsHandler(),
-        openTab: (req) => tabViewManager.openTabHandler(req),
-        closeTab: (req) => tabViewManager.closeTabHandler(req),
-        selectTab: (req) => tabViewManager.selectTabHandler(req),
-        reloadTab: (req) => tabViewManager.reloadTabHandler(req),
-        captureTab: (req) => tabViewManager.captureTabById(req),
-        getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
-        execTabJs: (req) => tabViewManager.execTabJsById(req),
-      },
+      tabTools,
     };
 
     this.windows.set(window.id, ctx);
@@ -202,6 +242,12 @@ class WindowManager {
       commandPalette.destroy();
       tabViewManager.destroyAllTabViews();
     });
+
+    // Set up agent state streaming and create initial session
+    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(sessionManager, window)
+    sessionManager.createSession().catch((err) => {
+      console.error('[session-manager] Initial session creation failed:', err)
+    })
 
     window.loadURL('app://index.html');
     window.show();
@@ -269,7 +315,11 @@ class WindowManager {
     const ctx = this.windows.get(windowId);
     if (!ctx) return;
 
-    disposeProviderSessionsForWindow(windowId);
+    // Dispose agent state streaming, session manager, task runner
+    ctx.agentStateStreamingCleanup?.();
+    ctx.agentStateStreamingCleanup = null;
+    ctx.sessionManager.disposeAll().catch(() => {});
+    ctx.taskRunner.dispose();
 
     // Clear debounce timers
     if (ctx.dbChangeDebounceTimer) {
@@ -441,9 +491,9 @@ class WindowManager {
       writeLockfile(agentRoot, ctx.httpApi.port());
       ctx.triggerEngine = new TriggerEngine({
         getAgentRoot: () => agentRoot,
-        startTask: (taskId, input?, origin?) => {
-          if (win.isDestroyed()) throw new Error('Main window is not available');
-          return forwardStartTask(win, taskId, input, origin);
+        startTask: async (taskId, input?, origin?) => {
+          const runId = await ctx.taskRunner.startTask(taskId, input, origin as any);
+          return { runId };
         },
         busWaitFor: (topic, timeoutMs?) => {
           if (win.isDestroyed()) throw new Error('Main window is not available');

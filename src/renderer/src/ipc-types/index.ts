@@ -16,16 +16,6 @@ import type { DialogApi } from './dialog.js'
 import type { BusApi } from './bus.js'
 import type { TasksApi } from './tasks.js'
 
-export interface ExecJsApi {
-  ensureWorker(sessionId: string): Promise<void>
-  terminateWorker(sessionId: string): Promise<void>
-  execute(sessionId: string, code: string, timeoutMs?: number, input?: unknown): Promise<import('../../../runtime/types.js').ExecJsDetails>
-  cancel(sessionId: string): void
-  watchLogs(sessionId: string): Promise<void>
-  unwatchLogs(sessionId: string): Promise<void>
-  onLog(callback: (sessionId: string, entry: import('../../../runtime/types.js').ExecJsLogEntry) => void): () => void
-}
-
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
   showFiltered(query: string): Promise<void>
@@ -41,11 +31,21 @@ export interface PluginsApi {
 export interface ProvidersApi {
   list(): Promise<Array<{ id: string; name: string; settingsView?: string }>>
   getStatusLine(providerId: string): Promise<string>
-  createSession(providerId: string, config: { sessionId: string; systemPrompt: string }): Promise<string>
-  restoreSession(providerId: string, messages: unknown[], config: { sessionId: string; systemPrompt: string }): Promise<string>
-  send(handle: string, input: unknown): Promise<void>
-  getDisplayMessages(handle: string): Promise<unknown[]>
-  onEvent(callback: (handle: string, output: unknown) => void): () => void
+}
+
+export interface AgentApi {
+  createSession(opts?: { label?: string; prompt?: string }): Promise<string>
+  sendMessage(text: string, options?: { streamingBehavior?: 'steer' | 'followUp' }): Promise<void>
+  abort(): Promise<void>
+  closeSession(): Promise<void>
+  loadSession(file: string): Promise<void>
+  switchTo(sessionId: string): Promise<void>
+  getSessionList(): Promise<unknown[]>
+  setNotifyOnFinish(value: boolean): Promise<void>
+  reconnect(): Promise<void>
+  getSnapshot(): Promise<unknown>
+  onSnapshot(callback: (snapshot: unknown) => void): () => void
+  onStreaming(callback: (data: unknown) => void): () => void
 }
 
 export interface AppIpc {
@@ -57,10 +57,10 @@ export interface AppIpc {
   dialog: DialogApi
   bus: BusApi
   tasks: TasksApi
-  execJs: ExecJsApi
   plugins: PluginsApi
   providers: ProvidersApi
   commandPalette: CommandPaletteApi
+  agent: AgentApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>

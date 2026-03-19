@@ -6,12 +6,12 @@ import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerBusHandlers } from './ipc/bus.js';
-import { registerExecJsHandlers, getOrCreateRuntime } from './ipc/exec-js.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
 import { registerProviderHandlers } from './ipc/providers.js';
+import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
   showAgentPickerDialog,
@@ -82,28 +82,16 @@ registerSqlHandlers(
 );
 registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTools);
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
-registerExecJsHandlers(
-  (e) => {
-    const ctx = windowManager.getContextForSender(e.sender.id);
-    return getOrCreateRuntime(ctx.window, {
-      agentRoot: ctx.agentRoot,
-      win: ctx.window,
-      tabTools: ctx.tabTools,
-      pluginRegistry: ctx.pluginRegistry,
-      onDbChange: (change) => {
-        if (ctx.window.isDestroyed()) return;
-        ctx.window.webContents.send('bus:dbChanged', change);
-      },
-    });
-  },
+registerBusHandlers(
   (e) => windowManager.getWindowForEvent(e),
+  (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
+  (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
 );
-registerBusHandlers((e) => windowManager.getWindowForEvent(e));
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);
 registerTaskRunnerHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
-  (e) => windowManager.getWindowForEvent(e),
+  (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
 );
 registerPluginHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
@@ -111,7 +99,27 @@ registerPluginHandlers(
 );
 registerProviderHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
-  (e) => windowManager.getWindowForEvent(e),
+);
+registerAgentSessionHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
+  async (e) => {
+    const ctx = windowManager.getContextForSender(e.sender.id);
+    // Dispose old streaming and session manager
+    ctx.agentStateStreamingCleanup?.();
+    await ctx.sessionManager.disposeAll();
+    // Create new session manager
+    const { AgentSessionManager } = await import('./agent/session_manager.js');
+    const newMgr = new AgentSessionManager({
+      agentRoot: ctx.agentRoot,
+      win: ctx.window,
+      providerRegistry: ctx.providerRegistry,
+      getJsRuntime: () => ctx.jsRuntime,
+    });
+    ctx.sessionManager = newMgr;
+    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(newMgr, ctx.window);
+    await newMgr.createSession();
+    return newMgr;
+  },
 );
 
 ipcMain.handle('app:getAgentRoot', (event) => {

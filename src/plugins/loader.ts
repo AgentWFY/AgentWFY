@@ -6,7 +6,7 @@ import type { PluginApi } from './registry.js'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
 import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import type { ProviderRegistry } from '../providers/registry.js'
-import type { ProviderFactory } from '../renderer/src/agent/provider_types.js'
+import type { ProviderFactory } from '../agent/provider_types.js'
 
 // Use Node's real require (not esbuild's bundled version) so plugins can
 // require built-in modules like child_process, crypto, etc.

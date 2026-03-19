@@ -16,10 +16,4 @@ export interface BusApi {
   onForwardUnsubscribe(callback: (detail: { subId: string }) => void): () => void
   subscribeEvent(subId: string, data: unknown): void
   onDbChanged(callback: (detail: AgentDbChange) => void): () => void
-  onForwardSpawnAgent(callback: (detail: { waiterId: string; prompt: string }) => void): () => void
-  spawnAgentResult(waiterId: string, result: unknown): void
-  spawnAgent(prompt: string): Promise<{ agentId: string }>
-  onForwardSendToAgent(callback: (detail: { waiterId: string; agentId: string; message: string }) => void): () => void
-  sendToAgentResult(waiterId: string, result: unknown): void
-  sendToAgent(agentId: string, message: string): Promise<void>
 }

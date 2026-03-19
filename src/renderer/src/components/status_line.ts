@@ -1,6 +1,3 @@
-import { getSessionManager } from '../agent/session_manager.js'
-import { getTaskRunner } from '../tasks/task_runner.js'
-
 const STYLES = `
   :host {
     display: flex;
@@ -155,12 +152,15 @@ const STYLES = `
   }
 `
 
+interface AgentSnapshot {
+  streamingSessionsCount: number
+}
+
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
   private _taskCount = 0
-  private managerUnsub: (() => void) | null = null
-  private taskRunnerUnsub: (() => void) | null = null
+  private snapshotUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -186,8 +186,7 @@ export class TlStatusLine extends HTMLElement {
     this.render()
     this.bindBackupClick()
     this.bindIndicatorClicks()
-    this.subscribeToManager()
-    this.subscribeToTaskRunner()
+    this.subscribeToSnapshots()
     this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
@@ -195,10 +194,8 @@ export class TlStatusLine extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.managerUnsub?.()
-    this.managerUnsub = null
-    this.taskRunnerUnsub?.()
-    this.taskRunnerUnsub = null
+    this.snapshotUnsub?.()
+    this.snapshotUnsub = null
     window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
     if (this.flashTimeout) clearTimeout(this.flashTimeout)
   }
@@ -226,30 +223,18 @@ export class TlStatusLine extends HTMLElement {
     `
   }
 
-  private subscribeToManager() {
-    const mgr = getSessionManager()
-    if (!mgr) {
-      const interval = setInterval(() => {
-        const m = getSessionManager()
-        if (m) {
-          clearInterval(interval)
-          this.managerUnsub = m.subscribe(() => this.syncAgentCount())
-          this.syncAgentCount()
-        }
-      }, 500)
-      return
-    }
-    this.managerUnsub = mgr.subscribe(() => this.syncAgentCount())
-    this.syncAgentCount()
-  }
+  private subscribeToSnapshots() {
+    const ipc = window.ipc
+    if (!ipc?.agent) return
 
-  private syncAgentCount() {
-    const mgr = getSessionManager()
-    const count = mgr ? mgr.streamingSessionsCount : 0
-    if (count !== this._agentCount) {
-      this._agentCount = count
-      this.updateAgentIndicator()
-    }
+    this.snapshotUnsub = ipc.agent.onSnapshot((snapshot: unknown) => {
+      const s = snapshot as AgentSnapshot
+      const count = s.streamingSessionsCount ?? 0
+      if (count !== this._agentCount) {
+        this._agentCount = count
+        this.updateAgentIndicator()
+      }
+    })
   }
 
   private updateAgentIndicator() {
@@ -263,32 +248,6 @@ export class TlStatusLine extends HTMLElement {
       indicator.classList.add('visible')
     } else {
       indicator.classList.remove('visible')
-    }
-  }
-
-  private subscribeToTaskRunner() {
-    const runner = getTaskRunner()
-    if (!runner) {
-      const interval = setInterval(() => {
-        const r = getTaskRunner()
-        if (r) {
-          clearInterval(interval)
-          this.taskRunnerUnsub = r.subscribe(() => this.syncTaskCount())
-          this.syncTaskCount()
-        }
-      }, 500)
-      return
-    }
-    this.taskRunnerUnsub = runner.subscribe(() => this.syncTaskCount())
-    this.syncTaskCount()
-  }
-
-  private syncTaskCount() {
-    const runner = getTaskRunner()
-    const count = runner ? runner.runningCount : 0
-    if (count !== this._taskCount) {
-      this._taskCount = count
-      this.updateTaskIndicator()
     }
   }
 
