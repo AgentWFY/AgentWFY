@@ -15,13 +15,13 @@ interface BackupMetadata {
   versions: Record<string, { hash: string; timestamp: string }>;
 }
 
-export interface BackupStatus {
+interface BackupStatus {
   currentVersion: number | null;
   modified: boolean;
   latestBackup: { version: number; timestamp: string } | null;
 }
 
-export interface BackupVersionInfo {
+interface BackupVersionInfo {
   version: number;
   timestamp: string;
   matchesCurrent: boolean;

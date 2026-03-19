@@ -12,7 +12,7 @@
  * Supports: * (any), values (5), ranges (1-5), lists (1,15), steps (STAR/10, 2-30/2).
  */
 
-export interface ParsedExpression {
+interface ParsedExpression {
   second: number[];
   minute: number[];
   hour: number[];

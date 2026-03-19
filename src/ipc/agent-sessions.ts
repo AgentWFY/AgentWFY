@@ -1,18 +1,6 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '../agent/session_manager.js'
-import type { DisplayMessage } from '../agent/provider_types.js'
 import { Channels } from './channels.js'
-
-export interface AgentSnapshot {
-  messages: DisplayMessage[]
-  isStreaming: boolean
-  label: string
-  streamingSessionsCount: number
-  notifyOnFinish: boolean
-  streamingMessage: DisplayMessage | null
-  statusLine: string | undefined
-  providerId: string
-}
 
 export function registerAgentSessionHandlers(
   getManager: (e: IpcMainInvokeEvent) => AgentSessionManager,

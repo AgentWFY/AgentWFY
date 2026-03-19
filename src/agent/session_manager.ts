@@ -36,7 +36,7 @@ function extractFirstUserMessage(messages: DisplayMessage[], maxLen: number): st
   return null
 }
 
-export interface SessionEntry {
+interface SessionEntry {
   agent: AgentWFYAgent
   label: string
   unsubscribe: () => void
@@ -45,13 +45,13 @@ export interface SessionEntry {
   autoPublishResponse?: boolean
 }
 
-export interface SessionHistoryItem {
+interface SessionHistoryItem {
   file: string
   updatedAt: number
   firstUserMessage: string
 }
 
-export interface SessionListItem {
+interface SessionListItem {
   label: string
   updatedAt: number
   isActive: boolean
@@ -60,7 +60,7 @@ export interface SessionListItem {
   sessionId: string | null
 }
 
-export interface AgentSessionManagerDeps {
+interface AgentSessionManagerDeps {
   agentRoot: string
   win: BrowserWindow
   providerRegistry: ProviderRegistry

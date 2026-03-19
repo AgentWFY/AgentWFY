@@ -434,8 +434,6 @@ const STYLES = `
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
   }
-  .session-panel { }
-  .provider-panel { }
   .provider-panel-item {
     display: flex;
     align-items: center;
@@ -1355,31 +1353,6 @@ export class TlAgentChat extends HTMLElement {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
     }
-  }
-
-  private async toggleProviderPanel() {
-    if (this.activePanel === 'providers') {
-      this.activePanel = null
-      this.render()
-      return
-    }
-    const ipc = window.ipc
-    if (!ipc?.providers) return
-
-    try {
-      this._providerList = await ipc.providers.list()
-      const rows = await ipc.sql.run({
-        target: 'agent',
-        sql: "SELECT value FROM config WHERE name = 'system.provider'",
-      }) as Array<{ value: string }>
-      this._activeProviderId = rows[0]?.value ? JSON.parse(rows[0].value) : 'openai-compatible'
-    } catch {
-      this._activeProviderId = 'openai-compatible'
-    }
-
-    this.activePanel = 'providers'
-    this._providerPanelDirty = true
-    this.render()
   }
 
   private async handleSelectProvider(providerId: string) {

@@ -1,6 +1,6 @@
 import type { BrowserWindow } from 'electron';
 
-export interface RendererBridgeDeps {
+interface RendererBridgeDeps {
   getMainWindow: () => BrowserWindow | null;
 }
 

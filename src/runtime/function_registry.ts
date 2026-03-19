@@ -1,4 +1,4 @@
-export type FunctionHandler = (params: unknown) => Promise<unknown>
+type FunctionHandler = (params: unknown) => Promise<unknown>
 
 const BUILT_IN_SOURCE = 'built-in'
 

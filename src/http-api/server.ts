@@ -14,7 +14,7 @@ export interface HttpRequestData {
   body: unknown;
 }
 
-export type RouteHandler = (request: HttpRequestData) => Promise<{ status?: number; body: unknown }>;
+type RouteHandler = (request: HttpRequestData) => Promise<{ status?: number; body: unknown }>;
 
 interface RegisteredRoute {
   handler: RouteHandler;

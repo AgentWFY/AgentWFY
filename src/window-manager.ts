@@ -32,7 +32,7 @@ import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
 
-export interface AppWindowContext {
+interface AppWindowContext {
   window: BrowserWindow;
   agentRoot: string;
   rendererBridge: RendererBridge;
@@ -413,16 +413,6 @@ class WindowManager {
     return this.getContextForSender(event.sender.id).window;
   }
 
-  // --- Sender registration ---
-
-  registerSender(webContentsId: number, windowId: number): void {
-    this.senderMap.set(webContentsId, windowId);
-  }
-
-  unregisterSender(webContentsId: number): void {
-    this.senderMap.delete(webContentsId);
-  }
-
   // --- Protocol support ---
 
   getAgentRootForHash(hash: string): string | null {
@@ -549,10 +539,6 @@ class WindowManager {
 
   getAllContexts(): AppWindowContext[] {
     return Array.from(this.windows.values());
-  }
-
-  get windowCount(): number {
-    return this.windows.size;
   }
 
   // --- Open agent in window (focus existing or create new) ---

@@ -155,7 +155,6 @@ export function installFromPackage(agentRoot: string, packagePath: string): { in
 
   // Extract assets to plugin-assets/<plugin>/<path>
   for (const asset of assets) {
-    const slashIdx = asset.name.indexOf('/')
     const filePath = path.join(agentRoot, '.agentwfy', 'plugin-assets', asset.name)
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     fs.writeFileSync(filePath, asset.data)

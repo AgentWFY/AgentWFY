@@ -159,7 +159,6 @@ interface AgentSnapshot {
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
-  private _taskCount = 0
   private snapshotUnsub: (() => void) | null = null
 
   constructor() {
@@ -245,20 +244,6 @@ export class TlStatusLine extends HTMLElement {
     if (this._agentCount > 0) {
       const suffix = this._agentCount === 1 ? 'agent running' : 'agents running'
       label.textContent = `${this._agentCount} ${suffix}`
-      indicator.classList.add('visible')
-    } else {
-      indicator.classList.remove('visible')
-    }
-  }
-
-  private updateTaskIndicator() {
-    const indicator = this.shadow.querySelector('#task-indicator')
-    const label = this.shadow.querySelector('#task-label')
-    if (!indicator || !label) return
-
-    if (this._taskCount > 0) {
-      const suffix = this._taskCount === 1 ? 'task running' : 'tasks running'
-      label.textContent = `${this._taskCount} ${suffix}`
       indicator.classList.add('visible')
     } else {
       indicator.classList.remove('visible')

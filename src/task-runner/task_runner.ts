@@ -14,7 +14,7 @@ export type TaskOrigin =
   | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
 
-export interface TaskRun {
+interface TaskRun {
   runId: string
   taskId: number
   name: string
@@ -26,15 +26,6 @@ export interface TaskRun {
   result?: unknown
   error?: string
   logs: ExecJsLogEntry[]
-  logFile?: string
-}
-
-export interface TaskLogHistoryItem {
-  file: string
-  updatedAt: number
-  taskName: string
-  status: string
-  origin?: TaskOrigin
 }
 
 function createRunId(taskId: number): string {
@@ -47,7 +38,7 @@ function createLogFileName(): string {
   return `${ts}-${rand}.json`
 }
 
-export interface TaskRunnerDeps {
+interface TaskRunnerDeps {
   agentRoot: string
   win: BrowserWindow
   getJsRuntime: () => JsRuntime
@@ -55,20 +46,10 @@ export interface TaskRunnerDeps {
 
 export class TaskRunner {
   private _runs: TaskRun[] = []
-  private listeners = new Set<() => void>()
-  private completionWaiters = new Map<string, { resolve: (value: unknown) => void }>()
   private readonly deps: TaskRunnerDeps
 
   constructor(deps: TaskRunnerDeps) {
     this.deps = deps
-  }
-
-  get runs(): TaskRun[] {
-    return this._runs
-  }
-
-  get runningCount(): number {
-    return this._runs.filter(r => r.status === 'running').length
   }
 
   async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
@@ -103,21 +84,12 @@ export class TaskRunner {
     }
 
     this._runs.unshift(run)
-    this.notify()
 
     const runtime = getJsRuntime()
     runtime.ensureWorker(runId)
 
     void this.executeRun(run, task.content, timeoutMs, input)
 
-    return runId
-  }
-
-  async runTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
-    const runId = await this.startTask(taskId, input, origin)
-    await new Promise<unknown>((resolve) => {
-      this.completionWaiters.set(runId, { resolve })
-    })
     return runId
   }
 
@@ -130,13 +102,7 @@ export class TaskRunner {
     run.status = 'failed'
     run.error = 'Stopped by user'
     run.finishedAt = Date.now()
-    this.notify()
     void this.persistLog(run)
-  }
-
-  subscribe(listener: () => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
   }
 
   dispose(): void {
@@ -147,8 +113,6 @@ export class TaskRunner {
       }
     }
     this._runs = []
-    this.completionWaiters.clear()
-    this.listeners.clear()
   }
 
   private async executeRun(run: TaskRun, code: string, timeoutMs: number, input?: unknown): Promise<void> {
@@ -178,23 +142,16 @@ export class TaskRunner {
         run.finishedAt = Date.now()
         runtime.terminateWorker(run.runId)
         await this.persistLog(run)
-        this.notify()
       }
       this.removeFinishedRun(run.runId)
 
-      // Always publish bus event and resolve completion waiters
+      // Always publish bus event
       if (!this.deps.win.isDestroyed()) {
         forwardBusPublish(this.deps.win, `task:run:${run.runId}`, {
           runId: run.runId, taskId: run.taskId, name: run.name,
           status: run.status, origin: run.origin, startedAt: run.startedAt,
           finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
         })
-      }
-
-      const waiter = this.completionWaiters.get(run.runId)
-      if (waiter) {
-        this.completionWaiters.delete(run.runId)
-        waiter.resolve(undefined)
       }
     }
   }
@@ -203,17 +160,6 @@ export class TaskRunner {
     const idx = this._runs.findIndex(r => r.runId === runId)
     if (idx !== -1 && this._runs[idx].status !== 'running') {
       this._runs.splice(idx, 1)
-      this.notify()
-    }
-  }
-
-  private notify(): void {
-    for (const listener of this.listeners) {
-      try {
-        listener()
-      } catch (err) {
-        console.error('[TaskRunner] listener error', err)
-      }
     }
   }
 
@@ -238,7 +184,6 @@ export class TaskRunner {
 
       const logPath = path.join(taskLogsDir, logFileName)
       await fs.writeFile(logPath, JSON.stringify(logData, null, 2), 'utf-8')
-      run.logFile = logFileName
     } catch (err) {
       console.error('[TaskRunner] failed to persist log', err)
     }

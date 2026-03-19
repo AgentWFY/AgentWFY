@@ -3,7 +3,7 @@ import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
 import { EditingScreen } from './editing.js'
 
-export interface ScopeParams {
+interface ScopeParams {
   key: string
   label: string
   type: string

@@ -1,4 +1,4 @@
-export type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
+type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
 export interface ExecJsLogEntry {
   level: ConsoleMethod
@@ -34,44 +34,44 @@ export interface WorkerRunSqlRequest {
   description?: string
 }
 
-export interface WorkerReadRequest {
+interface WorkerReadRequest {
   path: string
   offset?: number
   limit?: number
 }
 
-export interface WorkerWriteRequest {
+interface WorkerWriteRequest {
   path: string
   content: string
 }
 
-export interface WorkerWriteBinaryRequest {
+interface WorkerWriteBinaryRequest {
   path: string
   base64: string
 }
 
-export interface WorkerEditRequest {
+interface WorkerEditRequest {
   path: string
   oldText: string
   newText: string
 }
 
-export interface WorkerLsRequest {
+interface WorkerLsRequest {
   path?: string
   limit?: number
 }
 
-export interface WorkerMkdirRequest {
+interface WorkerMkdirRequest {
   path: string
   recursive?: boolean
 }
 
-export interface WorkerRemoveRequest {
+interface WorkerRemoveRequest {
   path: string
   recursive?: boolean
 }
 
-export interface WorkerFindRequest {
+interface WorkerFindRequest {
   pattern: string
   path?: string
   limit?: number
@@ -84,14 +84,14 @@ export interface WorkerGrepOptions {
   limit?: number
 }
 
-export interface WorkerGrepRequest {
+interface WorkerGrepRequest {
   pattern: string
   path?: string
   options?: WorkerGrepOptions
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface WorkerGetTabsRequest {}
+interface WorkerGetTabsRequest {}
 
 export interface WorkerGetTabsResult {
   tabs: Array<{
@@ -148,7 +148,7 @@ export interface WorkerTabConsoleLogEntry {
   timestamp: number
 }
 
-export interface WorkerCaptureTabResult {
+interface WorkerCaptureTabResult {
   base64: string
   mimeType: 'image/png'
 }
@@ -252,20 +252,18 @@ export interface WorkerHostMethodMap {
   }
 }
 
-export interface WorkerStartTaskRequest {
+interface WorkerStartTaskRequest {
   taskId: number
   input?: unknown
 }
 
-export interface WorkerStartTaskResult {
+interface WorkerStartTaskResult {
   runId: string
 }
 
-export interface WorkerStopTaskRequest {
+interface WorkerStopTaskRequest {
   runId: string
 }
-
-export type WorkerHostMethod = string
 
 export interface WorkerExecuteRequestMessage {
   type: 'exec:run'
@@ -276,7 +274,7 @@ export interface WorkerExecuteRequestMessage {
   methods: string[]
 }
 
-export interface WorkerCancelRequestMessage {
+interface WorkerCancelRequestMessage {
   type: 'exec:cancel'
   requestId: string
 }
@@ -290,12 +288,12 @@ export interface WorkerHostResultMessage {
   error?: ExecJsSerializedError
 }
 
-export interface WorkerWatchLogsMessage {
+interface WorkerWatchLogsMessage {
   type: 'exec:watch'
   requestId: string
 }
 
-export interface WorkerUnwatchLogsMessage {
+interface WorkerUnwatchLogsMessage {
   type: 'exec:unwatch'
   requestId: string
 }
@@ -315,13 +313,13 @@ export interface WorkerHostCallMessage {
   params: unknown
 }
 
-export interface WorkerExecutionResultMessage {
+interface WorkerExecutionResultMessage {
   type: 'exec:result'
   requestId: string
   details: ExecJsDetails
 }
 
-export interface WorkerLogStreamMessage {
+interface WorkerLogStreamMessage {
   type: 'exec:log'
   requestId: string
   logEntry: ExecJsLogEntry
