@@ -125,7 +125,7 @@ export class AgentWFYAgent {
   private readonly sessionIdRef: { current: string }
   private readonly createProviderSession: ProviderSessionFactory
   private readonly restoreProviderSession: ProviderSessionRestorer
-  private readonly providerId: string
+  readonly providerId: string
 
   private systemPrompt: string
   private sessionWritePromise: Promise<void> = Promise.resolve()

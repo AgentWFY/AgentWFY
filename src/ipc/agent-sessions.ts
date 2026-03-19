@@ -11,13 +11,14 @@ export interface AgentSnapshot {
   notifyOnFinish: boolean
   streamingMessage: DisplayMessage | null
   statusLine: string | undefined
+  providerId: string
 }
 
 export function registerAgentSessionHandlers(
   getManager: (e: IpcMainInvokeEvent) => AgentSessionManager,
   onReconnect: (e: IpcMainInvokeEvent) => Promise<AgentSessionManager>,
 ): void {
-  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string }) => {
+  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string }) => {
     return getManager(event).createSession(opts)
   })
 
