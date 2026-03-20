@@ -28,6 +28,7 @@ import { loadPlugins } from './plugins/loader.js';
 import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
+import { ConfirmationManager } from './confirmation/manager.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
@@ -38,6 +39,7 @@ interface AppWindowContext {
   rendererBridge: RendererBridge;
   tabViewManager: TabViewManager;
   commandPalette: CommandPaletteManager;
+  confirmation: ConfirmationManager;
   httpApi: HttpApiServer | null;
   triggerEngine: TriggerEngine | null;
   pluginRegistry: PluginRegistry | null;
@@ -141,6 +143,13 @@ class WindowManager {
       unregisterSender,
       openAgentInWindow: (root) => this.openAgentInWindow(root).then(() => {}),
       getPluginRegistry: () => ctx.pluginRegistry,
+      getConfirmation: () => ctx.confirmation,
+    });
+
+    const confirmation = new ConfirmationManager({
+      getMainWindow: () => window,
+      registerSender,
+      unregisterSender,
     });
 
     const agentHash = this.getHashForAgentRoot(agentRoot);
@@ -178,6 +187,7 @@ class WindowManager {
       },
       getSessionManager: () => ctx.sessionManager,
       getTaskRunner: () => ctx.taskRunner,
+      getCommandPalette: () => ctx.commandPalette,
     })
 
     const jsRuntime = getOrCreateRuntime(window, {
@@ -203,6 +213,7 @@ class WindowManager {
       rendererBridge,
       tabViewManager,
       commandPalette,
+      confirmation,
       httpApi: null,
       triggerEngine: null,
       pluginRegistry,
@@ -261,10 +272,12 @@ class WindowManager {
 
     window.on('move', () => {
       commandPalette.syncBounds();
+      confirmation.syncBounds();
     });
 
     window.on('resize', () => {
       commandPalette.syncBounds();
+      confirmation.syncBounds();
     });
 
     window.maximize();
@@ -286,6 +299,7 @@ class WindowManager {
 
     window.webContents.on('did-start-loading', () => {
       commandPalette.destroy();
+      confirmation.destroy();
       tabViewManager.destroyAllTabViews();
     });
 
@@ -375,6 +389,7 @@ class WindowManager {
 
     ctx.pluginRegistry?.deactivateAll();
     ctx.commandPalette.destroy();
+    ctx.confirmation.destroy();
     ctx.tabViewManager.destroyAllTabViews();
     ctx.tabViewManager.clearTrackedViewWebContents();
     this.stopHttpServerForContext(ctx);

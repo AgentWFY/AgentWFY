@@ -142,6 +142,19 @@ function validatePackage(
   return errors
 }
 
+export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; description: string; version: string }> } {
+  const { plugins, docs, views, config, assets } = readPackage(packagePath)
+
+  const errors = validatePackage(plugins, docs, views, config, assets)
+  if (errors.length > 0) {
+    throw new Error(`Invalid plugin package:\n${errors.join('\n')}`)
+  }
+
+  return {
+    plugins: plugins.map(p => ({ name: p.name, description: p.description, version: p.version })),
+  }
+}
+
 export function installFromPackage(agentRoot: string, packagePath: string): { installed: string[] } {
   const { plugins, docs, views, config, assets } = readPackage(packagePath)
 

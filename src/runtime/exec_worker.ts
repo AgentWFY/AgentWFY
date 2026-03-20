@@ -350,6 +350,21 @@ const builtInWrappers: Record<string, BuiltInWrapper> = {
     create: (call) => (runId: string) =>
       call('stopTask', { runId }),
   },
+  requestInstallPlugin: {
+    exposedName: 'requestInstallPlugin',
+    create: (call) => (packagePath: string) =>
+      call('requestInstallPlugin', { packagePath }),
+  },
+  requestTogglePlugin: {
+    exposedName: 'requestTogglePlugin',
+    create: (call) => (pluginName: string) =>
+      call('requestTogglePlugin', { pluginName }),
+  },
+  requestUninstallPlugin: {
+    exposedName: 'requestUninstallPlugin',
+    create: (call) => (pluginName: string) =>
+      call('requestUninstallPlugin', { pluginName }),
+  },
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {

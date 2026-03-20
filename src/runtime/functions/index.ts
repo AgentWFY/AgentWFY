@@ -3,6 +3,7 @@ import type { OnDbChange } from '../../db/sqlite.js'
 import type { AgentTabTools } from '../../ipc/tabs.js'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { TaskRunner } from '../../task-runner/task_runner.js'
+import type { CommandPaletteManager } from '../../command-palette/manager.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -10,6 +11,7 @@ import { registerTabs } from './tabs.js'
 import { registerEvents } from './events.js'
 import { registerAgent } from './agent.js'
 import { registerTasks } from './tasks.js'
+import { registerPlugins } from './plugins.js'
 
 interface BuiltInFunctionDeps {
   agentRoot: string
@@ -18,6 +20,7 @@ interface BuiltInFunctionDeps {
   onDbChange?: OnDbChange
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
+  getCommandPalette: () => CommandPaletteManager
 }
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
@@ -27,4 +30,7 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   registerEvents(registry, { win: deps.win })
   registerAgent(registry, { getSessionManager: deps.getSessionManager })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
+  registerPlugins(registry, {
+    getCommandPalette: deps.getCommandPalette,
+  })
 }

@@ -70,6 +70,9 @@ const Channels = {
     methods: 'plugin:methods',
     install: 'plugin:install',
     uninstall: 'plugin:uninstall',
+    requestInstall: 'plugin:requestInstall',
+    requestToggle: 'plugin:requestToggle',
+    requestUninstall: 'plugin:requestUninstall',
   },
   providers: {
     list: 'provider:list',
@@ -468,6 +471,15 @@ if (isAgentView) {
     ...pluginFunctions,
     openExternal(url: string): Promise<void> {
       return ipcRenderer.invoke(Channels.dialog.openExternal, url);
+    },
+    requestInstallPlugin(packagePath: string): Promise<{ installed: string[] }> {
+      return ipcRenderer.invoke(Channels.plugins.requestInstall, packagePath);
+    },
+    requestTogglePlugin(pluginName: string): Promise<{ toggled: boolean; enabled?: boolean }> {
+      return ipcRenderer.invoke(Channels.plugins.requestToggle, pluginName);
+    },
+    requestUninstallPlugin(pluginName: string): Promise<{ uninstalled: boolean }> {
+      return ipcRenderer.invoke(Channels.plugins.requestUninstall, pluginName);
     },
   });
 }
