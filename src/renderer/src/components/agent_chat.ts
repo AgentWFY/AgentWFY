@@ -682,6 +682,7 @@ export class TlAgentChat extends HTMLElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     this.snapshotUnsub?.()
     this.snapshotUnsub = null
     this.streamingUnsub?.()
@@ -739,9 +740,16 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
+  private onPluginChanged = () => {
+    this.loadConfigStatusLine().then(() => this.render())
+  }
+
   private async init() {
     try {
       await this.loadConfigStatusLine()
+
+      // Refresh provider list when plugins change
+      window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
 
       const ipc = window.ipc
       if (!ipc?.agent) {
