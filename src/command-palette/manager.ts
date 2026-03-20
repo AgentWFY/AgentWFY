@@ -473,16 +473,29 @@ export class CommandPaletteManager {
       return { installed: [] };
     }
 
-    return installFromPackage(this.deps.getAgentRoot(), result.filePaths[0]);
+    const installResult = installFromPackage(this.deps.getAgentRoot(), result.filePaths[0]);
+    if (installResult.installed.length > 0) {
+      const names = installResult.installed.join(', ');
+      this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
+        message: `Installed ${names}`,
+      });
+    }
+    return installResult;
   }
 
   uninstallPluginByName(pluginName: string): void {
     uninstallPlugin(this.deps.getAgentRoot(), pluginName);
+    this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
+      message: `Uninstalled ${pluginName}`,
+    });
   }
 
   togglePluginEnabled(pluginName: string, enabled: boolean): void {
     const db = getOrCreateAgentDb(this.deps.getAgentRoot());
     db.togglePlugin(pluginName, enabled);
+    this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
+      message: `${enabled ? 'Enabled' : 'Disabled'} ${pluginName}`,
+    });
   }
 
   openSettingsFile(): void {

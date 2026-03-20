@@ -72,6 +72,20 @@ const STYLES = `
   .task-label {
     white-space: nowrap;
   }
+  .notification {
+    display: none;
+    align-items: center;
+    font-size: 11px;
+    color: var(--color-text3);
+    white-space: nowrap;
+    background: var(--color-surface);
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-right: 4px;
+  }
+  .notification.visible {
+    display: flex;
+  }
   .agent-indicator:hover,
   .task-indicator:hover {
     color: var(--color-text3);
@@ -166,16 +180,27 @@ export class TlStatusLine extends HTMLElement {
     this.shadow = this.attachShadow({ mode: 'open' })
   }
 
-  private flashTimeout: ReturnType<typeof setTimeout> | null = null
+  private notificationTimeout: ReturnType<typeof setTimeout> | null = null
+
+  private onPluginChanged = (event: Event) => {
+    const detail = (event as CustomEvent)?.detail
+    if (detail?.message) {
+      this.showNotification(detail.message)
+    }
+  }
 
   private onBackupChanged = (event: Event) => {
     const detail = (event as CustomEvent)?.detail
     if (detail?.version != null) {
-      this.showBackupFlash(`Backed up v${detail.version}`)
+      this.showNotification(`Backed up v${detail.version}`)
     } else if (detail?.skipped) {
-      this.showBackupFlash('No changes to back up')
+      this.showNotification('No changes to back up')
     } else if (detail?.restored != null) {
-      this.showBackupFlash(`Restored v${detail.restored}`)
+      this.showNotification(`Restored v${detail.restored}`)
+    }
+    if (detail?.version != null || detail?.skipped || detail?.restored != null) {
+      // Also refresh the backup version display after flash
+      setTimeout(() => this.loadBackupInfo(), 3000)
     } else {
       this.loadBackupInfo()
     }
@@ -190,13 +215,15 @@ export class TlStatusLine extends HTMLElement {
     this.loadDataDir()
     this.loadBackupInfo()
     window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
+    window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
   }
 
   disconnectedCallback() {
     this.snapshotUnsub?.()
     this.snapshotUnsub = null
     window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
-    if (this.flashTimeout) clearTimeout(this.flashTimeout)
+    window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
   }
 
   private render() {
@@ -213,6 +240,7 @@ export class TlStatusLine extends HTMLElement {
         </div>
       </div>
       <div class="right">
+        <span class="notification" id="notification"></span>
         <button class="port-info" id="port-info" type="button"></button>
         <span class="separator" id="port-sep"></span>
         <button class="backup-info" id="backup-info" type="button"></button>
@@ -334,15 +362,16 @@ export class TlStatusLine extends HTMLElement {
     }
   }
 
-  private showBackupFlash(message: string) {
-    const infoEl = this.shadow.querySelector('#backup-info') as HTMLButtonElement | null
-    if (!infoEl) return
-    if (this.flashTimeout) clearTimeout(this.flashTimeout)
-    infoEl.textContent = message
-    this.flashTimeout = setTimeout(() => {
-      this.flashTimeout = null
-      this.loadBackupInfo()
-    }, 2000)
+  private showNotification(message: string) {
+    const el = this.shadow.querySelector('#notification')
+    if (!el) return
+    if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
+    el.textContent = message
+    el.classList.add('visible')
+    this.notificationTimeout = setTimeout(() => {
+      this.notificationTimeout = null
+      el.classList.remove('visible')
+    }, 3000)
   }
 
   private shortenPath(fullPath: string): string {
