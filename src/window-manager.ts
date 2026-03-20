@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
@@ -61,10 +61,19 @@ interface AppWindowContext {
   };
 }
 
+function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, action: string): string {
+  const parts: string[] = [];
+  if (streamingAgents > 0) parts.push(`${streamingAgents} agent${streamingAgents > 1 ? 's' : ''} streaming`);
+  if (runningTasks > 0) parts.push(`${runningTasks} task${runningTasks > 1 ? 's' : ''} running`);
+  const verb = (runningTasks + streamingAgents) === 1 ? 'is' : 'are';
+  return `There ${verb} ${parts.join(' and ')}. ${action} will stop them.`;
+}
+
 class WindowManager {
   private windows = new Map<number, AppWindowContext>();
   private senderMap = new Map<number, number>(); // webContents.id → BrowserWindow.id
   private agentHashes = new Map<string, string>(); // hash → agentRoot
+  private forceCloseIds = new Set<number>();
   onWindowCreated: (() => void) | null = null;
 
   async createWindow(agentRoot: string, options?: { skipRecents?: boolean }): Promise<AppWindowContext> {
@@ -216,6 +225,36 @@ class WindowManager {
       evt.preventDefault();
     });
 
+    window.on('close', (event) => {
+      const wCtx = this.windows.get(window.id);
+      if (!wCtx) return;
+
+      if (this.forceCloseIds.has(window.id)) {
+        this.forceCloseIds.delete(window.id);
+        return;
+      }
+
+      const runningTasks = wCtx.taskRunner.runningCount;
+      const streamingAgents = wCtx.sessionManager.streamingSessionsCount;
+      if (runningTasks === 0 && streamingAgents === 0) return;
+
+      event.preventDefault();
+
+      dialog.showMessageBox(window, {
+        type: 'warning',
+        buttons: ['Cancel', 'Close'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Close Window?',
+        message: buildActiveWorkWarning(runningTasks, streamingAgents, 'Closing'),
+      }).then(({ response }) => {
+        if (response === 1) {
+          this.forceCloseIds.add(window.id);
+          window.close();
+        }
+      });
+    });
+
     window.on('closed', () => {
       this.destroyWindow(window.id);
     });
@@ -349,6 +388,7 @@ class WindowManager {
     }
 
     this.windows.delete(windowId);
+    this.forceCloseIds.delete(windowId);
 
     // Clean up agent hash if no other window uses this agent
     let agentStillOpen = false;
@@ -529,6 +569,38 @@ class WindowManager {
   }
 
   // --- Lifecycle ---
+
+  hasActiveWork(): boolean {
+    for (const ctx of this.windows.values()) {
+      if (ctx.taskRunner.runningCount > 0 || ctx.sessionManager.streamingSessionsCount > 0) return true;
+    }
+    return false;
+  }
+
+  async showQuitConfirmation(): Promise<boolean> {
+    const { runningTasks, streamingAgents } = this.getActiveWorkCounts();
+    if (runningTasks === 0 && streamingAgents === 0) return true;
+
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['Cancel', 'Quit'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Quit AgentWFY?',
+      message: buildActiveWorkWarning(runningTasks, streamingAgents, 'Quitting'),
+    });
+    return response === 1;
+  }
+
+  private getActiveWorkCounts(): { runningTasks: number; streamingAgents: number } {
+    let runningTasks = 0;
+    let streamingAgents = 0;
+    for (const ctx of this.windows.values()) {
+      runningTasks += ctx.taskRunner.runningCount;
+      streamingAgents += ctx.sessionManager.streamingSessionsCount;
+    }
+    return { runningTasks, streamingAgents };
+  }
 
   destroyAll(): void {
     // Copy IDs to avoid mutation during iteration (destroyWindow deletes from map)
