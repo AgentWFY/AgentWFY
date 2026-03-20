@@ -125,7 +125,7 @@ export class CommandPaletteManager {
         preload: path.join(import.meta.dirname, 'command-palette', 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
       },
     });

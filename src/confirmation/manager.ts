@@ -62,7 +62,7 @@ export class ConfirmationManager {
         preload: path.join(import.meta.dirname, 'confirmation', 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
-        webSecurity: false,
+        webSecurity: true,
         backgroundThrottling: false,
       },
     })
