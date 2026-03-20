@@ -289,12 +289,14 @@ module.exports = {
 Plugins are distributed as `.plugins.awfy` files (SQLite databases) with these tables:
 
 ```sql
-plugins (name TEXT, description TEXT, version TEXT, code TEXT)         — 1..N rows (required)
+plugins (name TEXT, description TEXT, version TEXT, code TEXT, author TEXT, repository TEXT, license TEXT) — 1..N rows (required)
 docs    (name TEXT, content TEXT)                                      — 0..N rows (optional)
 views   (name TEXT, title TEXT, content TEXT)                          — 0..N rows (optional)
 config  (name TEXT, value TEXT, description TEXT)                      — 0..N rows (optional)
 assets  (name TEXT, data BLOB)                                        — 0..N rows (optional)
 ```
+
+The `author`, `repository`, and `license` columns are optional for local plugins. They are required when publishing to the public plugin registry.
 
 A package can contain one or multiple plugins (plugin pack).
 
@@ -326,7 +328,9 @@ Plugin docs are read-only from the agent's perspective. The `system.plugins` doc
 The `plugins` table:
 
 ```sql
-plugins (id, name UNIQUE, description, version, code TEXT, enabled, created_at, updated_at)
+plugins (id, name UNIQUE, description, version, code TEXT, author, repository, license, enabled, created_at, updated_at)
 ```
+
+The `author`, `repository`, and `license` columns are nullable — they are populated when a plugin is installed from a package that includes them.
 
 This table is read-only from SQL — the agent can query it but cannot modify it.

@@ -5,9 +5,9 @@
   <title>Plugins</title>
   <!--
     SECTIONS:
-    style-layout     – page shell: header, content area
+    style-layout     – page shell: header, tabs, content area
     style-components – plugin cards, badges, buttons, toggle switch
-    script-data      – state, DB operations (load, toggle, uninstall)
+    script-data      – state, DB operations, registry fetch
     script-render    – DOM rendering, filtering
     script-init      – event wiring and startup
   -->
@@ -78,6 +78,29 @@
   .content::-webkit-scrollbar { width: 8px; }
   .content::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
   .content::-webkit-scrollbar-track { background: transparent; }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .tab-btn {
+    padding: 6px 16px;
+    font-size: 13px;
+    font-family: var(--font-family);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text2);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+  .tab-btn:hover { color: var(--color-text3); }
+  .tab-btn.active {
+    color: var(--color-text4);
+    border-bottom-color: var(--color-accent);
+  }
 </style>
 
 <style id="style-components">
@@ -122,6 +145,21 @@
     color: var(--color-text2);
     font-weight: 600;
   }
+  .badge-installed {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--color-green-bg, rgba(46, 160, 67, 0.15));
+    color: var(--color-green-fg, #3fb950);
+    font-weight: 600;
+  }
+  .badge-downloads {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--color-bg3);
+    color: var(--color-text2);
+  }
   .plugin-desc {
     font-size: 12px;
     color: var(--color-text2);
@@ -130,6 +168,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .plugin-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-text1);
+    margin-top: 2px;
+  }
+  .plugin-meta span { white-space: nowrap; }
+  .plugin-meta a {
+    color: var(--color-text2);
+    text-decoration: none;
+  }
+  .plugin-meta a:hover { text-decoration: underline; }
   .plugin-actions {
     display: flex;
     align-items: center;
@@ -191,6 +242,11 @@
     background: var(--color-red-bg);
     border-color: transparent;
   }
+  .btn-install:hover {
+    color: var(--color-green-fg, #3fb950);
+    background: var(--color-green-bg, rgba(46, 160, 67, 0.15));
+    border-color: transparent;
+  }
   .btn:disabled {
     opacity: 0.5;
     cursor: default;
@@ -214,6 +270,18 @@
     color: var(--color-text1);
     margin-bottom: 12px;
   }
+  .loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--color-text2);
+    font-size: 13px;
+  }
+  .error-msg {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--color-red-fg, #f85149);
+    font-size: 13px;
+  }
 </style>
 
 </head>
@@ -221,7 +289,7 @@
 
 <div class="header">
   <h1>Plugins</h1>
-  <div class="subtitle">Manage installed plugins. Toggle to enable or disable, or uninstall to remove completely.</div>
+  <div class="subtitle">Manage installed plugins or browse the registry to discover new ones.</div>
   <div class="header-row">
     <div class="search-wrap">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -233,24 +301,60 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
     </button>
   </div>
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="installed">Installed</button>
+    <button class="tab-btn" data-tab="browse">Browse</button>
+  </div>
 </div>
 
 <div class="content" id="pluginsContainer"></div>
 
 <script id="script-data">
+  const REGISTRY_API = 'https://agentwfy.com/api/plugins';
+
+  let activeTab = 'installed';
   let plugins = [];
+  let registryPlugins = null;
+  let registryError = null;
+  let registryLoading = false;
+  let installingPlugins = new Set();
 
   async function loadPlugins() {
     const rows = await window.agentwfy.runSql({
       target: 'agent',
-      sql: 'SELECT name, description, version, enabled FROM plugins ORDER BY name'
+      sql: 'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
     });
     plugins = rows.map(r => ({
       name: r.name,
       description: r.description || '',
       version: r.version || '',
+      author: r.author || '',
+      repository: r.repository || '',
+      license: r.license || '',
       enabled: !!r.enabled,
     }));
+  }
+
+  async function loadRegistry() {
+    if (registryLoading) return;
+    registryLoading = true;
+    registryError = null;
+    render();
+    try {
+      const res = await fetch(REGISTRY_API);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      registryPlugins = await res.json();
+    } catch (err) {
+      registryError = 'Failed to load registry. ' + err.message;
+      registryPlugins = null;
+    } finally {
+      registryLoading = false;
+      render();
+    }
+  }
+
+  function isInstalled(name) {
+    return plugins.some(p => p.name === name);
   }
 
   async function togglePlugin(name) {
@@ -260,9 +364,9 @@
         const p = plugins.find(p => p.name === name);
         if (p) p.enabled = result.enabled;
       }
-      renderPlugins();
+      render();
     } catch {
-      renderPlugins();
+      render();
     }
   }
 
@@ -271,10 +375,43 @@
       const result = await window.agentwfy.requestUninstallPlugin(name);
       if (result.uninstalled) {
         await loadPlugins();
-        renderPlugins();
+        render();
       }
     } catch {
       // handled by status line
+    }
+  }
+
+  function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  async function installFromRegistry(pluginId, downloadUrl) {
+    if (installingPlugins.has(pluginId)) return;
+    installingPlugins.add(pluginId);
+    render();
+    try {
+      const res = await fetch(downloadUrl, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const base64 = arrayBufferToBase64(buf);
+      const tmpPath = '.tmp/registry-plugin.plugins.awfy';
+      await window.agentwfy.writeBinary(tmpPath, base64);
+      const result = await window.agentwfy.requestInstallPlugin(tmpPath);
+      if (result.installed && result.installed.length > 0) {
+        await loadPlugins();
+      }
+    } catch (err) {
+      console.error('Install failed:', err);
+      alert('Install failed: ' + err.message);
+    } finally {
+      installingPlugins.delete(pluginId);
+      render();
     }
   }
 </script>
@@ -286,13 +423,22 @@
     return _escDiv.innerHTML.replace(/"/g, '&quot;');
   }
 
-  function renderPlugins() {
+  function render() {
+    if (activeTab === 'installed') {
+      renderInstalled();
+    } else {
+      renderBrowse();
+    }
+  }
+
+  function renderInstalled() {
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
     let filtered = plugins;
     if (query) {
       filtered = plugins.filter(p =>
         p.name.toLowerCase().includes(query) ||
-        p.description.toLowerCase().includes(query)
+        p.description.toLowerCase().includes(query) ||
+        p.author.toLowerCase().includes(query)
       );
     }
 
@@ -305,7 +451,7 @@
             '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' +
           '</svg>' +
           '<div style="margin-top: 12px">No plugins installed</div>' +
-          '<div style="font-size: 12px; margin-top: 4px; color: var(--color-text1)">Install plugins via the command palette or programmatically.</div>' +
+          '<div style="font-size: 12px; margin-top: 4px; color: var(--color-text1)">Browse the registry to discover plugins, or install via the command palette.</div>' +
         '</div>';
       return;
     }
@@ -346,6 +492,13 @@
       if (p.description) {
         h += '    <div class="plugin-desc">' + esc(p.description) + '</div>';
       }
+      if (p.author || p.license || p.repository) {
+        h += '    <div class="plugin-meta">';
+        if (p.author) h += '<span>' + esc(p.author) + '</span>';
+        if (p.license) h += '<span>' + esc(p.license) + '</span>';
+        if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>';
+        h += '    </div>';
+      }
       h += '  </div>';
       h += '  <div class="plugin-actions">';
       h += '    <label class="toggle" title="' + (p.enabled ? 'Disable' : 'Enable') + '">';
@@ -362,6 +515,94 @@
     container.innerHTML = h;
   }
 
+  function renderBrowse() {
+    const container = document.getElementById('pluginsContainer');
+
+    if (registryLoading) {
+      container.innerHTML = '<div class="loading">Loading registry...</div>';
+      return;
+    }
+
+    if (registryError) {
+      container.innerHTML = '<div class="error-msg">' + esc(registryError) + '</div>';
+      return;
+    }
+
+    if (!registryPlugins || registryPlugins.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">' +
+          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+            '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' +
+          '</svg>' +
+          '<div style="margin-top: 12px">No plugins in the registry yet</div>' +
+        '</div>';
+      return;
+    }
+
+    const query = document.getElementById('searchInput').value.toLowerCase().trim();
+    let filtered = registryPlugins;
+    if (query) {
+      filtered = registryPlugins.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.description.toLowerCase().includes(query) ||
+        p.author.toLowerCase().includes(query)
+      );
+    }
+
+    if (filtered.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state">' +
+          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+            '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>' +
+          '</svg>' +
+          '<div>No plugins match your search</div>' +
+        '</div>';
+      return;
+    }
+
+    let h = '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '') + ' in registry</div>';
+    h += '<div class="plugin-list">';
+
+    for (const p of filtered) {
+      const installed = isInstalled(p.id);
+      const installing = installingPlugins.has(p.id);
+
+      h += '<div class="plugin-row">';
+      h += '  <div class="plugin-info">';
+      h += '    <div class="plugin-name-row">';
+      h += '      <span class="plugin-name">' + esc(p.name) + '</span>';
+      h += '      <span class="plugin-version">v' + esc(p.version) + '</span>';
+      if (installed) {
+        h += '      <span class="badge-installed">installed</span>';
+      }
+      if (typeof p.downloads === 'number' && p.downloads > 0) {
+        h += '      <span class="badge-downloads">' + p.downloads + ' downloads</span>';
+      }
+      h += '    </div>';
+      if (p.description) {
+        h += '    <div class="plugin-desc">' + esc(p.description) + '</div>';
+      }
+      h += '    <div class="plugin-meta">';
+      if (p.author) h += '<span>' + esc(p.author) + '</span>';
+      if (p.license) h += '<span>' + esc(p.license) + '</span>';
+      if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>';
+      h += '    </div>';
+      h += '  </div>';
+      h += '  <div class="plugin-actions">';
+      if (installing) {
+        h += '    <button class="btn" disabled>Installing...</button>';
+      } else if (installed) {
+        h += '    <button class="btn btn-install" data-action="registry-install" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Update</button>';
+      } else {
+        h += '    <button class="btn btn-install" data-action="registry-install" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Install</button>';
+      }
+      h += '  </div>';
+      h += '</div>';
+    }
+
+    h += '</div>';
+    container.innerHTML = h;
+  }
 </script>
 
 <script id="script-init">
@@ -376,24 +617,49 @@
     });
 
     container.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action="uninstall"]');
-      if (!btn) return;
-      uninstallPlugin(btn.dataset.name);
+      const uninstallBtn = e.target.closest('[data-action="uninstall"]');
+      if (uninstallBtn) {
+        uninstallPlugin(uninstallBtn.dataset.name);
+        return;
+      }
+      const installBtn = e.target.closest('[data-action="registry-install"]');
+      if (installBtn) {
+        installFromRegistry(installBtn.dataset.id, installBtn.dataset.url);
+        return;
+      }
+    });
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeTab = btn.dataset.tab;
+        document.getElementById('searchInput').value = '';
+        if (activeTab === 'browse' && !registryPlugins && !registryLoading) {
+          loadRegistry();
+        } else {
+          render();
+        }
+      });
     });
 
     document.getElementById('refreshBtn').addEventListener('click', async () => {
-      await loadPlugins();
-      renderPlugins();
+      if (activeTab === 'installed') {
+        await loadPlugins();
+      } else {
+        await loadRegistry();
+      }
+      render();
     });
 
     let searchTimer;
     document.getElementById('searchInput').addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(renderPlugins, 150);
+      searchTimer = setTimeout(render, 150);
     });
 
     await loadPlugins();
-    renderPlugins();
+    render();
     document.getElementById('searchInput').focus();
   })();
 </script>
