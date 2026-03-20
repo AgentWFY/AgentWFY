@@ -84,8 +84,6 @@ registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTo
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerBusHandlers(
   (e) => windowManager.getWindowForEvent(e),
-  (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
-  (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
 );
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);

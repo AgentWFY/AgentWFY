@@ -4,7 +4,8 @@ export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRe
 export type { SessionsApi } from './sessions.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
-export type { BusApi, AgentDbChange } from './bus.js'
+export type { BusApi } from './bus.js'
+export type { DbApi, AgentDbChange } from './db.js'
 export type { TasksApi } from './tasks.js'
 
 import type { FilesApi } from './files.js'
@@ -14,6 +15,7 @@ import type { SessionsApi } from './sessions.js'
 import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { BusApi } from './bus.js'
+import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 
 export interface CommandPaletteApi {
@@ -56,6 +58,7 @@ export interface AppIpc {
   store: StoreApi
   dialog: DialogApi
   bus: BusApi
+  db: DbApi
   tasks: TasksApi
   plugins: PluginsApi
   providers: ProvidersApi
