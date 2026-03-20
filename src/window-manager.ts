@@ -164,7 +164,7 @@ class WindowManager {
       tabTools,
       onDbChange: (change) => {
         if (window.isDestroyed()) return;
-        window.webContents.send('bus:dbChanged', change);
+        window.webContents.send('db:changed', change);
       },
       getSessionManager: () => ctx.sessionManager,
       getTaskRunner: () => ctx.taskRunner,
@@ -450,7 +450,7 @@ class WindowManager {
     const { window: win, rendererBridge, triggerEngine } = ctx;
 
     if (win.isDestroyed()) return;
-    win.webContents.send('bus:dbChanged', change);
+    win.webContents.send('db:changed', change);
 
     // Reschedule backup when config changes
     if (change.table === 'config') {

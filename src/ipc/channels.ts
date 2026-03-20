@@ -51,9 +51,9 @@ export const Channels = {
     forwardSubscribe: 'bus:forwardSubscribe',
     forwardUnsubscribe: 'bus:forwardUnsubscribe',
     subscribeEvent: 'bus:subscribeEvent',
-    spawnAgent: 'bus:spawnAgent',
-    sendToAgent: 'bus:sendToAgent',
-    dbChanged: 'bus:dbChanged',
+  },
+  db: {
+    changed: 'db:changed',
   },
   tasks: {
     start: 'tasks:start',
@@ -86,5 +86,7 @@ export const Channels = {
     getSnapshot: 'agent:getSnapshot',
     snapshot: 'agent:snapshot',
     streaming: 'agent:streaming',
+    spawnAgent: 'agent:spawnAgent',
+    sendToAgent: 'agent:sendToAgent',
   },
 } as const;
