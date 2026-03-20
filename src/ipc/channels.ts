@@ -58,6 +58,7 @@ export const Channels = {
   tasks: {
     start: 'tasks:start',
     stop: 'tasks:stop',
+    listRunning: 'tasks:listRunning',
     listLogHistory: 'tasks:listLogHistory',
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',

@@ -6,21 +6,6 @@ type TaskOrigin =
   | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
 
-interface TaskRun {
-  runId: string
-  taskId: number
-  name: string
-  status: 'running' | 'completed' | 'failed'
-  origin: TaskOrigin
-  input?: unknown
-  startedAt: number
-  finishedAt?: number
-  result?: unknown
-  error?: string
-  logs: Array<{ level: string; message: string; timestamp: number }>
-  logFile?: string
-}
-
 interface TaskLogHistoryItem {
   file: string
   updatedAt: number
@@ -29,6 +14,7 @@ interface TaskLogHistoryItem {
   origin?: TaskOrigin
 }
 import { escapeHtml } from './chat_utils.js'
+import { bus } from '../event-bus.js'
 
 interface TaskItem {
   id: number
@@ -249,30 +235,6 @@ const STYLES = `
     color: var(--color-text1);
     flex-shrink: 0;
   }
-  .run-logs {
-    display: none;
-    margin-top: 4px;
-    padding: 4px 6px;
-    background: var(--color-bg1);
-    border-radius: var(--radius-sm, 4px);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    max-height: 160px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    color: var(--color-text2);
-  }
-  .run-logs.open { display: block; }
-  .run-logs { user-select: text; }
-  .run-error {
-    color: var(--color-red-fg, #e55);
-  }
-  .log-entry {
-    padding: 1px 0;
-  }
-  .log-entry.warn { color: var(--color-yellow-fg, #cc8); }
-  .log-entry.error { color: var(--color-red-fg, #e55); }
   .trigger-wrap {
     margin-bottom: 2px;
     border-radius: var(--radius-sm, 4px);
@@ -393,10 +355,6 @@ function originLabel(origin?: TaskOrigin): string {
   }
 }
 
-function logLevelClass(level: string): string {
-  return level === 'warn' ? ' warn' : level === 'error' ? ' error' : ''
-}
-
 function formatElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const s = Math.floor(ms / 1000)
@@ -432,11 +390,12 @@ export class TlTaskPanel extends HTMLElement {
   private logHistory: TaskLogHistoryItem[] = []
   private expandedTaskId: number | null = null
   private expandedTriggerId: number | null = null
-  private expandedRunIds = new Set<string>()
   private expandedHistoryFiles = new Set<string>()
   private historyDetails = new Map<string, string>()
-  private renderedLogCounts = new Map<string, number>()
   private searchQuery = ''
+  private activeRuns: Array<{ runId: string; taskId: number; name: string; status: string; origin: TaskOrigin; startedAt: number }> = []
+  private busUnsub: (() => void) | null = null
+  private runningTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
     super()
@@ -448,6 +407,20 @@ export class TlTaskPanel extends HTMLElement {
     this.loadTasks()
     this.loadTriggers()
     this.loadLogHistory()
+    this.loadRunningTasks()
+
+    // Subscribe to task finish events to refresh running tasks and history
+    this.busUnsub = bus.subscribe('task:run:finished', () => {
+      this.loadRunningTasks()
+      this.loadLogHistory()
+    })
+
+    // Poll to update elapsed time display for running tasks
+    this.runningTimer = setInterval(() => {
+      if (this.activeRuns.length > 0) {
+        this.updateRunTimers()
+      }
+    }, 1000)
 
     window.addEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.addEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
@@ -455,7 +428,12 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.renderedLogCounts.clear()
+    this.busUnsub?.()
+    this.busUnsub = null
+    if (this.runningTimer) {
+      clearInterval(this.runningTimer)
+      this.runningTimer = null
+    }
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
@@ -475,7 +453,9 @@ export class TlTaskPanel extends HTMLElement {
       const ipc = window.ipc
       if (ipc) {
         const input = e.detail?.input
-        ipc.tasks.start(taskId, input || undefined, { type: 'command-palette' } as any).catch(err => {
+        ipc.tasks.start(taskId, input || undefined, { type: 'command-palette' } as any).then(() => {
+          this.loadRunningTasks()
+        }).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }
@@ -523,6 +503,18 @@ export class TlTaskPanel extends HTMLElement {
     this.updateContent()
   }
 
+  private async loadRunningTasks() {
+    const ipc = window.ipc
+    if (!ipc) return
+
+    try {
+      this.activeRuns = await ipc.tasks.listRunning() as typeof this.activeRuns
+    } catch {
+      this.activeRuns = []
+    }
+    this.updateContent()
+  }
+
   private async loadLogHistory() {
     const ipc = window.ipc
     if (!ipc) return
@@ -547,7 +539,7 @@ export class TlTaskPanel extends HTMLElement {
     const root = this.shadow.querySelector('#root')
     if (!root) return
 
-    const activeRuns: TaskRun[] = []
+    const activeRuns = this.activeRuns
     const filteredTasks = this.getFilteredTasks()
 
     let html = ''
@@ -560,7 +552,6 @@ export class TlTaskPanel extends HTMLElement {
       html += `<div class="empty">No running tasks</div>`
     } else {
       for (const run of activeRuns) {
-        const expanded = this.expandedRunIds.has(run.runId)
         const elapsed = Date.now() - run.startedAt
         const oLabel = originLabel(run.origin)
         html += `<div class="run-entry">`
@@ -571,9 +562,7 @@ export class TlTaskPanel extends HTMLElement {
         html += `<span class="run-time">${formatElapsed(elapsed)}</span>`
         html += `<button class="btn btn-stop" data-stop-run="${escapeHtml(run.runId)}">Stop</button>`
         html += `</div>`
-        html += `<div class="run-logs ${expanded ? 'open' : ''}">`
-        html += this.renderRunLogs(run)
-        html += `</div></div>`
+        html += `</div>`
       }
     }
     html += `</div></div>`
@@ -674,13 +663,6 @@ export class TlTaskPanel extends HTMLElement {
     root.innerHTML = html
     this.attachContentListeners()
 
-    // Track rendered log counts for expanded runs
-    for (const run of activeRuns) {
-      if (this.expandedRunIds.has(run.runId)) {
-        this.renderedLogCounts.set(run.runId, run.logs.length)
-      }
-    }
-
     // Focus input if a task is expanded
     if (this.expandedTaskId !== null) {
       const inputEl = this.shadow.querySelector(`.task-input[data-input-task="${this.expandedTaskId}"]`) as HTMLInputElement | null
@@ -688,20 +670,13 @@ export class TlTaskPanel extends HTMLElement {
     }
   }
 
-  private renderRunLogs(run: TaskRun): string {
-    let html = ''
-    for (const log of run.logs) {
-      const cls = logLevelClass(log.level)
-      html += `<div class="log-entry${cls}">${escapeHtml(log.message)}</div>`
-    }
-    if (run.error) {
-      html += `<div class="run-error">${escapeHtml(run.error)}</div>`
-    }
-    if (run.status === 'completed' && run.result !== undefined) {
-      const resultStr = typeof run.result === 'string' ? run.result : JSON.stringify(run.result, null, 2)
-      html += `<div class="log-entry">→ ${escapeHtml(resultStr ?? 'undefined')}</div>`
-    }
-    return html
+  private updateRunTimers() {
+    const spans = this.shadow.querySelectorAll('.run-time')
+    spans.forEach((el, i) => {
+      if (i < this.activeRuns.length) {
+        el.textContent = formatElapsed(Date.now() - this.activeRuns[i].startedAt)
+      }
+    })
   }
 
   private attachContentListeners() {
@@ -757,18 +732,6 @@ export class TlTaskPanel extends HTMLElement {
     })
 
     // Expand/collapse run logs
-    this.shadow.querySelectorAll('.run-header[data-run-id]').forEach(el => {
-      el.addEventListener('click', () => {
-        const runId = (el as HTMLElement).dataset.runId!
-        if (this.expandedRunIds.has(runId)) {
-          this.expandedRunIds.delete(runId)
-        } else {
-          this.expandedRunIds.add(runId)
-        }
-        this.updateContent()
-      })
-    })
-
     // Expand/collapse trigger description
     this.shadow.querySelectorAll('.trigger-item[data-trigger-id]').forEach(el => {
       el.addEventListener('click', () => {
@@ -801,7 +764,7 @@ export class TlTaskPanel extends HTMLElement {
     const ipc = window.ipc
     if (ipc) {
       ipc.tasks.start(taskId, inputValue, { type: 'task-panel' } as any).then(() => {
-        this.loadLogHistory()
+        this.loadRunningTasks()
       }).catch(err => console.error('[TlTaskPanel] run with input failed', err))
       if (inputEl) inputEl.value = ''
     }
