@@ -52,6 +52,10 @@ export class TaskRunner {
     this.deps = deps
   }
 
+  get runningCount(): number {
+    return this._runs.filter(r => r.status === 'running').length
+  }
+
   async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
     const { agentRoot, getJsRuntime } = this.deps
 

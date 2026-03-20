@@ -413,10 +413,37 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+let forceQuit = false;
+let quitDialogOpen = false;
+
+function doQuitCleanup() {
   stopFileWatcher();
   stopBackupScheduler();
   windowManager.destroyAll();
+}
+
+app.on('before-quit', (event) => {
+  if (forceQuit) {
+    doQuitCleanup();
+    return;
+  }
+
+  if (!windowManager.hasActiveWork()) {
+    doQuitCleanup();
+    return;
+  }
+
+  event.preventDefault();
+  if (quitDialogOpen) return;
+  quitDialogOpen = true;
+
+  windowManager.showQuitConfirmation().then((confirmed) => {
+    quitDialogOpen = false;
+    if (confirmed) {
+      forceQuit = true;
+      app.quit();
+    }
+  });
 });
 
 app.on('activate', () => {
