@@ -116,7 +116,7 @@ class WindowManager {
           }),
       webPreferences: {
         preload: path.join(import.meta.dirname, 'preload.cjs'),
-        webSecurity: false,
+        webSecurity: true,
       },
     });
 
