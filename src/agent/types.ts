@@ -57,3 +57,4 @@ export type AgentEvent =
   | { type: 'agent_idle' }
   | { type: 'stream_update' }
   | { type: 'status_line'; text: string }
+  | { type: 'state_changed' }

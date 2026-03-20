@@ -161,6 +161,7 @@ class OpenAICompatibleSession implements ProviderSession {
       }
     }
     this.displayMessages.push({ role: 'user', blocks, timestamp: Date.now() })
+    this.emit({ type: 'state_changed' })
 
     // Start streaming
     void this.stream()
@@ -184,6 +185,7 @@ class OpenAICompatibleSession implements ProviderSession {
     if (lastAssistant && lastAssistant.role === 'assistant') {
       lastAssistant.blocks.push({ type: 'exec_js_result', id, content, isError })
     }
+    this.emit({ type: 'state_changed' })
 
     // Continue streaming
     void this.stream()
@@ -368,6 +370,7 @@ class OpenAICompatibleSession implements ProviderSession {
 
     // Create or append to display message
     this.displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
+    this.emit({ type: 'state_changed' })
 
     // Update status line with context size
     if (inputTokens > 0) {
