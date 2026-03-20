@@ -18,6 +18,8 @@ import {
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
+import { handleProviderFallback } from '../plugins/registry.js';
+import type { PluginRegistry } from '../plugins/registry.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
 import type { CommandPaletteAction, CommandPaletteItem } from './types.js';
 
@@ -32,6 +34,7 @@ export interface CommandPaletteManagerDeps {
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
   openAgentInWindow: (agentRoot: string) => Promise<void>;
+  getPluginRegistry: () => PluginRegistry | null;
 }
 
 export class CommandPaletteManager {
@@ -473,7 +476,19 @@ export class CommandPaletteManager {
       return { installed: [] };
     }
 
-    const installResult = installFromPackage(this.deps.getAgentRoot(), result.filePaths[0]);
+    const agentRoot = this.deps.getAgentRoot();
+    const installResult = installFromPackage(agentRoot, result.filePaths[0]);
+
+    // Activate installed plugins at runtime
+    const pluginRegistry = this.deps.getPluginRegistry();
+    if (pluginRegistry && installResult.installed.length > 0) {
+      const db = getOrCreateAgentDb(agentRoot);
+      for (const name of installResult.installed) {
+        const row = db.getPlugin(name);
+        if (row) pluginRegistry.loadPlugin(row);
+      }
+    }
+
     if (installResult.installed.length > 0) {
       const names = installResult.installed.join(', ');
       this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
@@ -484,15 +499,37 @@ export class CommandPaletteManager {
   }
 
   uninstallPluginByName(pluginName: string): void {
-    uninstallPlugin(this.deps.getAgentRoot(), pluginName);
+    const agentRoot = this.deps.getAgentRoot();
+
+    // Deactivate plugin before removing from DB
+    const pluginRegistry = this.deps.getPluginRegistry();
+    if (pluginRegistry) {
+      const removedProviders = pluginRegistry.unloadPlugin(pluginName);
+      handleProviderFallback(agentRoot, removedProviders);
+    }
+
+    uninstallPlugin(agentRoot, pluginName);
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `Uninstalled ${pluginName}`,
     });
   }
 
   togglePluginEnabled(pluginName: string, enabled: boolean): void {
-    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    const agentRoot = this.deps.getAgentRoot();
+    const db = getOrCreateAgentDb(agentRoot);
     db.togglePlugin(pluginName, enabled);
+
+    const pluginRegistry = this.deps.getPluginRegistry();
+    if (pluginRegistry) {
+      if (!enabled) {
+        const removedProviders = pluginRegistry.unloadPlugin(pluginName);
+        handleProviderFallback(agentRoot, removedProviders);
+      } else {
+        const row = db.getPlugin(pluginName);
+        if (row) pluginRegistry.loadPlugin(row);
+      }
+    }
+
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `${enabled ? 'Enabled' : 'Disabled'} ${pluginName}`,
     });

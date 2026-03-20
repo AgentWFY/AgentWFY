@@ -1,3 +1,15 @@
+import path from 'path'
+import fs from 'fs'
+import { createRequire } from 'node:module'
+import { getConfigValue, setAgentConfig, clearAgentConfig } from '../settings/config.js'
+import type { ProviderRegistry } from '../providers/registry.js'
+import type { ProviderFactory } from '../agent/provider_types.js'
+import type { FunctionRegistry } from '../runtime/function_registry.js'
+
+// Use Node's real require (not esbuild's bundled version) so plugins can
+// require built-in modules like child_process, crypto, etc.
+const nodeRequire = createRequire(import.meta.url)
+
 export interface PluginManifest {
   name: string
   description: string
@@ -17,9 +29,101 @@ export interface PluginApi {
 export class PluginRegistry {
   readonly plugins = new Map<string, PluginManifest>()
   private readonly deactivators = new Map<string, () => void>()
+  private readonly agentRoot: string
+  private readonly publish: (topic: string, data: unknown) => void
+  private readonly providerRegistry: ProviderRegistry | undefined
+  private readonly functionRegistry: FunctionRegistry | undefined
 
-  setDeactivator(pluginName: string, fn: () => void): void {
-    this.deactivators.set(pluginName, fn)
+  constructor(opts: {
+    agentRoot: string
+    publish: (topic: string, data: unknown) => void
+    providerRegistry?: ProviderRegistry
+    functionRegistry?: FunctionRegistry
+  }) {
+    this.agentRoot = opts.agentRoot
+    this.publish = opts.publish
+    this.providerRegistry = opts.providerRegistry
+    this.functionRegistry = opts.functionRegistry
+  }
+
+  loadPlugin(row: { name: string; description: string; version: string; code: string }): void {
+    const assetsDir = path.join(this.agentRoot, '.agentwfy', 'plugin-assets', row.name)
+    fs.mkdirSync(assetsDir, { recursive: true })
+
+    try {
+      const mod: Record<string, unknown> = { exports: {} }
+      const modExports = mod.exports as Record<string, unknown>
+      const fn = new Function('module', 'exports', 'require', row.code)
+      fn(mod, modExports, nodeRequire)
+
+      const activate = (modExports.activate ?? (mod.exports as Record<string, unknown>).activate) as
+        ((api: PluginApi) => { deactivate?: () => void } | void) | undefined
+      if (typeof activate !== 'function') {
+        console.warn(`[plugins] Skipping ${row.name}: code does not export an activate function`)
+        return
+      }
+
+      const api: PluginApi = {
+        agentRoot: this.agentRoot,
+        assetsDir,
+        publish: this.publish,
+        registerFunction: (name: string, handler) => {
+          if (!this.functionRegistry) {
+            console.warn(`[plugins] ${row.name}: cannot register '${name}' — function registry not available`)
+            return
+          }
+          if (this.functionRegistry.has(name)) {
+            console.warn(`[plugins] ${row.name}: cannot register '${name}' — already registered`)
+            return
+          }
+          this.functionRegistry.register(name, handler, row.name)
+        },
+        getConfig: (name: string, fallback?: unknown): unknown => {
+          return getConfigValue(this.agentRoot, name, fallback)
+        },
+        setConfig: (name: string, value: unknown): void => {
+          setAgentConfig(this.agentRoot, name, value)
+        },
+        registerProvider: (factory: Parameters<PluginApi['registerProvider']>[0]) => {
+          if (!this.providerRegistry) {
+            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — provider registry not available`)
+            return
+          }
+          if (this.providerRegistry.has(factory.id)) {
+            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — already registered`)
+            return
+          }
+          this.providerRegistry.register(factory as unknown as ProviderFactory, row.name)
+          console.log(`[plugins] ${row.name}: registered provider '${factory.id}'`)
+        },
+      }
+
+      const result = activate(api)
+      if (result && typeof result.deactivate === 'function') {
+        this.deactivators.set(row.name, result.deactivate)
+      }
+      this.plugins.set(row.name, { name: row.name, description: row.description, version: row.version })
+    } catch (err) {
+      console.warn(`[plugins] Skipping ${row.name}: failed to load — ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  unloadPlugin(name: string): string[] {
+    const deactivator = this.deactivators.get(name)
+    if (deactivator) {
+      try {
+        deactivator()
+      } catch (err) {
+        console.warn(`[plugins] ${name} deactivate failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+      this.deactivators.delete(name)
+    }
+
+    this.functionRegistry?.unregisterBySource(name)
+    const removedProviders = this.providerRegistry?.unregisterBySource(name) ?? []
+
+    this.plugins.delete(name)
+    return removedProviders
   }
 
   deactivateAll(): void {
@@ -32,5 +136,13 @@ export class PluginRegistry {
     }
     this.deactivators.clear()
     this.plugins.clear()
+  }
+}
+
+export function handleProviderFallback(agentRoot: string, removedProviders: string[]): void {
+  if (removedProviders.length === 0) return
+  const currentProvider = getConfigValue(agentRoot, 'system.provider') as string | undefined
+  if (currentProvider && removedProviders.includes(currentProvider)) {
+    clearAgentConfig(agentRoot, 'system.provider')
   }
 }
