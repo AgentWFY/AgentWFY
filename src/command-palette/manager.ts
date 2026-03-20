@@ -454,10 +454,12 @@ export class CommandPaletteManager {
     ];
 
     for (const p of plugins) {
+      let subtitle = p.description;
+      if (p.author) subtitle = subtitle ? `${subtitle} — ${p.author}` : p.author;
       items.push({
         id: `plugin:${p.name}`,
         title: p.name,
-        subtitle: p.description,
+        subtitle,
         group: 'Plugins',
         settingValue: p.enabled ? 'enabled' : 'disabled',
         action: {
@@ -572,6 +574,8 @@ export class CommandPaletteManager {
       currentEnabled,
       description: plugin.description,
       version: plugin.version,
+      author: plugin.author,
+      license: plugin.license,
     });
     if (!confirmed) {
       return { toggled: false };
@@ -591,6 +595,8 @@ export class CommandPaletteManager {
       pluginName,
       description: plugin.description,
       version: plugin.version,
+      author: plugin.author,
+      license: plugin.license,
     });
     if (!confirmed) {
       return { uninstalled: false };

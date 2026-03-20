@@ -130,6 +130,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .plugin-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--color-text1);
+    margin-top: 2px;
+  }
+  .plugin-meta span { white-space: nowrap; }
+  .plugin-meta a {
+    color: var(--color-text2);
+    text-decoration: none;
+  }
+  .plugin-meta a:hover { text-decoration: underline; }
   .plugin-actions {
     display: flex;
     align-items: center;
@@ -243,12 +256,15 @@
   async function loadPlugins() {
     const rows = await window.agentwfy.runSql({
       target: 'agent',
-      sql: 'SELECT name, description, version, enabled FROM plugins ORDER BY name'
+      sql: 'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
     });
     plugins = rows.map(r => ({
       name: r.name,
       description: r.description || '',
       version: r.version || '',
+      author: r.author || '',
+      repository: r.repository || '',
+      license: r.license || '',
       enabled: !!r.enabled,
     }));
   }
@@ -345,6 +361,13 @@
       h += '    </div>';
       if (p.description) {
         h += '    <div class="plugin-desc">' + esc(p.description) + '</div>';
+      }
+      if (p.author || p.license || p.repository) {
+        h += '    <div class="plugin-meta">';
+        if (p.author) h += '<span>' + esc(p.author) + '</span>';
+        if (p.license) h += '<span>' + esc(p.license) + '</span>';
+        if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>';
+        h += '    </div>';
       }
       h += '  </div>';
       h += '  <div class="plugin-actions">';
