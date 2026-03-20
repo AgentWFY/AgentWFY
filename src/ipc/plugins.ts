@@ -1,4 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import path from 'path'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
 import { handleProviderFallback } from '../plugins/registry.js'
 import type { PluginRegistry } from '../plugins/registry.js'
@@ -78,7 +79,8 @@ export function registerPluginHandlers(
     if (typeof packagePath !== 'string' || packagePath.trim().length === 0) {
       throw new Error('plugin:requestInstall requires a non-empty package path')
     }
-    return getCommandPalette(event).requestPluginInstall(packagePath)
+    const resolved = path.isAbsolute(packagePath) ? packagePath : path.resolve(getRoot(event), packagePath)
+    return getCommandPalette(event).requestPluginInstall(resolved)
   })
 
   ipcMain.handle(Channels.plugins.requestToggle, async (event, pluginName: string) => {
