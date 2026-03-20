@@ -18,10 +18,12 @@ const watch = process.argv.includes('--watch')
 
 mkdirSync(clientDist, { recursive: true })
 mkdirSync(join(dist, 'command-palette'), { recursive: true })
+mkdirSync(join(dist, 'confirmation'), { recursive: true })
 
 cpSync(join(src, 'renderer', 'index.html'), join(clientDist, 'index.html'))
 cpSync(join(src, 'renderer', 'src', 'global.css'), join(clientDist, 'global.css'))
 cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
+cpSync(join(src, 'confirmation.html'), join(dist, 'confirmation.html'))
 cpSync(join(src, 'index.css'), join(dist, 'index.css'))
 
 // ── System data ──
@@ -95,6 +97,28 @@ const builds = [
     bundle: true,
     format: 'esm',
     outfile: join(clientDist, 'command_palette.js'),
+    define: { 'process.env': '{}', 'process.versions': '{}' },
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Confirmation preload
+  {
+    entryPoints: [join(src, 'confirmation', 'preload.cts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outExtension: { '.js': '.cjs' },
+    outdir: join(dist, 'confirmation'),
+    external: ['electron'],
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Confirmation UI
+  {
+    entryPoints: [join(src, 'confirmation', 'ui', 'index.ts')],
+    bundle: true,
+    format: 'esm',
+    outfile: join(clientDist, 'confirmation.js'),
     define: { 'process.env': '{}', 'process.versions': '{}' },
     sourcemap: watch,
     logLevel: 'info',

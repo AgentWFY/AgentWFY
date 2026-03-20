@@ -10,6 +10,7 @@ import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
+import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
@@ -95,7 +96,9 @@ registerPluginHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
   (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
+  (e) => windowManager.getContextForSender(e.sender.id).commandPalette,
 );
+registerConfirmationHandlers((e) => windowManager.getContextForSender(e.sender.id).confirmation);
 registerProviderHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
 );

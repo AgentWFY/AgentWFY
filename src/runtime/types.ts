@@ -250,6 +250,18 @@ export interface WorkerHostMethodMap {
     params: WorkerStopTaskRequest
     result: void
   }
+  requestInstallPlugin: {
+    params: { packagePath: string }
+    result: { installed: string[] }
+  }
+  requestTogglePlugin: {
+    params: { pluginName: string }
+    result: { toggled: boolean; enabled?: boolean }
+  }
+  requestUninstallPlugin: {
+    params: { pluginName: string }
+    result: { uninstalled: boolean }
+  }
 }
 
 interface WorkerStartTaskRequest {

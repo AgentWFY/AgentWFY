@@ -5,7 +5,7 @@ import { listViews } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
-import { installFromPackage, uninstallPlugin } from '../plugins/installer.js';
+import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plugins/installer.js';
 import { storeSet } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
@@ -20,6 +20,7 @@ import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
 import { handleProviderFallback } from '../plugins/registry.js';
 import type { PluginRegistry } from '../plugins/registry.js';
+import type { ConfirmationManager } from '../confirmation/manager.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
 import type { CommandPaletteAction, CommandPaletteItem } from './types.js';
 
@@ -35,6 +36,7 @@ export interface CommandPaletteManagerDeps {
   unregisterSender?: (webContentsId: number) => void;
   openAgentInWindow: (agentRoot: string) => Promise<void>;
   getPluginRegistry: () => PluginRegistry | null;
+  getConfirmation: () => ConfirmationManager;
 }
 
 export class CommandPaletteManager {
@@ -469,20 +471,9 @@ export class CommandPaletteManager {
     return items;
   }
 
-  async installPluginFromDialog(): Promise<{ installed: string[] }> {
-    const mainWindow = this.deps.getMainWindow();
-    const result = await dialog.showOpenDialog(mainWindow!, {
-      title: 'Install Plugin',
-      filters: [{ name: 'Plugin Package', extensions: ['plugins.awfy'] }],
-      properties: ['openFile'],
-    });
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return { installed: [] };
-    }
-
+  performInstall(packagePath: string): { installed: string[] } {
     const agentRoot = this.deps.getAgentRoot();
-    const installResult = installFromPackage(agentRoot, result.filePaths[0]);
+    const installResult = installFromPackage(agentRoot, packagePath);
 
     // Activate installed plugins at runtime
     const pluginRegistry = this.deps.getPluginRegistry();
@@ -501,6 +492,21 @@ export class CommandPaletteManager {
       });
     }
     return installResult;
+  }
+
+  async installPluginFromDialog(): Promise<{ installed: string[] }> {
+    const mainWindow = this.deps.getMainWindow();
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Install Plugin',
+      filters: [{ name: 'Plugin Package', extensions: ['plugins.awfy'] }],
+      properties: ['openFile'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { installed: [] };
+    }
+
+    return this.requestPluginInstall(result.filePaths[0]);
   }
 
   uninstallPluginByName(pluginName: string): void {
@@ -538,6 +544,59 @@ export class CommandPaletteManager {
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `${enabled ? 'Enabled' : 'Disabled'} ${pluginName}`,
     });
+  }
+
+  async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
+    const metadata = readPackageMetadata(packagePath);
+    const confirmation = this.deps.getConfirmation();
+    const confirmed = await confirmation.requestConfirmation('confirm-plugin-install', {
+      packagePath,
+      plugins: metadata.plugins,
+    });
+    if (!confirmed) {
+      return { installed: [] };
+    }
+    return this.performInstall(packagePath);
+  }
+
+  async requestPluginToggle(pluginName: string): Promise<{ toggled: boolean; enabled?: boolean }> {
+    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    const plugin = db.getPluginInfo(pluginName);
+    if (!plugin) {
+      throw new Error(`Plugin '${pluginName}' not found`);
+    }
+    const currentEnabled = !!plugin.enabled;
+    const confirmation = this.deps.getConfirmation();
+    const confirmed = await confirmation.requestConfirmation('confirm-plugin-toggle', {
+      pluginName,
+      currentEnabled,
+      description: plugin.description,
+      version: plugin.version,
+    });
+    if (!confirmed) {
+      return { toggled: false };
+    }
+    this.togglePluginEnabled(pluginName, !currentEnabled);
+    return { toggled: true, enabled: !currentEnabled };
+  }
+
+  async requestPluginUninstall(pluginName: string): Promise<{ uninstalled: boolean }> {
+    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    const plugin = db.getPluginInfo(pluginName);
+    if (!plugin) {
+      throw new Error(`Plugin '${pluginName}' not found`);
+    }
+    const confirmation = this.deps.getConfirmation();
+    const confirmed = await confirmation.requestConfirmation('confirm-plugin-uninstall', {
+      pluginName,
+      description: plugin.description,
+      version: plugin.version,
+    });
+    if (!confirmed) {
+      return { uninstalled: false };
+    }
+    this.uninstallPluginByName(pluginName);
+    return { uninstalled: true };
   }
 
   openSettingsFile(): void {

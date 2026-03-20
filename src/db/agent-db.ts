@@ -306,6 +306,13 @@ class AgentDb {
     return rows[0];
   }
 
+  getPluginInfo(name: string): { name: string; description: string; version: string; enabled: number } | undefined {
+    const rows = this.db.prepare(
+      'SELECT name, description, version, enabled FROM plugins WHERE name = ?'
+    ).all(name) as Array<{ name: string; description: string; version: string; enabled: number }>;
+    return rows[0];
+  }
+
   listPlugins(): Array<{ name: string; description: string; version: string; enabled: number }> {
     return this.db.prepare(
       'SELECT name, description, version, enabled FROM plugins ORDER BY name'
