@@ -1,8 +1,6 @@
 import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from 'electron'
 import crypto from 'crypto'
 import { Channels } from './channels.js'
-import type { AgentSessionManager } from '../agent/session_manager.js'
-import type { TaskRunner } from '../task-runner/task_runner.js'
 
 type PendingWaiter = {
   resolve: (value: unknown) => void
@@ -50,8 +48,6 @@ export function forwardBusUnsubscribe(win: BrowserWindow, subId: string): void {
 
 export function registerBusHandlers(
   getWindow: (e: IpcMainInvokeEvent) => BrowserWindow,
-  getSessionManager: (e: IpcMainInvokeEvent) => AgentSessionManager,
-  getTaskRunner: (e: IpcMainInvokeEvent) => TaskRunner,
 ): void {
   // bus:publish — view publishes → forward to renderer
   ipcMain.handle(Channels.bus.publish, async (event, topic: string, data: unknown) => {
@@ -70,29 +66,6 @@ export function registerBusHandlers(
     pendingWaiters.delete(payload.waiterId)
     if (waiter.timer) clearTimeout(waiter.timer)
     waiter.resolve(payload.data)
-  })
-
-  // spawnAgent(prompt) → { agentId } — now calls SessionManager directly
-  ipcMain.handle(Channels.bus.spawnAgent, async (event, prompt: string) => {
-    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
-      throw new Error('spawnAgent requires a non-empty prompt string')
-    }
-
-    const mgr = getSessionManager(event)
-    return mgr.spawnSession(prompt)
-  })
-
-  // sendToAgent(agentId, message) — now calls SessionManager directly
-  ipcMain.handle(Channels.bus.sendToAgent, async (event, agentId: string, message: string) => {
-    if (typeof agentId !== 'string' || agentId.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty agentId string')
-    }
-    if (typeof message !== 'string' || message.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty message string')
-    }
-
-    const mgr = getSessionManager(event)
-    await mgr.sendToAgent(agentId, message)
   })
 
   // Renderer forwards subscribed bus events back to main

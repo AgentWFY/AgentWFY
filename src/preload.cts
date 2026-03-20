@@ -53,9 +53,9 @@ const Channels = {
     forwardSubscribe: 'bus:forwardSubscribe',
     forwardUnsubscribe: 'bus:forwardUnsubscribe',
     subscribeEvent: 'bus:subscribeEvent',
-    spawnAgent: 'bus:spawnAgent',
-    sendToAgent: 'bus:sendToAgent',
-    dbChanged: 'bus:dbChanged',
+  },
+  db: {
+    changed: 'db:changed',
   },
   tasks: {
     start: 'tasks:start',
@@ -88,6 +88,8 @@ const Channels = {
     getSnapshot: 'agent:getSnapshot',
     snapshot: 'agent:snapshot',
     streaming: 'agent:streaming',
+    spawnAgent: 'agent:spawnAgent',
+    sendToAgent: 'agent:sendToAgent',
   },
 } as const;
 
@@ -309,10 +311,12 @@ if (isApp) {
       subscribeEvent(subId: string, data: unknown): void {
         ipcRenderer.send(Channels.bus.subscribeEvent, { subId, data });
       },
+    },
+    db: {
       onDbChanged(callback: (detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
         const handler = (_event: unknown, detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
-        ipcRenderer.on(Channels.bus.dbChanged, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.dbChanged, handler);
+        ipcRenderer.on(Channels.db.changed, handler);
+        return () => ipcRenderer.removeListener(Channels.db.changed, handler);
       },
     },
     commandPalette: {
@@ -450,10 +454,10 @@ if (isAgentView) {
     execTabJs: agentTabs.execJs,
     ...busAgent,
     spawnAgent(prompt: string): Promise<{ agentId: string }> {
-      return ipcRenderer.invoke(Channels.bus.spawnAgent, prompt);
+      return ipcRenderer.invoke(Channels.agent.spawnAgent, prompt);
     },
     sendToAgent(agentId: string, message: string): Promise<void> {
-      return ipcRenderer.invoke(Channels.bus.sendToAgent, agentId, message);
+      return ipcRenderer.invoke(Channels.agent.sendToAgent, agentId, message);
     },
     startTask(taskId: number, input?: unknown): Promise<{ runId: string }> {
       return ipcRenderer.invoke(Channels.tasks.start, taskId, input);
