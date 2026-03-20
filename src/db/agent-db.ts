@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS plugins (
   description TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '1.0.0',
   code TEXT NOT NULL,
+  author TEXT,
+  repository TEXT,
+  license TEXT,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -306,17 +309,17 @@ class AgentDb {
     return rows[0];
   }
 
-  getPluginInfo(name: string): { name: string; description: string; version: string; enabled: number } | undefined {
+  getPluginInfo(name: string): { name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number } | undefined {
     const rows = this.db.prepare(
-      'SELECT name, description, version, enabled FROM plugins WHERE name = ?'
-    ).all(name) as Array<{ name: string; description: string; version: string; enabled: number }>;
+      'SELECT name, description, version, author, repository, license, enabled FROM plugins WHERE name = ?'
+    ).all(name) as Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
     return rows[0];
   }
 
-  listPlugins(): Array<{ name: string; description: string; version: string; enabled: number }> {
+  listPlugins(): Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }> {
     return this.db.prepare(
-      'SELECT name, description, version, enabled FROM plugins ORDER BY name'
-    ).all() as Array<{ name: string; description: string; version: string; enabled: number }>;
+      'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
+    ).all() as Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
   }
 
   togglePlugin(name: string, enabled: boolean): void {
@@ -327,19 +330,22 @@ class AgentDb {
   }
 
   installPlugins(
-    plugins: Array<{ name: string; description: string; version: string; code: string }>,
+    plugins: Array<{ name: string; description: string; version: string; code: string; author?: string | null; repository?: string | null; license?: string | null }>,
     docs: Array<{ name: string; content: string }>,
     views: Array<{ name: string; title: string; content: string }>,
     config: Array<{ name: string; value: string | null; description: string }>,
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
-        INSERT INTO plugins (name, description, version, code, updated_at)
-          VALUES (?, ?, ?, ?, unixepoch())
+        INSERT INTO plugins (name, description, version, code, author, repository, license, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
           ON CONFLICT(name) DO UPDATE SET
             description = excluded.description,
             version = excluded.version,
             code = excluded.code,
+            author = excluded.author,
+            repository = excluded.repository,
+            license = excluded.license,
             updated_at = unixepoch()
       `);
       const upsertDoc = this.db.prepare(`
@@ -366,7 +372,7 @@ class AgentDb {
 
       this.db.exec('BEGIN');
       for (const p of plugins) {
-        upsertPlugin.run(p.name, p.description, p.version, p.code);
+        upsertPlugin.run(p.name, p.description, p.version, p.code, p.author ?? null, p.repository ?? null, p.license ?? null);
       }
       for (const d of docs) {
         upsertDoc.run(d.name, d.content);

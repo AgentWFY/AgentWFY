@@ -8,6 +8,9 @@ interface PackagePlugin {
   description: string
   version: string
   code: string
+  author: string | null
+  repository: string | null
+  license: string | null
 }
 
 interface PackageDoc {
@@ -41,7 +44,14 @@ function readPackage(packagePath: string): {
 } {
   const db = new DatabaseSync(packagePath)
   try {
-    const plugins = db.prepare('SELECT name, description, version, code FROM plugins').all() as unknown as PackagePlugin[]
+    let plugins: PackagePlugin[]
+    try {
+      plugins = db.prepare('SELECT name, description, version, code, author, repository, license FROM plugins').all() as unknown as PackagePlugin[]
+    } catch {
+      // Fallback for packages without the new columns
+      const basic = db.prepare('SELECT name, description, version, code FROM plugins').all() as unknown as Array<{ name: string; description: string; version: string; code: string }>
+      plugins = basic.map(p => ({ ...p, author: null, repository: null, license: null }))
+    }
 
     let docs: PackageDoc[] = []
     try {
@@ -142,7 +152,7 @@ function validatePackage(
   return errors
 }
 
-export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; description: string; version: string }> } {
+export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null }> } {
   const { plugins, docs, views, config, assets } = readPackage(packagePath)
 
   const errors = validatePackage(plugins, docs, views, config, assets)
@@ -151,7 +161,7 @@ export function readPackageMetadata(packagePath: string): { plugins: Array<{ nam
   }
 
   return {
-    plugins: plugins.map(p => ({ name: p.name, description: p.description, version: p.version })),
+    plugins: plugins.map(p => ({ name: p.name, description: p.description, version: p.version, author: p.author, repository: p.repository, license: p.license })),
   }
 }
 
