@@ -48,4 +48,15 @@ export class FunctionRegistry {
       .filter(([, entry]) => entry.source !== BUILT_IN_SOURCE)
       .map(([name]) => name)
   }
+
+  unregisterBySource(source: string): void {
+    let didRemove = false
+    for (const [name, entry] of this.handlers) {
+      if (entry.source === source) {
+        this.handlers.delete(name)
+        didRemove = true
+      }
+    }
+    if (didRemove) this.cachedMethodNames = null
+  }
 }
