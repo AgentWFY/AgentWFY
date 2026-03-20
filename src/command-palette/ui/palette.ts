@@ -238,6 +238,13 @@ export class PaletteController {
         itemButton.appendChild(valueWrap)
       }
 
+      if (item.expandable) {
+        const chevronEl = document.createElement('span')
+        chevronEl.className = 'item-chevron'
+        chevronEl.textContent = '\u203A'
+        itemButton.appendChild(chevronEl)
+      }
+
       this.resultsEl.appendChild(itemButton)
     })
 
