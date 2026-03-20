@@ -767,7 +767,10 @@ export class TlAgentChat extends HTMLElement {
         this.notifyOnFinish = s.notifyOnFinish
         this.streamingMessage = s.streamingMessage
         this.statusLine = s.statusLine || ''
-        if (s.providerId) this._activeProviderId = s.providerId
+        if (s.providerId && s.providerId !== this._activeProviderId) {
+          this._activeProviderId = s.providerId
+          this.configStatusLine = this._providerStatusLines.get(s.providerId) || ''
+        }
         this.error = null
         this.ready = true
         this.render()
