@@ -48,6 +48,11 @@ export function registerTaskRunnerHandlers(
     runner.stopTask(runId);
   });
 
+  ipcMain.handle(Channels.tasks.listRunning, async (event) => {
+    const runner = getTaskRunner(event);
+    return runner.listRunning();
+  });
+
   // --- Log persistence handlers ---
 
   // listLogHistory — inlined from TaskRunner class

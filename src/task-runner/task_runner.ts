@@ -56,6 +56,12 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').length
   }
 
+  listRunning(): Array<{ runId: string; taskId: number; name: string; status: string; origin: TaskOrigin; startedAt: number }> {
+    return this._runs
+      .filter(r => r.status === 'running')
+      .map(r => ({ runId: r.runId, taskId: r.taskId, name: r.name, status: r.status, origin: r.origin, startedAt: r.startedAt }))
+  }
+
   async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
     const { agentRoot, getJsRuntime } = this.deps
 
@@ -149,13 +155,15 @@ export class TaskRunner {
       }
       this.removeFinishedRun(run.runId)
 
-      // Always publish bus event
+      // Always publish bus events
       if (!this.deps.win.isDestroyed()) {
-        forwardBusPublish(this.deps.win, `task:run:${run.runId}`, {
+        const payload = {
           runId: run.runId, taskId: run.taskId, name: run.name,
           status: run.status, origin: run.origin, startedAt: run.startedAt,
           finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
-        })
+        }
+        forwardBusPublish(this.deps.win, `task:run:${run.runId}`, payload)
+        forwardBusPublish(this.deps.win, 'task:run:finished', payload)
       }
     }
   }
