@@ -1,9 +1,3 @@
-export interface AgentDbChange {
-  table: string
-  rowId: number
-  op: 'insert' | 'update' | 'delete'
-}
-
 export interface BusApi {
   // Agent tool operations
   publish(topic: string, data: unknown): Promise<void>
@@ -15,5 +9,4 @@ export interface BusApi {
   onForwardSubscribe(callback: (detail: { subId: string; topic: string }) => void): () => void
   onForwardUnsubscribe(callback: (detail: { subId: string }) => void): () => void
   subscribeEvent(subId: string, data: unknown): void
-  onDbChanged(callback: (detail: AgentDbChange) => void): () => void
 }

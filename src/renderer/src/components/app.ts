@@ -378,7 +378,7 @@ export class TlApp extends HTMLElement {
     }
 
     this.unlistenAgentDbChanged?.()
-    this.unlistenAgentDbChanged = ipc.bus.onDbChanged((change: AgentDbChange) => {
+    this.unlistenAgentDbChanged = ipc.db.onDbChanged((change: AgentDbChange) => {
       if (!change) return
       if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
       if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) return
