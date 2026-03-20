@@ -278,6 +278,10 @@ export class Agent {
                 this._state.statusLine = event.text
                 this.emit({ type: 'status_line', text: event.text })
                 break
+
+              case 'state_changed':
+                this.emit({ type: 'state_changed' })
+                break
             }
           }
 

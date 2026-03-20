@@ -163,7 +163,7 @@ export class AgentWFYAgent {
     this.unsubscribeFromAgent = this.agent.subscribe((event) => {
       this.emit(event)
 
-      if (event.type === 'agent_end') {
+      if (event.type === 'agent_end' || event.type === 'state_changed') {
         void this.persistSession()
       }
     })

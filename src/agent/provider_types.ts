@@ -43,6 +43,7 @@ export type ProviderOutput =
   | { type: 'done' }
   | { type: 'error'; error: string }
   | { type: 'status_line'; text: string }
+  | { type: 'state_changed' }
 
 // ── Provider session interface ──
 

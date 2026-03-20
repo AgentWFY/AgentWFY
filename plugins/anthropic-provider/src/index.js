@@ -291,6 +291,7 @@ class AnthropicSession {
       }
     }
     this._displayMessages.push({ role: 'user', blocks, timestamp: Date.now() })
+    this._emit({ type: 'state_changed' })
 
     this._stream()
   }
@@ -324,6 +325,7 @@ class AnthropicSession {
     }
 
     this._pendingToolIds.delete(id)
+    this._emit({ type: 'state_changed' })
     if (this._pendingToolIds.size === 0) {
       this._stream()
     }
@@ -561,6 +563,7 @@ class AnthropicSession {
       blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
     }
     this._displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
+    this._emit({ type: 'state_changed' })
 
     if (inputTokens > 0) {
       this._lastInputTokens = inputTokens

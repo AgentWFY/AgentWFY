@@ -137,6 +137,7 @@ class MySession {
     //   { type: 'done' }
     //   { type: 'error', error: string }
     //   { type: 'status_line', text: string }
+    //   { type: 'state_changed' }
   }
 
   off(listener) {
@@ -180,6 +181,10 @@ User types message
 ```
 
 The provider decides when to call the LLM again after receiving tool results — the core does not drive the loop.
+
+### Incremental session persistence
+
+Emit `{ type: 'state_changed' }` after committing a meaningful state change — user message added, assistant response committed, or tool result received. The core persists the session to disk on each `state_changed` event, so progress is saved incrementally. Without this, session data is only saved when the full turn completes (`done`), and closing the app mid-session loses all progress.
 
 ### Status line
 
@@ -230,9 +235,11 @@ class MySession {
   send(event) {
     if (event.type === 'user_message') {
       this.messages.push({ role: 'user', blocks: [{ type: 'text', text: event.text }], timestamp: Date.now() })
+      this.emit({ type: 'state_changed' })
       this.stream(event.text)
     } else if (event.type === 'exec_js_result') {
       // append result, continue streaming
+      this.emit({ type: 'state_changed' })
     } else if (event.type === 'abort') {
       this.abortController?.abort()
     }
@@ -250,6 +257,8 @@ class MySession {
   async stream(userText) {
     this.emit({ type: 'start' })
     // ... fetch from your API, parse SSE, emit deltas ...
+    // commit assistant message to this.messages here
+    this.emit({ type: 'state_changed' })
     this.emit({ type: 'done' })
   }
 }
