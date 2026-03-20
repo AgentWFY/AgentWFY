@@ -131,6 +131,7 @@ class WindowManager {
       registerSender,
       unregisterSender,
       openAgentInWindow: (root) => this.openAgentInWindow(root).then(() => {}),
+      getPluginRegistry: () => ctx.pluginRegistry,
     });
 
     const agentHash = this.getHashForAgentRoot(agentRoot);

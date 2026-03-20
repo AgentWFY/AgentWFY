@@ -1,17 +1,7 @@
-import path from 'path'
-import fs from 'fs'
-import { createRequire } from 'node:module'
 import { PluginRegistry } from './registry.js'
-import type { PluginApi } from './registry.js'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
-import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import type { ProviderRegistry } from '../providers/registry.js'
-import type { ProviderFactory } from '../agent/provider_types.js'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
-
-// Use Node's real require (not esbuild's bundled version) so plugins can
-// require built-in modules like child_process, crypto, etc.
-const nodeRequire = createRequire(import.meta.url)
 
 export function loadPlugins(
   agentRoot: string,
@@ -19,70 +9,12 @@ export function loadPlugins(
   providerRegistry?: ProviderRegistry,
   functionRegistry?: FunctionRegistry,
 ): PluginRegistry {
-  const registry = new PluginRegistry()
+  const registry = new PluginRegistry({ agentRoot, publish, providerRegistry, functionRegistry })
   const db = getOrCreateAgentDb(agentRoot)
   const rows = db.getEnabledPlugins()
 
   for (const row of rows) {
-    const assetsDir = path.join(agentRoot, '.agentwfy', 'plugin-assets', row.name)
-    fs.mkdirSync(assetsDir, { recursive: true })
-
-    try {
-      const mod: Record<string, unknown> = { exports: {} }
-      const modExports = mod.exports as Record<string, unknown>
-      const fn = new Function('module', 'exports', 'require', row.code)
-      fn(mod, modExports, nodeRequire)
-
-      const activate = (modExports.activate ?? (mod.exports as Record<string, unknown>).activate) as
-        ((api: PluginApi) => { deactivate?: () => void } | void) | undefined
-      if (typeof activate !== 'function') {
-        console.warn(`[plugins] Skipping ${row.name}: code does not export an activate function`)
-        continue
-      }
-
-      const api: PluginApi = {
-        agentRoot,
-        assetsDir,
-        publish,
-        registerFunction(name: string, handler) {
-          if (!functionRegistry) {
-            console.warn(`[plugins] ${row.name}: cannot register '${name}' — function registry not available`)
-            return
-          }
-          if (functionRegistry.has(name)) {
-            console.warn(`[plugins] ${row.name}: cannot register '${name}' — already registered`)
-            return
-          }
-          functionRegistry.register(name, handler, row.name)
-        },
-        getConfig(name: string, fallback?: unknown): unknown {
-          return getConfigValue(agentRoot, name, fallback)
-        },
-        setConfig(name: string, value: unknown): void {
-          setAgentConfig(agentRoot, name, value)
-        },
-        registerProvider(factory: Parameters<PluginApi['registerProvider']>[0]) {
-          if (!providerRegistry) {
-            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — provider registry not available`)
-            return
-          }
-          if (providerRegistry.has(factory.id)) {
-            console.warn(`[plugins] ${row.name}: cannot register provider '${factory.id}' — already registered`)
-            return
-          }
-          providerRegistry.register(factory as unknown as ProviderFactory)
-          console.log(`[plugins] ${row.name}: registered provider '${factory.id}'`)
-        },
-      }
-
-      const result = activate(api)
-      if (result && typeof result.deactivate === 'function') {
-        registry.setDeactivator(row.name, result.deactivate)
-      }
-      registry.plugins.set(row.name, { name: row.name, description: row.description, version: row.version })
-    } catch (err) {
-      console.warn(`[plugins] Skipping ${row.name}: failed to load — ${err instanceof Error ? err.message : String(err)}`)
-    }
+    registry.loadPlugin(row)
   }
 
   return registry
