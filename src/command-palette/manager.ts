@@ -279,7 +279,8 @@ export class CommandPaletteManager {
       },
       {
         id: 'action:enter-settings',
-        title: 'Settings...',
+        title: 'Settings',
+        expandable: true,
         group: 'Actions',
         action: { type: 'enter-settings' },
       },
@@ -303,7 +304,8 @@ export class CommandPaletteManager {
       },
       {
         id: 'agent:recent-agents',
-        title: 'Recent Agents...',
+        title: 'Recent Agents',
+        expandable: true,
         group: 'Actions',
         action: { type: 'enter-recent-agents' },
       },
@@ -315,19 +317,22 @@ export class CommandPaletteManager {
       },
       {
         id: 'agent:restore-db',
-        title: 'Restore Agent Database...',
+        title: 'Restore Agent Database',
+        expandable: true,
         group: 'Actions',
         action: { type: 'restore-agent-db' },
       },
       {
         id: 'action:run-task',
-        title: 'Run Task...',
+        title: 'Run Task',
+        expandable: true,
         group: 'Actions',
         action: { type: 'enter-tasks' },
       },
       {
         id: 'action:plugins',
-        title: 'Plugins...',
+        title: 'Plugins',
+        expandable: true,
         group: 'Actions',
         action: { type: 'enter-plugins' },
       },
@@ -437,7 +442,7 @@ export class CommandPaletteManager {
     const items: CommandPaletteItem[] = [
       {
         id: 'plugin:install',
-        title: 'Install Plugin...',
+        title: 'Install Plugin',
         group: 'Plugins',
         action: { type: 'install-plugin' },
       },
