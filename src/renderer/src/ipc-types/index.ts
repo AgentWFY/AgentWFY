@@ -1,6 +1,6 @@
 export type { FilesApi } from './files.js'
 export type { SqlApi } from './sql.js'
-export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent } from './tabs.js'
+export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent, TabData, TabDataType, TabState } from './tabs.js'
 export type { SessionsApi } from './sessions.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'

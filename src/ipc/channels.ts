@@ -27,6 +27,11 @@ export const Channels = {
     destroyView: 'tabs:destroyView',
     showContextMenu: 'tabs:showContextMenu',
     viewEvent: 'tabs:viewEvent',
+    stateChanged: 'tabs:stateChanged',
+    getState: 'tabs:getState',
+    reorderTabs: 'tabs:reorderTabs',
+    togglePin: 'tabs:togglePin',
+    revealTab: 'tabs:revealTab',
   },
   sessions: {
     list: 'sessions:list',

@@ -24,14 +24,13 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       throw new Error('openTab requires exactly one of viewId, filePath, or url')
     }
 
-    await tabTools.openTab({
+    return tabTools.openTab({
       viewId: hasViewId ? request.viewId : undefined,
       filePath: hasFilePath ? request.filePath : undefined,
       url: hasUrl ? request.url : undefined,
       title: request.title,
       hidden: request.hidden,
     })
-    return undefined
   })
 
   registry.register('closeTab', async (params) => {

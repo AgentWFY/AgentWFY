@@ -1408,9 +1408,7 @@ export class TlAgentChat extends HTMLElement {
       }) as Array<{ id: number; title: string; updated_at: number }>
       const row = rows[0]
       if (!row) return
-      window.dispatchEvent(new CustomEvent('agentwfy:open-view', {
-        detail: { viewId: String(row.id), title: row.title, viewUpdatedAt: row.updated_at },
-      }))
+      await ipc.tabs.openTab({ viewId: String(row.id), title: row.title })
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)
     }

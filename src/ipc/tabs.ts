@@ -44,7 +44,7 @@ interface ReloadTabRequest {
 
 export interface AgentTabTools {
   getTabs: () => Promise<GetTabsResult>
-  openTab: (request: OpenTabRequest) => Promise<void>
+  openTab: (request: OpenTabRequest) => Promise<{ tabId: string }>
   closeTab: (request: CloseTabRequest) => Promise<void>
   selectTab: (request: SelectTabRequest) => Promise<void>
   reloadTab: (request: ReloadTabRequest) => Promise<void>
