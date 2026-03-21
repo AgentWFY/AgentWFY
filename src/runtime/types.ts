@@ -266,6 +266,10 @@ export interface WorkerHostMethodMap {
     params: Record<string, never>
     result: Array<{ name: string; source: string }>
   }
+  openExternal: {
+    params: { url: string }
+    result: void
+  }
 }
 
 interface WorkerStartTaskRequest {
