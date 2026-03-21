@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 const CHANNEL = {
   SHOW: 'app:confirmation:show',
   RESULT: 'app:confirmation:result',
+  PICK_DIRECTORY: 'app:confirmation:pickDirectory',
 } as const
 
 contextBridge.exposeInMainWorld('confirmationBridge', {
@@ -11,7 +12,10 @@ contextBridge.exposeInMainWorld('confirmationBridge', {
     ipcRenderer.on(CHANNEL.SHOW, handler)
     return () => ipcRenderer.removeListener(CHANNEL.SHOW, handler)
   },
-  sendResult(requestId: string, confirmed: boolean): Promise<void> {
-    return ipcRenderer.invoke(CHANNEL.RESULT, requestId, confirmed)
+  sendResult(requestId: string, confirmed: boolean, data?: Record<string, unknown>): Promise<void> {
+    return ipcRenderer.invoke(CHANNEL.RESULT, requestId, confirmed, data)
+  },
+  pickDirectory(): Promise<string | null> {
+    return ipcRenderer.invoke(CHANNEL.PICK_DIRECTORY)
   },
 })
