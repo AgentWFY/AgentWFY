@@ -365,6 +365,11 @@ const builtInWrappers: Record<string, BuiltInWrapper> = {
     create: (call) => (pluginName: string) =>
       call('requestUninstallPlugin', { pluginName }),
   },
+  openExternal: {
+    exposedName: 'openExternal',
+    create: (call) => (url: string) =>
+      call('openExternal', { url }),
+  },
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {

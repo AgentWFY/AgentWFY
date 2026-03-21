@@ -262,6 +262,10 @@ export interface WorkerHostMethodMap {
     params: { pluginName: string }
     result: { uninstalled: boolean }
   }
+  openExternal: {
+    params: { url: string }
+    result: void
+  }
 }
 
 interface WorkerStartTaskRequest {
