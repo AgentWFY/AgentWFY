@@ -67,6 +67,7 @@ export class TlApp extends HTMLElement {
     this.sidebarWidth = newWidth
     this.sidebarEl.style.width = `${newWidth}px`
     this.updateHeaderSpacer()
+    window.dispatchEvent(new Event('resize'))
   }
 
   private onResizeMouseUp = () => {
