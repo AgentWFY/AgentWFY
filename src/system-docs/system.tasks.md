@@ -15,8 +15,8 @@ tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content T
 
 ## APIs
 
-- `startTask(taskId, input?)` → `{ runId }` — starts the task in a new worker. Non-blocking.
-- `stopTask(runId)` → void — terminates a running task.
+- `startTask({ taskId, input? })` → `{ runId }` — starts the task in a new worker. Non-blocking.
+- `stopTask({ runId })` → void — terminates a running task.
 
 ## Input
 
@@ -33,15 +33,15 @@ When a task is triggered (by a trigger or by the user from the command palette),
 Task completion is published to the event bus:
 
 ```js
-const { runId } = await startTask(taskId, 'some input')
-const result = await waitFor('task:run:' + runId)
+const { runId } = await startTask({ taskId, input: 'some input' })
+const result = await waitFor({ topic: 'task:run:' + runId })
 // result: { runId, taskId, name, status, result, error, logs }
 ```
 
 For inter-task data passing, use the bus with runId as correlation ID:
 ```js
 // caller
-publish('task:' + runId + ':config', { key: 'value' })
+publish({ topic: 'task:' + runId + ':config', data: { key: 'value' } })
 // inside task code
-const config = await waitFor('task:' + runId + ':config')
+const config = await waitFor({ topic: 'task:' + runId + ':config' })
 ```

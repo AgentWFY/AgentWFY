@@ -15,15 +15,15 @@ Default timeout is 5000ms, maximum 120000ms.
 
 All paths are relative to the data directory root.
 
-- `read(path, offset?, limit?)` → string with line-numbered content. Max 2000 lines / 50KB per call. Use `offset` (1-indexed line number) to paginate.
-- `write(path, content)` → success message. Creates parent dirs. Overwrites entire file. UTF-8 text only.
-- `writeBinary(path, base64)` → success message. Creates parent dirs. Decodes base64 string and writes raw binary.
-- `edit(path, oldText, newText)` → success message. `oldText` must match exactly once (whitespace-sensitive).
-- `ls(path?, limit?)` → text listing. Dirs have `/` suffix. Default limit 500.
-- `mkdir(path, recursive?)` → void
-- `remove(path, recursive?)` → void
-- `find(pattern, path?, limit?)` → text list of matching paths. Glob patterns (`*`, `**`, `?`). Default limit 1000.
-- `grep(pattern, path?, options?)` → `file:line: content` format. Default limit 100. Options: `{ ignoreCase?, literal?, context?, limit? }`
+- `read({ path, offset?, limit? })` → string with line-numbered content. Max 2000 lines / 50KB per call. Use `offset` (1-indexed line number) to paginate.
+- `write({ path, content })` → success message. Creates parent dirs. Overwrites entire file. UTF-8 text only.
+- `writeBinary({ path, base64 })` → success message. Creates parent dirs. Decodes base64 string and writes raw binary.
+- `edit({ path, oldText, newText })` → success message. `oldText` must match exactly once (whitespace-sensitive).
+- `ls({ path?, limit? })` → text listing. Dirs have `/` suffix. Default limit 500.
+- `mkdir({ path, recursive? })` → void
+- `remove({ path, recursive? })` → void
+- `find({ pattern, path?, limit? })` → text list of matching paths. Glob patterns (`*`, `**`, `?`). Default limit 1000.
+- `grep({ pattern, path?, options? })` → `file:line: content` format. Default limit 100. Options: `{ ignoreCase?, literal?, context?, limit? }`
 
 Path traversal outside the data directory root is blocked. Use `.tmp/` directory for any temporary files.
 
@@ -81,15 +81,15 @@ Always `reloadTab` after updating view content via SQL.
 
 Tasks store JavaScript code in the `tasks` table. The user can run them from the command palette or they can be started programmatically. Triggers (`triggers` table) automate task execution via cron schedules, HTTP endpoints, or event bus topics.
 
-- `startTask(taskId, input?)` → `{ runId }` — non-blocking, starts a task
-- `stopTask(runId)` → void
+- `startTask({ taskId, input? })` → `{ runId }` — non-blocking, starts a task
+- `stopTask({ runId })` → void
 
 Load `system.tasks` and `system.triggers` reference sections for full details.
 
 ### EventBus
 
-- `publish(topic, data)` — publish a message. If a waiter exists, it receives immediately. Otherwise queued until a waiter arrives.
-- `waitFor(topic, timeoutMs?)` — wait for next message. Returns immediately if already queued. Default 120s timeout.
+- `publish({ topic, data })` — publish a message. If a waiter exists, it receives immediately. Otherwise queued until a waiter arrives.
+- `waitFor({ topic, timeoutMs? })` — wait for next message. Returns immediately if already queued. Default 120s timeout.
 - Messages are consumed: each publish delivers to exactly one waitFor (FIFO). Use unique topic names (e.g. include agentId) to avoid collisions.
 
 ### Agents
