@@ -104,6 +104,9 @@ const Channels = {
     methods: 'runtime-functions:methods',
     call: 'runtime-functions:call',
   },
+  agents: {
+    requestInstall: 'agents:requestInstall',
+  },
 } as const;
 
 // --- Helpers ---
@@ -479,5 +482,10 @@ if (isAgentView) {
       ipcRenderer.invoke(Channels.runtimeFunctions.call, name, params);
   }
 
-  contextBridge.exposeInMainWorld('agentwfy', runtimeFunctions);
+  contextBridge.exposeInMainWorld('agentwfy', {
+    ...runtimeFunctions,
+    requestInstallAgent(filePath: string): Promise<{ installed: boolean; agentRoot?: string }> {
+      return ipcRenderer.invoke(Channels.agents.requestInstall, filePath);
+    },
+  });
 }
