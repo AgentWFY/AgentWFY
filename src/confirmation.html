@@ -61,6 +61,44 @@
       padding: 12px 16px;
       overflow-y: auto;
     }
+    /* Plugin info cards */
+    .plugin-card {
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .plugin-card + .plugin-card {
+      margin-top: 8px;
+    }
+    .plugin-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-strong);
+      margin: 0;
+    }
+    .plugin-version {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .plugin-description {
+      font-size: 12px;
+      color: var(--text);
+      margin: 4px 0 0;
+      line-height: 1.4;
+    }
+    .plugin-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 6px 0 0;
+    }
+    .plugin-warning {
+      font-size: 12px;
+      color: var(--danger);
+      margin-top: 10px;
+    }
     .footer {
       display: flex;
       justify-content: flex-end;

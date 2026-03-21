@@ -21,11 +21,11 @@ export class ConfirmationManager {
   private resolveBounds(): Electron.Rectangle {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow || mainWindow.isDestroyed()) {
-      return { x: 0, y: 0, width: 400, height: 220 }
+      return { x: 0, y: 0, width: 420, height: 300 }
     }
     const bounds = mainWindow.getBounds()
-    const width = 400
-    const height = 220
+    const width = 420
+    const height = 300
     const x = bounds.x + Math.floor((bounds.width - width) / 2)
     const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.25))
     return { x, y, width, height }
