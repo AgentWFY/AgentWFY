@@ -49,6 +49,13 @@ export class FunctionRegistry {
       .map(([name]) => name)
   }
 
+  getFunctionInfo(): Array<{ name: string; source: string }> {
+    return Array.from(this.handlers.entries()).map(([name, entry]) => ({
+      name,
+      source: entry.source,
+    }))
+  }
+
   unregisterBySource(source: string): void {
     let didRemove = false
     for (const [name, entry] of this.handlers) {
