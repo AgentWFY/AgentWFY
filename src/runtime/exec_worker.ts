@@ -219,162 +219,10 @@ function callHostMethod(
   })
 }
 
-// Built-in wrappers provide ergonomic signatures for known host methods.
-// Each entry maps a host method name to an exposed name and wrapper factory.
-interface BuiltInWrapper {
-  exposedName: string
-  create: (call: (method: string, params: unknown) => Promise<unknown>, capturedImages: ExecJsCapturedImage[]) => Function
-}
-
-const builtInWrappers: Record<string, BuiltInWrapper> = {
-  runSql: {
-    exposedName: 'runSql',
-    create: (call) => (request: WorkerHostMethodMap['runSql']['params']) =>
-      call('runSql', request),
-  },
-  read: {
-    exposedName: 'read',
-    create: (call) => (path: string, offset?: number, limit?: number) =>
-      call('read', { path, offset, limit }),
-  },
-  write: {
-    exposedName: 'write',
-    create: (call) => (path: string, content: string) =>
-      call('write', { path, content }),
-  },
-  writeBinary: {
-    exposedName: 'writeBinary',
-    create: (call) => (path: string, base64: string) =>
-      call('writeBinary', { path, base64 }),
-  },
-  edit: {
-    exposedName: 'edit',
-    create: (call) => (path: string, oldText: string, newText: string) =>
-      call('edit', { path, oldText, newText }),
-  },
-  ls: {
-    exposedName: 'ls',
-    create: (call) => (path?: string, limit?: number) =>
-      call('ls', { path, limit }),
-  },
-  mkdir: {
-    exposedName: 'mkdir',
-    create: (call) => (path: string, recursive?: boolean) =>
-      call('mkdir', { path, recursive }),
-  },
-  remove: {
-    exposedName: 'remove',
-    create: (call) => (path: string, recursive?: boolean) =>
-      call('remove', { path, recursive }),
-  },
-  find: {
-    exposedName: 'find',
-    create: (call) => (pattern: string, path?: string, limit?: number) =>
-      call('find', { pattern, path, limit }),
-  },
-  grep: {
-    exposedName: 'grep',
-    create: (call) => (pattern: string, path?: string, options?: WorkerHostMethodMap['grep']['params']['options']) =>
-      call('grep', { pattern, path, options }),
-  },
-  getTabs: {
-    exposedName: 'getTabs',
-    create: (call) => () =>
-      call('getTabs', {}),
-  },
-  openTab: {
-    exposedName: 'openTab',
-    create: (call) => (request: WorkerHostMethodMap['openTab']['params']) =>
-      call('openTab', request),
-  },
-  closeTab: {
-    exposedName: 'closeTab',
-    create: (call) => (request: WorkerHostMethodMap['closeTab']['params']) =>
-      call('closeTab', request),
-  },
-  selectTab: {
-    exposedName: 'selectTab',
-    create: (call) => (request: WorkerHostMethodMap['selectTab']['params']) =>
-      call('selectTab', request),
-  },
-  reloadTab: {
-    exposedName: 'reloadTab',
-    create: (call) => (request: WorkerHostMethodMap['reloadTab']['params']) =>
-      call('reloadTab', request),
-  },
-  captureTab: {
-    exposedName: 'captureTab',
-    create: (call, capturedImages) => async (request: WorkerHostMethodMap['captureTab']['params']) => {
-      const result = await call('captureTab', request) as WorkerHostMethodMap['captureTab']['result']
-      capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
-      return { captured: true, mimeType: result.mimeType }
-    },
-  },
-  getTabConsoleLogs: {
-    exposedName: 'getTabConsoleLogs',
-    create: (call) => (request: WorkerHostMethodMap['getTabConsoleLogs']['params']) =>
-      call('getTabConsoleLogs', request),
-  },
-  execTabJs: {
-    exposedName: 'execTabJs',
-    create: (call) => (request: WorkerHostMethodMap['execTabJs']['params']) =>
-      call('execTabJs', request),
-  },
-  busPublish: {
-    exposedName: 'publish',
-    create: (call) => (topic: string, data: unknown) =>
-      call('busPublish', { topic, data }),
-  },
-  busWaitFor: {
-    exposedName: 'waitFor',
-    create: (call) => (topic: string, timeoutMs?: number) =>
-      call('busWaitFor', { topic, timeoutMs }),
-  },
-  spawnAgent: {
-    exposedName: 'spawnAgent',
-    create: (call) => (prompt: string) =>
-      call('spawnAgent', { prompt }),
-  },
-  sendToAgent: {
-    exposedName: 'sendToAgent',
-    create: (call) => (agentId: string, message: string) =>
-      call('sendToAgent', { agentId, message }),
-  },
-  startTask: {
-    exposedName: 'startTask',
-    create: (call) => (taskId: number, input?: unknown) =>
-      call('startTask', { taskId, input }),
-  },
-  stopTask: {
-    exposedName: 'stopTask',
-    create: (call) => (runId: string) =>
-      call('stopTask', { runId }),
-  },
-  requestInstallPlugin: {
-    exposedName: 'requestInstallPlugin',
-    create: (call) => (packagePath: string) =>
-      call('requestInstallPlugin', { packagePath }),
-  },
-  requestTogglePlugin: {
-    exposedName: 'requestTogglePlugin',
-    create: (call) => (pluginName: string) =>
-      call('requestTogglePlugin', { pluginName }),
-  },
-  requestUninstallPlugin: {
-    exposedName: 'requestUninstallPlugin',
-    create: (call) => (pluginName: string) =>
-      call('requestUninstallPlugin', { pluginName }),
-  },
-  getAvailableFunctions: {
-    exposedName: 'getAvailableFunctions',
-    create: (call) => () =>
-      call('getAvailableFunctions', {}),
-  },
-  openExternal: {
-    exposedName: 'openExternal',
-    create: (call) => (url: string) =>
-      call('openExternal', { url }),
-  },
+// Methods not listed here are exposed under their original name.
+const exposedNameMap: Record<string, string> = {
+  busPublish: 'publish',
+  busWaitFor: 'waitFor',
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
@@ -398,17 +246,20 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     ]
     const shadowArgValues: unknown[] = Array(shadowParamNames.length).fill(undefined)
 
-    // Build method wrappers from the methods list
+    // Build method bindings from the methods list
     const methodParamNames: string[] = []
     const methodArgValues: Function[] = []
 
     for (const method of methods) {
-      const wrapper = builtInWrappers[method]
-      if (wrapper) {
-        methodParamNames.push(wrapper.exposedName)
-        methodArgValues.push(wrapper.create(call, capturedImages))
+      methodParamNames.push(exposedNameMap[method] ?? method)
+
+      if (method === 'captureTab') {
+        methodArgValues.push(async (params: unknown) => {
+          const result = await call('captureTab', params) as WorkerHostMethodMap['captureTab']['result']
+          capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
+          return { captured: true, mimeType: result.mimeType }
+        })
       } else {
-        methodParamNames.push(method)
         methodArgValues.push((params: unknown) => call(method, params))
       }
     }
