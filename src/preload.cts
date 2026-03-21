@@ -479,10 +479,5 @@ if (isAgentView) {
       ipcRenderer.invoke(Channels.runtimeFunctions.call, name, params);
   }
 
-  contextBridge.exposeInMainWorld('agentwfy', {
-    ...runtimeFunctions,
-    openExternal(url: string): Promise<void> {
-      return ipcRenderer.invoke(Channels.dialog.openExternal, url);
-    },
-  });
+  contextBridge.exposeInMainWorld('agentwfy', runtimeFunctions);
 }

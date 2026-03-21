@@ -370,6 +370,11 @@ const builtInWrappers: Record<string, BuiltInWrapper> = {
     create: (call) => () =>
       call('getAvailableFunctions', {}),
   },
+  openExternal: {
+    exposedName: 'openExternal',
+    create: (call) => (url: string) =>
+      call('openExternal', { url }),
+  },
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {

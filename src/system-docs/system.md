@@ -73,10 +73,9 @@ APIs:
 
 Always `reloadTab` after updating view content via SQL.
 
-### Network
+### Browser
 
-- `fetch(url, init?)` — standard fetch API, including custom/restricted headers.
-- `WebSocket(url, protocols?, options?)` — standard WebSocket. Third argument `options: { origin?, headers? }` allows setting custom headers and origin.
+- `openExternal({ url })` — open a URL in the user's default browser (http/https only)
 
 ### Tasks & Triggers
 
