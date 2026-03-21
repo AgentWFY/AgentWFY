@@ -4,7 +4,6 @@ import {
   updateMessagesEl
 } from './chat_message_renderer.js'
 import { escapeHtml } from './chat_utils.js'
-import { renderSessionPanelHtml } from './chat_session_panel.js'
 
 interface SessionListItem {
   label: string
@@ -24,6 +23,13 @@ interface AgentSnapshot {
   streamingMessage: DisplayMessage | null
   statusLine: string | undefined
   providerId: string
+  activeSessionFile: string | null
+  streamingFiles: string[]
+}
+
+interface OpenSession {
+  file: string
+  label: string
 }
 
 const STYLES = `
@@ -669,94 +675,159 @@ const STYLES = `
     color: var(--color-text2);
     flex-shrink: 0;
   }
-  .session-switcher {
+  /* Open sessions area */
+  .open-sessions-box {
     position: relative;
     flex-shrink: 0;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s, padding 0.15s;
+    z-index: 20;
   }
-  .session-switcher.expanded {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+  .open-sessions-box:hover {
+    border-color: var(--color-border);
+    background: var(--color-bg2);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
-  .session-switcher-btn {
+  .open-dots {
     display: flex;
-    width: 100%;
     align-items: center;
-    gap: 5px;
-    padding: 6px 8px;
-    cursor: pointer;
-    color: var(--color-text3);
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 8px;
+  }
+  .session-title {
+    flex: 1;
     font-size: 12px;
     font-weight: 500;
-    user-select: none;
-    background: var(--color-surface);
-    border: none;
-    border-radius: var(--radius-sm);
-    font-family: inherit;
+    color: var(--color-text3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 60px;
   }
-  .session-switcher-btn:hover {
-    color: var(--color-text4);
-  }
-  .session-switcher-chevron {
+  .open-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text2);
+    opacity: 0.35;
+    cursor: pointer;
     flex-shrink: 0;
-    transition: transform 0.15s;
+    transition: opacity 0.15s, box-shadow 0.15s;
   }
-  .session-switcher-btn.open .session-switcher-chevron {
-    transform: rotate(180deg);
+  .open-dot:hover {
+    opacity: 0.6;
   }
-  .session-switcher-dropdown {
+  .open-dot.active {
+    box-shadow: 0 0 0 2px var(--color-bg1), 0 0 0 3.5px var(--color-text3);
+    opacity: 0.7;
+  }
+  .open-dot.streaming {
+    background: #4caf50;
+    opacity: 1;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .open-dot.streaming.active {
+    box-shadow: 0 0 0 2px var(--color-bg1), 0 0 0 3.5px #4caf50;
+  }
+  .open-list {
+    display: none;
     position: absolute;
+    left: -1px;
+    right: -1px;
     top: 100%;
-    left: 0;
-    right: 0;
     background: var(--color-bg2);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 20;
-    margin-top: 2px;
-  }
-  .session-switcher-search {
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .session-switcher-search input {
-    width: 100%;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-input-bg);
-    padding: 5px 8px;
-    font-size: 12px;
-    outline: none;
-    box-sizing: border-box;
-    color: inherit;
-    font-family: inherit;
-  }
-  .session-switcher-search input:focus {
-    border-color: var(--color-focus-border);
-  }
-  .session-switcher-list {
+    padding-bottom: 4px;
+    max-height: 400px;
     overflow-y: auto;
-    max-height: 300px;
   }
-  .session-switcher-dropdown.inline {
-    position: static;
-    box-shadow: none;
-    border: 1px solid var(--color-border);
-    margin-top: 0;
+  .open-sessions-box:hover .open-list {
+    display: block;
+  }
+  .open-list-item {
     display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--color-text3);
   }
-  .session-switcher-dropdown.inline .session-switcher-list {
-    max-height: none;
-    flex: 1;
+  .open-list-item:hover {
+    background: var(--color-item-hover);
   }
-  .session-switcher-dropdown.inline #new-session-btn {
-    display: none;
+  .open-list-item.active {
+    font-weight: 600;
+  }
+  .open-list-item-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-text2);
+    opacity: 0.4;
+  }
+  .open-list-item-dot.streaming {
+    background: #4caf50;
+    opacity: 1;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .open-list-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .open-list-item-action {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    color: var(--color-text2);
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .open-list-item:hover .open-list-item-action {
+    opacity: 1;
+  }
+  .open-list-item-action:hover {
+    color: var(--color-text4);
+    background: var(--color-bg3);
+  }
+  .all-sessions-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--color-text2);
+    border-top: 1px solid var(--color-border);
+    margin-top: 2px;
+    user-select: none;
+  }
+  .all-sessions-btn:hover {
+    color: var(--color-text3);
+    background: var(--color-item-hover);
+  }
+  .all-sessions-btn svg {
+    transition: transform 0.15s;
+  }
+  .all-sessions-btn.expanded svg {
+    transform: rotate(90deg);
   }
 `
 
@@ -768,11 +839,10 @@ export class TlAgentChat extends HTMLElement {
   private isStreaming = false
   private error: string | null = null
   private inputValue = ''
-  private activePanel: 'providers' | 'sessions' | null = null
+  private activePanel: 'providers' | null = null
   private isInitializing = true
   private ready = false
   private notifyOnFinish = false
-  private sessionListItems: SessionListItem[] = []
   private messagesEl: HTMLElement | null = null
   private openToolSet = new Set<string>()
   private containerEl!: HTMLDivElement
@@ -786,14 +856,8 @@ export class TlAgentChat extends HTMLElement {
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
-  private _sessionSwitcher: HTMLElement | null = null
-  private _sessionSwitcherBtn: HTMLElement | null = null
-  private _sessionSwitcherLabel: HTMLElement | null = null
-  private _sessionDropdown: HTMLElement | null = null
-  private _sessionDropdownList: HTMLElement | null = null
-  private _sessionSearchInput: HTMLInputElement | null = null
   private _sessionLabel = ''
-  private _inlineSessionsFetched = false
+  private _sessionTitleEl: HTMLElement | null = null
   private _providerPanel: HTMLElement | null = null
   private _providerList: Array<{ id: string; name: string; settingsView?: string }> = []
   private _activeProviderId = ''
@@ -802,7 +866,6 @@ export class TlAgentChat extends HTMLElement {
   private _providerStatusLines = new Map<string, string>()
   private _providerPanelDirty = false
   private _stopBtn: HTMLElement | null = null
-  private _sessionPanelDirty = false
   private _providerInfo: HTMLElement | null = null
   private _providerGrid: HTMLElement | null = null
   private _pastedText: string | null = null
@@ -811,6 +874,15 @@ export class TlAgentChat extends HTMLElement {
   private _pasteAttachmentEl: HTMLElement | null = null
   private _pasteLabelEl: HTMLElement | null = null
   private _pastePreviewEl: HTMLElement | null = null
+  // Open sessions
+  private _openSessions: OpenSession[] = []
+  private _activeSessionFile: string | null = null
+  private _streamingFiles: string[] = []
+  private _openBox: HTMLElement | null = null
+  private _openDotsEl: HTMLElement | null = null
+  private _openListEl: HTMLElement | null = null
+  private _allSessionsExpanded = false
+  private _allSessionsItems: SessionListItem[] = []
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -840,14 +912,12 @@ export class TlAgentChat extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
-    document.removeEventListener('mousedown', this._onClickOutside)
     this.snapshotUnsub?.()
     this.snapshotUnsub = null
     this.streamingUnsub?.()
     this.streamingUnsub = null
     this.messages = []
     this.isStreaming = false
-    this.sessionListItems = []
     this.clearChatRefs()
     this._renderMode = null
   }
@@ -926,9 +996,15 @@ export class TlAgentChat extends HTMLElement {
         this.streamingMessage = s.streamingMessage
         this._sessionLabel = s.label || ''
         this.statusLine = s.statusLine || ''
+        this._activeSessionFile = s.activeSessionFile ?? null
+        this._streamingFiles = s.streamingFiles ?? []
         if (s.providerId && s.providerId !== this._activeProviderId) {
           this._activeProviderId = s.providerId
           this.configStatusLine = this._providerStatusLines.get(s.providerId) || ''
+        }
+        // Auto-add active session to open sessions on first message
+        if (this._activeSessionFile && (s.messages.length > 0 || s.isStreaming)) {
+          this.addOpenSession(this._activeSessionFile, s.label || 'New session')
         }
         this.error = null
         this.ready = true
@@ -942,6 +1018,12 @@ export class TlAgentChat extends HTMLElement {
         this.render()
       })
 
+      // Load open sessions from store
+      try {
+        const stored = await ipc.store.get('openSessions')
+        if (Array.isArray(stored)) this._openSessions = stored as OpenSession[]
+      } catch {}
+
       // Get initial snapshot
       const snapshot = await ipc.agent.getSnapshot() as AgentSnapshot | null
       if (snapshot) {
@@ -951,7 +1033,12 @@ export class TlAgentChat extends HTMLElement {
         this.streamingMessage = snapshot.streamingMessage
         this._sessionLabel = snapshot.label || ''
         this.statusLine = snapshot.statusLine || ''
+        this._activeSessionFile = snapshot.activeSessionFile ?? null
+        this._streamingFiles = snapshot.streamingFiles ?? []
         if (snapshot.providerId) this._activeProviderId = snapshot.providerId
+        if (this._activeSessionFile && (snapshot.messages.length > 0 || snapshot.isStreaming)) {
+          this.addOpenSession(this._activeSessionFile, snapshot.label || 'New session')
+        }
         this.ready = true
       }
     } catch (e) {
@@ -992,78 +1079,14 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleNewSession() {
     this.activePanel = null
-    this._inlineSessionsFetched = false
     this._selectedProviderId = this._defaultProviderId
     try {
       await window.ipc?.agent.createSession()
-      // Reload status lines for the provider grid
       await this.loadConfigStatusLine()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     }
     this.render()
-  }
-
-  private _onClickOutside = (e: MouseEvent) => {
-    if (this._sessionSwitcher && !this._sessionSwitcher.contains(e.target as Node)) {
-      this.activePanel = null
-      document.removeEventListener('mousedown', this._onClickOutside)
-      this.render()
-    }
-  }
-
-  private async toggleSessionDropdown() {
-    if (this.activePanel === 'sessions') {
-      this.activePanel = null
-      document.removeEventListener('mousedown', this._onClickOutside)
-      this.render()
-      return
-    }
-
-    try {
-      this.sessionListItems = (await window.ipc?.agent.getSessionList() ?? []) as SessionListItem[]
-    } catch {
-      this.sessionListItems = []
-    }
-    this.activePanel = 'sessions'
-    this._sessionPanelDirty = true
-    this.render()
-
-    requestAnimationFrame(() => {
-      this._sessionSearchInput?.focus()
-    })
-    document.addEventListener('mousedown', this._onClickOutside)
-  }
-
-  private filterSessions(query: string) {
-    if (!this._sessionDropdownList) return
-    const items = this._sessionDropdownList.querySelectorAll('.session-panel-item')
-    const q = query.toLowerCase()
-    items.forEach((item) => {
-      const el = item as HTMLElement
-      if (el.id === 'new-session-btn') {
-        el.style.display = q ? 'none' : ''
-        return
-      }
-      const label = el.querySelector('.session-panel-item-label')?.textContent?.toLowerCase() || ''
-      el.style.display = label.includes(q) ? '' : 'none'
-    })
-  }
-
-  private handleSessionClick(item: SessionListItem) {
-    if (item.isActive) return
-    this.activePanel = null
-    if (item.sessionId) {
-      window.ipc?.agent.switchTo(item.sessionId).catch(e => {
-        this.error = e instanceof Error ? e.message : String(e)
-        this.render()
-      })
-    } else if (item.file) {
-      window.ipc?.agent.loadSession(item.file).catch(e => {
-        this.error = e instanceof Error ? e.message : String(e)
-        this.render()
-      })
-    }
   }
 
   private async sendMessage() {
@@ -1233,12 +1256,6 @@ export class TlAgentChat extends HTMLElement {
     this._newSessionBtn = null
     this._notifyBtn = null
     this._settingsBtn = null
-    this._sessionSwitcher = null
-    this._sessionSwitcherBtn = null
-    this._sessionSwitcherLabel = null
-    this._sessionDropdown = null
-    this._sessionDropdownList = null
-    this._sessionSearchInput = null
     this._providerPanel = null
     this._stopBtn = null
     this._providerInfo = null
@@ -1246,6 +1263,10 @@ export class TlAgentChat extends HTMLElement {
     this._pasteAttachmentEl = null
     this._pasteLabelEl = null
     this._pastePreviewEl = null
+    this._openBox = null
+    this._openDotsEl = null
+    this._openListEl = null
+    this._sessionTitleEl = null
   }
 
   private buildChatLayout() {
@@ -1256,64 +1277,110 @@ export class TlAgentChat extends HTMLElement {
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;'
 
-    // Session switcher header
-    this._sessionSwitcher = document.createElement('div')
-    this._sessionSwitcher.className = 'session-switcher'
+    // Open sessions box (dots + hover list)
+    this._openBox = document.createElement('div')
+    this._openBox.className = 'open-sessions-box'
+    this._openBox.style.display = 'none'
 
-    this._sessionSwitcherBtn = document.createElement('button')
-    this._sessionSwitcherBtn.className = 'session-switcher-btn'
-    this._sessionSwitcherBtn.innerHTML = `<svg class="session-switcher-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4 5,7 8,4"/></svg><span></span>`
-    this._sessionSwitcherLabel = this._sessionSwitcherBtn.querySelector('span')!
-    this._sessionSwitcherLabel.textContent = this._sessionLabel || 'New Session'
-    this._sessionSwitcherBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.toggleSessionDropdown()
-    })
-    this._sessionSwitcher.appendChild(this._sessionSwitcherBtn)
-
-    this._sessionDropdown = document.createElement('div')
-    this._sessionDropdown.className = 'session-switcher-dropdown'
-    this._sessionDropdown.style.display = 'none'
-
-    const searchWrapper = document.createElement('div')
-    searchWrapper.className = 'session-switcher-search'
-    this._sessionSearchInput = document.createElement('input')
-    this._sessionSearchInput.type = 'text'
-    this._sessionSearchInput.placeholder = 'Search sessions...'
-    this._sessionSearchInput.addEventListener('input', () => {
-      this.filterSessions(this._sessionSearchInput!.value)
-    })
-    this._sessionSearchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.activePanel = null
-        this.render()
+    this._openDotsEl = document.createElement('div')
+    this._openDotsEl.className = 'open-dots'
+    this._openDotsEl.addEventListener('mousedown', (e) => {
+      const dot = (e.target as HTMLElement).closest('.open-dot') as HTMLElement | null
+      if (dot) {
+        e.preventDefault()
+        const idx = parseInt(dot.dataset.idx!, 10)
+        const session = this._openSessions[idx]
+        if (session && session.file !== this._activeSessionFile) {
+          this.loadSession(session.file)
+        }
       }
     })
-    searchWrapper.appendChild(this._sessionSearchInput)
-    this._sessionDropdown.appendChild(searchWrapper)
+    this._sessionTitleEl = document.createElement('span')
+    this._sessionTitleEl.className = 'session-title'
+    this._openDotsEl.appendChild(this._sessionTitleEl)
 
-    this._sessionDropdownList = document.createElement('div')
-    this._sessionDropdownList.className = 'session-switcher-list'
-    this._sessionDropdownList.addEventListener('mousedown', (e) => {
+    this._openBox.appendChild(this._openDotsEl)
+
+    this._openListEl = document.createElement('div')
+    this._openListEl.className = 'open-list'
+    this._openListEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
-      const newBtn = target.closest('#new-session-btn') as HTMLElement | null
-      if (newBtn) {
+
+      // Close button
+      const closeBtn = target.closest('[data-close-file]') as HTMLElement | null
+      if (closeBtn) {
         e.preventDefault()
-        this.handleNewSession()
+        e.stopPropagation()
+        this.removeOpenSession(closeBtn.dataset.closeFile!)
         return
       }
-      const sessionItem = target.closest('.session-panel-item[data-session-idx]') as HTMLElement | null
-      if (sessionItem) {
+
+      // "All sessions" toggle
+      const allBtn = target.closest('.all-sessions-btn')
+      if (allBtn) {
         e.preventDefault()
-        const idx = parseInt(sessionItem.dataset.sessionIdx!, 10)
-        const item = this.sessionListItems[idx]
-        if (item) this.handleSessionClick(item)
+        this._allSessionsExpanded = !this._allSessionsExpanded
+        if (this._allSessionsExpanded && this._allSessionsItems.length === 0) {
+          window.ipc?.agent.getSessionList().then((items) => {
+            this._allSessionsItems = (items ?? []) as SessionListItem[]
+            this.renderOpenList()
+          }).catch(() => {})
+          return
+        }
+        this.renderOpenList()
+        return
+      }
+
+      // Click open session item
+      const openItem = target.closest('[data-open-idx]') as HTMLElement | null
+      if (openItem) {
+        e.preventDefault()
+        const idx = parseInt(openItem.dataset.openIdx!, 10)
+        const session = this._openSessions[idx]
+        if (session && session.file !== this._activeSessionFile) {
+          this.loadSession(session.file)
+        }
+        return
+      }
+
+      // Click "all sessions" item — open it (adds to open sessions automatically via snapshot)
+      const allItem = target.closest('[data-all-idx]') as HTMLElement | null
+      if (allItem) {
+        e.preventDefault()
+        const idx = parseInt(allItem.dataset.allIdx!, 10)
+        const openFiles = new Set(this._openSessions.map(s => s.file))
+        const other = this._allSessionsItems.filter(s => s.file && !openFiles.has(s.file))
+        const session = other[idx]
+        if (session) {
+          // Add to open sessions immediately for instant feedback
+          if (session.file) {
+            this.addOpenSession(session.file, session.label)
+            this.renderOpenList()
+          }
+          if (session.sessionId) {
+            window.ipc?.agent.switchTo(session.sessionId).catch(err => {
+              this.error = err instanceof Error ? err.message : String(err)
+              this.render()
+            })
+          } else if (session.file) {
+            this.loadSession(session.file)
+          }
+        }
+        return
       }
     })
-    this._sessionDropdown.appendChild(this._sessionDropdownList)
 
-    this._sessionSwitcher.appendChild(this._sessionDropdown)
-    container.appendChild(this._sessionSwitcher)
+    this._openBox.appendChild(this._openListEl)
+
+    this._openBox.addEventListener('mouseenter', () => {
+      this.renderOpenList()
+    })
+    this._openBox.addEventListener('mouseleave', () => {
+      this._allSessionsExpanded = false
+      this._allSessionsItems = []
+    })
+
+    container.appendChild(this._openBox)
 
     // Provider grid (shown when no messages)
     this._providerGrid = document.createElement('div')
@@ -1543,22 +1610,13 @@ export class TlAgentChat extends HTMLElement {
 
     // 0. Provider grid vs messages visibility
     if (this._providerGrid) {
-      const hasSessions = !hasMessages && this.sessionListItems.length > 0
       if (hasMessages) {
         this._providerGrid.style.display = 'none'
-      } else if (hasSessions && this._providerList.length <= 1) {
-        this._providerGrid.style.display = 'none'
-      } else if (!hasMessages) {
+      } else {
         this._providerGrid.style.display = ''
-        if (hasSessions) {
-          this._providerGrid.style.justifyContent = 'flex-start'
-          this._providerGrid.style.flex = 'none'
-          this._providerGrid.style.paddingBottom = '0'
-        } else {
-          this._providerGrid.style.justifyContent = 'center'
-          this._providerGrid.style.flex = '1'
-          this._providerGrid.style.paddingBottom = ''
-        }
+        this._providerGrid.style.justifyContent = 'center'
+        this._providerGrid.style.flex = '1'
+        this._providerGrid.style.paddingBottom = ''
         this.renderProviderGrid()
       }
     }
@@ -1628,62 +1686,15 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 7. Session switcher
-    if (!hasMessages) {
-      // New session: hide header, show session list inline if sessions exist
-      if (this._sessionSwitcherBtn) this._sessionSwitcherBtn.style.display = 'none'
-      if (this._sessionDropdown) {
-        this._sessionSwitcherBtn?.classList.remove('open')
-        if (!this._inlineSessionsFetched) {
-          this._inlineSessionsFetched = true
-          this._sessionDropdown.style.display = 'none'
-          window.ipc?.agent.getSessionList().then((items) => {
-            this.sessionListItems = (items ?? []) as SessionListItem[]
-            this._sessionPanelDirty = true
-            this.render()
-          }).catch(() => {})
-        } else if (this.sessionListItems.length > 0) {
-          this._sessionDropdown.style.display = ''
-          this._sessionDropdown.classList.add('inline')
-          this._sessionSwitcher!.classList.add('expanded')
-          if (this._sessionPanelDirty && this._sessionDropdownList) {
-            this._sessionDropdownList.innerHTML = renderSessionPanelHtml(this.sessionListItems)
-            this._sessionPanelDirty = false
-          }
-        } else {
-          this._sessionDropdown.style.display = 'none'
-          this._sessionSwitcher!.classList.remove('expanded')
-        }
-      }
-    } else {
-      // Active session: show header with dropdown
-      if (this._sessionSwitcherBtn) this._sessionSwitcherBtn.style.display = ''
-      if (this._sessionSwitcher) {
-        this._sessionSwitcher.classList.remove('expanded')
-      }
-      if (this._sessionSwitcherLabel) {
-        const label = this._sessionLabel || 'New Session'
-        if (this._sessionSwitcherLabel.textContent !== label) {
-          this._sessionSwitcherLabel.textContent = label
-        }
-      }
-      this._inlineSessionsFetched = false
-      if (this._sessionDropdown) {
-        this._sessionDropdown.classList.remove('inline')
-        if (this.activePanel === 'sessions') {
-          this._sessionDropdown.style.display = ''
-          this._sessionSwitcherBtn?.classList.add('open')
-          if (this._sessionPanelDirty && this._sessionDropdownList) {
-            this._sessionDropdownList.innerHTML = renderSessionPanelHtml(this.sessionListItems)
-            this._sessionPanelDirty = false
-          }
-        } else {
-          this._sessionDropdown.style.display = 'none'
-          this._sessionSwitcherBtn?.classList.remove('open')
-          if (this._sessionSearchInput) this._sessionSearchInput.value = ''
-        }
+    // 7. Open sessions dots — update label if active session is open
+    if (this._activeSessionFile && this._sessionLabel) {
+      const pinIdx = this._openSessions.findIndex(p => p.file === this._activeSessionFile)
+      if (pinIdx >= 0 && this._openSessions[pinIdx].label !== this._sessionLabel) {
+        this._openSessions[pinIdx].label = this._sessionLabel
+        this.saveOpenSessions()
       }
     }
+    this.updateOpenDots()
 
     // 9. Provider panel
     if (this._providerPanel) {
@@ -1793,6 +1804,123 @@ export class TlAgentChat extends HTMLElement {
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)
     }
+  }
+
+  // --- Open sessions ---
+
+  private saveOpenSessions() {
+    window.ipc?.store.set('openSessions', this._openSessions)
+  }
+
+  private addOpenSession(file: string, label: string) {
+    if (this._openSessions.some(s => s.file === file)) return
+    this._openSessions.push({ file, label })
+    this.saveOpenSessions()
+  }
+
+  private loadSession(file: string) {
+    window.ipc?.agent.loadSession(file).catch(err => {
+      this.error = err instanceof Error ? err.message : String(err)
+      this.render()
+    })
+  }
+
+  private removeOpenSession(file: string) {
+    const wasCurrent = file === this._activeSessionFile
+    this._openSessions = this._openSessions.filter(s => s.file !== file)
+    this.saveOpenSessions()
+    this.renderOpenList()
+
+    if (wasCurrent) {
+      // Switch to another open session, or create new session if none left
+      const next = this._openSessions[0]
+      if (next) {
+        this.loadSession(next.file)
+      } else {
+        this.handleNewSession()
+      }
+    } else {
+      this.render()
+    }
+  }
+
+  private updateOpenDots() {
+    if (!this._openDotsEl || !this._openBox || !this._sessionTitleEl) return
+    const open = this._openSessions
+
+    this._openBox.style.display = ''
+
+    const activeFile = this._activeSessionFile
+    const streamingSet = new Set(this._streamingFiles)
+
+    const titleEl = this._sessionTitleEl
+    const existingDots = Array.from(this._openDotsEl.querySelectorAll('.open-dot')) as HTMLElement[]
+    while (existingDots.length > open.length) {
+      existingDots.pop()!.remove()
+    }
+    while (existingDots.length < open.length) {
+      const dot = document.createElement('div')
+      dot.className = 'open-dot'
+      this._openDotsEl.insertBefore(dot, titleEl)
+      existingDots.push(dot)
+    }
+
+    for (let i = 0; i < open.length; i++) {
+      const dot = existingDots[i]
+      const isActive = open[i].file === activeFile
+      const isStreaming = streamingSet.has(open[i].file)
+      dot.className = 'open-dot'
+        + (isActive ? ' active' : '')
+        + (isStreaming ? ' streaming' : '')
+      dot.title = open[i].label
+      dot.dataset.idx = String(i)
+    }
+
+    titleEl.textContent = this._sessionLabel || 'New Session'
+  }
+
+  private renderOpenList() {
+    if (!this._openListEl) return
+    const open = this._openSessions
+    const activeFile = this._activeSessionFile
+    const streamingSet = new Set(this._streamingFiles)
+
+    let html = ''
+    for (let i = 0; i < open.length; i++) {
+      const s = open[i]
+      const isActive = s.file === activeFile
+      const isStreaming = streamingSet.has(s.file)
+      html += `<div class="open-list-item${isActive ? ' active' : ''}" data-open-idx="${i}">
+        <span class="open-list-item-dot${isStreaming ? ' streaming' : ''}"></span>
+        <span class="open-list-item-label">${escapeHtml(s.label)}</span>
+        <button class="open-list-item-action" data-close-file="${escapeHtml(s.file)}" title="Close">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+        </button>
+      </div>`
+    }
+
+    html += `<div class="all-sessions-btn${this._allSessionsExpanded ? ' expanded' : ''}">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,2 7,5 3,8"/></svg>
+      All sessions
+    </div>`
+
+    if (this._allSessionsExpanded) {
+      const openFiles = new Set(open.map(s => s.file))
+      const other = this._allSessionsItems.filter(s => s.file && !openFiles.has(s.file))
+      if (other.length === 0) {
+        html += '<div style="padding:6px 10px;font-size:11px;color:var(--color-text2)">No other sessions</div>'
+      }
+      for (let i = 0; i < other.length; i++) {
+        const s = other[i]
+        const isActive = s.file === activeFile
+        html += `<div class="open-list-item${isActive ? ' active' : ''}" data-all-idx="${i}">
+          <span class="open-list-item-dot${s.isStreaming ? ' streaming' : ''}"></span>
+          <span class="open-list-item-label">${escapeHtml(s.label)}</span>
+        </div>`
+      }
+    }
+
+    this._openListEl.innerHTML = html
   }
 
   private renderProviderPanelHtml(): string {

@@ -404,8 +404,16 @@ export class AgentSessionManager {
     streamingMessage: DisplayMessage | null
     statusLine: string | undefined
     providerId: string
+    activeSessionFile: string | null
+    streamingFiles: string[]
   } {
     const agent = this.activeAgent
+    const streamingFiles: string[] = []
+    for (const [, entry] of this.sessions) {
+      if (entry.agent.isStreaming && entry.agent.sessionFile) {
+        streamingFiles.push(entry.agent.sessionFile)
+      }
+    }
     return {
       messages: this.activeMessages,
       isStreaming: this.activeIsStreaming,
@@ -415,6 +423,8 @@ export class AgentSessionManager {
       streamingMessage: agent?.state.streamingMessage ?? null,
       statusLine: agent?.state.statusLine,
       providerId: this._activeProviderId,
+      activeSessionFile: this._activeSessionFile,
+      streamingFiles,
     }
   }
 
