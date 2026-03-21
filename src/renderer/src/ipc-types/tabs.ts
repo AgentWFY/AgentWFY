@@ -53,10 +53,29 @@ export interface TabViewEvent {
   errorDescription?: string
 }
 
+export type TabDataType = 'view' | 'file' | 'url'
+
+export interface TabData {
+  id: string
+  type: TabDataType
+  title: string
+  target: string | number
+  viewUpdatedAt?: number | null
+  viewChanged: boolean
+  pinned: boolean
+  hidden: boolean
+  params?: Record<string, string>
+}
+
+export interface TabState {
+  tabs: TabData[]
+  selectedTabId: string | null
+}
+
 export interface TabsApi {
   // Agent tool operations
   getTabs(): Promise<WorkerGetTabsResult>
-  openTab(request: WorkerOpenTabRequest): Promise<void>
+  openTab(request: WorkerOpenTabRequest): Promise<{ tabId: string }>
   closeTab(request: WorkerCloseTabRequest): Promise<void>
   selectTab(request: WorkerSelectTabRequest): Promise<void>
   reloadTab(request: WorkerReloadTabRequest): Promise<void>
@@ -69,4 +88,10 @@ export interface TabsApi {
   destroyView(request: DestroyTabViewRequest): Promise<void>
   showContextMenu(request: TabContextMenuRequest): Promise<TabContextMenuAction>
   onViewEvent(callback: (detail: TabViewEvent) => void): () => void
+  // Tab state sync (main → renderer)
+  onStateChanged(callback: (state: TabState) => void): () => void
+  getTabState(): Promise<TabState>
+  reorderTabs(fromIndex: number, toIndex: number): Promise<void>
+  togglePin(tabId: string): Promise<void>
+  revealTab(tabId: string): Promise<void>
 }

@@ -35,8 +35,14 @@ export function registerPluginHandlers(
 
   // Sync handler for agentview preload sendSync()
   ipcMain.on(Channels.plugins.methods, (event) => {
-    const registry = getFunctionRegistry(event as unknown as IpcMainInvokeEvent)
-    event.returnValue = registry.getPluginMethodNames()
+    try {
+      const registry = getFunctionRegistry(event as unknown as IpcMainInvokeEvent)
+      event.returnValue = registry.getPluginMethodNames()
+    } catch {
+      // Always set returnValue — if left unset, sendSync throws on the renderer
+      // side, which can crash the preload and leave window.agentwfy undefined.
+      event.returnValue = []
+    }
   })
 
   ipcMain.handle(Channels.plugins.install, (event, packagePath: string) => {

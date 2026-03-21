@@ -623,13 +623,14 @@ export class CommandPaletteManager {
     }
 
     switch (type) {
-      case 'open-view':
-        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:open-view', {
-          viewId: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewId,
-          title: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).title,
-          viewUpdatedAt: (action as Extract<CommandPaletteAction, { type: 'open-view' }>).viewUpdatedAt ?? null,
+      case 'open-view': {
+        const openViewAction = action as Extract<CommandPaletteAction, { type: 'open-view' }>;
+        await this.deps.getTabViewManager().openTabHandler({
+          viewId: openViewAction.viewId,
+          title: openViewAction.title,
         });
         break;
+      }
 
       case 'toggle-agent-chat':
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
@@ -640,11 +641,11 @@ export class CommandPaletteManager {
         break;
 
       case 'close-current-tab':
-        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
+        this.deps.getTabViewManager().closeCurrentTab();
         break;
 
       case 'reload-current-tab':
-        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:refresh-current-view');
+        this.deps.getTabViewManager().reloadCurrentTab();
         break;
 
       case 'run-task': {

@@ -1,8 +1,29 @@
 import { BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
+import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewId } from '../protocol/view-document.js';
+import { Channels } from '../ipc/channels.js';
 
 // --- Types & Constants ---
+
+export type TabDataType = 'view' | 'file' | 'url'
+
+export interface TabData {
+  id: string
+  type: TabDataType
+  title: string
+  target: string | number
+  viewUpdatedAt?: number | null
+  viewChanged: boolean
+  pinned: boolean
+  hidden: boolean
+  params?: Record<string, string>
+}
+
+export interface TabState {
+  tabs: TabData[]
+  selectedTabId: string | null
+}
 
 interface ViewConsoleLogEntry {
   level: string
@@ -29,7 +50,7 @@ interface TabViewState {
   logs: ViewConsoleLogEntry[]
 }
 
-type TabType = 'view' | 'file' | 'url'
+type TabType = TabDataType
 
 interface TabViewBoundsPayload {
   x: number
@@ -80,26 +101,6 @@ const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   error: 'error',
 };
 
-const GET_TABS_QUERY = `(() => {
-  const tabsEl = document.querySelector('awfy-tabs');
-  if (!tabsEl) return { tabs: [] };
-  const selectedTabId = typeof tabsEl.selectedTabId === 'string' ? tabsEl.selectedTabId : null;
-  const tabList = Array.isArray(tabsEl.tabs) ? tabsEl.tabs : [];
-  return {
-    tabs: tabList.map((tab) => ({
-      id: tab.id,
-      title: tab.title || '',
-      type: tab.type || 'view',
-      target: tab.target ?? null,
-      viewUpdatedAt: tab.viewUpdatedAt ?? null,
-      viewChanged: Boolean(tab.viewChanged),
-      pinned: Boolean(tab.pinned),
-      hidden: Boolean(tab.hidden),
-      selected: tab.id === selectedTabId,
-      params: tab.params || null,
-    })),
-  };
-})()`;
 
 // --- Input validation helpers ---
 
@@ -196,9 +197,28 @@ export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
   private readonly deps: TabViewManagerDeps;
+  private tabs: TabData[] = [];
+  private selectedTabId: string | null = null;
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
+  }
+
+  private generateTabId(): string {
+    return crypto.randomBytes(8).toString('hex');
+  }
+
+  private pushStateToRenderer(): void {
+    const win = this.deps.getMainWindow();
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send(Channels.tabs.stateChanged, {
+      tabs: this.tabs,
+      selectedTabId: this.selectedTabId,
+    });
+  }
+
+  getState(): TabState {
+    return { tabs: this.tabs, selectedTabId: this.selectedTabId };
   }
 
   // --- Tab lifecycle ---
@@ -315,13 +335,13 @@ export class TabViewManager {
       if (key === 'w') {
         event.preventDefault();
         this.deps.focusMainRendererWindow();
-        this.deps.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
+        this.closeCurrentTab();
         return;
       }
 
       if (key === 'r') {
         event.preventDefault();
-        this.reloadTabView(tabId);
+        this.reloadCurrentTab();
       }
     });
 
@@ -490,6 +510,8 @@ export class TabViewManager {
     for (const tabId of tabIds) {
       this.destroyTabView(tabId);
     }
+    this.tabs = [];
+    this.selectedTabId = null;
   }
 
   reloadTabView(tabId: string): void {
@@ -522,52 +544,82 @@ export class TabViewManager {
   // --- Tab handlers ---
 
   async getTabsHandler(): Promise<{ tabs: Array<Record<string, unknown>> }> {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { tabs: [] };
-    }
-
-    try {
-      const result: unknown = await mainWindow.webContents.executeJavaScript(GET_TABS_QUERY, true);
-      if (!result || typeof result !== 'object' || !Array.isArray((result as Record<string, unknown>).tabs)) {
-        return { tabs: [] };
-      }
-      return result as { tabs: Array<Record<string, unknown>> };
-    } catch (error) {
-      console.warn('[agent-runtime] failed to read tabs from renderer', error);
-      return { tabs: [] };
-    }
+    return {
+      tabs: this.tabs.map((tab) => ({
+        id: tab.id,
+        title: tab.title || '',
+        type: tab.type || 'view',
+        target: tab.target ?? null,
+        viewUpdatedAt: tab.viewUpdatedAt ?? null,
+        viewChanged: Boolean(tab.viewChanged),
+        pinned: Boolean(tab.pinned),
+        hidden: Boolean(tab.hidden),
+        selected: tab.id === this.selectedTabId,
+        params: tab.params || null,
+      })),
+    };
   }
 
-  async openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<void> {
-    const type = request.url ? 'url' : request.filePath ? 'file' : 'view';
-    this.deps.dispatchRendererCustomEvent('agentwfy:agent-open-tab', {
+  async openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<{ tabId: string }> {
+    const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
+    let target: string | number;
+    if (type === 'url') {
+      target = request.url!;
+    } else if (type === 'file') {
+      target = request.filePath!;
+    } else {
+      target = request.viewId!;
+    }
+
+    const tabId = this.generateTabId();
+    const isHidden = Boolean(request.hidden);
+    const tab: TabData = {
+      id: tabId,
       type,
-      viewId: request.viewId,
-      filePath: request.filePath,
-      url: request.url,
-      title: request.title,
-      hidden: request.hidden,
+      title: request.title || (type === 'url' ? 'Web Page' : type === 'file' ? 'File View' : 'Agent View'),
+      target,
+      viewUpdatedAt: null,
+      viewChanged: false,
+      pinned: false,
+      hidden: isHidden,
       params: request.params,
-    });
+    };
+    this.tabs = [...this.tabs, tab];
+    if (!isHidden) {
+      this.selectedTabId = tabId;
+    }
+    this.pushStateToRenderer();
+    return { tabId };
   }
 
   async closeTabHandler(request: { tabId: string }): Promise<void> {
-    this.deps.dispatchRendererCustomEvent('agentwfy:agent-close-tab', {
-      tabId: request.tabId,
-    });
+    const tab = this.tabs.find(t => t.id === request.tabId);
+    if (!tab || tab.pinned) return;
+
+    this.tabs = this.tabs.filter(t => t.id !== request.tabId);
+    this.destroyTabView(request.tabId);
+
+    if (this.selectedTabId === request.tabId) {
+      const visible = this.tabs.filter(t => !t.hidden);
+      const last = visible[visible.length - 1];
+      this.selectedTabId = last?.id || null;
+    }
+    this.pushStateToRenderer();
   }
 
   async selectTabHandler(request: { tabId: string }): Promise<void> {
-    this.deps.dispatchRendererCustomEvent('agentwfy:agent-select-tab', {
-      tabId: request.tabId,
-    });
+    const tab = this.tabs.find(t => t.id === request.tabId);
+    if (!tab || this.selectedTabId === request.tabId) return;
+    this.selectedTabId = request.tabId;
+    this.pushStateToRenderer();
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {
-    this.deps.dispatchRendererCustomEvent('agentwfy:agent-reload-tab', {
-      tabId: request.tabId,
-    });
+    const tab = this.tabs.find(t => t.id === request.tabId);
+    if (!tab) return;
+    tab.viewChanged = false;
+    this.reloadTabView(request.tabId);
+    this.pushStateToRenderer();
   }
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
@@ -752,6 +804,66 @@ export class TabViewManager {
     }
   }
 
+  // --- Tab state mutations ---
+
+  markViewChanged(viewId: string | number): void {
+    let changed = false;
+    for (const tab of this.tabs) {
+      if (tab.type !== 'view' || tab.target != viewId) continue;
+      tab.viewChanged = true;
+      changed = true;
+    }
+    if (changed) {
+      this.pushStateToRenderer();
+    }
+  }
+
+  togglePin(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    tab.pinned = !tab.pinned;
+    // Reorder: pinned tabs first, preserve relative order within each group
+    const pinned = this.tabs.filter(t => t.pinned);
+    const unpinned = this.tabs.filter(t => !t.pinned);
+    this.tabs = [...pinned, ...unpinned];
+    this.pushStateToRenderer();
+  }
+
+  reorderTabs(fromIndex: number, toIndex: number): void {
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= this.tabs.length) return;
+    if (toIndex < 0 || toIndex >= this.tabs.length) return;
+
+    const pinnedEnd = this.tabs.filter(t => t.pinned && !t.hidden).length;
+    const fromPinned = fromIndex < pinnedEnd;
+    const toPinned = toIndex < pinnedEnd;
+    if (fromPinned !== toPinned) return;
+
+    const newTabs = [...this.tabs];
+    const [tab] = newTabs.splice(fromIndex, 1);
+    newTabs.splice(toIndex, 0, tab);
+    this.tabs = newTabs;
+    this.pushStateToRenderer();
+  }
+
+  revealTab(tabId: string): void {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab || !tab.hidden) return;
+    tab.hidden = false;
+    this.selectedTabId = tabId;
+    this.pushStateToRenderer();
+  }
+
+  closeCurrentTab(): void {
+    if (!this.selectedTabId) return;
+    this.closeTabHandler({ tabId: this.selectedTabId });
+  }
+
+  reloadCurrentTab(): void {
+    if (!this.selectedTabId) return;
+    this.reloadTabHandler({ tabId: this.selectedTabId });
+  }
+
   // --- Context menu ---
 
   showNativeTabContextMenu(
@@ -773,6 +885,7 @@ export class TabViewManager {
         label: 'Reload',
         click: () => {
           selectedAction = 'reload';
+          this.reloadTabHandler({ tabId: tabId! });
         },
       });
     }
@@ -781,6 +894,7 @@ export class TabViewManager {
       label: pinned ? 'Unpin Tab' : 'Pin Tab',
       click: () => {
         selectedAction = 'toggle-pin';
+        if (tabId) this.togglePin(tabId);
       },
     });
 

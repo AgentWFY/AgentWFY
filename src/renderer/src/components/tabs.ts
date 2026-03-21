@@ -1,17 +1,4 @@
-type TabDataType = 'view' | 'file' | 'url'
-
-interface TabData {
-  id: string
-  type: TabDataType
-  title: string
-  // view: numeric/string view ID, file: relative path, url: full URL
-  target: string | number
-  viewUpdatedAt?: number | null    // only for view
-  viewChanged: boolean             // only for view
-  pinned: boolean
-  hidden: boolean
-  params?: Record<string, string>  // custom query params passed to the view
-}
+import type { TabData, TabDataType, TabState } from '../ipc-types/index.js'
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
@@ -21,17 +8,6 @@ const TAB_TYPE_ICONS: Record<TabDataType, string> = {
   view: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
   file: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
   url: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
-}
-
-function extractParams(detail: Record<string, unknown>): Record<string, string> | undefined {
-  const p = detail.params
-  return p && typeof p === 'object' && !Array.isArray(p) ? p as Record<string, string> : undefined
-}
-
-function generateId(len = 8): string {
-  const arr = new Uint8Array((len || 40) / 2)
-  window.crypto.getRandomValues(arr)
-  return Array.from(arr, (v) => v.toString(16).padStart(2, '0')).join('')
 }
 
 export class TlTabs extends HTMLElement {
@@ -50,142 +26,8 @@ export class TlTabs extends HTMLElement {
   private styleEl!: HTMLStyleElement
   private hiddenTabsBtnEl!: HTMLDivElement
   private hiddenTabsExpanded = false
-
-  // Command palette / UI opens a view
-  private onOpenView = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    const tabId = generateId()
-    const viewId = typeof detail?.viewId !== 'undefined' ? detail.viewId : (detail?.path ?? null)
-    if (viewId == null) return
-    const params = extractParams(detail)
-    const tab: TabData = {
-      id: tabId,
-      type: 'view',
-      title: detail.title || 'Agent View',
-      target: viewId,
-      viewUpdatedAt: detail.viewUpdatedAt ?? null,
-      viewChanged: false,
-      pinned: false,
-      hidden: false,
-      params,
-    }
-    this.tabs = [...this.tabs, tab]
-    this.selectedTabId = tabId
-    this.render()
-    this.dispatchTabSelected()
-  }
-
-  private onRemoveCurrentTab = () => {
-    if (!this.selectedTabId) return
-    const tab = this.tabs.find(t => t.id === this.selectedTabId)
-    if (tab?.pinned) return
-    this.removeTab(this.selectedTabId)
-  }
-
-  private onRefreshCurrentView = () => {
-    if (!this.selectedTabId) return
-    this.reloadTab(this.selectedTabId)
-  }
-
-  // Agent opens a tab (view, file, or url)
-  private onAgentOpenTab = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    if (!detail) return
-
-    let type: TabDataType
-    let target: string | number
-
-    if (detail.type === 'url' && typeof detail.url === 'string') {
-      type = 'url'
-      target = detail.url
-    } else if (detail.type === 'file' && typeof detail.filePath === 'string') {
-      type = 'file'
-      target = detail.filePath
-    } else if (typeof detail.viewId === 'string' || typeof detail.viewId === 'number') {
-      type = 'view'
-      target = detail.viewId
-    } else {
-      return
-    }
-
-    const tabId = generateId()
-    const isHidden = Boolean(detail.hidden)
-    const params = extractParams(detail)
-    const tab: TabData = {
-      id: tabId,
-      type,
-      title: detail.title || (type === 'url' ? 'Web Page' : type === 'file' ? 'File View' : 'Agent View'),
-      target,
-      viewUpdatedAt: null,
-      viewChanged: false,
-      pinned: false,
-      hidden: isHidden,
-      params,
-    }
-    this.tabs = [...this.tabs, tab]
-    if (!isHidden) {
-      this.selectedTabId = tabId
-    }
-    this.render()
-    if (!isHidden) {
-      this.dispatchTabSelected()
-    }
-  }
-
-  private onAgentCloseTab = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    if (!detail || typeof detail.tabId !== 'string') return
-    const tab = this.tabs.find(t => t.id === detail.tabId)
-    if (!tab) return
-    this.removeTab(detail.tabId)
-  }
-
-  private onAgentSelectTab = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    if (!detail || typeof detail.tabId !== 'string') return
-    const tab = this.tabs.find(t => t.id === detail.tabId)
-    if (!tab) return
-    this.selectTab(detail.tabId)
-  }
-
-  private onAgentReloadTab = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    if (!detail || typeof detail.tabId !== 'string') return
-    const tab = this.tabs.find(t => t.id === detail.tabId)
-    if (!tab) return
-    this.reloadTab(detail.tabId)
-  }
-
-  // Only view tabs track DB changes
-  private onViewsDbChanged = (e: Event) => {
-    const detail = (e as CustomEvent).detail as { change?: { rowId?: unknown; op?: unknown } } | undefined
-    const change = detail?.change
-    if (!change || (change.op !== 'update' && change.op !== 'delete')) return
-    if (typeof change.rowId !== 'string' && typeof change.rowId !== 'number') return
-
-    if (this.markDbViewChanged(change.rowId)) {
-      this.render()
-    }
-  }
-
-  private markDbViewChanged(viewId: string | number): boolean {
-    let changed = false
-    for (const tab of this.tabs) {
-      if (tab.type !== 'view' || tab.target != viewId) {
-        continue
-      }
-
-      tab.viewChanged = true
-      changed = true
-
-      const viewEl = this.viewMap.get(tab.id) as (HTMLElement & { viewChanged?: boolean }) | undefined
-      if (viewEl) {
-        viewEl.viewChanged = true
-      }
-    }
-
-    return changed
-  }
+  private unsubscribeStateChanged: (() => void) | null = null
+  private lastDispatchedSelectedTabId: string | null = null
 
   connectedCallback() {
     this.style.display = 'block'
@@ -226,96 +68,37 @@ export class TlTabs extends HTMLElement {
     this.containerEl.appendChild(this.emptyStateEl)
     this.appendChild(this.containerEl)
 
-    window.addEventListener('agentwfy:open-view', this.onOpenView)
-    window.addEventListener('agentwfy:remove-current-tab', this.onRemoveCurrentTab)
-    window.addEventListener('agentwfy:refresh-current-view', this.onRefreshCurrentView)
-    window.addEventListener('agentwfy:views-db-changed', this.onViewsDbChanged)
-    window.addEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
-    window.addEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
-    window.addEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
-    window.addEventListener('agentwfy:agent-reload-tab', this.onAgentReloadTab)
+    // Subscribe to tab state pushes from main process
+    const ipc = window.ipc
+    if (ipc) {
+      this.unsubscribeStateChanged = ipc.tabs.onStateChanged((state: TabState) => {
+        this.applyState(state)
+      })
+
+      // Fetch initial state
+      ipc.tabs.getTabState().then((state: TabState) => {
+        this.applyState(state)
+      }).catch(err => console.error('[tabs] getTabState failed:', err))
+    }
 
     this.render()
-    this.openDefaultView()
-  }
-
-  private openDefaultView() {
-    window.ipc?.getDefaultView().then(view => {
-      if (view && this.tabs.length === 0) {
-        window.dispatchEvent(new CustomEvent('agentwfy:open-view', { detail: view }))
-      }
-    }).catch(err => console.error('[openDefaultView]', err))
   }
 
   disconnectedCallback() {
-    window.removeEventListener('agentwfy:open-view', this.onOpenView)
-    window.removeEventListener('agentwfy:remove-current-tab', this.onRemoveCurrentTab)
-    window.removeEventListener('agentwfy:refresh-current-view', this.onRefreshCurrentView)
-    window.removeEventListener('agentwfy:views-db-changed', this.onViewsDbChanged)
-    window.removeEventListener('agentwfy:agent-open-tab', this.onAgentOpenTab)
-    window.removeEventListener('agentwfy:agent-close-tab', this.onAgentCloseTab)
-    window.removeEventListener('agentwfy:agent-select-tab', this.onAgentSelectTab)
-    window.removeEventListener('agentwfy:agent-reload-tab', this.onAgentReloadTab)
-  }
-
-  private selectTab(id: string) {
-    this.selectedTabId = id
-    this.render()
-    this.dispatchTabSelected()
-  }
-
-  private removeTab(id: string) {
-    const tab = this.tabs.find(t => t.id === id)
-    if (!tab || tab.pinned) return
-
-    // Clean up view element
-    const viewEl = this.viewMap.get(id)
-    if (viewEl) {
-      viewEl.remove()
-      this.viewMap.delete(id)
+    if (this.unsubscribeStateChanged) {
+      this.unsubscribeStateChanged()
+      this.unsubscribeStateChanged = null
     }
+  }
 
-    this.tabs = this.tabs.filter(t => t.id !== id)
-    if (this.selectedTabId === id) {
-      const visible = this.visibleTabs()
-      const lastVisible = visible[visible.length - 1]
-      this.selectedTabId = lastVisible?.id || null
+  private applyState(state: TabState) {
+    this.tabs = state.tabs
+    this.selectedTabId = state.selectedTabId
+    this.render()
+    if (this.selectedTabId !== this.lastDispatchedSelectedTabId) {
+      this.lastDispatchedSelectedTabId = this.selectedTabId
+      this.dispatchTabSelected()
     }
-    this.render()
-    this.dispatchTabSelected()
-  }
-
-  private togglePin(id: string) {
-    const tab = this.tabs.find(t => t.id === id)
-    if (!tab) return
-    tab.pinned = !tab.pinned
-
-    // Reorder: pinned tabs first, preserve relative order within each group
-    const pinned = this.tabs.filter(t => t.pinned)
-    const unpinned = this.tabs.filter(t => !t.pinned)
-    this.tabs = [...pinned, ...unpinned]
-    this.render()
-  }
-
-  private pinnedCount(): number {
-    return this.tabs.filter(t => t.pinned && !t.hidden).length
-  }
-
-  private reorderTab(fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex) return
-
-    const pinnedEnd = this.pinnedCount()
-    const fromPinned = fromIndex < pinnedEnd
-    const toPinned = toIndex < pinnedEnd
-
-    // Prevent dragging across the pinned/unpinned boundary
-    if (fromPinned !== toPinned) return
-
-    const newTabs = [...this.tabs]
-    const [tab] = newTabs.splice(fromIndex, 1)
-    newTabs.splice(toIndex, 0, tab)
-    this.tabs = newTabs
-    this.render()
   }
 
   private dispatchTabSelected() {
@@ -331,15 +114,6 @@ export class TlTabs extends HTMLElement {
 
   private visibleTabs(): TabData[] {
     return this.tabs.filter(t => !t.hidden)
-  }
-
-  private revealTab(id: string) {
-    const tab = this.tabs.find(t => t.id === id)
-    if (!tab || !tab.hidden) return
-    tab.hidden = false
-    this.selectedTabId = id
-    this.render()
-    this.dispatchTabSelected()
   }
 
   private render() {
@@ -376,7 +150,7 @@ export class TlTabs extends HTMLElement {
         if (tab.pinned) tabItem.classList.add('pinned')
         tabItem.draggable = true
 
-        // Drag handlers — use index within visible tabs for reorder
+        // Drag handlers — use index within all tabs for reorder
         const realIndex = this.tabs.indexOf(tab)
         tabItem.addEventListener('dragstart', (e) => {
           this.dragFromIndex = realIndex
@@ -421,7 +195,7 @@ export class TlTabs extends HTMLElement {
         tabItem.addEventListener('drop', (e) => {
           e.preventDefault()
           if (this.dragFromIndex !== null && this.dragFromIndex !== realIndex) {
-            this.reorderTab(this.dragFromIndex, realIndex)
+            window.ipc?.tabs.reorderTabs(this.dragFromIndex, realIndex)
           }
           this.dragFromIndex = null
           this.dragOverIndex = null
@@ -435,12 +209,16 @@ export class TlTabs extends HTMLElement {
           })
         })
 
-        tabItem.addEventListener('click', () => this.selectTab(tab.id))
+        tabItem.addEventListener('click', () => {
+          window.ipc?.tabs.selectTab({ tabId: tab.id })
+        })
         tabItem.addEventListener('auxclick', (e) => {
-          if (e.button === 1 && !tab.pinned) this.removeTab(tab.id)
+          if (e.button === 1 && !tab.pinned) {
+            window.ipc?.tabs.closeTab({ tabId: tab.id })
+          }
         })
 
-        // Context menu for pin/unpin
+        // Context menu for pin/unpin (main process handles the action)
         tabItem.addEventListener('contextmenu', (e) => {
           e.preventDefault()
           void this.showTabContextMenu(e, tab)
@@ -478,7 +256,7 @@ export class TlTabs extends HTMLElement {
           close.textContent = '\u00d7'
           close.addEventListener('click', (e) => {
             e.stopPropagation()
-            this.removeTab(tab.id)
+            window.ipc?.tabs.closeTab({ tabId: tab.id })
           })
           tabItem.appendChild(close)
         }
@@ -518,11 +296,13 @@ export class TlTabs extends HTMLElement {
           close.textContent = '\u00d7'
           close.addEventListener('click', (e) => {
             e.stopPropagation()
-            this.removeTab(tab.id)
+            window.ipc?.tabs.closeTab({ tabId: tab.id })
           })
           tabItem.appendChild(close)
 
-          tabItem.addEventListener('click', () => this.revealTab(tab.id))
+          tabItem.addEventListener('click', () => {
+            window.ipc?.tabs.revealTab(tab.id)
+          })
           tabBar.appendChild(tabItem)
         }
       }
@@ -613,37 +393,16 @@ export class TlTabs extends HTMLElement {
 
   private async showTabContextMenu(e: MouseEvent, tab: TabData) {
     const ipc = window.ipc
-    if (!ipc) {
-      return
-    }
+    if (!ipc) return
 
-    const action = await ipc.tabs.showContextMenu({
+    // Main process shows the menu and executes the action directly
+    await ipc.tabs.showContextMenu({
       x: e.clientX,
       y: e.clientY,
       pinned: Boolean(tab.pinned),
       viewChanged: Boolean(tab.viewChanged),
       tabId: tab.id,
     }).catch(() => null)
-
-    if (action === 'toggle-pin') {
-      this.togglePin(tab.id)
-    } else if (action === 'reload') {
-      this.reloadTab(tab.id)
-    }
-  }
-
-  private reloadTab(id: string) {
-    const tab = this.tabs.find(t => t.id === id)
-    if (!tab) return
-    tab.viewChanged = false
-    const viewEl = this.viewMap.get(id) as (HTMLElement & { viewChanged?: boolean }) | undefined
-    if (viewEl) {
-      viewEl.viewChanged = false
-    }
-    window.dispatchEvent(new CustomEvent('agentwfy:refresh-view', {
-      detail: { viewId: id }
-    }))
-    this.render()
   }
 
   private getStyles(): string {

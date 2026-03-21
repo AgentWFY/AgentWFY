@@ -200,7 +200,7 @@ export interface WorkerHostMethodMap {
   }
   openTab: {
     params: WorkerOpenTabRequest
-    result: void
+    result: { tabId: string }
   }
   closeTab: {
     params: WorkerCloseTabRequest

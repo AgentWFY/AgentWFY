@@ -29,6 +29,11 @@ const Channels = {
     destroyView: 'tabs:destroyView',
     showContextMenu: 'tabs:showContextMenu',
     viewEvent: 'tabs:viewEvent',
+    stateChanged: 'tabs:stateChanged',
+    getState: 'tabs:getState',
+    reorderTabs: 'tabs:reorderTabs',
+    togglePin: 'tabs:togglePin',
+    revealTab: 'tabs:revealTab',
   },
   sessions: {
     list: 'sessions:list',
@@ -180,7 +185,7 @@ function buildAgentTabsApi() {
     getTabs(): Promise<unknown> {
       return ipcRenderer.invoke(Channels.tabs.getTabs);
     },
-    openTab(request: unknown): Promise<void> {
+    openTab(request: unknown): Promise<{ tabId: string }> {
       return ipcRenderer.invoke(Channels.tabs.openTab, request);
     },
     closeTab(request: unknown): Promise<void> {
@@ -249,6 +254,23 @@ if (isApp) {
         const handler = (_event: unknown, detail: unknown) => callback(detail);
         ipcRenderer.on(Channels.tabs.viewEvent, handler);
         return () => ipcRenderer.removeListener(Channels.tabs.viewEvent, handler);
+      },
+      onStateChanged(callback: (state: unknown) => void): () => void {
+        const handler = (_event: unknown, state: unknown) => callback(state);
+        ipcRenderer.on(Channels.tabs.stateChanged, handler);
+        return () => ipcRenderer.removeListener(Channels.tabs.stateChanged, handler);
+      },
+      getTabState(): Promise<unknown> {
+        return ipcRenderer.invoke(Channels.tabs.getState);
+      },
+      reorderTabs(fromIndex: number, toIndex: number): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.reorderTabs, { fromIndex, toIndex });
+      },
+      togglePin(tabId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.togglePin, tabId);
+      },
+      revealTab(tabId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.revealTab, tabId);
       },
     },
     sessions: {
@@ -443,8 +465,16 @@ if (isAgentView) {
   const agentTabs = buildAgentTabsApi();
   const busAgent = buildBusAgentApi();
 
-  // Query plugin method names synchronously so they can be exposed as flat methods
-  const pluginMethodNames: string[] = ipcRenderer.sendSync(Channels.plugins.methods) ?? [];
+  // Query plugin method names synchronously so they can be exposed as flat methods.
+  // Wrapped in try/catch: if the sync IPC handler throws (e.g. sender context not found),
+  // sendSync throws on the renderer side, which would prevent contextBridge.exposeInMainWorld
+  // from executing — leaving window.agentwfy undefined.
+  let pluginMethodNames: string[] = [];
+  try {
+    pluginMethodNames = ipcRenderer.sendSync(Channels.plugins.methods) ?? [];
+  } catch {
+    // Plugins unavailable for this view — continue without them.
+  }
   const pluginFunctions: Record<string, Function> = {};
   for (const name of pluginMethodNames) {
     pluginFunctions[name] = (params: unknown) => ipcRenderer.invoke(Channels.plugins.call, name, params);

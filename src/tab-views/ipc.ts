@@ -20,4 +20,25 @@ export function registerTabViewHandlers(getTabViewManager: (e: IpcMainInvokeEven
   ipcMain.handle(Channels.tabs.showContextMenu, async (event, payload: unknown) => {
     return getTabViewManager(event).showNativeTabContextMenu(event, payload);
   });
+
+  ipcMain.handle(Channels.tabs.getState, async (event) => {
+    return getTabViewManager(event).getState();
+  });
+
+  ipcMain.handle(Channels.tabs.reorderTabs, async (event, payload: unknown) => {
+    const input = payload && typeof payload === 'object' ? payload as { fromIndex?: number; toIndex?: number } : {};
+    const fromIndex = typeof input.fromIndex === 'number' ? input.fromIndex : -1;
+    const toIndex = typeof input.toIndex === 'number' ? input.toIndex : -1;
+    getTabViewManager(event).reorderTabs(fromIndex, toIndex);
+  });
+
+  ipcMain.handle(Channels.tabs.togglePin, async (event, payload: unknown) => {
+    const tabId = toNonEmptyString(payload);
+    getTabViewManager(event).togglePin(tabId);
+  });
+
+  ipcMain.handle(Channels.tabs.revealTab, async (event, payload: unknown) => {
+    const tabId = toNonEmptyString(payload);
+    getTabViewManager(event).revealTab(tabId);
+  });
 }

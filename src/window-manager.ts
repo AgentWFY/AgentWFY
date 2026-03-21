@@ -14,6 +14,7 @@ import { forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from '.
 import { AgentSessionManager } from './agent/session_manager.js';
 import { TaskRunner } from './task-runner/task_runner.js';
 import { getOrCreateRuntime } from './ipc/exec-js.js';
+import type { AgentTabTools } from './ipc/tabs.js';
 import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { getStorePath } from './ipc/store.js';
 import {
@@ -24,6 +25,7 @@ import { runCleanup } from './cleanup.js';
 import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
 import type { AgentDbChange } from './db/sqlite.js';
 import { closeAgentDb, getOrCreateAgentDb } from './db/agent-db.js';
+import { getViewByName } from './db/views.js';
 import { loadPlugins } from './plugins/loader.js';
 import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
@@ -51,16 +53,7 @@ interface AppWindowContext {
   agentStateStreamingCleanup: (() => void) | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
-  tabTools: {
-    getTabs: () => ReturnType<TabViewManager['getTabsHandler']>;
-    openTab: (req: Parameters<TabViewManager['openTabHandler']>[0]) => ReturnType<TabViewManager['openTabHandler']>;
-    closeTab: (req: Parameters<TabViewManager['closeTabHandler']>[0]) => ReturnType<TabViewManager['closeTabHandler']>;
-    selectTab: (req: Parameters<TabViewManager['selectTabHandler']>[0]) => ReturnType<TabViewManager['selectTabHandler']>;
-    reloadTab: (req: Parameters<TabViewManager['reloadTabHandler']>[0]) => ReturnType<TabViewManager['reloadTabHandler']>;
-    captureTab: (req: Parameters<TabViewManager['captureTabById']>[0]) => ReturnType<TabViewManager['captureTabById']>;
-    getTabConsoleLogs: (req: Parameters<TabViewManager['getTabConsoleLogsById']>[0]) => ReturnType<TabViewManager['getTabConsoleLogsById']>;
-    execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => ReturnType<TabViewManager['execTabJsById']>;
-  };
+  tabTools: AgentTabTools;
 }
 
 function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, action: string): string {
@@ -336,12 +329,12 @@ class WindowManager {
       }
       if (!input.shift && key === 'w') {
         event.preventDefault();
-        rendererBridge.dispatchRendererWindowEvent('agentwfy:remove-current-tab');
+        tabViewManager.closeCurrentTab();
         return;
       }
       if (!input.shift && key === 'r') {
         event.preventDefault();
-        rendererBridge.dispatchRendererWindowEvent('agentwfy:refresh-current-view');
+        tabViewManager.reloadCurrentTab();
       }
       if (input.shift && key === 'r') {
         event.preventDefault();
@@ -352,11 +345,12 @@ class WindowManager {
     // Start HTTP API + triggers
     await this.startHttpServerForContext(ctx);
 
-    if (ctx.triggerEngine) {
-      window.webContents.once('did-finish-load', () => {
-        ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
-      });
-    }
+    window.webContents.once('did-finish-load', () => {
+      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
+
+      // Open default view tab
+      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+    });
 
     // Schedule backup
     scheduleBackup(agentRoot).then(() => {
@@ -503,10 +497,15 @@ class WindowManager {
 
   onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
     const ctx = this.getContextForSender(event.sender.id);
-    const { window: win, rendererBridge, triggerEngine } = ctx;
+    const { window: win, rendererBridge, triggerEngine, tabViewManager } = ctx;
 
     if (win.isDestroyed()) return;
     win.webContents.send('db:changed', change);
+
+    // Mark view tabs as changed when the views table is modified
+    if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {
+      tabViewManager.markViewChanged(change.rowId);
+    }
 
     // Reschedule backup when config changes
     if (change.table === 'config') {
@@ -642,6 +641,26 @@ class WindowManager {
       this.destroyWindow(existing.window.id);
     }
     return this.createWindow(agentRoot);
+  }
+
+  // --- Default view ---
+
+  private async openDefaultViewForContext(ctx: AppWindowContext): Promise<void> {
+    try {
+      const configValue = getConfigValue(ctx.agentRoot, 'system.defaultView', 'Home');
+      const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
+      const viewName = trimmed || 'Home';
+      const view = await getViewByName(ctx.agentRoot, viewName);
+      if (!view) return;
+      const state = ctx.tabViewManager.getState();
+      if (state.tabs.length > 0) return;
+      await ctx.tabViewManager.openTabHandler({
+        viewId: String(view.id),
+        title: view.title || view.name,
+      });
+    } catch (err) {
+      console.error('[default-view] Failed to open default view:', err);
+    }
   }
 
   // --- Broadcast to all windows ---
