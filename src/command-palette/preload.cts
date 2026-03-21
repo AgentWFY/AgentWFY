@@ -29,10 +29,6 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',
-  LIST_PLUGINS: 'app:command-palette:list-plugins',
-  INSTALL_PLUGIN: 'app:command-palette:install-plugin',
-  UNINSTALL_PLUGIN: 'app:command-palette:uninstall-plugin',
-  TOGGLE_PLUGIN: 'app:command-palette:toggle-plugin',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -80,18 +76,6 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   listTasks(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_TASKS);
-  },
-  listPlugins(): Promise<CommandPaletteItem[]> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_PLUGINS);
-  },
-  installPlugin(): Promise<{ installed: string[] }> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.INSTALL_PLUGIN);
-  },
-  uninstallPlugin(pluginName: string): Promise<void> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UNINSTALL_PLUGIN, pluginName);
-  },
-  togglePlugin(pluginName: string, enabled: boolean): Promise<void> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.TOGGLE_PLUGIN, pluginName, enabled);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);
