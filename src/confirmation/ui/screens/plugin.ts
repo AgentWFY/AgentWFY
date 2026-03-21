@@ -1,83 +1,96 @@
 import type { ConfirmationScreen } from '../screen.js'
 
-function infoDiv(lines: string[]): HTMLElement {
-  const el = document.createElement('div')
-  el.style.cssText = 'font-size: 13px; color: var(--text); line-height: 1.6; white-space: pre-wrap;'
-  el.textContent = lines.join('\n')
-  return el
-}
+function pluginCard(opts: {
+  name: string
+  version?: string | null
+  description?: string | null
+  author?: string | null
+  license?: string | null
+}): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'plugin-card'
 
-function metaLine(author?: string | null, license?: string | null): string | null {
-  const parts: string[] = []
-  if (author) parts.push(`Author: ${author}`)
-  if (license) parts.push(`License: ${license}`)
-  return parts.length ? parts.join(' \u00b7 ') : null
+  const header = document.createElement('div')
+  header.className = 'plugin-name'
+  header.textContent = opts.name
+  if (opts.version) {
+    const ver = document.createElement('span')
+    ver.className = 'plugin-version'
+    ver.textContent = `v${opts.version}`
+    header.appendChild(ver)
+  }
+  card.appendChild(header)
+
+  if (opts.description) {
+    const desc = document.createElement('div')
+    desc.className = 'plugin-description'
+    desc.textContent = opts.description
+    card.appendChild(desc)
+  }
+
+  const metaParts: string[] = []
+  if (opts.author) metaParts.push(opts.author)
+  if (opts.license) metaParts.push(opts.license)
+  if (metaParts.length) {
+    const meta = document.createElement('div')
+    meta.className = 'plugin-meta'
+    meta.textContent = metaParts.join(' \u00b7 ')
+    card.appendChild(meta)
+  }
+
+  return card
 }
 
 export function pluginInstallScreen(params: Record<string, unknown>): ConfirmationScreen {
   const plugins = params.plugins as Array<{ name: string; description: string; version: string; author?: string | null; repository?: string | null; license?: string | null }>
   return {
-    title: 'Install Plugin',
+    title: plugins.length === 1 ? 'Install Plugin' : `Install ${plugins.length} Plugins`,
     confirmLabel: 'Install',
     renderBody(container) {
-      const lines = plugins.map(p => {
-        let text = `${p.name} v${p.version}`
-        if (p.description) text += ` \u2014 ${p.description}`
-        const meta = metaLine(p.author, p.license)
-        if (meta) text += `\n  ${meta}`
-        return text
-      })
-      container.appendChild(infoDiv(lines))
+      for (const p of plugins) {
+        container.appendChild(pluginCard({
+          name: p.name,
+          version: p.version,
+          description: p.description,
+          author: p.author,
+          license: p.license,
+        }))
+      }
     },
   }
 }
 
-export function pluginToggleScreen(params: Record<string, unknown>): ConfirmationScreen {
-  const pluginName = params.pluginName as string
-  const currentEnabled = params.currentEnabled as boolean
-  const description = params.description as string | undefined
-  const version = params.version as string | undefined
-  const author = params.author as string | undefined
-  const license = params.license as string | undefined
-  const action = currentEnabled ? 'Disable' : 'Enable'
+function singlePluginCard(params: Record<string, unknown>): HTMLElement {
+  return pluginCard({
+    name: params.pluginName as string,
+    version: params.version as string | undefined,
+    description: params.description as string | undefined,
+    author: params.author as string | undefined,
+    license: params.license as string | undefined,
+  })
+}
 
+export function pluginToggleScreen(params: Record<string, unknown>): ConfirmationScreen {
+  const action = (params.currentEnabled as boolean) ? 'Disable' : 'Enable'
   return {
     title: `${action} Plugin`,
     confirmLabel: action,
     renderBody(container) {
-      const lines: string[] = []
-      let header = pluginName
-      if (version) header += ` v${version}`
-      lines.push(header)
-      if (description) lines.push(description)
-      const meta = metaLine(author, license)
-      if (meta) lines.push(meta)
-      container.appendChild(infoDiv(lines))
+      container.appendChild(singlePluginCard(params))
     },
   }
 }
 
 export function pluginUninstallScreen(params: Record<string, unknown>): ConfirmationScreen {
-  const pluginName = params.pluginName as string
-  const description = params.description as string | undefined
-  const version = params.version as string | undefined
-  const author = params.author as string | undefined
-  const license = params.license as string | undefined
-
   return {
     title: 'Uninstall Plugin',
     confirmLabel: 'Uninstall',
     renderBody(container) {
-      const lines: string[] = []
-      let header = pluginName
-      if (version) header += ` v${version}`
-      lines.push(header)
-      if (description) lines.push(description)
-      const meta = metaLine(author, license)
-      if (meta) lines.push(meta)
-      lines.push('')
-      lines.push('This will remove the plugin and its docs.')
-      container.appendChild(infoDiv(lines))
+      container.appendChild(singlePluginCard(params))
+      const warning = document.createElement('div')
+      warning.className = 'plugin-warning'
+      warning.textContent = 'This will remove the plugin and its docs.'
+      container.appendChild(warning)
     },
   }
 }
