@@ -82,6 +82,10 @@ export const Channels = {
     list: 'provider:list',
     getStatusLine: 'provider:get-status-line',
   },
+  runtimeFunctions: {
+    methods: 'runtime-functions:methods',
+    call: 'runtime-functions:call',
+  },
   agent: {
     createSession: 'agent:createSession',
     sendMessage: 'agent:sendMessage',
