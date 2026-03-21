@@ -102,4 +102,7 @@ export const Channels = {
     spawnAgent: 'agent:spawnAgent',
     sendToAgent: 'agent:sendToAgent',
   },
+  agents: {
+    requestInstall: 'agents:requestInstall',
+  },
 } as const;

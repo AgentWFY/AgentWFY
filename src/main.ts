@@ -10,6 +10,7 @@ import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
+import { registerAgentHandlers } from './ipc/agents.js';
 import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
@@ -101,6 +102,10 @@ registerPluginHandlers(
 );
 registerRuntimeFunctionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
+);
+registerAgentHandlers(
+  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getContextForSender(e.sender.id).commandPalette,
 );
 registerConfirmationHandlers((e) => windowManager.getContextForSender(e.sender.id).confirmation);
 registerProviderHandlers(

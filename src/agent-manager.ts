@@ -43,7 +43,7 @@ export function isAgentDir(dirPath: string): boolean {
   }
 }
 
-async function initAgent(dirPath: string, sourceDbPath?: string): Promise<void> {
+export async function initAgent(dirPath: string, sourceDbPath?: string): Promise<void> {
   if (sourceDbPath) {
     const agentDir = path.join(dirPath, AGENT_DIR_NAME);
     fs.mkdirSync(agentDir, { recursive: true });
