@@ -365,6 +365,11 @@ const builtInWrappers: Record<string, BuiltInWrapper> = {
     create: (call) => (pluginName: string) =>
       call('requestUninstallPlugin', { pluginName }),
   },
+  getAvailableFunctions: {
+    exposedName: 'getAvailableFunctions',
+    create: (call) => () =>
+      call('getAvailableFunctions', {}),
+  },
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {

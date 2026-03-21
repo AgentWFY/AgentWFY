@@ -33,4 +33,8 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   registerPlugins(registry, {
     getCommandPalette: deps.getCommandPalette,
   })
+
+  registry.register('getAvailableFunctions', async () => {
+    return registry.getFunctionInfo()
+  })
 }

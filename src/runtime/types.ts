@@ -262,6 +262,10 @@ export interface WorkerHostMethodMap {
     params: { pluginName: string }
     result: { uninstalled: boolean }
   }
+  getAvailableFunctions: {
+    params: Record<string, never>
+    result: Array<{ name: string; source: string }>
+  }
 }
 
 interface WorkerStartTaskRequest {
