@@ -12,6 +12,7 @@ import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
 import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
+import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
@@ -97,6 +98,9 @@ registerPluginHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
   (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
   (e) => windowManager.getContextForSender(e.sender.id).commandPalette,
+);
+registerRuntimeFunctionHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
 );
 registerConfirmationHandlers((e) => windowManager.getContextForSender(e.sender.id).confirmation);
 registerProviderHandlers(
