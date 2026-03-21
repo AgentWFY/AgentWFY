@@ -294,6 +294,62 @@ const STYLES = `
     outline: none;
     box-sizing: border-box;
   }
+  .paste-attachment {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 8px 0;
+    padding: 4px 8px;
+    background: var(--color-bg3);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--color-text3);
+    cursor: pointer;
+    user-select: none;
+  }
+  .paste-attachment:hover {
+    background: var(--color-item-hover);
+  }
+  .paste-attachment-icon {
+    flex-shrink: 0;
+    color: var(--color-text2);
+  }
+  .paste-attachment-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .paste-attachment-remove {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    color: var(--color-text2);
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+  }
+  .paste-attachment-remove:hover {
+    color: var(--color-red-fg);
+  }
+  .paste-attachment-preview {
+    margin: 0 8px 6px;
+    padding: 6px 8px;
+    background: var(--color-bg3);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--color-text2);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 150px;
+    overflow-y: auto;
+  }
   .stop-btn {
     position: absolute;
     right: 6px;
@@ -654,6 +710,12 @@ export class TlAgentChat extends HTMLElement {
   private _sessionPanelDirty = false
   private _providerInfo: HTMLElement | null = null
   private _providerGrid: HTMLElement | null = null
+  private _pastedText: string | null = null
+  private _pastedLineCount = 0
+  private _pasteExpanded = false
+  private _pasteAttachmentEl: HTMLElement | null = null
+  private _pasteLabelEl: HTMLElement | null = null
+  private _pastePreviewEl: HTMLElement | null = null
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -877,18 +939,32 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async sendMessage() {
-    const text = this.inputValue.trim()
-    if (!text) return
+    const typed = this.inputValue.trim()
+    const pasted = this._pastedText
+    if (!typed && !pasted) return
+
+    let text: string
+    if (pasted && typed) {
+      text = typed + '\n\n<context>\n' + pasted + '\n</context>'
+    } else if (pasted) {
+      text = pasted
+    } else {
+      text = typed
+    }
 
     // If this is the first message (empty session), create session with selected provider
     const isFirstMessage = this.messages.length === 0 && !this.isStreaming
     const selectedProvider = this._selectedProviderId
 
     this.inputValue = ''
+    this._pastedText = null
+    this._pastedLineCount = 0
+    this._pasteExpanded = false
     if (this._textarea) {
       this._textarea.value = ''
       this._textarea.style.height = 'auto'
     }
+    this.renderPasteAttachment()
     this.userScrolledUp = false
     this.render()
 
@@ -926,6 +1002,56 @@ export class TlAgentChat extends HTMLElement {
   private autoResizeTextarea(textarea: HTMLTextAreaElement) {
     textarea.style.height = 'auto'
     textarea.style.height = textarea.scrollHeight + 'px'
+  }
+
+  private static PASTE_THRESHOLD = 500
+
+  private handlePaste(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData('text/plain')
+    if (!text || text.length < TlAgentChat.PASTE_THRESHOLD) return
+
+    e.preventDefault()
+    this._pastedText = text
+    this._pastedLineCount = 1
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 10) this._pastedLineCount++
+    }
+    this._pasteExpanded = false
+    this.renderPasteAttachment()
+  }
+
+  private removePasteAttachment() {
+    this._pastedText = null
+    this._pastedLineCount = 0
+    this._pasteExpanded = false
+    this.renderPasteAttachment()
+  }
+
+  private renderPasteAttachment() {
+    if (!this._pasteAttachmentEl || !this._pastePreviewEl) return
+
+    if (!this._pastedText) {
+      this._pasteAttachmentEl.style.display = 'none'
+      this._pastePreviewEl.style.display = 'none'
+      this._pastePreviewEl.textContent = ''
+      return
+    }
+
+    const lines = this._pastedLineCount
+    const chars = this._pastedText.length
+    if (this._pasteLabelEl) {
+      this._pasteLabelEl.textContent = `Pasted text \u2014 ${lines} line${lines !== 1 ? 's' : ''}, ${chars.toLocaleString()} chars`
+    }
+
+    this._pasteAttachmentEl.style.display = 'flex'
+
+    if (this._pasteExpanded) {
+      this._pastePreviewEl.style.display = 'block'
+      this._pastePreviewEl.textContent = this._pastedText
+    } else {
+      this._pastePreviewEl.style.display = 'none'
+      this._pastePreviewEl.textContent = ''
+    }
   }
 
   private handleMessagesScroll = () => {
@@ -985,6 +1111,9 @@ export class TlAgentChat extends HTMLElement {
     this._stopBtn = null
     this._providerInfo = null
     this._providerGrid = null
+    this._pasteAttachmentEl = null
+    this._pasteLabelEl = null
+    this._pastePreviewEl = null
   }
 
   private buildChatLayout() {
@@ -1120,6 +1249,44 @@ export class TlAgentChat extends HTMLElement {
     const inputContainer = document.createElement('div')
     inputContainer.className = 'input-container'
 
+    this._pasteAttachmentEl = document.createElement('div')
+    this._pasteAttachmentEl.className = 'paste-attachment'
+    this._pasteAttachmentEl.style.display = 'none'
+
+    const pasteIcon = document.createElement('span')
+    pasteIcon.className = 'paste-attachment-icon'
+    pasteIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-1.5"/><rect x="5" y="1" width="6" height="3" rx="1"/></svg>'
+    this._pasteAttachmentEl.appendChild(pasteIcon)
+
+    this._pasteLabelEl = document.createElement('span')
+    this._pasteLabelEl.className = 'paste-attachment-label'
+    this._pasteAttachmentEl.appendChild(this._pasteLabelEl)
+
+    const pasteRemoveBtn = document.createElement('button')
+    pasteRemoveBtn.className = 'paste-attachment-remove'
+    pasteRemoveBtn.title = 'Remove pasted text'
+    pasteRemoveBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>'
+    pasteRemoveBtn.addEventListener('mousedown', (ev) => {
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.removePasteAttachment()
+      this._textarea?.focus()
+    })
+    this._pasteAttachmentEl.appendChild(pasteRemoveBtn)
+
+    this._pasteAttachmentEl.addEventListener('click', (ev) => {
+      if ((ev.target as HTMLElement).closest('.paste-attachment-remove')) return
+      this._pasteExpanded = !this._pasteExpanded
+      this.renderPasteAttachment()
+    })
+
+    inputContainer.appendChild(this._pasteAttachmentEl)
+
+    this._pastePreviewEl = document.createElement('div')
+    this._pastePreviewEl.className = 'paste-attachment-preview'
+    this._pastePreviewEl.style.display = 'none'
+    inputContainer.appendChild(this._pastePreviewEl)
+
     this._textarea = document.createElement('textarea')
     this._textarea.id = 'msg-input'
     this._textarea.rows = 1
@@ -1127,7 +1294,10 @@ export class TlAgentChat extends HTMLElement {
     this._textarea.value = this.inputValue
     this._textarea.addEventListener('keydown', (e) => this.handleKeydown(e))
     this._textarea.addEventListener('input', (e) => this.handleInput(e))
+    this._textarea.addEventListener('paste', (e) => this.handlePaste(e))
     inputContainer.appendChild(this._textarea)
+
+    this.renderPasteAttachment()
 
     this._stopBtn = document.createElement('button')
     this._stopBtn.className = 'stop-btn'
