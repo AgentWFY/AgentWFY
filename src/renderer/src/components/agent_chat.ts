@@ -538,9 +538,9 @@ const STYLES = `
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 16px 0;
+    padding-bottom: 16px;
     flex: 1;
-    justify-content: center;
+    justify-content: flex-start;
     overflow-y: auto;
     min-height: 0;
   }
@@ -646,10 +646,10 @@ const STYLES = `
   .session-panel-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
+    gap: 8px;
+    padding: 8px 12px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--color-text3);
   }
   .session-panel-item:hover { background: var(--color-item-hover); }
@@ -668,6 +668,95 @@ const STYLES = `
     font-size: 11px;
     color: var(--color-text2);
     flex-shrink: 0;
+  }
+  .session-switcher {
+    position: relative;
+    flex-shrink: 0;
+    margin-bottom: 8px;
+  }
+  .session-switcher.expanded {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .session-switcher-btn {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+    color: var(--color-text3);
+    font-size: 12px;
+    font-weight: 500;
+    user-select: none;
+    background: var(--color-surface);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+  }
+  .session-switcher-btn:hover {
+    color: var(--color-text4);
+  }
+  .session-switcher-chevron {
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+  .session-switcher-btn.open .session-switcher-chevron {
+    transform: rotate(180deg);
+  }
+  .session-switcher-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 20;
+    margin-top: 2px;
+  }
+  .session-switcher-search {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .session-switcher-search input {
+    width: 100%;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-input-bg);
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+    color: inherit;
+    font-family: inherit;
+  }
+  .session-switcher-search input:focus {
+    border-color: var(--color-focus-border);
+  }
+  .session-switcher-list {
+    overflow-y: auto;
+    max-height: 300px;
+  }
+  .session-switcher-dropdown.inline {
+    position: static;
+    box-shadow: none;
+    border: 1px solid var(--color-border);
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .session-switcher-dropdown.inline .session-switcher-list {
+    max-height: none;
+    flex: 1;
+  }
+  .session-switcher-dropdown.inline #new-session-btn {
+    display: none;
   }
 `
 
@@ -694,11 +783,17 @@ export class TlAgentChat extends HTMLElement {
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
-  private _sessionPanel: HTMLElement | null = null
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
-  private _sessionsBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
+  private _sessionSwitcher: HTMLElement | null = null
+  private _sessionSwitcherBtn: HTMLElement | null = null
+  private _sessionSwitcherLabel: HTMLElement | null = null
+  private _sessionDropdown: HTMLElement | null = null
+  private _sessionDropdownList: HTMLElement | null = null
+  private _sessionSearchInput: HTMLInputElement | null = null
+  private _sessionLabel = ''
+  private _inlineSessionsFetched = false
   private _providerPanel: HTMLElement | null = null
   private _providerList: Array<{ id: string; name: string; settingsView?: string }> = []
   private _activeProviderId = ''
@@ -745,6 +840,7 @@ export class TlAgentChat extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    document.removeEventListener('mousedown', this._onClickOutside)
     this.snapshotUnsub?.()
     this.snapshotUnsub = null
     this.streamingUnsub?.()
@@ -828,6 +924,7 @@ export class TlAgentChat extends HTMLElement {
         this.isStreaming = s.isStreaming
         this.notifyOnFinish = s.notifyOnFinish
         this.streamingMessage = s.streamingMessage
+        this._sessionLabel = s.label || ''
         this.statusLine = s.statusLine || ''
         if (s.providerId && s.providerId !== this._activeProviderId) {
           this._activeProviderId = s.providerId
@@ -852,6 +949,7 @@ export class TlAgentChat extends HTMLElement {
         this.isStreaming = snapshot.isStreaming
         this.notifyOnFinish = snapshot.notifyOnFinish
         this.streamingMessage = snapshot.streamingMessage
+        this._sessionLabel = snapshot.label || ''
         this.statusLine = snapshot.statusLine || ''
         if (snapshot.providerId) this._activeProviderId = snapshot.providerId
         this.ready = true
@@ -894,6 +992,7 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleNewSession() {
     this.activePanel = null
+    this._inlineSessionsFetched = false
     this._selectedProviderId = this._defaultProviderId
     try {
       await window.ipc?.agent.createSession()
@@ -905,9 +1004,18 @@ export class TlAgentChat extends HTMLElement {
     this.render()
   }
 
-  private async toggleSessionPanel() {
+  private _onClickOutside = (e: MouseEvent) => {
+    if (this._sessionSwitcher && !this._sessionSwitcher.contains(e.target as Node)) {
+      this.activePanel = null
+      document.removeEventListener('mousedown', this._onClickOutside)
+      this.render()
+    }
+  }
+
+  private async toggleSessionDropdown() {
     if (this.activePanel === 'sessions') {
       this.activePanel = null
+      document.removeEventListener('mousedown', this._onClickOutside)
       this.render()
       return
     }
@@ -920,6 +1028,26 @@ export class TlAgentChat extends HTMLElement {
     this.activePanel = 'sessions'
     this._sessionPanelDirty = true
     this.render()
+
+    requestAnimationFrame(() => {
+      this._sessionSearchInput?.focus()
+    })
+    document.addEventListener('mousedown', this._onClickOutside)
+  }
+
+  private filterSessions(query: string) {
+    if (!this._sessionDropdownList) return
+    const items = this._sessionDropdownList.querySelectorAll('.session-panel-item')
+    const q = query.toLowerCase()
+    items.forEach((item) => {
+      const el = item as HTMLElement
+      if (el.id === 'new-session-btn') {
+        el.style.display = q ? 'none' : ''
+        return
+      }
+      const label = el.querySelector('.session-panel-item-label')?.textContent?.toLowerCase() || ''
+      el.style.display = label.includes(q) ? '' : 'none'
+    })
   }
 
   private handleSessionClick(item: SessionListItem) {
@@ -1070,7 +1198,7 @@ export class TlAgentChat extends HTMLElement {
 
     if (mode === 'initializing') {
       this.clearChatRefs()
-      this.containerEl.innerHTML = `<div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;"><div class="initializing">Initializing agent...</div></div>`
+      this.containerEl.innerHTML = `<div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;"><div class="initializing">Initializing agent...</div></div>`
       this._renderMode = 'initializing'
       return
     }
@@ -1078,7 +1206,7 @@ export class TlAgentChat extends HTMLElement {
     if (mode === 'setup') {
       this.clearChatRefs()
       this.containerEl.innerHTML = `
-        <div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;">
+        <div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;">
           <div class="setup-container">
             <h3>Agent Settings</h3>
             <awfy-agent-settings id="setup-settings"></awfy-agent-settings>
@@ -1102,11 +1230,15 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl = null
     this._textarea = null
     this._errorBanner = null
-    this._sessionPanel = null
     this._newSessionBtn = null
     this._notifyBtn = null
-    this._sessionsBtn = null
     this._settingsBtn = null
+    this._sessionSwitcher = null
+    this._sessionSwitcherBtn = null
+    this._sessionSwitcherLabel = null
+    this._sessionDropdown = null
+    this._sessionDropdownList = null
+    this._sessionSearchInput = null
     this._providerPanel = null
     this._stopBtn = null
     this._providerInfo = null
@@ -1122,7 +1254,66 @@ export class TlAgentChat extends HTMLElement {
 
     const container = document.createElement('div')
     container.className = 'container'
-    container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:10px;box-sizing:border-box;'
+    container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;'
+
+    // Session switcher header
+    this._sessionSwitcher = document.createElement('div')
+    this._sessionSwitcher.className = 'session-switcher'
+
+    this._sessionSwitcherBtn = document.createElement('button')
+    this._sessionSwitcherBtn.className = 'session-switcher-btn'
+    this._sessionSwitcherBtn.innerHTML = `<svg class="session-switcher-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4 5,7 8,4"/></svg><span></span>`
+    this._sessionSwitcherLabel = this._sessionSwitcherBtn.querySelector('span')!
+    this._sessionSwitcherLabel.textContent = this._sessionLabel || 'New Session'
+    this._sessionSwitcherBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this.toggleSessionDropdown()
+    })
+    this._sessionSwitcher.appendChild(this._sessionSwitcherBtn)
+
+    this._sessionDropdown = document.createElement('div')
+    this._sessionDropdown.className = 'session-switcher-dropdown'
+    this._sessionDropdown.style.display = 'none'
+
+    const searchWrapper = document.createElement('div')
+    searchWrapper.className = 'session-switcher-search'
+    this._sessionSearchInput = document.createElement('input')
+    this._sessionSearchInput.type = 'text'
+    this._sessionSearchInput.placeholder = 'Search sessions...'
+    this._sessionSearchInput.addEventListener('input', () => {
+      this.filterSessions(this._sessionSearchInput!.value)
+    })
+    this._sessionSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.activePanel = null
+        this.render()
+      }
+    })
+    searchWrapper.appendChild(this._sessionSearchInput)
+    this._sessionDropdown.appendChild(searchWrapper)
+
+    this._sessionDropdownList = document.createElement('div')
+    this._sessionDropdownList.className = 'session-switcher-list'
+    this._sessionDropdownList.addEventListener('mousedown', (e) => {
+      const target = e.target as HTMLElement
+      const newBtn = target.closest('#new-session-btn') as HTMLElement | null
+      if (newBtn) {
+        e.preventDefault()
+        this.handleNewSession()
+        return
+      }
+      const sessionItem = target.closest('.session-panel-item[data-session-idx]') as HTMLElement | null
+      if (sessionItem) {
+        e.preventDefault()
+        const idx = parseInt(sessionItem.dataset.sessionIdx!, 10)
+        const item = this.sessionListItems[idx]
+        if (item) this.handleSessionClick(item)
+      }
+    })
+    this._sessionDropdown.appendChild(this._sessionDropdownList)
+
+    this._sessionSwitcher.appendChild(this._sessionDropdown)
+    container.appendChild(this._sessionSwitcher)
 
     // Provider grid (shown when no messages)
     this._providerGrid = document.createElement('div')
@@ -1155,7 +1346,7 @@ export class TlAgentChat extends HTMLElement {
       if (card) {
         e.preventDefault()
         this._selectedProviderId = card.dataset.providerId!
-        this.renderProviderGrid()
+        this.render()
       }
     })
     container.appendChild(this._providerGrid)
@@ -1192,28 +1383,6 @@ export class TlAgentChat extends HTMLElement {
     // Input area
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
-
-    // Session panel (hidden by default, overlays above input)
-    this._sessionPanel = document.createElement('div')
-    this._sessionPanel.className = 'popup-panel session-panel'
-    this._sessionPanel.style.display = 'none'
-    this._sessionPanel.addEventListener('mousedown', (e) => {
-      const target = e.target as HTMLElement
-      const newBtn = target.closest('#new-session-btn') as HTMLElement | null
-      if (newBtn) {
-        e.preventDefault()
-        this.handleNewSession()
-        return
-      }
-      const sessionItem = target.closest('.session-panel-item[data-session-idx]') as HTMLElement | null
-      if (sessionItem) {
-        e.preventDefault()
-        const idx = parseInt(sessionItem.dataset.sessionIdx!, 10)
-        const item = this.sessionListItems[idx]
-        if (item) this.handleSessionClick(item)
-      }
-    })
-    inputArea.appendChild(this._sessionPanel)
 
     // Provider panel (hidden by default, overlays above input)
     this._providerPanel = document.createElement('div')
@@ -1345,17 +1514,6 @@ export class TlAgentChat extends HTMLElement {
     })
     actionsDiv.appendChild(this._notifyBtn)
 
-    // Sessions button
-    this._sessionsBtn = document.createElement('button')
-    this._sessionsBtn.className = 'gear-btn'
-    this._sessionsBtn.title = 'Sessions'
-    this._sessionsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg>'
-    this._sessionsBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.toggleSessionPanel()
-    })
-    actionsDiv.appendChild(this._sessionsBtn)
-
     // Settings button
     this._settingsBtn = document.createElement('button')
     this._settingsBtn.className = 'gear-btn'
@@ -1385,8 +1543,22 @@ export class TlAgentChat extends HTMLElement {
 
     // 0. Provider grid vs messages visibility
     if (this._providerGrid) {
-      this._providerGrid.style.display = hasMessages ? 'none' : ''
-      if (!hasMessages) {
+      const hasSessions = !hasMessages && this.sessionListItems.length > 0
+      if (hasMessages) {
+        this._providerGrid.style.display = 'none'
+      } else if (hasSessions && this._providerList.length <= 1) {
+        this._providerGrid.style.display = 'none'
+      } else if (!hasMessages) {
+        this._providerGrid.style.display = ''
+        if (hasSessions) {
+          this._providerGrid.style.justifyContent = 'flex-start'
+          this._providerGrid.style.flex = 'none'
+          this._providerGrid.style.paddingBottom = '0'
+        } else {
+          this._providerGrid.style.justifyContent = 'center'
+          this._providerGrid.style.flex = '1'
+          this._providerGrid.style.paddingBottom = ''
+        }
         this.renderProviderGrid()
       }
     }
@@ -1424,27 +1596,22 @@ export class TlAgentChat extends HTMLElement {
       this._notifyBtn.style.display = hasMessages ? '' : 'none'
       this._notifyBtn.classList.toggle('active', this.notifyOnFinish)
     }
-    if (this._sessionsBtn) {
-      this._sessionsBtn.classList.toggle('active', this.activePanel === 'sessions')
-    }
 
     // 5. Provider info in tools row
     if (this._providerInfo) {
-      if (hasMessages) {
-        const provider = this._providerList.find(p => p.id === this._activeProviderId)
-        const providerName = provider?.name || this._activeProviderId || ''
-        const currentStatusLine = this.statusLine || this.configStatusLine
-        const contentKey = `${providerName}|${currentStatusLine}`
-        if (this._providerInfo.dataset.contentKey !== contentKey) {
-          this._providerInfo.dataset.contentKey = contentKey
-          const sep = providerName && currentStatusLine ? ' · ' : ''
-          this._providerInfo.innerHTML = providerName
-            ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(currentStatusLine)}`
-            : escapeHtml(currentStatusLine)
-        }
-        this._providerInfo.style.display = ''
-      } else {
-        this._providerInfo.style.display = 'none'
+      const providerId = hasMessages ? this._activeProviderId : this._selectedProviderId
+      const provider = this._providerList.find(p => p.id === providerId)
+      const providerName = provider?.name || providerId || ''
+      const currentStatusLine = hasMessages
+        ? (this.statusLine || this.configStatusLine)
+        : (this._providerStatusLines.get(providerId) || '')
+      const contentKey = `${providerName}|${currentStatusLine}`
+      if (this._providerInfo.dataset.contentKey !== contentKey) {
+        this._providerInfo.dataset.contentKey = contentKey
+        const sep = providerName && currentStatusLine ? ' · ' : ''
+        this._providerInfo.innerHTML = providerName
+          ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(currentStatusLine)}`
+          : escapeHtml(currentStatusLine)
       }
     }
 
@@ -1461,16 +1628,60 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    // 7. Session panel
-    if (this._sessionPanel) {
-      if (this.activePanel === 'sessions') {
-        this._sessionPanel.style.display = ''
-        if (this._sessionPanelDirty) {
-          this._sessionPanel.innerHTML = renderSessionPanelHtml(this.sessionListItems)
-          this._sessionPanelDirty = false
+    // 7. Session switcher
+    if (!hasMessages) {
+      // New session: hide header, show session list inline if sessions exist
+      if (this._sessionSwitcherBtn) this._sessionSwitcherBtn.style.display = 'none'
+      if (this._sessionDropdown) {
+        this._sessionSwitcherBtn?.classList.remove('open')
+        if (!this._inlineSessionsFetched) {
+          this._inlineSessionsFetched = true
+          this._sessionDropdown.style.display = 'none'
+          window.ipc?.agent.getSessionList().then((items) => {
+            this.sessionListItems = (items ?? []) as SessionListItem[]
+            this._sessionPanelDirty = true
+            this.render()
+          }).catch(() => {})
+        } else if (this.sessionListItems.length > 0) {
+          this._sessionDropdown.style.display = ''
+          this._sessionDropdown.classList.add('inline')
+          this._sessionSwitcher!.classList.add('expanded')
+          if (this._sessionPanelDirty && this._sessionDropdownList) {
+            this._sessionDropdownList.innerHTML = renderSessionPanelHtml(this.sessionListItems)
+            this._sessionPanelDirty = false
+          }
+        } else {
+          this._sessionDropdown.style.display = 'none'
+          this._sessionSwitcher!.classList.remove('expanded')
         }
-      } else {
-        this._sessionPanel.style.display = 'none'
+      }
+    } else {
+      // Active session: show header with dropdown
+      if (this._sessionSwitcherBtn) this._sessionSwitcherBtn.style.display = ''
+      if (this._sessionSwitcher) {
+        this._sessionSwitcher.classList.remove('expanded')
+      }
+      if (this._sessionSwitcherLabel) {
+        const label = this._sessionLabel || 'New Session'
+        if (this._sessionSwitcherLabel.textContent !== label) {
+          this._sessionSwitcherLabel.textContent = label
+        }
+      }
+      this._inlineSessionsFetched = false
+      if (this._sessionDropdown) {
+        this._sessionDropdown.classList.remove('inline')
+        if (this.activePanel === 'sessions') {
+          this._sessionDropdown.style.display = ''
+          this._sessionSwitcherBtn?.classList.add('open')
+          if (this._sessionPanelDirty && this._sessionDropdownList) {
+            this._sessionDropdownList.innerHTML = renderSessionPanelHtml(this.sessionListItems)
+            this._sessionPanelDirty = false
+          }
+        } else {
+          this._sessionDropdown.style.display = 'none'
+          this._sessionSwitcherBtn?.classList.remove('open')
+          if (this._sessionSearchInput) this._sessionSearchInput.value = ''
+        }
       }
     }
 
