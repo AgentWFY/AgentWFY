@@ -14,6 +14,7 @@ import {
   showInstallAgentDialog,
   isAgentDir,
   shortenPath,
+  initAgent,
 } from '../agent-manager.js';
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
@@ -516,11 +517,11 @@ export class CommandPaletteManager {
   async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
     const metadata = readPackageMetadata(packagePath);
     const confirmation = this.deps.getConfirmation();
-    const confirmed = await confirmation.requestConfirmation('confirm-plugin-install', {
+    const result = await confirmation.requestConfirmation('confirm-plugin-install', {
       packagePath,
       plugins: metadata.plugins,
     });
-    if (!confirmed) {
+    if (!result.confirmed) {
       return { installed: [] };
     }
     return this.performInstall(packagePath);
@@ -534,7 +535,7 @@ export class CommandPaletteManager {
     }
     const currentEnabled = !!plugin.enabled;
     const confirmation = this.deps.getConfirmation();
-    const confirmed = await confirmation.requestConfirmation('confirm-plugin-toggle', {
+    const result = await confirmation.requestConfirmation('confirm-plugin-toggle', {
       pluginName,
       currentEnabled,
       description: plugin.description,
@@ -542,7 +543,7 @@ export class CommandPaletteManager {
       author: plugin.author,
       license: plugin.license,
     });
-    if (!confirmed) {
+    if (!result.confirmed) {
       return { toggled: false };
     }
     this.togglePluginEnabled(pluginName, !currentEnabled);
@@ -556,18 +557,64 @@ export class CommandPaletteManager {
       throw new Error(`Plugin '${pluginName}' not found`);
     }
     const confirmation = this.deps.getConfirmation();
-    const confirmed = await confirmation.requestConfirmation('confirm-plugin-uninstall', {
+    const result = await confirmation.requestConfirmation('confirm-plugin-uninstall', {
       pluginName,
       description: plugin.description,
       version: plugin.version,
       author: plugin.author,
       license: plugin.license,
     });
-    if (!confirmed) {
+    if (!result.confirmed) {
       return { uninstalled: false };
     }
     this.uninstallPluginByName(pluginName);
     return { uninstalled: true };
+  }
+
+  async requestAgentInstall(filePath: string): Promise<{ installed: boolean; agentRoot?: string }> {
+    // Validate the .agent.awfy file
+    const { DatabaseSync } = await import('node:sqlite');
+    let viewsCount = 0, docsCount = 0, tasksCount = 0, pluginsCount = 0;
+    try {
+      const db = new DatabaseSync(filePath);
+      try {
+        const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(r => r.name);
+        if (!tables.includes('views') || !tables.includes('docs')) {
+          throw new Error('Invalid agent file: missing required tables (views, docs)');
+        }
+        viewsCount = (db.prepare('SELECT COUNT(*) as c FROM views').get() as { c: number }).c;
+        docsCount = (db.prepare('SELECT COUNT(*) as c FROM docs').get() as { c: number }).c;
+        if (tables.includes('tasks')) {
+          tasksCount = (db.prepare('SELECT COUNT(*) as c FROM tasks').get() as { c: number }).c;
+        }
+        if (tables.includes('plugins')) {
+          pluginsCount = (db.prepare('SELECT COUNT(*) as c FROM plugins').get() as { c: number }).c;
+        }
+      } finally {
+        db.close();
+      }
+    } catch (err) {
+      throw new Error(`Invalid agent file: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    const confirmation = this.deps.getConfirmation();
+    const result = await confirmation.requestConfirmation('confirm-agent-install', {
+      filePath,
+      viewsCount,
+      docsCount,
+      tasksCount,
+      pluginsCount,
+    }, { width: 440, height: 280 });
+
+    if (!result.confirmed || !result.data?.directoryPath) {
+      return { installed: false };
+    }
+
+    const targetDir = result.data.directoryPath as string;
+    await initAgent(targetDir, filePath);
+
+    await this.deps.openAgentInWindow(targetDir);
+    return { installed: true, agentRoot: targetDir };
   }
 
   openSettingsFile(): void {

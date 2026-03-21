@@ -1,7 +1,7 @@
 import { BrowserWindow, nativeTheme } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { CONFIRMATION_CHANNEL } from './types.js'
+import { CONFIRMATION_CHANNEL, type ConfirmationResult } from './types.js'
 
 export interface ConfirmationManagerDeps {
   getMainWindow: () => BrowserWindow | null
@@ -9,10 +9,16 @@ export interface ConfirmationManagerDeps {
   unregisterSender?: (webContentsId: number) => void
 }
 
+export interface ConfirmationOptions {
+  width?: number
+  height?: number
+}
+
 export class ConfirmationManager {
   private window: BrowserWindow | null = null
   private readonly deps: ConfirmationManagerDeps
-  private readonly pendingRequests = new Map<string, { resolve: (confirmed: boolean) => void }>()
+  private readonly pendingRequests = new Map<string, { resolve: (result: ConfirmationResult) => void }>()
+  private sizeOverride: { width: number; height: number } | null = null
 
   constructor(deps: ConfirmationManagerDeps) {
     this.deps = deps
@@ -24,8 +30,8 @@ export class ConfirmationManager {
       return { x: 0, y: 0, width: 420, height: 300 }
     }
     const bounds = mainWindow.getBounds()
-    const width = 420
-    const height = 300
+    const width = this.sizeOverride?.width ?? 420
+    const height = this.sizeOverride?.height ?? 300
     const x = bounds.x + Math.floor((bounds.width - width) / 2)
     const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.25))
     return { x, y, width, height }
@@ -95,9 +101,10 @@ export class ConfirmationManager {
     return this.window
   }
 
-  requestConfirmation(screen: string, params: Record<string, unknown>): Promise<boolean> {
+  requestConfirmation(screen: string, params: Record<string, unknown>, options?: ConfirmationOptions): Promise<ConfirmationResult> {
     const requestId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    return new Promise<boolean>((resolve) => {
+    this.sizeOverride = options?.width || options?.height ? { width: options.width ?? 400, height: options.height ?? 220 } : null
+    return new Promise<ConfirmationResult>((resolve) => {
       this.pendingRequests.set(requestId, { resolve })
 
       const win = this.ensureWindow()
@@ -121,11 +128,11 @@ export class ConfirmationManager {
     })
   }
 
-  resolveConfirmation(requestId: string, confirmed: boolean): void {
+  resolveConfirmation(requestId: string, confirmed: boolean, data?: Record<string, unknown>): void {
     const entry = this.pendingRequests.get(requestId)
     if (!entry) return
     this.pendingRequests.delete(requestId)
-    entry.resolve(confirmed)
+    entry.resolve({ confirmed, data })
     this.hide()
   }
 
@@ -151,7 +158,7 @@ export class ConfirmationManager {
 
   private rejectAllPending(): void {
     for (const entry of this.pendingRequests.values()) {
-      entry.resolve(false)
+      entry.resolve({ confirmed: false })
     }
     this.pendingRequests.clear()
   }

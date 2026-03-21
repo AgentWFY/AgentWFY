@@ -2,12 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Plugins</title>
+  <title>Plugins & Agents</title>
   <!--
     SECTIONS:
     style-layout     – page shell: header, tabs, content area
-    style-components – plugin cards, badges, buttons, toggle switch
-    style-detail     – plugin detail view styles
+    style-components – cards, badges, buttons, toggle switch
+    style-detail     – plugin/agent detail view styles
     script-data      – state, DB operations, registry fetch
     script-render    – DOM rendering, filtering
     script-detail    – detail view data loading and rendering
@@ -103,420 +103,124 @@
     color: var(--color-text4);
     border-bottom-color: var(--color-accent);
   }
-</style>
-
-<style id="style-components">
-  .plugin-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-  .plugin-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--color-divider);
-  }
-  .plugin-row:last-child { border-bottom: none; }
-  .plugin-info {
-    flex: 1;
-    min-width: 0;
-  }
-  .plugin-name-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 2px;
-  }
-  .plugin-name {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--color-text4);
-    cursor: pointer;
-  }
-  .plugin-name:hover { text-decoration: underline; }
-  .plugin-version {
-    font-size: 11px;
-    color: var(--color-text1);
-    font-family: var(--font-mono);
-  }
-  .badge-disabled {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--color-bg3);
-    color: var(--color-text2);
-    font-weight: 600;
-  }
-  .badge-installed {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--color-green-bg, rgba(46, 160, 67, 0.15));
-    color: var(--color-green-fg, #3fb950);
-    font-weight: 600;
-  }
-  .badge-downloads {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: var(--color-bg3);
-    color: var(--color-text2);
-  }
-  .plugin-desc {
-    font-size: 12px;
-    color: var(--color-text2);
-    line-height: 1.4;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .plugin-meta {
-    display: flex;
-    gap: 12px;
-    font-size: 11px;
-    color: var(--color-text1);
-    margin-top: 2px;
-  }
-  .plugin-meta span { white-space: nowrap; }
-  .plugin-meta a {
-    color: var(--color-text2);
-    text-decoration: none;
-  }
-  .plugin-meta a:hover { text-decoration: underline; }
-  .plugin-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  /* Toggle switch */
-  .toggle {
-    position: relative;
-    width: 36px;
-    height: 20px;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .toggle input { display: none; }
-  .toggle-track {
-    position: absolute;
-    inset: 0;
-    background: var(--color-bg3);
-    border: 1px solid var(--color-border);
-    border-radius: 10px;
-    transition: background var(--transition-fast), border-color var(--transition-fast);
-  }
-  .toggle input:checked + .toggle-track {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  .toggle-knob {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 14px;
-    height: 14px;
-    background: #fff;
-    border-radius: 50%;
-    transition: transform var(--transition-fast);
-    pointer-events: none;
-  }
-  .toggle input:checked ~ .toggle-knob {
-    transform: translateX(16px);
-  }
-
-  .btn {
-    padding: 4px 10px;
-    font-size: 12px;
-    font-family: var(--font-family);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text3);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-  }
-  .btn:hover { background: var(--color-bg3); color: var(--color-text4); }
-  .btn-danger:hover {
-    color: var(--color-red-fg);
-    background: var(--color-red-bg);
-    border-color: transparent;
-  }
-  .btn-install:hover {
-    color: var(--color-green-fg, #3fb950);
-    background: var(--color-green-bg, rgba(46, 160, 67, 0.15));
-    border-color: transparent;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-    pointer-events: none;
-  }
-  .btn-refresh {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 7px 8px;
-    flex-shrink: 0;
-  }
-  .empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--color-text2);
-    font-size: 14px;
-  }
-  .plugin-count {
-    font-size: 12px;
-    color: var(--color-text1);
-    margin-bottom: 12px;
-  }
-  .loading {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--color-text2);
-    font-size: 13px;
-  }
-  .error-msg {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--color-red-fg, #f85149);
-    font-size: 13px;
-  }
-</style>
-
-<style id="style-detail">
-  .detail-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .back-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: none;
-    background: none;
-    color: var(--color-text2);
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-  .back-btn:hover { background: var(--color-bg3); color: var(--color-text4); }
-  .detail-title {
-    font-size: 18px;
-    font-weight: 500;
-    color: var(--color-text4);
-  }
-  .detail-version {
-    font-size: 12px;
-    color: var(--color-text1);
-    font-family: var(--font-mono);
-  }
   .tab-btn .tab-count {
     font-size: 10px;
     color: var(--color-text1);
     margin-left: 4px;
   }
+</style>
+
+<style id="style-components">
+  .plugin-list { display: flex; flex-direction: column; gap: 1px; }
+  .plugin-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--color-divider); }
+  .plugin-row:last-child { border-bottom: none; }
+  .plugin-row.clickable { cursor: pointer; }
+  .plugin-row.clickable:hover { background: var(--color-bg2, rgba(255,255,255,0.03)); margin: 0 -8px; padding: 14px 8px; border-radius: var(--radius-sm); }
+  .plugin-info { flex: 1; min-width: 0; }
+  .plugin-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .plugin-name { font-size: 14px; font-weight: 500; color: var(--color-text4); }
+  .plugin-name[data-action="open-detail"] { cursor: pointer; }
+  .plugin-name[data-action="open-detail"]:hover { text-decoration: underline; }
+  .plugin-version { font-size: 11px; color: var(--color-text1); font-family: var(--font-mono); }
+  .badge-disabled { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--color-bg3); color: var(--color-text2); font-weight: 600; }
+  .badge-installed { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--color-green-bg, rgba(46, 160, 67, 0.15)); color: var(--color-green-fg, #3fb950); font-weight: 600; }
+  .badge-downloads { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--color-bg3); color: var(--color-text2); }
+  .plugin-desc { font-size: 12px; color: var(--color-text2); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plugin-meta { display: flex; gap: 12px; font-size: 11px; color: var(--color-text1); margin-top: 2px; }
+  .plugin-meta span { white-space: nowrap; }
+  .plugin-meta a { color: var(--color-text2); text-decoration: none; }
+  .plugin-meta a:hover { text-decoration: underline; }
+  .plugin-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .toggle { position: relative; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; }
+  .toggle input { display: none; }
+  .toggle-track { position: absolute; inset: 0; background: var(--color-bg3); border: 1px solid var(--color-border); border-radius: 10px; transition: background var(--transition-fast), border-color var(--transition-fast); }
+  .toggle input:checked + .toggle-track { background: var(--color-accent); border-color: var(--color-accent); }
+  .toggle-knob { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: transform var(--transition-fast); pointer-events: none; }
+  .toggle input:checked ~ .toggle-knob { transform: translateX(16px); }
+  .btn { padding: 4px 10px; font-size: 12px; font-family: var(--font-family); border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text3); cursor: pointer; transition: all var(--transition-fast); white-space: nowrap; }
+  .btn:hover { background: var(--color-bg3); color: var(--color-text4); }
+  .btn-danger:hover { color: var(--color-red-fg); background: var(--color-red-bg); border-color: transparent; }
+  .btn-install:hover { color: var(--color-green-fg, #3fb950); background: var(--color-green-bg, rgba(46, 160, 67, 0.15)); border-color: transparent; }
+  .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+  .btn-refresh { display: flex; align-items: center; justify-content: center; padding: 7px 8px; flex-shrink: 0; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--color-text2); font-size: 14px; }
+  .plugin-count { font-size: 12px; color: var(--color-text1); margin-bottom: 12px; }
+  .loading { text-align: center; padding: 40px 20px; color: var(--color-text2); font-size: 13px; }
+  .error-msg { text-align: center; padding: 40px 20px; color: var(--color-red-fg, #f85149); font-size: 13px; }
+</style>
+
+<style id="style-detail">
+  .detail-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .back-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: none; color: var(--color-text2); cursor: pointer; border-radius: var(--radius-sm); flex-shrink: 0; }
+  .back-btn:hover { background: var(--color-bg3); color: var(--color-text4); }
+  .detail-title { font-size: 18px; font-weight: 500; color: var(--color-text4); }
+  .detail-version { font-size: 12px; color: var(--color-text1); font-family: var(--font-mono); }
   .detail-section { margin-bottom: 20px; }
-  .detail-section-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--color-text2);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-  }
-  .detail-meta-grid {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 4px 16px;
-    font-size: 13px;
-  }
-  .detail-meta-label {
-    color: var(--color-text1);
-  }
-  .detail-meta-value {
-    color: var(--color-text3);
-  }
-  .detail-meta-value a {
-    color: var(--color-text3);
-    text-decoration: none;
-  }
+  .detail-section-title { font-size: 12px; font-weight: 600; color: var(--color-text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .detail-meta-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; }
+  .detail-meta-label { color: var(--color-text1); }
+  .detail-meta-value { color: var(--color-text3); }
+  .detail-meta-value a { color: var(--color-text3); text-decoration: none; }
   .detail-meta-value a:hover { text-decoration: underline; }
-  .detail-desc {
-    font-size: 13px;
-    color: var(--color-text3);
-    line-height: 1.5;
-  }
-  .detail-items-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-  .detail-item-row {
-    padding: 8px 0;
-    border-bottom: 1px solid var(--color-divider);
-  }
+  .detail-desc { font-size: 13px; color: var(--color-text3); line-height: 1.5; }
+  .detail-items-list { display: flex; flex-direction: column; gap: 1px; }
+  .detail-item-row { padding: 8px 0; border-bottom: 1px solid var(--color-divider); }
   .detail-item-row:last-child { border-bottom: none; }
-  .detail-item-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--color-text4);
-  }
-  .detail-item-desc {
-    font-size: 12px;
-    color: var(--color-text2);
-    margin-top: 2px;
-  }
-  .doc-item {
-    cursor: pointer;
-    padding: 8px;
-    margin: 0 -8px;
-    border-radius: var(--radius-sm);
-  }
+  .detail-item-name { font-size: 13px; font-weight: 500; color: var(--color-text4); }
+  .detail-item-desc { font-size: 12px; color: var(--color-text2); margin-top: 2px; }
+  .doc-item { cursor: pointer; padding: 8px; margin: 0 -8px; border-radius: var(--radius-sm); }
   .doc-item:hover { background: var(--color-bg3); }
-  .doc-content {
-    margin-top: 12px;
-    padding: 16px;
-    background: var(--color-bg2, var(--color-surface));
-    border: 1px solid var(--color-divider);
-    border-radius: var(--radius-md);
-    font-size: 13px;
-    color: var(--color-text3);
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-  }
-  .code-block {
-    background: var(--color-bg2, var(--color-surface));
-    border: 1px solid var(--color-divider);
-    border-radius: var(--radius-md);
-    padding: 16px;
-    overflow-x: auto;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--color-text3);
-    white-space: pre;
-    tab-size: 2;
-  }
-  .no-items {
-    padding: 24px;
-    text-align: center;
-    color: var(--color-text1);
-    font-size: 13px;
-  }
+  .doc-content { margin-top: 12px; padding: 16px; background: var(--color-bg2, var(--color-surface)); border: 1px solid var(--color-divider); border-radius: var(--radius-md); font-size: 13px; color: var(--color-text3); line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+  .code-block { background: var(--color-bg2, var(--color-surface)); border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--color-text3); white-space: pre; tab-size: 2; }
+  .no-items { padding: 24px; text-align: center; color: var(--color-text1); font-size: 13px; }
 </style>
 
 </head>
 <body>
 
 <div class="header" id="listHeader">
-  <h1>Plugins</h1>
-  <div class="subtitle">Manage installed plugins or browse the registry to discover new ones.</div>
+  <h1>Plugins & Agents</h1>
+  <div class="subtitle">Manage installed plugins or browse registries to discover new ones.</div>
   <div class="header-row">
     <div class="search-wrap">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
     </svg>
-    <input class="search-input" id="searchInput" placeholder="Search plugins..." autocomplete="off" spellcheck="false">
+    <input class="search-input" id="searchInput" placeholder="Search..." autocomplete="off" spellcheck="false">
     </div>
     <button class="btn btn-refresh" id="refreshBtn" title="Refresh">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
     </button>
   </div>
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="installed">Installed</button>
-    <button class="tab-btn" data-tab="browse">Browse</button>
+  <div class="tab-bar" id="tabBar">
+    <button class="tab-btn active" data-tab="installed">Installed Plugins</button>
+    <button class="tab-btn" data-tab="browse-plugins">Browse Plugins</button>
+    <button class="tab-btn" data-tab="browse-agents">Browse Agents</button>
   </div>
 </div>
 
-<div class="content" id="pluginsContainer"></div>
+<div class="content" id="mainContainer"></div>
 
 <script id="script-data">
-  const REGISTRY_API = 'https://agentwfy.com/api/plugins';
+  const PLUGINS_REGISTRY_API = 'https://agentwfy.com/api/plugins';
+  const AGENTS_REGISTRY_API = 'https://agentwfy.com/api/agents';
   const TMP_PACKAGE_PATH = '.tmp/registry-plugin-preview.plugins.awfy';
 
   let activeTab = 'installed';
   let plugins = [];
   let registryPlugins = null;
-  let registryError = null;
-  let registryLoading = false;
+  let registryPluginsError = null;
+  let registryPluginsLoading = false;
   let installingPlugins = new Set();
+  let detailView = null;
+  const registryDetailCache = new Map();
 
-  // Detail view state
-  let detailView = null; // { source: 'installed'|'registry', name, downloadUrl?, plugin, docs, views, config, code, activeTab, expandedDoc }
-  const registryDetailCache = new Map(); // keyed by registry plugin id
-
-  async function loadPlugins() {
-    const rows = await window.agentwfy.runSql({
-      target: 'agent',
-      sql: 'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
-    });
-    plugins = rows.map(r => ({
-      name: r.name,
-      description: r.description || '',
-      version: r.version || '',
-      author: r.author || '',
-      repository: r.repository || '',
-      license: r.license || '',
-      enabled: !!r.enabled,
-    }));
-  }
-
-  async function loadRegistry() {
-    if (registryLoading) return;
-    registryLoading = true;
-    registryError = null;
-    render();
-    try {
-      const res = await fetch(REGISTRY_API);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      registryPlugins = await res.json();
-    } catch (err) {
-      registryError = 'Failed to load registry. ' + err.message;
-      registryPlugins = null;
-    } finally {
-      registryLoading = false;
-      render();
-    }
-  }
-
-  function isInstalled(name) {
-    return plugins.some(p => p.name === name);
-  }
-
-  async function togglePlugin(name) {
-    try {
-      const result = await window.agentwfy.requestTogglePlugin(name);
-      if (result.toggled) {
-        const p = plugins.find(p => p.name === name);
-        if (p) p.enabled = result.enabled;
-      }
-      render();
-    } catch {
-      render();
-    }
-  }
-
-  async function uninstallPlugin(name) {
-    try {
-      const result = await window.agentwfy.requestUninstallPlugin(name);
-      if (result.uninstalled) {
-        await loadPlugins();
-        render();
-      }
-    } catch {
-      // handled by status line
-    }
-  }
+  let registryAgents = null;
+  let registryAgentsError = null;
+  let registryAgentsLoading = false;
+  let installingAgents = new Set();
+  let previewAgent = null;
+  let previewLoading = false;
 
   async function downloadPackage(downloadUrl, destPath) {
     const res = await fetch(downloadUrl, { redirect: 'follow' });
@@ -524,341 +228,236 @@
     const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf);
     let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    await window.agentwfy.writeBinary(destPath, btoa(binary));
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    await window.agentwfy.writeBinary({ path: destPath, base64: btoa(binary) });
   }
 
-  async function installFromRegistry(pluginId, downloadUrl) {
+  async function loadPlugins() {
+    const rows = await window.agentwfy.runSql({ target: 'agent', sql: 'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name' });
+    plugins = rows.map(r => ({ name: r.name, description: r.description || '', version: r.version || '', author: r.author || '', repository: r.repository || '', license: r.license || '', enabled: !!r.enabled }));
+  }
+
+  async function loadPluginRegistry() {
+    if (registryPluginsLoading) return;
+    registryPluginsLoading = true; registryPluginsError = null; render();
+    try { const res = await fetch(PLUGINS_REGISTRY_API); if (!res.ok) throw new Error(`HTTP ${res.status}`); registryPlugins = await res.json(); }
+    catch (err) { registryPluginsError = 'Failed to load registry. ' + err.message; registryPlugins = null; }
+    finally { registryPluginsLoading = false; render(); }
+  }
+
+  function isPluginInstalled(name) { return plugins.some(p => p.name === name); }
+
+  async function togglePlugin(name) {
+    try { const result = await window.agentwfy.requestTogglePlugin({ pluginName: name }); if (result.toggled) { const p = plugins.find(p => p.name === name); if (p) p.enabled = result.enabled; } render(); }
+    catch { render(); }
+  }
+
+  async function uninstallPlugin(name) {
+    try { const result = await window.agentwfy.requestUninstallPlugin({ pluginName: name }); if (result.uninstalled) { await loadPlugins(); render(); } } catch {}
+  }
+
+  async function installPluginFromRegistry(pluginId, downloadUrl) {
     if (installingPlugins.has(pluginId)) return;
-    installingPlugins.add(pluginId);
-    render();
-    try {
-      const tmpPath = '.tmp/registry-plugin.plugins.awfy';
-      await downloadPackage(downloadUrl, tmpPath);
-      const result = await window.agentwfy.requestInstallPlugin(tmpPath);
-      if (result.installed && result.installed.length > 0) {
-        await loadPlugins();
-      }
-    } catch (err) {
-      console.error('Install failed:', err);
-      alert('Install failed: ' + err.message);
-    } finally {
-      installingPlugins.delete(pluginId);
-      render();
-    }
+    installingPlugins.add(pluginId); render();
+    try { await downloadPackage(downloadUrl, '.tmp/registry-plugin.plugins.awfy'); const result = await window.agentwfy.requestInstallPlugin({ packagePath: '.tmp/registry-plugin.plugins.awfy' }); if (result.installed && result.installed.length > 0) await loadPlugins(); }
+    catch (err) { console.error('Install failed:', err); alert('Install failed: ' + err.message); }
+    finally { installingPlugins.delete(pluginId); render(); }
   }
 
   async function loadInstalledPluginDetail(pluginName) {
-    const [pluginRow] = await window.agentwfy.runSql({
-      target: 'agent',
-      sql: "SELECT name, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'"
-    });
+    const [pluginRow] = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'" });
     if (!pluginRow) throw new Error('Plugin not found');
-
-    const docs = await window.agentwfy.runSql({
-      target: 'agent',
-      sql: "SELECT name, content FROM docs WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + "%'"
-    });
-
-    const views = await window.agentwfy.runSql({
-      target: 'agent',
-      sql: "SELECT name, title FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'"
-    });
-
-    return {
-      source: 'installed',
-      name: pluginRow.name,
-      plugin: {
-        name: pluginRow.name,
-        description: pluginRow.description || '',
-        version: pluginRow.version || '',
-        author: pluginRow.author || '',
-        repository: pluginRow.repository || '',
-        license: pluginRow.license || '',
-        enabled: !!pluginRow.enabled,
-      },
-      code: pluginRow.code || '',
-      docs: docs || [],
-      views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })),
-      activeTab: 'overview',
-      expandedDoc: null,
-    };
+    const docs = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, content FROM docs WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + "%'" });
+    const views = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'" });
+    return { source: 'installed', name: pluginRow.name, plugin: { name: pluginRow.name, description: pluginRow.description || '', version: pluginRow.version || '', author: pluginRow.author || '', repository: pluginRow.repository || '', license: pluginRow.license || '', enabled: !!pluginRow.enabled }, code: pluginRow.code || '', docs: docs || [], views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
   }
 
   async function loadRegistryPluginDetail(registryPlugin) {
     const cached = registryDetailCache.get(registryPlugin.id);
     if (cached) return { ...cached, activeTab: 'overview', expandedDoc: null };
-
     await downloadPackage(registryPlugin.download_url, TMP_PACKAGE_PATH);
-
-    // Query the downloaded package
     const sqlOpts = { target: 'sqlite-file', path: TMP_PACKAGE_PATH };
-
     let pkgPlugins = [];
-    try {
-      pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' });
-    } catch {
-      try {
-        const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' });
-        pkgPlugins = basic.map(p => ({ ...p, author: null, repository: null, license: null }));
-      } catch { /* no plugins table */ }
-    }
-
-    let pkgDocs = [];
-    try {
-      pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' });
-    } catch { /* docs table optional */ }
-
-    let pkgViews = [];
-    try {
-      pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' });
-    } catch { /* views table optional */ }
-
-    // Find the main plugin (match by registry id or first one)
+    try { pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' }); }
+    catch { try { const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' }); pkgPlugins = basic.map(p => ({ ...p, author: null, repository: null, license: null })); } catch {} }
+    let pkgDocs = []; try { pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' }); } catch {}
+    let pkgViews = []; try { pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' }); } catch {}
     const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.id) || pkgPlugins[0];
     if (!mainPlugin) throw new Error('No plugins found in package');
-
-    const detail = {
-      source: 'registry',
-      name: mainPlugin.name,
-      downloadUrl: registryPlugin.download_url,
-      plugin: {
-        name: registryPlugin.name || mainPlugin.name,
-        description: registryPlugin.description || mainPlugin.description || '',
-        version: registryPlugin.version || mainPlugin.version || '',
-        author: registryPlugin.author || mainPlugin.author || '',
-        repository: registryPlugin.repository || mainPlugin.repository || '',
-        license: registryPlugin.license || mainPlugin.license || '',
-        downloads: registryPlugin.downloads,
-      },
-      code: mainPlugin.code || '',
-      docs: pkgDocs || [],
-      views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })),
-      activeTab: 'overview',
-      expandedDoc: null,
-    };
+    const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
     registryDetailCache.set(registryPlugin.id, detail);
     return detail;
   }
 
   async function openDetail(source, pluginNameOrObj) {
-    const container = document.getElementById('pluginsContainer');
+    const container = document.getElementById('mainContainer');
     container.innerHTML = '<div class="loading">Loading plugin details...</div>';
     document.getElementById('listHeader').style.display = 'none';
-
     try {
-      if (source === 'installed') {
-        detailView = await loadInstalledPluginDetail(pluginNameOrObj);
-      } else {
-        detailView = await loadRegistryPluginDetail(pluginNameOrObj);
-      }
+      detailView = source === 'installed' ? await loadInstalledPluginDetail(pluginNameOrObj) : await loadRegistryPluginDetail(pluginNameOrObj);
       renderDetail();
-    } catch (err) {
-      container.innerHTML = '<div class="error-msg">Failed to load plugin details: ' + esc(err.message) + '</div>';
-    }
+    } catch (err) { container.innerHTML = '<div class="error-msg">Failed to load plugin details: ' + esc(err.message) + '</div>'; }
   }
 
   function closeDetail() {
-    if (detailView && detailView.source === 'registry') {
-      window.agentwfy.remove(TMP_PACKAGE_PATH).catch(() => {});
-    }
+    if (detailView && detailView.source === 'registry') window.agentwfy.remove({ path: TMP_PACKAGE_PATH }).catch(() => {});
     detailView = null;
     document.getElementById('listHeader').style.display = '';
     render();
+  }
+
+  async function loadAgentRegistry() {
+    if (registryAgentsLoading) return;
+    registryAgentsLoading = true; registryAgentsError = null; render();
+    try { const res = await fetch(AGENTS_REGISTRY_API); if (!res.ok) throw new Error(`HTTP ${res.status}`); registryAgents = await res.json(); }
+    catch (err) { registryAgentsError = 'Failed to load registry. ' + err.message; registryAgents = null; }
+    finally { registryAgentsLoading = false; render(); }
+  }
+
+  async function installAgentFromRegistry(agentId, downloadUrl) {
+    if (installingAgents.has(agentId)) return;
+    installingAgents.add(agentId); render();
+    try { await downloadPackage(downloadUrl, '.tmp/registry-agent.agent.awfy'); await window.agentwfy.requestInstallAgent('.tmp/registry-agent.agent.awfy'); }
+    catch (err) { console.error('Agent install failed:', err); alert('Agent install failed: ' + err.message); }
+    finally { installingAgents.delete(agentId); render(); }
+  }
+
+  async function previewAgentFromRegistry(agent) {
+    previewLoading = true; previewAgent = { agent, data: null }; render();
+    try {
+      const tmpPath = '.tmp/preview-agent.agent.awfy';
+      await downloadPackage(agent.download_url, tmpPath);
+      const sqlOpts = { target: 'sqlite-file', path: tmpPath };
+      const [views, docs, tasks, agentPlugins] = await Promise.all([
+        window.agentwfy.runSql({ ...sqlOpts, sql: "SELECT name, title FROM views WHERE name NOT LIKE 'system.%' ORDER BY name" }).catch(() => []),
+        window.agentwfy.runSql({ ...sqlOpts, sql: "SELECT name FROM docs WHERE name NOT LIKE 'system.%' ORDER BY name" }).catch(() => []),
+        window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description FROM tasks ORDER BY name' }).catch(() => []),
+        window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version FROM plugins ORDER BY name' }).catch(() => []),
+      ]);
+      previewAgent = { agent, data: { views, docs, tasks, plugins: agentPlugins } };
+    } catch (err) { previewAgent = { agent, data: null, error: 'Failed to load preview: ' + err.message }; }
+    finally { previewLoading = false; render(); }
   }
 </script>
 
 <script id="script-render">
   const _escDiv = document.createElement('div');
-  function esc(s) {
-    _escDiv.textContent = s;
-    return _escDiv.innerHTML.replace(/"/g, '&quot;');
-  }
+  function esc(s) { _escDiv.textContent = s; return _escDiv.innerHTML.replace(/"/g, '&quot;'); }
 
   function render() {
-    if (detailView) {
-      renderDetail();
-      return;
-    }
-    if (activeTab === 'installed') {
-      renderInstalled();
-    } else {
-      renderBrowse();
-    }
+    if (detailView) { renderDetail(); return; }
+    if (activeTab === 'installed') renderInstalled();
+    else if (activeTab === 'browse-plugins') renderBrowsePlugins();
+    else if (activeTab === 'browse-agents') { previewAgent ? renderAgentPreview() : renderBrowseAgents(); }
   }
 
   function renderInstalled() {
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
     let filtered = plugins;
-    if (query) {
-      filtered = plugins.filter(p =>
-        p.name.toLowerCase().includes(query) ||
-        p.description.toLowerCase().includes(query) ||
-        p.author.toLowerCase().includes(query)
-      );
-    }
-
-    const container = document.getElementById('pluginsContainer');
-
-    if (plugins.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">' +
-          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
-            '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' +
-          '</svg>' +
-          '<div style="margin-top: 12px">No plugins installed</div>' +
-          '<div style="font-size: 12px; margin-top: 4px; color: var(--color-text1)">Browse the registry to discover plugins, or install via the command palette.</div>' +
-        '</div>';
-      return;
-    }
-
-    if (filtered.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">' +
-          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
-            '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>' +
-          '</svg>' +
-          '<div>No plugins match your search</div>' +
-        '</div>';
-      return;
-    }
-
+    if (query) filtered = plugins.filter(p => p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query) || p.author.toLowerCase().includes(query));
+    const container = document.getElementById('mainContainer');
+    if (plugins.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><div style="margin-top: 12px">No plugins installed</div><div style="font-size: 12px; margin-top: 4px; color: var(--color-text1)">Browse the registry to discover plugins, or install via the command palette.</div></div>'; return; }
+    if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No plugins match your search</div></div>'; return; }
     const enabledCount = filtered.filter(p => p.enabled).length;
-    const totalCount = filtered.length;
-
-    let h = '<div class="plugin-count">' + totalCount + ' plugin' + (totalCount !== 1 ? 's' : '');
-    if (enabledCount < totalCount) {
-      h += ' (' + enabledCount + ' enabled)';
-    }
-    h += '</div>';
-    h += '<div class="plugin-list">';
-
+    let h = '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '');
+    if (enabledCount < filtered.length) h += ' (' + enabledCount + ' enabled)';
+    h += '</div><div class="plugin-list">';
     for (const p of filtered) {
-      h += '<div class="plugin-row" data-name="' + esc(p.name) + '">';
-      h += '  <div class="plugin-info">';
-      h += '    <div class="plugin-name-row">';
-      h += '      <span class="plugin-name" data-action="open-detail" data-source="installed" data-name="' + esc(p.name) + '">' + esc(p.name) + '</span>';
-      if (p.version) {
-        h += '      <span class="plugin-version">v' + esc(p.version) + '</span>';
-      }
-      if (!p.enabled) {
-        h += '      <span class="badge-disabled">disabled</span>';
-      }
-      h += '    </div>';
-      if (p.description) {
-        h += '    <div class="plugin-desc">' + esc(p.description) + '</div>';
-      }
-      if (p.author || p.license || p.repository) {
-        h += '    <div class="plugin-meta">';
-        if (p.author) h += '<span>' + esc(p.author) + '</span>';
-        if (p.license) h += '<span>' + esc(p.license) + '</span>';
-        if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>';
-        h += '    </div>';
-      }
-      h += '  </div>';
-      h += '  <div class="plugin-actions">';
-      h += '    <label class="toggle" title="' + (p.enabled ? 'Disable' : 'Enable') + '">';
-      h += '      <input type="checkbox" data-action="toggle" data-name="' + esc(p.name) + '"' + (p.enabled ? ' checked' : '') + '>';
-      h += '      <div class="toggle-track"></div>';
-      h += '      <div class="toggle-knob"></div>';
-      h += '    </label>';
-      h += '    <button class="btn btn-danger" data-action="uninstall" data-name="' + esc(p.name) + '">Uninstall</button>';
-      h += '  </div>';
+      h += '<div class="plugin-row"><div class="plugin-info"><div class="plugin-name-row">';
+      h += '<span class="plugin-name" data-action="open-detail" data-source="installed" data-name="' + esc(p.name) + '">' + esc(p.name) + '</span>';
+      if (p.version) h += '<span class="plugin-version">v' + esc(p.version) + '</span>';
+      if (!p.enabled) h += '<span class="badge-disabled">disabled</span>';
       h += '</div>';
+      if (p.description) h += '<div class="plugin-desc">' + esc(p.description) + '</div>';
+      if (p.author || p.license || p.repository) { h += '<div class="plugin-meta">'; if (p.author) h += '<span>' + esc(p.author) + '</span>'; if (p.license) h += '<span>' + esc(p.license) + '</span>'; if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>'; h += '</div>'; }
+      h += '</div><div class="plugin-actions">';
+      h += '<label class="toggle" title="' + (p.enabled ? 'Disable' : 'Enable') + '"><input type="checkbox" data-action="toggle" data-name="' + esc(p.name) + '"' + (p.enabled ? ' checked' : '') + '><div class="toggle-track"></div><div class="toggle-knob"></div></label>';
+      h += '<button class="btn btn-danger" data-action="uninstall" data-name="' + esc(p.name) + '">Uninstall</button>';
+      h += '</div></div>';
     }
-
     h += '</div>';
     container.innerHTML = h;
   }
 
-  function renderBrowse() {
-    const container = document.getElementById('pluginsContainer');
-
-    if (registryLoading) {
-      container.innerHTML = '<div class="loading">Loading registry...</div>';
-      return;
-    }
-
-    if (registryError) {
-      container.innerHTML = '<div class="error-msg">' + esc(registryError) + '</div>';
-      return;
-    }
-
-    if (!registryPlugins || registryPlugins.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">' +
-          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
-            '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' +
-          '</svg>' +
-          '<div style="margin-top: 12px">No plugins in the registry yet</div>' +
-        '</div>';
-      return;
-    }
-
+  function renderBrowsePlugins() {
+    const container = document.getElementById('mainContainer');
+    if (registryPluginsLoading) { container.innerHTML = '<div class="loading">Loading registry...</div>'; return; }
+    if (registryPluginsError) { container.innerHTML = '<div class="error-msg">' + esc(registryPluginsError) + '</div>'; return; }
+    if (!registryPlugins || registryPlugins.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><div style="margin-top: 12px">No plugins in the registry yet</div></div>'; return; }
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
     let filtered = registryPlugins;
-    if (query) {
-      filtered = registryPlugins.filter(p =>
-        p.name.toLowerCase().includes(query) ||
-        p.description.toLowerCase().includes(query) ||
-        p.author.toLowerCase().includes(query)
-      );
-    }
-
-    if (filtered.length === 0) {
-      container.innerHTML =
-        '<div class="empty-state">' +
-          '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
-            '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>' +
-          '</svg>' +
-          '<div>No plugins match your search</div>' +
-        '</div>';
-      return;
-    }
-
-    let h = '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '') + ' in registry</div>';
-    h += '<div class="plugin-list">';
-
+    if (query) filtered = registryPlugins.filter(p => p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query) || p.author.toLowerCase().includes(query));
+    if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No plugins match your search</div></div>'; return; }
+    let h = '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '') + ' in registry</div><div class="plugin-list">';
     for (const p of filtered) {
-      const installed = isInstalled(p.id);
-      const installing = installingPlugins.has(p.id);
-
-      h += '<div class="plugin-row">';
-      h += '  <div class="plugin-info">';
-      h += '    <div class="plugin-name-row">';
-      h += '      <span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.name) + '</span>';
-      h += '      <span class="plugin-version">v' + esc(p.version) + '</span>';
-      if (installed) {
-        h += '      <span class="badge-installed">installed</span>';
-      }
-      if (typeof p.downloads === 'number' && p.downloads > 0) {
-        h += '      <span class="badge-downloads">' + p.downloads + ' downloads</span>';
-      }
-      h += '    </div>';
-      if (p.description) {
-        h += '    <div class="plugin-desc">' + esc(p.description) + '</div>';
-      }
-      h += '    <div class="plugin-meta">';
-      if (p.author) h += '<span>' + esc(p.author) + '</span>';
-      if (p.license) h += '<span>' + esc(p.license) + '</span>';
-      if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>';
-      h += '    </div>';
-      h += '  </div>';
-      h += '  <div class="plugin-actions">';
-      if (installing) {
-        h += '    <button class="btn" disabled>Installing...</button>';
-      } else if (installed) {
-        h += '    <button class="btn btn-install" data-action="registry-install" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Update</button>';
-      } else {
-        h += '    <button class="btn btn-install" data-action="registry-install" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Install</button>';
-      }
-      h += '  </div>';
+      const installed = isPluginInstalled(p.id); const installing = installingPlugins.has(p.id);
+      h += '<div class="plugin-row"><div class="plugin-info"><div class="plugin-name-row">';
+      h += '<span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.name) + '</span>';
+      h += '<span class="plugin-version">v' + esc(p.version) + '</span>';
+      if (installed) h += '<span class="badge-installed">installed</span>';
+      if (typeof p.downloads === 'number' && p.downloads > 0) h += '<span class="badge-downloads">' + p.downloads + ' downloads</span>';
       h += '</div>';
+      if (p.description) h += '<div class="plugin-desc">' + esc(p.description) + '</div>';
+      h += '<div class="plugin-meta">'; if (p.author) h += '<span>' + esc(p.author) + '</span>'; if (p.license) h += '<span>' + esc(p.license) + '</span>'; if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>'; h += '</div>';
+      h += '</div><div class="plugin-actions">';
+      if (installing) h += '<button class="btn" disabled>Installing...</button>';
+      else if (installed) h += '<button class="btn btn-install" data-action="registry-install-plugin" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Update</button>';
+      else h += '<button class="btn btn-install" data-action="registry-install-plugin" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Install</button>';
+      h += '</div></div>';
     }
-
     h += '</div>';
+    container.innerHTML = h;
+  }
+
+  function renderBrowseAgents() {
+    const container = document.getElementById('mainContainer');
+    if (registryAgentsLoading) { container.innerHTML = '<div class="loading">Loading registry...</div>'; return; }
+    if (registryAgentsError) { container.innerHTML = '<div class="error-msg">' + esc(registryAgentsError) + '</div>'; return; }
+    if (!registryAgents || registryAgents.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><div style="margin-top: 12px">No agents in the registry yet</div></div>'; return; }
+    const query = document.getElementById('searchInput').value.toLowerCase().trim();
+    let filtered = registryAgents;
+    if (query) filtered = registryAgents.filter(a => a.name.toLowerCase().includes(query) || a.description.toLowerCase().includes(query) || a.author.toLowerCase().includes(query));
+    if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No agents match your search</div></div>'; return; }
+    let h = '<div class="plugin-count">' + filtered.length + ' agent' + (filtered.length !== 1 ? 's' : '') + ' in registry</div><div class="plugin-list">';
+    for (const a of filtered) {
+      const installing = installingAgents.has(a.id);
+      h += '<div class="plugin-row clickable" data-action="preview-agent" data-agent-id="' + esc(a.id) + '"><div class="plugin-info"><div class="plugin-name-row">';
+      h += '<span class="plugin-name">' + esc(a.name) + '</span>';
+      if (typeof a.downloads === 'number' && a.downloads > 0) h += '<span class="badge-downloads">' + a.downloads + ' downloads</span>';
+      h += '</div>';
+      if (a.description) h += '<div class="plugin-desc">' + esc(a.description) + '</div>';
+      h += '<div class="plugin-meta">'; if (a.author) h += '<span>' + esc(a.author) + '</span>'; if (a.repository) h += '<a href="' + esc(a.repository) + '" target="_blank">' + esc(a.repository) + '</a>'; h += '</div>';
+      h += '</div><div class="plugin-actions">';
+      if (installing) h += '<button class="btn" disabled>Installing...</button>';
+      else h += '<button class="btn btn-install" data-action="registry-install-agent" data-id="' + esc(a.id) + '" data-url="' + esc(a.download_url) + '">Install</button>';
+      h += '</div></div>';
+    }
+    h += '</div>';
+    container.innerHTML = h;
+  }
+
+  function renderAgentPreview() {
+    const container = document.getElementById('mainContainer');
+    const a = previewAgent.agent;
+    let h = '<div class="detail-header"><button class="back-btn" data-action="back" title="Back to list"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>';
+    h += '<span class="detail-title">' + esc(a.name) + '</span></div>';
+    if (a.description) h += '<div class="detail-desc" style="margin-bottom: 12px;">' + esc(a.description) + '</div>';
+    h += '<div class="plugin-meta" style="margin-bottom: 16px;">'; if (a.author) h += '<span>' + esc(a.author) + '</span>'; if (a.repository) h += '<a href="' + esc(a.repository) + '" target="_blank">' + esc(a.repository) + '</a>'; h += '</div>';
+    const installing = installingAgents.has(a.id);
+    h += '<div style="margin-bottom: 20px;">';
+    if (installing) h += '<button class="btn" disabled>Installing...</button>';
+    else h += '<button class="btn btn-install" data-action="registry-install-agent" data-id="' + esc(a.id) + '" data-url="' + esc(a.download_url) + '">Install Agent</button>';
+    h += '</div>';
+    if (previewLoading) { h += '<div class="loading">Loading agent contents...</div>'; }
+    else if (previewAgent.error) { h += '<div class="error-msg">' + esc(previewAgent.error) + '</div>'; }
+    else if (previewAgent.data) {
+      const d = previewAgent.data;
+      if (d.views.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Views (' + d.views.length + ')</div><div class="detail-items-list">'; for (const v of d.views) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(v.name) + '</div><div class="detail-item-desc">' + esc(v.title || '') + '</div></div>'; h += '</div></div>'; }
+      if (d.docs.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Docs (' + d.docs.length + ')</div><div class="detail-items-list">'; for (const doc of d.docs) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(doc.name) + '</div></div>'; h += '</div></div>'; }
+      if (d.tasks.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Tasks (' + d.tasks.length + ')</div><div class="detail-items-list">'; for (const t of d.tasks) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(t.name) + '</div><div class="detail-item-desc">' + esc(t.description || '') + '</div></div>'; h += '</div></div>'; }
+      if (d.plugins.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Plugins (' + d.plugins.length + ')</div><div class="detail-items-list">'; for (const p of d.plugins) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(p.name) + '</div><div class="detail-item-desc">' + esc(p.description || '') + (p.version ? ' (v' + esc(p.version) + ')' : '') + '</div></div>'; h += '</div></div>'; }
+      if (d.views.length === 0 && d.docs.length === 0 && d.tasks.length === 0 && d.plugins.length === 0) h += '<div class="no-items">This agent has no custom views, docs, tasks, or plugins.</div>';
+    }
     container.innerHTML = h;
   }
 </script>
@@ -867,121 +466,49 @@
   function renderDetail() {
     if (!detailView) return;
     const d = detailView;
-    const container = document.getElementById('pluginsContainer');
-
-    let h = '';
-
-    // Header with back button
-    h += '<div class="detail-header">';
-    h += '  <button class="back-btn" data-action="back" title="Back to list">';
-    h += '    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
-    h += '  </button>';
-    h += '  <span class="detail-title">' + esc(d.plugin.name) + '</span>';
-    if (d.plugin.version) {
-      h += '  <span class="detail-version">v' + esc(d.plugin.version) + '</span>';
-    }
-    if (d.source === 'installed' && d.plugin.enabled === false) {
-      h += '  <span class="badge-disabled">disabled</span>';
-    }
-    if (d.source === 'registry' && isInstalled(d.name)) {
-      h += '  <span class="badge-installed">installed</span>';
-    }
+    const container = document.getElementById('mainContainer');
+    let h = '<div class="detail-header"><button class="back-btn" data-action="back" title="Back to list"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>';
+    h += '<span class="detail-title">' + esc(d.plugin.name) + '</span>';
+    if (d.plugin.version) h += '<span class="detail-version">v' + esc(d.plugin.version) + '</span>';
+    if (d.source === 'installed' && d.plugin.enabled === false) h += '<span class="badge-disabled">disabled</span>';
+    if (d.source === 'registry' && isPluginInstalled(d.name)) h += '<span class="badge-installed">installed</span>';
     h += '</div>';
-
-    // Detail tabs
     const docCount = d.docs.length;
     h += '<div class="tab-bar">';
-    h += '  <button class="tab-btn' + (d.activeTab === 'overview' ? ' active' : '') + '" data-action="detail-tab" data-tab="overview">Overview</button>';
-    h += '  <button class="tab-btn' + (d.activeTab === 'docs' ? ' active' : '') + '" data-action="detail-tab" data-tab="docs">Docs';
-    if (docCount > 0) h += '<span class="tab-count">' + docCount + '</span>';
-    h += '</button>';
-    h += '  <button class="tab-btn' + (d.activeTab === 'source' ? ' active' : '') + '" data-action="detail-tab" data-tab="source">Source</button>';
+    h += '<button class="tab-btn' + (d.activeTab === 'overview' ? ' active' : '') + '" data-action="detail-tab" data-tab="overview">Overview</button>';
+    h += '<button class="tab-btn' + (d.activeTab === 'docs' ? ' active' : '') + '" data-action="detail-tab" data-tab="docs">Docs'; if (docCount > 0) h += '<span class="tab-count">' + docCount + '</span>'; h += '</button>';
+    h += '<button class="tab-btn' + (d.activeTab === 'source' ? ' active' : '') + '" data-action="detail-tab" data-tab="source">Source</button>';
     h += '</div>';
-
-    // Tab content
-    if (d.activeTab === 'overview') {
-      h += renderDetailOverview(d);
-    } else if (d.activeTab === 'docs') {
-      h += renderDetailDocs(d);
-    } else if (d.activeTab === 'source') {
-      h += renderDetailSource(d);
-    }
-
+    if (d.activeTab === 'overview') h += renderDetailOverview(d);
+    else if (d.activeTab === 'docs') h += renderDetailDocs(d);
+    else if (d.activeTab === 'source') h += renderDetailSource(d);
     container.innerHTML = h;
   }
 
   function renderDetailOverview(d) {
     let h = '';
-
-    if (d.plugin.description) {
-      h += '<div class="detail-section">';
-      h += '  <div class="detail-desc">' + esc(d.plugin.description) + '</div>';
-      h += '</div>';
-    }
-
-    h += '<div class="detail-section">';
-    h += '  <div class="detail-section-title">Details</div>';
-    h += '  <div class="detail-meta-grid">';
-    if (d.plugin.author) {
-      h += '    <span class="detail-meta-label">Author</span>';
-      h += '    <span class="detail-meta-value">' + esc(d.plugin.author) + '</span>';
-    }
-    if (d.plugin.version) {
-      h += '    <span class="detail-meta-label">Version</span>';
-      h += '    <span class="detail-meta-value">' + esc(d.plugin.version) + '</span>';
-    }
-    if (d.plugin.license) {
-      h += '    <span class="detail-meta-label">License</span>';
-      h += '    <span class="detail-meta-value">' + esc(d.plugin.license) + '</span>';
-    }
-    if (d.plugin.repository) {
-      h += '    <span class="detail-meta-label">Repository</span>';
-      h += '    <span class="detail-meta-value"><a href="' + esc(d.plugin.repository) + '" target="_blank">' + esc(d.plugin.repository) + '</a></span>';
-    }
-    if (typeof d.plugin.downloads === 'number') {
-      h += '    <span class="detail-meta-label">Downloads</span>';
-      h += '    <span class="detail-meta-value">' + d.plugin.downloads + '</span>';
-    }
-    h += '  </div>';
-    h += '</div>';
-
-    if (d.views.length > 0) {
-      h += '<div class="detail-section">';
-      h += '  <div class="detail-section-title">Views</div>';
-      h += '  <div class="detail-items-list">';
-      for (const v of d.views) {
-        h += '    <div class="detail-item-row">';
-        h += '      <div class="detail-item-name">' + esc(v.title || v.name) + '</div>';
-        h += '      <div class="detail-item-desc">' + esc(v.name) + '</div>';
-        h += '    </div>';
-      }
-      h += '  </div>';
-      h += '</div>';
-    }
-
+    if (d.plugin.description) h += '<div class="detail-section"><div class="detail-desc">' + esc(d.plugin.description) + '</div></div>';
+    h += '<div class="detail-section"><div class="detail-section-title">Details</div><div class="detail-meta-grid">';
+    if (d.plugin.author) h += '<span class="detail-meta-label">Author</span><span class="detail-meta-value">' + esc(d.plugin.author) + '</span>';
+    if (d.plugin.version) h += '<span class="detail-meta-label">Version</span><span class="detail-meta-value">' + esc(d.plugin.version) + '</span>';
+    if (d.plugin.license) h += '<span class="detail-meta-label">License</span><span class="detail-meta-value">' + esc(d.plugin.license) + '</span>';
+    if (d.plugin.repository) h += '<span class="detail-meta-label">Repository</span><span class="detail-meta-value"><a href="' + esc(d.plugin.repository) + '" target="_blank">' + esc(d.plugin.repository) + '</a></span>';
+    if (typeof d.plugin.downloads === 'number') h += '<span class="detail-meta-label">Downloads</span><span class="detail-meta-value">' + d.plugin.downloads + '</span>';
+    h += '</div></div>';
+    if (d.views.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Views</div><div class="detail-items-list">'; for (const v of d.views) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(v.title || v.name) + '</div><div class="detail-item-desc">' + esc(v.name) + '</div></div>'; h += '</div></div>'; }
     return h;
   }
 
   function renderDetailDocs(d) {
-    if (d.docs.length === 0) {
-      return '<div class="no-items">No documentation included with this plugin.</div>';
-    }
-
+    if (d.docs.length === 0) return '<div class="no-items">No documentation included with this plugin.</div>';
     let h = '<div class="detail-items-list">';
     for (let i = 0; i < d.docs.length; i++) {
-      const doc = d.docs[i];
-      const isExpanded = d.expandedDoc === i;
+      const doc = d.docs[i]; const isExpanded = d.expandedDoc === i;
       const displayName = doc.name.replace(/^plugin\.[^.]+\.?/, '') || doc.name;
-      h += '<div class="detail-item-row">';
-      h += '  <div class="doc-item" data-action="toggle-doc" data-index="' + i + '">';
-      h += '    <div class="detail-item-name">';
-      h += '      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 4px; transition: transform 0.15s;' + (isExpanded ? ' transform: rotate(90deg);' : '') + '"><polyline points="9 18 15 12 9 6"/></svg>';
-      h += esc(displayName);
-      h += '    </div>';
-      h += '  </div>';
-      if (isExpanded) {
-        h += '  <div class="doc-content">' + esc(doc.content) + '</div>';
-      }
+      h += '<div class="detail-item-row"><div class="doc-item" data-action="toggle-doc" data-index="' + i + '"><div class="detail-item-name">';
+      h += '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 4px; transition: transform 0.15s;' + (isExpanded ? ' transform: rotate(90deg);' : '') + '"><polyline points="9 18 15 12 9 6"/></svg>';
+      h += esc(displayName) + '</div></div>';
+      if (isExpanded) h += '<div class="doc-content">' + esc(doc.content) + '</div>';
       h += '</div>';
     }
     h += '</div>';
@@ -989,16 +516,14 @@
   }
 
   function renderDetailSource(d) {
-    if (!d.code) {
-      return '<div class="no-items">No source code available.</div>';
-    }
+    if (!d.code) return '<div class="no-items">No source code available.</div>';
     return '<div class="code-block">' + esc(d.code) + '</div>';
   }
 </script>
 
 <script id="script-init">
   (async () => {
-    const container = document.getElementById('pluginsContainer');
+    const container = document.getElementById('mainContainer');
 
     container.addEventListener('change', e => {
       const input = e.target.closest('[data-action="toggle"]');
@@ -1008,84 +533,59 @@
     });
 
     container.addEventListener('click', e => {
-      // Back button
       if (e.target.closest('[data-action="back"]')) {
-        closeDetail();
+        if (detailView) closeDetail();
+        else if (previewAgent) { previewAgent = null; render(); }
         return;
       }
-
-      // Detail tab switching
       const detailTabBtn = e.target.closest('[data-action="detail-tab"]');
-      if (detailTabBtn && detailView) {
-        detailView.activeTab = detailTabBtn.dataset.tab;
-        detailView.expandedDoc = null;
-        renderDetail();
-        return;
-      }
-
-      // Toggle doc expand/collapse
+      if (detailTabBtn && detailView) { detailView.activeTab = detailTabBtn.dataset.tab; detailView.expandedDoc = null; renderDetail(); return; }
       const docToggle = e.target.closest('[data-action="toggle-doc"]');
-      if (docToggle && detailView) {
-        const idx = parseInt(docToggle.dataset.index, 10);
-        detailView.expandedDoc = detailView.expandedDoc === idx ? null : idx;
-        renderDetail();
-        return;
-      }
-
-      // Open detail view
+      if (docToggle && detailView) { const idx = parseInt(docToggle.dataset.index, 10); detailView.expandedDoc = detailView.expandedDoc === idx ? null : idx; renderDetail(); return; }
       const openBtn = e.target.closest('[data-action="open-detail"]');
       if (openBtn) {
         const source = openBtn.dataset.source;
-        if (source === 'installed') {
-          openDetail('installed', openBtn.dataset.name);
-        } else if (source === 'registry') {
-          const regPlugin = registryPlugins && registryPlugins.find(p => p.id === openBtn.dataset.id);
-          if (regPlugin) openDetail('registry', regPlugin);
-        }
+        if (source === 'installed') openDetail('installed', openBtn.dataset.name);
+        else if (source === 'registry') { const rp = registryPlugins && registryPlugins.find(p => p.id === openBtn.dataset.id); if (rp) openDetail('registry', rp); }
         return;
       }
-
       const uninstallBtn = e.target.closest('[data-action="uninstall"]');
-      if (uninstallBtn) {
-        uninstallPlugin(uninstallBtn.dataset.name);
-        return;
-      }
-      const installBtn = e.target.closest('[data-action="registry-install"]');
-      if (installBtn) {
-        installFromRegistry(installBtn.dataset.id, installBtn.dataset.url);
+      if (uninstallBtn) { uninstallPlugin(uninstallBtn.dataset.name); return; }
+      const installPluginBtn = e.target.closest('[data-action="registry-install-plugin"]');
+      if (installPluginBtn) { installPluginFromRegistry(installPluginBtn.dataset.id, installPluginBtn.dataset.url); return; }
+      const installAgentBtn = e.target.closest('[data-action="registry-install-agent"]');
+      if (installAgentBtn) { e.stopPropagation(); installAgentFromRegistry(installAgentBtn.dataset.id, installAgentBtn.dataset.url); return; }
+      const previewRow = e.target.closest('[data-action="preview-agent"]');
+      if (previewRow && !e.target.closest('.plugin-actions')) {
+        const agentId = previewRow.dataset.agentId;
+        const agent = registryAgents && registryAgents.find(a => a.id === agentId);
+        if (agent) previewAgentFromRegistry(agent);
         return;
       }
     });
 
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (detailView) closeDetail();
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        activeTab = btn.dataset.tab;
-        document.getElementById('searchInput').value = '';
-        if (activeTab === 'browse' && !registryPlugins && !registryLoading) {
-          loadRegistry();
-        } else {
-          render();
-        }
-      });
+    document.getElementById('tabBar').addEventListener('click', e => {
+      const btn = e.target.closest('[data-tab]');
+      if (!btn || btn.dataset.action) return;
+      if (detailView) closeDetail();
+      activeTab = btn.dataset.tab;
+      previewAgent = null;
+      document.querySelectorAll('#tabBar .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === activeTab));
+      document.getElementById('searchInput').value = '';
+      if (activeTab === 'browse-plugins' && !registryPlugins && !registryPluginsLoading) loadPluginRegistry();
+      else if (activeTab === 'browse-agents' && !registryAgents && !registryAgentsLoading) loadAgentRegistry();
+      else render();
     });
 
     document.getElementById('refreshBtn').addEventListener('click', async () => {
-      if (activeTab === 'installed') {
-        await loadPlugins();
-      } else {
-        await loadRegistry();
-      }
+      if (activeTab === 'installed') await loadPlugins();
+      else if (activeTab === 'browse-plugins') await loadPluginRegistry();
+      else if (activeTab === 'browse-agents') await loadAgentRegistry();
       render();
     });
 
     let searchTimer;
-    document.getElementById('searchInput').addEventListener('input', () => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(render, 150);
-    });
+    document.getElementById('searchInput').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(render, 150); });
 
     await loadPlugins();
     render();
