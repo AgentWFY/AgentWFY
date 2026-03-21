@@ -7,8 +7,10 @@
     SECTIONS:
     style-layout     – page shell: header, tabs, content area
     style-components – plugin cards, badges, buttons, toggle switch
+    style-detail     – plugin detail view styles
     script-data      – state, DB operations, registry fetch
     script-render    – DOM rendering, filtering
+    script-detail    – detail view data loading and rendering
     script-init      – event wiring and startup
   -->
 <style id="style-layout">
@@ -131,7 +133,9 @@
     font-size: 14px;
     font-weight: 500;
     color: var(--color-text4);
+    cursor: pointer;
   }
+  .plugin-name:hover { text-decoration: underline; }
   .plugin-version {
     font-size: 11px;
     color: var(--color-text1);
@@ -284,10 +288,137 @@
   }
 </style>
 
+<style id="style-detail">
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: var(--color-text2);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+  .back-btn:hover { background: var(--color-bg3); color: var(--color-text4); }
+  .detail-title {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--color-text4);
+  }
+  .detail-version {
+    font-size: 12px;
+    color: var(--color-text1);
+    font-family: var(--font-mono);
+  }
+  .tab-btn .tab-count {
+    font-size: 10px;
+    color: var(--color-text1);
+    margin-left: 4px;
+  }
+  .detail-section { margin-bottom: 20px; }
+  .detail-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+  .detail-meta-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+    font-size: 13px;
+  }
+  .detail-meta-label {
+    color: var(--color-text1);
+  }
+  .detail-meta-value {
+    color: var(--color-text3);
+  }
+  .detail-meta-value a {
+    color: var(--color-text3);
+    text-decoration: none;
+  }
+  .detail-meta-value a:hover { text-decoration: underline; }
+  .detail-desc {
+    font-size: 13px;
+    color: var(--color-text3);
+    line-height: 1.5;
+  }
+  .detail-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .detail-item-row {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .detail-item-row:last-child { border-bottom: none; }
+  .detail-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text4);
+  }
+  .detail-item-desc {
+    font-size: 12px;
+    color: var(--color-text2);
+    margin-top: 2px;
+  }
+  .doc-item {
+    cursor: pointer;
+    padding: 8px;
+    margin: 0 -8px;
+    border-radius: var(--radius-sm);
+  }
+  .doc-item:hover { background: var(--color-bg3); }
+  .doc-content {
+    margin-top: 12px;
+    padding: 16px;
+    background: var(--color-bg2, var(--color-surface));
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    color: var(--color-text3);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .code-block {
+    background: var(--color-bg2, var(--color-surface));
+    border: 1px solid var(--color-divider);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-text3);
+    white-space: pre;
+    tab-size: 2;
+  }
+  .no-items {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-text1);
+    font-size: 13px;
+  }
+</style>
+
 </head>
 <body>
 
-<div class="header">
+<div class="header" id="listHeader">
   <h1>Plugins</h1>
   <div class="subtitle">Manage installed plugins or browse the registry to discover new ones.</div>
   <div class="header-row">
@@ -311,6 +442,7 @@
 
 <script id="script-data">
   const REGISTRY_API = 'https://agentwfy.com/api/plugins';
+  const TMP_PACKAGE_PATH = '.tmp/registry-plugin-preview.plugins.awfy';
 
   let activeTab = 'installed';
   let plugins = [];
@@ -318,6 +450,10 @@
   let registryError = null;
   let registryLoading = false;
   let installingPlugins = new Set();
+
+  // Detail view state
+  let detailView = null; // { source: 'installed'|'registry', name, downloadUrl?, plugin, docs, views, config, code, activeTab, expandedDoc }
+  const registryDetailCache = new Map(); // keyed by registry plugin id
 
   async function loadPlugins() {
     const rows = await window.agentwfy.runSql({
@@ -382,13 +518,16 @@
     }
   }
 
-  function arrayBufferToBase64(buf) {
+  async function downloadPackage(downloadUrl, destPath) {
+    const res = await fetch(downloadUrl, { redirect: 'follow' });
+    if (!res.ok) throw new Error('Download failed: HTTP ' + res.status);
+    const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return btoa(binary);
+    await window.agentwfy.writeBinary(destPath, btoa(binary));
   }
 
   async function installFromRegistry(pluginId, downloadUrl) {
@@ -396,12 +535,8 @@
     installingPlugins.add(pluginId);
     render();
     try {
-      const res = await fetch(downloadUrl, { redirect: 'follow' });
-      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
-      const buf = await res.arrayBuffer();
-      const base64 = arrayBufferToBase64(buf);
       const tmpPath = '.tmp/registry-plugin.plugins.awfy';
-      await window.agentwfy.writeBinary(tmpPath, base64);
+      await downloadPackage(downloadUrl, tmpPath);
       const result = await window.agentwfy.requestInstallPlugin(tmpPath);
       if (result.installed && result.installed.length > 0) {
         await loadPlugins();
@@ -414,6 +549,125 @@
       render();
     }
   }
+
+  async function loadInstalledPluginDetail(pluginName) {
+    const [pluginRow] = await window.agentwfy.runSql({
+      target: 'agent',
+      sql: "SELECT name, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'"
+    });
+    if (!pluginRow) throw new Error('Plugin not found');
+
+    const docs = await window.agentwfy.runSql({
+      target: 'agent',
+      sql: "SELECT name, content FROM docs WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + "%'"
+    });
+
+    const views = await window.agentwfy.runSql({
+      target: 'agent',
+      sql: "SELECT name, title FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'"
+    });
+
+    return {
+      source: 'installed',
+      name: pluginRow.name,
+      plugin: {
+        name: pluginRow.name,
+        description: pluginRow.description || '',
+        version: pluginRow.version || '',
+        author: pluginRow.author || '',
+        repository: pluginRow.repository || '',
+        license: pluginRow.license || '',
+        enabled: !!pluginRow.enabled,
+      },
+      code: pluginRow.code || '',
+      docs: docs || [],
+      views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })),
+      activeTab: 'overview',
+      expandedDoc: null,
+    };
+  }
+
+  async function loadRegistryPluginDetail(registryPlugin) {
+    const cached = registryDetailCache.get(registryPlugin.id);
+    if (cached) return { ...cached, activeTab: 'overview', expandedDoc: null };
+
+    await downloadPackage(registryPlugin.download_url, TMP_PACKAGE_PATH);
+
+    // Query the downloaded package
+    const sqlOpts = { target: 'sqlite-file', path: TMP_PACKAGE_PATH };
+
+    let pkgPlugins = [];
+    try {
+      pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' });
+    } catch {
+      try {
+        const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' });
+        pkgPlugins = basic.map(p => ({ ...p, author: null, repository: null, license: null }));
+      } catch { /* no plugins table */ }
+    }
+
+    let pkgDocs = [];
+    try {
+      pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' });
+    } catch { /* docs table optional */ }
+
+    let pkgViews = [];
+    try {
+      pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' });
+    } catch { /* views table optional */ }
+
+    // Find the main plugin (match by registry id or first one)
+    const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.id) || pkgPlugins[0];
+    if (!mainPlugin) throw new Error('No plugins found in package');
+
+    const detail = {
+      source: 'registry',
+      name: mainPlugin.name,
+      downloadUrl: registryPlugin.download_url,
+      plugin: {
+        name: registryPlugin.name || mainPlugin.name,
+        description: registryPlugin.description || mainPlugin.description || '',
+        version: registryPlugin.version || mainPlugin.version || '',
+        author: registryPlugin.author || mainPlugin.author || '',
+        repository: registryPlugin.repository || mainPlugin.repository || '',
+        license: registryPlugin.license || mainPlugin.license || '',
+        downloads: registryPlugin.downloads,
+      },
+      code: mainPlugin.code || '',
+      docs: pkgDocs || [],
+      views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })),
+      activeTab: 'overview',
+      expandedDoc: null,
+    };
+    registryDetailCache.set(registryPlugin.id, detail);
+    return detail;
+  }
+
+  async function openDetail(source, pluginNameOrObj) {
+    const container = document.getElementById('pluginsContainer');
+    container.innerHTML = '<div class="loading">Loading plugin details...</div>';
+    document.getElementById('listHeader').style.display = 'none';
+
+    try {
+      if (source === 'installed') {
+        detailView = await loadInstalledPluginDetail(pluginNameOrObj);
+      } else {
+        detailView = await loadRegistryPluginDetail(pluginNameOrObj);
+      }
+      renderDetail();
+    } catch (err) {
+      container.innerHTML = '<div class="error-msg">Failed to load plugin details: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  function closeDetail() {
+    if (detailView && detailView.source === 'registry') {
+      window.agentwfy.remove(TMP_PACKAGE_PATH).catch(() => {});
+    }
+    detailView = null;
+    document.getElementById('listHeader').style.display = '';
+    render();
+  }
 </script>
 
 <script id="script-render">
@@ -424,6 +678,10 @@
   }
 
   function render() {
+    if (detailView) {
+      renderDetail();
+      return;
+    }
     if (activeTab === 'installed') {
       renderInstalled();
     } else {
@@ -481,7 +739,7 @@
       h += '<div class="plugin-row" data-name="' + esc(p.name) + '">';
       h += '  <div class="plugin-info">';
       h += '    <div class="plugin-name-row">';
-      h += '      <span class="plugin-name">' + esc(p.name) + '</span>';
+      h += '      <span class="plugin-name" data-action="open-detail" data-source="installed" data-name="' + esc(p.name) + '">' + esc(p.name) + '</span>';
       if (p.version) {
         h += '      <span class="plugin-version">v' + esc(p.version) + '</span>';
       }
@@ -570,7 +828,7 @@
       h += '<div class="plugin-row">';
       h += '  <div class="plugin-info">';
       h += '    <div class="plugin-name-row">';
-      h += '      <span class="plugin-name">' + esc(p.name) + '</span>';
+      h += '      <span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.name) + '</span>';
       h += '      <span class="plugin-version">v' + esc(p.version) + '</span>';
       if (installed) {
         h += '      <span class="badge-installed">installed</span>';
@@ -605,6 +863,139 @@
   }
 </script>
 
+<script id="script-detail">
+  function renderDetail() {
+    if (!detailView) return;
+    const d = detailView;
+    const container = document.getElementById('pluginsContainer');
+
+    let h = '';
+
+    // Header with back button
+    h += '<div class="detail-header">';
+    h += '  <button class="back-btn" data-action="back" title="Back to list">';
+    h += '    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+    h += '  </button>';
+    h += '  <span class="detail-title">' + esc(d.plugin.name) + '</span>';
+    if (d.plugin.version) {
+      h += '  <span class="detail-version">v' + esc(d.plugin.version) + '</span>';
+    }
+    if (d.source === 'installed' && d.plugin.enabled === false) {
+      h += '  <span class="badge-disabled">disabled</span>';
+    }
+    if (d.source === 'registry' && isInstalled(d.name)) {
+      h += '  <span class="badge-installed">installed</span>';
+    }
+    h += '</div>';
+
+    // Detail tabs
+    const docCount = d.docs.length;
+    h += '<div class="tab-bar">';
+    h += '  <button class="tab-btn' + (d.activeTab === 'overview' ? ' active' : '') + '" data-action="detail-tab" data-tab="overview">Overview</button>';
+    h += '  <button class="tab-btn' + (d.activeTab === 'docs' ? ' active' : '') + '" data-action="detail-tab" data-tab="docs">Docs';
+    if (docCount > 0) h += '<span class="tab-count">' + docCount + '</span>';
+    h += '</button>';
+    h += '  <button class="tab-btn' + (d.activeTab === 'source' ? ' active' : '') + '" data-action="detail-tab" data-tab="source">Source</button>';
+    h += '</div>';
+
+    // Tab content
+    if (d.activeTab === 'overview') {
+      h += renderDetailOverview(d);
+    } else if (d.activeTab === 'docs') {
+      h += renderDetailDocs(d);
+    } else if (d.activeTab === 'source') {
+      h += renderDetailSource(d);
+    }
+
+    container.innerHTML = h;
+  }
+
+  function renderDetailOverview(d) {
+    let h = '';
+
+    if (d.plugin.description) {
+      h += '<div class="detail-section">';
+      h += '  <div class="detail-desc">' + esc(d.plugin.description) + '</div>';
+      h += '</div>';
+    }
+
+    h += '<div class="detail-section">';
+    h += '  <div class="detail-section-title">Details</div>';
+    h += '  <div class="detail-meta-grid">';
+    if (d.plugin.author) {
+      h += '    <span class="detail-meta-label">Author</span>';
+      h += '    <span class="detail-meta-value">' + esc(d.plugin.author) + '</span>';
+    }
+    if (d.plugin.version) {
+      h += '    <span class="detail-meta-label">Version</span>';
+      h += '    <span class="detail-meta-value">' + esc(d.plugin.version) + '</span>';
+    }
+    if (d.plugin.license) {
+      h += '    <span class="detail-meta-label">License</span>';
+      h += '    <span class="detail-meta-value">' + esc(d.plugin.license) + '</span>';
+    }
+    if (d.plugin.repository) {
+      h += '    <span class="detail-meta-label">Repository</span>';
+      h += '    <span class="detail-meta-value"><a href="' + esc(d.plugin.repository) + '" target="_blank">' + esc(d.plugin.repository) + '</a></span>';
+    }
+    if (typeof d.plugin.downloads === 'number') {
+      h += '    <span class="detail-meta-label">Downloads</span>';
+      h += '    <span class="detail-meta-value">' + d.plugin.downloads + '</span>';
+    }
+    h += '  </div>';
+    h += '</div>';
+
+    if (d.views.length > 0) {
+      h += '<div class="detail-section">';
+      h += '  <div class="detail-section-title">Views</div>';
+      h += '  <div class="detail-items-list">';
+      for (const v of d.views) {
+        h += '    <div class="detail-item-row">';
+        h += '      <div class="detail-item-name">' + esc(v.title || v.name) + '</div>';
+        h += '      <div class="detail-item-desc">' + esc(v.name) + '</div>';
+        h += '    </div>';
+      }
+      h += '  </div>';
+      h += '</div>';
+    }
+
+    return h;
+  }
+
+  function renderDetailDocs(d) {
+    if (d.docs.length === 0) {
+      return '<div class="no-items">No documentation included with this plugin.</div>';
+    }
+
+    let h = '<div class="detail-items-list">';
+    for (let i = 0; i < d.docs.length; i++) {
+      const doc = d.docs[i];
+      const isExpanded = d.expandedDoc === i;
+      const displayName = doc.name.replace(/^plugin\.[^.]+\.?/, '') || doc.name;
+      h += '<div class="detail-item-row">';
+      h += '  <div class="doc-item" data-action="toggle-doc" data-index="' + i + '">';
+      h += '    <div class="detail-item-name">';
+      h += '      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 4px; transition: transform 0.15s;' + (isExpanded ? ' transform: rotate(90deg);' : '') + '"><polyline points="9 18 15 12 9 6"/></svg>';
+      h += esc(displayName);
+      h += '    </div>';
+      h += '  </div>';
+      if (isExpanded) {
+        h += '  <div class="doc-content">' + esc(doc.content) + '</div>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function renderDetailSource(d) {
+    if (!d.code) {
+      return '<div class="no-items">No source code available.</div>';
+    }
+    return '<div class="code-block">' + esc(d.code) + '</div>';
+  }
+</script>
+
 <script id="script-init">
   (async () => {
     const container = document.getElementById('pluginsContainer');
@@ -617,6 +1008,43 @@
     });
 
     container.addEventListener('click', e => {
+      // Back button
+      if (e.target.closest('[data-action="back"]')) {
+        closeDetail();
+        return;
+      }
+
+      // Detail tab switching
+      const detailTabBtn = e.target.closest('[data-action="detail-tab"]');
+      if (detailTabBtn && detailView) {
+        detailView.activeTab = detailTabBtn.dataset.tab;
+        detailView.expandedDoc = null;
+        renderDetail();
+        return;
+      }
+
+      // Toggle doc expand/collapse
+      const docToggle = e.target.closest('[data-action="toggle-doc"]');
+      if (docToggle && detailView) {
+        const idx = parseInt(docToggle.dataset.index, 10);
+        detailView.expandedDoc = detailView.expandedDoc === idx ? null : idx;
+        renderDetail();
+        return;
+      }
+
+      // Open detail view
+      const openBtn = e.target.closest('[data-action="open-detail"]');
+      if (openBtn) {
+        const source = openBtn.dataset.source;
+        if (source === 'installed') {
+          openDetail('installed', openBtn.dataset.name);
+        } else if (source === 'registry') {
+          const regPlugin = registryPlugins && registryPlugins.find(p => p.id === openBtn.dataset.id);
+          if (regPlugin) openDetail('registry', regPlugin);
+        }
+        return;
+      }
+
       const uninstallBtn = e.target.closest('[data-action="uninstall"]');
       if (uninstallBtn) {
         uninstallPlugin(uninstallBtn.dataset.name);
@@ -631,6 +1059,7 @@
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (detailView) closeDetail();
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeTab = btn.dataset.tab;
