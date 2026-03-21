@@ -50,19 +50,4 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).buildTaskItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_PLUGINS, async (event) => {
-    return getCommandPalette(event).buildPluginItems();
-  });
-
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.INSTALL_PLUGIN, async (event) => {
-    return getCommandPalette(event).installPluginFromDialog();
-  });
-
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UNINSTALL_PLUGIN, async (event, pluginName: string) => {
-    getCommandPalette(event).uninstallPluginByName(pluginName);
-  });
-
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.TOGGLE_PLUGIN, async (event, pluginName: string, enabled: boolean) => {
-    getCommandPalette(event).togglePluginEnabled(pluginName, enabled);
-  });
 }

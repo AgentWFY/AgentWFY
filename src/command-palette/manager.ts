@@ -335,11 +335,10 @@ export class CommandPaletteManager {
         action: { type: 'enter-tasks' },
       },
       {
-        id: 'action:plugins',
-        title: 'Plugins',
-        expandable: true,
+        id: 'action:install-plugin',
+        title: 'Install Plugin',
         group: 'Actions',
-        action: { type: 'enter-plugins' },
+        action: { type: 'install-plugin' },
       },
     ];
 
@@ -437,40 +436,6 @@ export class CommandPaletteManager {
         },
       };
     });
-  }
-
-  buildPluginItems(): CommandPaletteItem[] {
-    const agentRoot = this.deps.getAgentRoot();
-    const db = getOrCreateAgentDb(agentRoot);
-    const plugins = db.listPlugins();
-
-    const items: CommandPaletteItem[] = [
-      {
-        id: 'plugin:install',
-        title: 'Install Plugin',
-        group: 'Plugins',
-        action: { type: 'install-plugin' },
-      },
-    ];
-
-    for (const p of plugins) {
-      let subtitle = p.description;
-      if (p.author) subtitle = subtitle ? `${subtitle} — ${p.author}` : p.author;
-      items.push({
-        id: `plugin:${p.name}`,
-        title: p.name,
-        subtitle,
-        group: 'Plugins',
-        settingValue: p.enabled ? 'enabled' : 'disabled',
-        action: {
-          type: 'toggle-plugin',
-          pluginName: p.name,
-          enabled: !p.enabled,
-        },
-      });
-    }
-
-    return items;
   }
 
   performInstall(packagePath: string): { installed: string[] } {
@@ -664,7 +629,6 @@ export class CommandPaletteManager {
       case 'enter-settings':
       case 'enter-recent-agents':
       case 'enter-tasks':
-      case 'enter-plugins':
         // Handled entirely in the palette UI
         return;
 
