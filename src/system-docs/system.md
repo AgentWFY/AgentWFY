@@ -97,6 +97,10 @@ Load `system.tasks` and `system.triggers` reference sections for full details.
 
 Spawn headless sub-agents with their own execJs context and the same host APIs. Send follow-up messages for multi-turn conversations. Responses are delivered via the event bus. Load `system.agents` for full details.
 
+### Introspection
+
+- `getAvailableFunctions()` → `[{ name, source }]`
+
 ## Docs
 
 Docs are stored in the `docs` table (target="agent"). Docs without dots in the name are preloaded into this prompt. Read others on demand:
