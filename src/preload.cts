@@ -100,6 +100,10 @@ const Channels = {
     spawnAgent: 'agent:spawnAgent',
     sendToAgent: 'agent:sendToAgent',
   },
+  runtimeFunctions: {
+    methods: 'runtime-functions:methods',
+    call: 'runtime-functions:call',
+  },
 } as const;
 
 // --- Helpers ---
@@ -461,59 +465,24 @@ if (isApp) {
 // --- agentview:// — expose window.agentwfy (flat API, agent tools subset only) ---
 
 if (isAgentView) {
-  const files = buildFilesApi();
-  const agentTabs = buildAgentTabsApi();
-  const busAgent = buildBusAgentApi();
-
-  // Query plugin method names synchronously so they can be exposed as flat methods.
-  // Wrapped in try/catch: if the sync IPC handler throws (e.g. sender context not found),
-  // sendSync throws on the renderer side, which would prevent contextBridge.exposeInMainWorld
-  // from executing — leaving window.agentwfy undefined.
-  let pluginMethodNames: string[] = [];
+  let runtimeFunctionNames: string[] = [];
   try {
-    pluginMethodNames = ipcRenderer.sendSync(Channels.plugins.methods) ?? [];
+    runtimeFunctionNames = ipcRenderer.sendSync(Channels.runtimeFunctions.methods) ?? [];
   } catch {
-    // Plugins unavailable for this view — continue without them.
+    // Silently continue — if sendSync throws (e.g. sender context gone),
+    // leaving runtimeFunctionNames empty is safer than crashing the preload.
   }
-  const pluginFunctions: Record<string, Function> = {};
-  for (const name of pluginMethodNames) {
-    pluginFunctions[name] = (params: unknown) => ipcRenderer.invoke(Channels.plugins.call, name, params);
+
+  const runtimeFunctions: Record<string, Function> = {};
+  for (const name of runtimeFunctionNames) {
+    runtimeFunctions[name] = (params: unknown) =>
+      ipcRenderer.invoke(Channels.runtimeFunctions.call, name, params);
   }
 
   contextBridge.exposeInMainWorld('agentwfy', {
-    ...files,
-    runSql(request: RunSqlRequest): Promise<unknown[]> {
-      return invokeRunSql(request);
-    },
-    ...agentTabs,
-    // Flat aliases matching WorkerHostMethodMap keys
-    getTabConsoleLogs: agentTabs.getConsoleLogs,
-    execTabJs: agentTabs.execJs,
-    ...busAgent,
-    spawnAgent(prompt: string): Promise<{ agentId: string }> {
-      return ipcRenderer.invoke(Channels.agent.spawnAgent, prompt);
-    },
-    sendToAgent(agentId: string, message: string): Promise<void> {
-      return ipcRenderer.invoke(Channels.agent.sendToAgent, agentId, message);
-    },
-    startTask(taskId: number, input?: unknown): Promise<{ runId: string }> {
-      return ipcRenderer.invoke(Channels.tasks.start, taskId, input);
-    },
-    stopTask(runId: string): Promise<void> {
-      return ipcRenderer.invoke(Channels.tasks.stop, runId);
-    },
-    ...pluginFunctions,
+    ...runtimeFunctions,
     openExternal(url: string): Promise<void> {
       return ipcRenderer.invoke(Channels.dialog.openExternal, url);
-    },
-    requestInstallPlugin(packagePath: string): Promise<{ installed: string[] }> {
-      return ipcRenderer.invoke(Channels.plugins.requestInstall, packagePath);
-    },
-    requestTogglePlugin(pluginName: string): Promise<{ toggled: boolean; enabled?: boolean }> {
-      return ipcRenderer.invoke(Channels.plugins.requestToggle, pluginName);
-    },
-    requestUninstallPlugin(pluginName: string): Promise<{ uninstalled: boolean }> {
-      return ipcRenderer.invoke(Channels.plugins.requestUninstall, pluginName);
     },
   });
 }
