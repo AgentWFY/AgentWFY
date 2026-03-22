@@ -16,6 +16,114 @@ import type {
 } from '../agent/provider_types.js'
 import { parseSSE } from '../agent/streaming/sse.js'
 
+// ── Context compaction ──
+
+const COMPACTION_SYSTEM_PROMPT = 'You are a conversation summarizer. Produce a concise, structured summary that another LLM will use to continue the work. Never refuse, never add commentary.'
+
+const COMPACTION_PROMPT = `Summarize the conversation above into a structured context checkpoint. Use this format:
+
+## Goal
+[What the user is trying to accomplish]
+
+## Progress
+- [x] [Completed tasks]
+- [ ] [In-progress tasks]
+
+## Key Decisions
+- [Important decisions and rationale]
+
+## Next Steps
+1. [What should happen next]
+
+## Critical Context
+- [File paths, function names, data, or references needed to continue]
+
+Be concise. Preserve exact file paths, function names, and error messages.`
+
+const COMPACTION_UPDATE_PROMPT = `The messages above are NEW conversation messages since the last summary. Update the existing summary provided in <previous-summary> tags.
+
+RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from in-progress to completed when done
+- UPDATE Next Steps based on what was accomplished
+- If something is no longer relevant, remove it
+
+Use the same format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Progress
+- [x] [Include previously done items AND newly completed items]
+- [ ] [Current work — update based on progress]
+
+## Key Decisions
+- [Preserve all previous, add new]
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Be concise. Preserve exact file paths, function names, and error messages.`
+
+function serializeMessages(messages: InternalMessage[]): string {
+  const parts: string[] = []
+  for (const msg of messages) {
+    if (msg.role === 'system') continue
+    const role = msg.role === 'assistant' ? 'Assistant' : msg.role === 'tool' ? 'Tool Result' : 'User'
+    const content = typeof msg.content === 'string' ? msg.content
+      : Array.isArray(msg.content)
+        ? (msg.content as Array<{ type?: string; text?: string }>).filter(c => c.type === 'text' || c.text).map(c => c.text ?? '').join('\n')
+        : String(msg.content ?? '')
+    if (content) parts.push(`${role}: ${content.slice(0, 2000)}`)
+  }
+  return parts.join('\n\n')
+}
+
+// ── Context overflow detection ──
+// OpenAI/OpenRouter return: { "error": { "code": "context_length_exceeded", ... } }
+
+function isContextOverflow(responseText: string): boolean {
+  try {
+    const body = JSON.parse(responseText)
+    const err = body?.error
+    return err?.code === 'context_length_exceeded'
+  } catch {
+    return false
+  }
+}
+
+// ── Retry ──
+
+const MAX_RETRIES = 2
+const INITIAL_DELAY_MS = 500
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 429 || status === 529 || status >= 500
+}
+
+function getRetryDelay(attempt: number, headers?: Headers): number {
+  const retryAfter = headers?.get('retry-after')
+  if (retryAfter) {
+    const seconds = Number(retryAfter)
+    if (!isNaN(seconds) && seconds > 0 && seconds <= 60) return seconds * 1000
+  }
+  const base = INITIAL_DELAY_MS * Math.pow(2, attempt)
+  return base + Math.random() * base * 0.5
+}
+
+function retrySleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms)
+    if (!signal) return
+    if (signal.aborted) { clearTimeout(timer); reject(new Error('aborted')); return }
+    signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('aborted')) }, { once: true })
+  })
+}
+
 // ── Internal message types (OpenAI format) ──
 
 interface InternalMessage {
@@ -60,6 +168,7 @@ class OpenAICompatibleSession implements ProviderSession {
   private config: ProviderSessionConfig
   private providerConfig: ProviderConfigSnapshot
   private lastInputTokens = 0
+  private pendingToolIds = new Set<string>()
 
   constructor(
     config: ProviderSessionConfig,
@@ -71,6 +180,7 @@ class OpenAICompatibleSession implements ProviderSession {
     this.providerConfig = providerConfig
     if (initialMessages) {
       this.messages = [{ role: 'system', content: config.systemPrompt }, ...initialMessages]
+      this.repairOrphanedToolCalls()
     } else {
       this.messages.push({ role: 'system', content: config.systemPrompt })
     }
@@ -140,7 +250,127 @@ class OpenAICompatibleSession implements ProviderSession {
     }
   }
 
+  private async compactMessages(): Promise<boolean> {
+    // messages[0] is always the system prompt
+    if (this.messages.length <= 7) return false
+
+    const keepFromEnd = Math.max(6, Math.ceil((this.messages.length - 1) / 2))
+    let splitIdx = this.messages.length - keepFromEnd
+    if (splitIdx < 2) return false
+    // Find a user message that starts a new turn (skip tool results and assistant messages)
+    while (splitIdx < this.messages.length) {
+      const msg = this.messages[splitIdx]
+      if (msg.role === 'user') break
+      splitIdx++
+    }
+    // Don't split right after an assistant with tool_calls (would orphan the tool results)
+    while (splitIdx > 1 && this.messages[splitIdx - 1]?.role === 'tool') {
+      splitIdx--
+    }
+    // Back up to the assistant that owns those tool results
+    if (splitIdx > 1 && this.messages[splitIdx - 1]?.role === 'assistant') {
+      splitIdx--
+    }
+    if (splitIdx < 2 || splitIdx >= this.messages.length - 2) return false
+
+    const oldMessages = this.messages.slice(1, splitIdx) // exclude system prompt
+    const keptMessages = this.messages.slice(splitIdx)
+
+    // Check for previous compaction summary to build upon
+    let previousSummary: string | undefined
+    if (oldMessages.length > 0 && typeof oldMessages[0].content === 'string'
+      && oldMessages[0].content.startsWith('[Context compacted')) {
+      previousSummary = oldMessages[0].content
+    }
+
+    let summary: string
+    try {
+      const apiKey = this.providerConfig.apiKey ?? ''
+      const baseUrl = this.providerConfig.baseUrl.replace(/\/v1\/?$/, '')
+      const conversationText = serializeMessages(oldMessages)
+      let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`
+      if (previousSummary) {
+        promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`
+        promptText += COMPACTION_UPDATE_PROMPT
+      } else {
+        promptText += COMPACTION_PROMPT
+      }
+
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.providerConfig.modelId,
+          messages: [
+            { role: 'system', content: COMPACTION_SYSTEM_PROMPT },
+            { role: 'user', content: promptText },
+          ],
+          max_tokens: 4096,
+        }),
+      })
+
+      if (!response.ok) {
+        console.error('[openai-compatible] Compaction summarization failed:', response.status)
+        return false
+      }
+
+      const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+      summary = result.choices?.[0]?.message?.content ?? ''
+    } catch (err) {
+      console.error('[openai-compatible] Compaction summarization error:', err)
+      return false
+    }
+
+    if (!summary) return false
+
+    const compactionText = `[Context compacted — ${oldMessages.length} earlier messages summarized]\n\n${summary}`
+    this.messages = [
+      this.messages[0], // system prompt
+      { role: 'user', content: compactionText },
+      { role: 'assistant', content: 'Understood, I have the context from the summary. Continuing.' },
+      ...keptMessages,
+    ]
+    this.displayMessages.push({
+      role: 'assistant',
+      blocks: [{ type: 'text', text: compactionText }],
+      timestamp: Date.now(),
+    })
+    this.emit({ type: 'state_changed' })
+    return true
+  }
+
+  private repairOrphanedToolCalls(): void {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i]
+      if (msg.role !== 'assistant') continue
+      const toolCalls = msg.tool_calls as Array<{ id: string }> | undefined
+      if (!toolCalls || toolCalls.length === 0) return
+
+      const resolved = new Set<string>()
+      for (let j = i + 1; j < this.messages.length; j++) {
+        if (this.messages[j].role === 'tool' && this.messages[j].tool_call_id) {
+          resolved.add(this.messages[j].tool_call_id as string)
+        }
+      }
+
+      for (const tc of toolCalls) {
+        if (!resolved.has(tc.id)) {
+          this.messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: 'Tool execution was interrupted.',
+          })
+        }
+      }
+      return
+    }
+  }
+
   private handleUserMessage(text: string, images?: ImageContent[]): void {
+    this.repairOrphanedToolCalls()
     // Build user content
     const content: unknown[] = [{ type: 'text', text }]
     if (images) {
@@ -185,10 +415,14 @@ class OpenAICompatibleSession implements ProviderSession {
     if (lastAssistant && lastAssistant.role === 'assistant') {
       lastAssistant.blocks.push({ type: 'exec_js_result', id, content, isError })
     }
-    this.emit({ type: 'state_changed' })
 
-    // Continue streaming
-    void this.stream()
+    this.pendingToolIds.delete(id)
+    if (this.pendingToolIds.size === 0) {
+      // All tool results received — safe to persist now
+      this.emit({ type: 'state_changed' })
+      // Continue streaming
+      void this.stream()
+    }
   }
 
   private async stream(): Promise<void> {
@@ -220,26 +454,51 @@ class OpenAICompatibleSession implements ProviderSession {
     this.emit({ type: 'start' })
     this.emitStatusLine()
 
-    let response: Response
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal,
-      })
-    } catch (err) {
-      if (signal.aborted) {
-        this.emit({ type: 'done' })
+    const bodyJson = JSON.stringify(body)
+    let response: Response | undefined
+    let lastError: string | undefined
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        try {
+          await retrySleep(getRetryDelay(attempt - 1, response?.headers), signal)
+        } catch {
+          this.emit({ type: 'done' })
+          return
+        }
+      }
+
+      try {
+        response = await fetch(url, { method: 'POST', headers, body: bodyJson, signal })
+      } catch (err) {
+        if (signal.aborted) {
+          this.emit({ type: 'done' })
+          return
+        }
+        lastError = err instanceof Error ? err.message : String(err)
+        continue
+      }
+
+      if (response.ok) {
+        lastError = undefined
+        break
+      }
+
+      if (!isRetryableStatus(response.status)) {
+        const text = await response.text().catch(() => '')
+        if (isContextOverflow(text) && await this.compactMessages()) {
+          void this.stream()
+          return
+        }
+        this.emitError(`OpenAI API error (${response.status}): ${text || response.statusText}`)
         return
       }
-      this.emitError(err instanceof Error ? err.message : String(err))
-      return
+
+      lastError = `OpenAI API error (${response.status}): ${await response.text().catch(() => response!.statusText)}`
     }
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      this.emitError(`OpenAI API error (${response.status}): ${text || response.statusText}`)
+    if (lastError || !response?.ok) {
+      this.emitError(lastError ?? 'Request failed')
       return
     }
 
@@ -370,7 +629,6 @@ class OpenAICompatibleSession implements ProviderSession {
 
     // Create or append to display message
     this.displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
-    this.emit({ type: 'state_changed' })
 
     // Update status line with context size
     if (inputTokens > 0) {
@@ -379,15 +637,20 @@ class OpenAICompatibleSession implements ProviderSession {
     }
 
     // Emit exec_js after assistant message is committed
-    for (const pt of pendingTools) {
-      this.emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
-    }
-
-    // If there are pending tool calls, don't emit done — wait for tool results
     if (pendingTools.length > 0) {
+      for (const pt of pendingTools) {
+        this.pendingToolIds.add(pt.id)
+      }
+      for (const pt of pendingTools) {
+        this.emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
+      }
+      // Don't emit state_changed while tools are pending — the session must
+      // not be persisted with tool_calls that lack matching tool results.
       return
     }
 
+    // No pending tools — safe to persist
+    this.emit({ type: 'state_changed' })
     this.emit({ type: 'done' })
   }
 }
