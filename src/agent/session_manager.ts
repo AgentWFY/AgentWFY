@@ -285,7 +285,7 @@ export class AgentSessionManager {
     return () => this.listeners.delete(listener)
   }
 
-  async spawnSession(prompt: string): Promise<{ agentId: string }> {
+  async spawnSession(prompt: string): Promise<{ sessionId: string }> {
     const agent = await this.createAgentInstance({})
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
@@ -298,22 +298,20 @@ export class AgentSessionManager {
       console.error('[AgentSessionManager] spawn-prompt failed', err)
     })
 
-    // Return the session file as the durable agentId
-    return { agentId: agent.sessionFile! }
+    return { sessionId: agent.sessionFile! }
   }
 
-  async sendToAgent(agentId: string, message: string): Promise<void> {
-    // agentId is a session file name
+  async sendToAgent(sessionFile: string, message: string): Promise<void> {
     // Check if this agent is already streaming in memory
     for (const [, entry] of this.sessions) {
-      if (entry.agent.sessionFile === agentId) {
+      if (entry.agent.sessionFile === sessionFile) {
         await entry.agent.prompt(message, { streamingBehavior: 'followUp' })
         return
       }
     }
 
     // Load from disk and send
-    const agent = await this.createAgentInstance({ sessionFile: agentId })
+    const agent = await this.createAgentInstance({ sessionFile })
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
 
@@ -501,9 +499,9 @@ export class AgentSessionManager {
     if (entry.autoPublishResponse) {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
-      const agentId = entry.agent.sessionFile
-      if (agentId && !this.deps.win.isDestroyed()) {
-        forwardBusPublish(this.deps.win, `agent:response:${agentId}`, { agentId, response: lastText })
+      const sessionFile = entry.agent.sessionFile
+      if (sessionFile && !this.deps.win.isDestroyed()) {
+        forwardBusPublish(this.deps.win, `agent:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
       }
     }
 
