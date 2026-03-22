@@ -324,6 +324,22 @@ function cancelRequest(requestId: string): void {
   controller.abort()
 }
 
+function handleFatalError(error: unknown): void {
+  const serialized = serializeError(error)
+  // Write to stderr first — piped to host and flushed reliably before exit
+  process.stderr.write(`${serialized.stack ?? `${serialized.name}: ${serialized.message}`}\n`)
+  // Best-effort IPC — may not be delivered before process exits
+  try {
+    parentPort.postMessage({ type: 'worker:crash', error: serialized })
+  } catch {
+    // parentPort may already be unusable
+  }
+  process.exit(1)
+}
+
+process.on('uncaughtException', handleFatalError)
+process.on('unhandledRejection', handleFatalError)
+
 parentPort.on('message', (messageEvent: { data: HostToWorkerMessage }) => {
   const message = messageEvent.data
   if (!message || typeof message !== 'object' || typeof (message as unknown as Record<string, unknown>).type !== 'string') {
