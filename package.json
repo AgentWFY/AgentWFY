@@ -18,12 +18,13 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-dmg": "^7.6.0",
     "@electron-forge/maker-squirrel": "^7.6.0",
     "@electron-forge/maker-zip": "^7.6.0",
     "electron": "npm:electron-nightly@^41.0.0-nightly.20251219",
-    "typescript": "^5.6.3",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.3"
   },
   "keywords": [],
   "author": {

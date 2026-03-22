@@ -44,6 +44,16 @@ module.exports = {
       },
     },
     {
+      name: '@electron-forge/maker-deb',
+      config: {
+        options: {
+          name: 'agentwfy',
+          productName: 'AgentWFY',
+          icon: './icons/icon.png',
+        },
+      },
+    },
+    {
       name: '@electron-forge/maker-squirrel',
       config: {
         name: 'AgentWFY',
