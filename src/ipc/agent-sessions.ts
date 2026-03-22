@@ -53,14 +53,14 @@ export function registerAgentSessionHandlers(
     return getManager(event).spawnSession(prompt)
   })
 
-  ipcMain.handle(Channels.agent.sendToAgent, async (event, agentId: string, message: string) => {
-    if (typeof agentId !== 'string' || agentId.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty agentId string')
+  ipcMain.handle(Channels.agent.sendToAgent, async (event, sessionId: string, message: string) => {
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      throw new Error('sendToAgent requires a non-empty sessionId string')
     }
     if (typeof message !== 'string' || message.trim().length === 0) {
       throw new Error('sendToAgent requires a non-empty message string')
     }
-    await getManager(event).sendToAgent(agentId, message)
+    await getManager(event).sendToAgent(sessionId, message)
   })
 }
 
