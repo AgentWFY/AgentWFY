@@ -96,6 +96,7 @@ class WindowManager {
 
     const window = new BrowserWindow({
       show: false,
+      icon: path.join(import.meta.dirname, '..', 'icons', 'icon.png'),
       title: agentRoot,
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'

@@ -358,6 +358,10 @@ async function createInitialWindow() {
 // --- App lifecycle ---
 
 app.on('ready', async () => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(path.join(import.meta.dirname, '..', 'icons', 'icon.png'));
+  }
+
   startFileWatcher();
 
   buildAndSetMenu();
