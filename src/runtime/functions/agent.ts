@@ -16,14 +16,14 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
 
   registry.register('sendToAgent', async (params) => {
     const request = params as WorkerHostMethodMap['sendToAgent']['params']
-    if (!request || typeof request.agentId !== 'string' || request.agentId.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty agentId string')
+    if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
+      throw new Error('sendToAgent requires a non-empty sessionId string')
     }
     if (typeof request.message !== 'string' || request.message.trim().length === 0) {
       throw new Error('sendToAgent requires a non-empty message string')
     }
     const sessionManager = getSessionManager()
-    await sessionManager.sendToAgent(request.agentId, request.message)
+    await sessionManager.sendToAgent(request.sessionId, request.message)
     return undefined
   })
 }

@@ -4,35 +4,35 @@ Spawn and interact with sub-agents.
 
 ## Spawning Agents
 
-`spawnAgent({ prompt })` → `{ agentId }` — spawn a headless sub-agent. It has its own execJs context with the same host APIs. The `agentId` is a session file name — the agent's conversation is persisted to disk.
+`spawnAgent({ prompt })` → `{ sessionId }` — spawn a headless sub-agent. It has its own execJs context with the same host APIs. The `sessionId` is a session file name — the agent's conversation is persisted to disk.
 
-When a spawned agent finishes processing, its last assistant response is auto-published to `agent:response:{agentId}`.
+When a spawned agent finishes processing, its last assistant response is auto-published to `agent:response:{sessionId}`.
 
 ```javascript
-const { agentId } = await spawnAgent({ prompt: 'Analyze the data and return a JSON summary.' })
-const { response } = await waitFor({ topic: `agent:response:${agentId}`, timeoutMs: 120000 })
+const { sessionId } = await spawnAgent({ prompt: 'Analyze the data and return a JSON summary.' })
+const { response } = await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 120000 })
 console.log(response)
 ```
 
 ## Interactive Agents
 
-Use `sendToAgent` to send follow-up messages to a previously spawned agent. The agent loads its conversation from disk, processes the new message, and auto-publishes the response to the same `agent:response:{agentId}` topic.
+Use `sendToAgent` to send follow-up messages to a previously spawned agent. The agent loads its conversation from disk, processes the new message, and auto-publishes the response to the same `agent:response:{sessionId}` topic.
 
-- `sendToAgent({ agentId, message })` → void — sends a message to an existing agent session. Blocks until the agent finishes processing.
+- `sendToAgent({ sessionId, message })` → void — sends a message to an existing agent session. Blocks until the agent finishes processing.
 
 ```javascript
 // Spawn an agent with a system-level instruction
-const { agentId } = await spawnAgent({ prompt: 'You are a trading assistant. Answer questions about portfolio data.' })
-await waitFor({ topic: `agent:response:${agentId}`, timeoutMs: 120000 }) // wait for initial response
+const { sessionId } = await spawnAgent({ prompt: 'You are a trading assistant. Answer questions about portfolio data.' })
+await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 120000 }) // wait for initial response
 
 // Send follow-up messages (multi-turn conversation)
-await sendToAgent({ agentId, message: 'What is the total P&L for March?' })
-const { response } = await waitFor({ topic: `agent:response:${agentId}`, timeoutMs: 120000 })
+await sendToAgent({ sessionId, message: 'What is the total P&L for March?' })
+const { response } = await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 120000 })
 console.log(response)
 
 // Continue the conversation — full history is preserved
-await sendToAgent({ agentId, message: 'Break it down by strategy.' })
-const { response: r2 } = await waitFor({ topic: `agent:response:${agentId}`, timeoutMs: 120000 })
+await sendToAgent({ sessionId, message: 'Break it down by strategy.' })
+const { response: r2 } = await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 120000 })
 console.log(r2)
 ```
 
