@@ -4,6 +4,8 @@ import fs from 'fs';
 import { WRITE_RE, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, OnDbChange } from './sqlite.js';
 
+const DDL_RE = /^\s*(CREATE|ALTER|DROP)\s+(TABLE|INDEX|TRIGGER|VIEW)\b/i;
+
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -417,6 +419,10 @@ class AgentDb {
   }
 
   run(request: SqlExecutionRequest, onDbChange?: OnDbChange): unknown[] {
+    if (DDL_RE.test(request.sql)) {
+      throw new Error('Schema modifications (CREATE/ALTER/DROP TABLE/INDEX/TRIGGER/VIEW) are not allowed on the agent database');
+    }
+
     const params = normalizeParams(request.params);
     const trackChanges = onDbChange && WRITE_RE.test(request.sql);
 
