@@ -25,6 +25,8 @@ type ChildEntry = {
   pendingExecutions: Map<string, PendingExecution>
   onMessage: (message: WorkerToHostMessage) => void
   onExit: (code: number) => void
+  lastCrashError?: string
+  stderrChunks: string[]
 }
 
 export interface JsRuntimeDeps {
@@ -75,7 +77,7 @@ export class JsRuntime {
     const child = utilityProcess.fork(
       path.join(import.meta.dirname, 'exec_worker.js'),
       [],
-      { serviceName: 'exec-worker-' + normalizedSessionId },
+      { serviceName: 'exec-worker-' + normalizedSessionId, stdio: 'pipe' },
     )
 
     const entry: ChildEntry = {
@@ -84,6 +86,19 @@ export class JsRuntime {
       pendingExecutions: new Map(),
       onMessage: () => {},
       onExit: () => {},
+      stderrChunks: [],
+    }
+
+    if (child.stderr) {
+      let stderrBytes = 0
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString()
+        stderrBytes += text.length
+        entry.stderrChunks.push(text)
+        while (stderrBytes > 65536 && entry.stderrChunks.length > 1) {
+          stderrBytes -= entry.stderrChunks.shift()!.length
+        }
+      })
     }
 
     entry.onMessage = (message: WorkerToHostMessage) => {
@@ -91,10 +106,20 @@ export class JsRuntime {
     }
 
     entry.onExit = (code: number) => {
-      const message = code === 0
-        ? new Error(`Session worker exited for ${normalizedSessionId}`)
-        : new Error(`Session worker crashed with code ${code} for ${normalizedSessionId}`)
-      this.disposeEntry(entry, message)
+      let errorMessage: string
+      if (code === 0) {
+        errorMessage = `Session worker exited for ${normalizedSessionId}`
+      } else {
+        errorMessage = `Session worker crashed with code ${code} for ${normalizedSessionId}`
+        if (entry.lastCrashError) {
+          errorMessage += `\n${entry.lastCrashError}`
+        }
+        const stderr = entry.stderrChunks.join('').trim()
+        if (stderr) {
+          errorMessage += `\nstderr: ${stderr}`
+        }
+      }
+      this.disposeEntry(entry, new Error(errorMessage))
     }
 
     child.on('message', entry.onMessage)
@@ -206,6 +231,11 @@ export class JsRuntime {
       }
       case 'host:call': {
         void this.handleHostCall(entry, message)
+        return
+      }
+      case 'worker:crash': {
+        const err = message.error
+        entry.lastCrashError = err.stack ?? `${err.name}: ${err.message}`
         return
       }
       default:
