@@ -874,7 +874,6 @@ export class TlAgentChat extends HTMLElement {
   private _pasteAttachmentEl: HTMLElement | null = null
   private _pasteLabelEl: HTMLElement | null = null
   private _pastePreviewEl: HTMLElement | null = null
-  // Open sessions
   private _openSessions: OpenSession[] = []
   private _activeSessionFile: string | null = null
   private _streamingFiles: string[] = []
@@ -1017,12 +1016,6 @@ export class TlAgentChat extends HTMLElement {
         if (d.statusLine) this.statusLine = d.statusLine
         this.render()
       })
-
-      // Load open sessions from store
-      try {
-        const stored = await ipc.store.get('openSessions')
-        if (Array.isArray(stored)) this._openSessions = stored as OpenSession[]
-      } catch {}
 
       // Get initial snapshot
       const snapshot = await ipc.agent.getSnapshot() as AgentSnapshot | null
@@ -1691,7 +1684,6 @@ export class TlAgentChat extends HTMLElement {
       const pinIdx = this._openSessions.findIndex(p => p.file === this._activeSessionFile)
       if (pinIdx >= 0 && this._openSessions[pinIdx].label !== this._sessionLabel) {
         this._openSessions[pinIdx].label = this._sessionLabel
-        this.saveOpenSessions()
       }
     }
     this.updateOpenDots()
@@ -1808,14 +1800,9 @@ export class TlAgentChat extends HTMLElement {
 
   // --- Open sessions ---
 
-  private saveOpenSessions() {
-    window.ipc?.store.set('openSessions', this._openSessions)
-  }
-
   private addOpenSession(file: string, label: string) {
     if (this._openSessions.some(s => s.file === file)) return
     this._openSessions.push({ file, label })
-    this.saveOpenSessions()
   }
 
   private loadSession(file: string) {
@@ -1828,7 +1815,6 @@ export class TlAgentChat extends HTMLElement {
   private removeOpenSession(file: string) {
     const wasCurrent = file === this._activeSessionFile
     this._openSessions = this._openSessions.filter(s => s.file !== file)
-    this.saveOpenSessions()
     this.renderOpenList()
 
     if (wasCurrent) {
