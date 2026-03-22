@@ -30,6 +30,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       url: hasUrl ? request.url : undefined,
       title: request.title,
       hidden: request.hidden,
+      params: request.params,
     })
   })
 
