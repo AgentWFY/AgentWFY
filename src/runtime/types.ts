@@ -236,10 +236,10 @@ export interface WorkerHostMethodMap {
   }
   spawnAgent: {
     params: { prompt: string }
-    result: { agentId: string }
+    result: { sessionId: string }
   }
   sendToAgent: {
-    params: { agentId: string; message: string }
+    params: { sessionId: string; message: string }
     result: void
   }
   startTask: {
