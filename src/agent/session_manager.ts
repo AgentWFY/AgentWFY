@@ -367,7 +367,7 @@ export class AgentSessionManager {
         updatedAt: h.updatedAt,
         isActive: isAct,
         isStreaming: !!streamingId,
-        file: streamingId ? null : h.file,
+        file: h.file,
         sessionId: streamingId ?? null,
       })
     }
