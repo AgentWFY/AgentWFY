@@ -345,7 +345,13 @@ interface WorkerLogStreamMessage {
   logEntry: ExecJsLogEntry
 }
 
+interface WorkerCrashMessage {
+  type: 'worker:crash'
+  error: ExecJsSerializedError
+}
+
 export type WorkerToHostMessage =
   | WorkerHostCallMessage
   | WorkerExecutionResultMessage
   | WorkerLogStreamMessage
+  | WorkerCrashMessage
