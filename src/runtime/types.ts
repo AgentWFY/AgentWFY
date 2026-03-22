@@ -112,6 +112,7 @@ export interface WorkerOpenTabRequest {
   url?: string
   title?: string
   hidden?: boolean
+  params?: Record<string, string>
 }
 
 export interface WorkerCloseTabRequest {
