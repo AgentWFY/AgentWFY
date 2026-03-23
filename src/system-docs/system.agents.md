@@ -37,3 +37,7 @@ console.log(r2)
 ```
 
 This enables building custom agent chat interfaces in views. The view spawns an agent once, then uses `sendToAgent` + `waitFor` for each user message.
+
+## Opening Agent Sessions in Chat
+
+`openSessionInChat({ sessionId })` → void — opens a spawned agent session in the main chat panel. Works for both running and finished sessions.

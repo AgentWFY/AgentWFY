@@ -28,7 +28,7 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
   registerTabs(registry, { tabTools: deps.tabTools })
   registerEvents(registry, { win: deps.win })
-  registerAgent(registry, { getSessionManager: deps.getSessionManager })
+  registerAgent(registry, { getSessionManager: deps.getSessionManager, win: deps.win })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
   registerPlugins(registry, {
     getCommandPalette: deps.getCommandPalette,

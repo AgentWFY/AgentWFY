@@ -322,6 +322,19 @@ export class AgentSessionManager {
     await agent.prompt(message)
   }
 
+  async openSessionInChat(sessionFile: string): Promise<{ label: string }> {
+    // If it's currently streaming in memory, switch to it
+    for (const [id, entry] of this.sessions) {
+      if (entry.agent.sessionFile === sessionFile) {
+        this.switchTo(id)
+        return { label: entry.label }
+      }
+    }
+    // Otherwise load from disk
+    await this.loadSessionFromDisk(sessionFile)
+    return { label: this._activeLabel }
+  }
+
   async disposeAll(): Promise<void> {
     for (const [, entry] of this.sessions) {
       if (entry.agent.isStreaming) {
