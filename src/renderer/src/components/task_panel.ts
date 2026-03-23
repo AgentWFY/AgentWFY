@@ -432,8 +432,6 @@ export class TlTaskPanel extends HTMLElement {
   private activeRuns: Array<{ runId: string; taskId: number; name: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private busUnsub: (() => void) | null = null
   private runningTimer: ReturnType<typeof setInterval> | null = null
-  // Cache for running task logs (fetched from live run data)
-  private runningLogs = new Map<string, Array<{ level: string; message: string; timestamp?: number }>>()
 
   constructor() {
     super()
