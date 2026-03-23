@@ -73,6 +73,10 @@ APIs:
 
 Always `reloadTab` after updating view content via SQL.
 
+### Tab Links
+
+Clickable links in chat messages: `[text](agentview://view/<viewId>)` or `[text](agentview://file/<filePath>)`. Optional `?title=...` query param sets the tab title.
+
 ### Browser
 
 - `openExternal({ url })` — open a URL in the user's default browser (http/https only)
