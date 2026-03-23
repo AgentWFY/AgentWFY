@@ -629,6 +629,11 @@ export class TlTaskPanel extends HTMLElement {
           if (configInfo) {
             html += `<div class="trigger-detail-row"><span class="trigger-detail-label">config </span>${escapeHtml(configInfo)}</div>`
           }
+          const triggerInput = (() => { try { const p = JSON.parse(trigger.config); return p.input } catch { return undefined } })()
+          if (triggerInput !== undefined && triggerInput !== null) {
+            const inputStr = typeof triggerInput === 'string' ? triggerInput : JSON.stringify(triggerInput, null, 2)
+            html += `<div class="trigger-detail-row"><span class="trigger-detail-label">input </span>${escapeHtml(inputStr)}</div>`
+          }
           html += `</div>`
         }
         html += `</div>`
