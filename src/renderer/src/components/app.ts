@@ -370,6 +370,7 @@ export class TlApp extends HTMLElement {
     })
 
     this.updateHeaderSpacer()
+    window.dispatchEvent(new Event('resize'))
   }
 
   private subscribeToAgentDbChanges() {
