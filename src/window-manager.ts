@@ -547,7 +547,7 @@ class WindowManager {
           const runId = await ctx.taskRunner.startTask(taskId, input, origin as any);
           return { runId };
         },
-        busWaitFor: (topic, timeoutMs?) => {
+        waitFor: (topic, timeoutMs?) => {
           if (win.isDestroyed()) throw new Error('Main window is not available');
           return forwardBusWaitFor(win, topic, timeoutMs);
         },

@@ -227,11 +227,11 @@ export interface WorkerHostMethodMap {
     params: WorkerExecTabJsRequest
     result: unknown
   }
-  busPublish: {
+  publish: {
     params: { topic: string; data: unknown }
     result: void
   }
-  busWaitFor: {
+  waitFor: {
     params: { topic: string; timeoutMs?: number }
     result: unknown
   }
