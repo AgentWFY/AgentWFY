@@ -1300,6 +1300,18 @@ export class TlAgentChat extends HTMLElement {
         }
       }
     })
+    this._openDotsEl.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return
+      const dot = (e.target as HTMLElement).closest('.open-dot') as HTMLElement | null
+      if (dot) {
+        e.preventDefault()
+        const idx = parseInt(dot.dataset.idx!, 10)
+        const session = this._openSessions[idx]
+        if (session) {
+          this.removeOpenSession(session.file)
+        }
+      }
+    })
     this._sessionTitleEl = document.createElement('span')
     this._sessionTitleEl.className = 'session-title'
     this._openDotsEl.appendChild(this._sessionTitleEl)
