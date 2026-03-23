@@ -78,7 +78,7 @@ export function setupAgentStateStreaming(
 ): () => void {
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
   let prevIsStreaming = false
-  let prevMessageCount = 0
+  let prevMessages: unknown = null
   let prevNotifyOnFinish = false
 
   const unsubscribe = manager.subscribe(() => {
@@ -101,9 +101,10 @@ export function setupAgentStateStreaming(
       }
 
       // Send full snapshot when messages change (new turn committed during
-      // multi-turn tool calling), on transition into streaming, or when
-      // non-streaming state like notifyOnFinish changes
-      if (!prevIsStreaming || snapshot.messages.length !== prevMessageCount || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
+      // multi-turn tool calling, or messages replaced on done), on transition
+      // into streaming, or when non-streaming state like notifyOnFinish changes.
+      // Compare by reference to detect replacements (Agent always creates new arrays).
+      if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
         win.webContents.send(Channels.agent.snapshot, snapshot)
       }
     } else {
@@ -112,7 +113,7 @@ export function setupAgentStateStreaming(
     }
 
     prevIsStreaming = snapshot.isStreaming
-    prevMessageCount = snapshot.messages.length
+    prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
   })
 
