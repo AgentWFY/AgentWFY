@@ -15,11 +15,15 @@ triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE
 
 Triggers reload automatically when the table changes.
 
+## input
+
+All trigger types support an optional `input` field in their config. When set, it overrides the trigger's default input and is passed to the task as its `input` global. Without it, each trigger passes its natural default (schedule: none, http: request data, event: event data).
+
 ## schedule
 
 Cron-like scheduling with 6-field expressions.
 
-Config: `{ "expression": "second minute hour day month weekday" }`
+Config: `{ "expression": "second minute hour day month weekday", "input": ... }`
 
 Fields (left to right):
 1. seconds (0-59)
@@ -40,17 +44,16 @@ Examples:
 
 Exposes an HTTP endpoint that triggers the task when called.
 
-Config: `{ "path": "/my-endpoint", "method": "POST" }`
+Config: `{ "path": "/my-endpoint", "method": "POST", "input": ... }`
 
 - `path` — URL path for the endpoint (must start with `/`)
 - `method` — GET, POST, PUT, PATCH, DELETE (default: POST)
-
-Task receives as input: `{ method, path, headers, query, body }`
+Task receives as input: `{ method, path, headers, query, body }` (overridden by `input` when configured)
 
 ## event
 
 Subscribes to an internal event bus topic.
 
-Config: `{ "topic": "my-topic" }`
+Config: `{ "topic": "my-topic", "input": ... }`
 
-Task receives the published event data as input. Fires each time a message is published to the topic.
+Task receives the published event data as input. Fires each time a message is published to the topic (overridden by `input` when configured).
