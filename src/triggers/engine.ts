@@ -13,15 +13,18 @@ interface TriggerRow {
 
 interface ScheduleConfig {
   expression: string;
+  input?: unknown;
 }
 
 interface HttpConfig {
   path: string;
   method?: string;
+  input?: unknown;
 }
 
 interface EventConfig {
   topic: string;
+  input?: unknown;
 }
 
 import type { TaskOrigin } from '../task-runner/task_runner.js';
@@ -152,7 +155,7 @@ export class TriggerEngine {
       const delay = next.getTime() - Date.now();
       timer = setTimeout(() => {
         if (stopped) return;
-        this.deps.startTask(taskId, undefined, { type: 'trigger', triggerId, triggerType: 'schedule', triggerConfig: config.expression }).catch(err => {
+        this.deps.startTask(taskId, config.input, { type: 'trigger', triggerId, triggerType: 'schedule', triggerConfig: config.expression }).catch(err => {
           console.error(`[triggers] Schedule trigger ${triggerId} failed to start task ${taskId}:`, err);
         });
         scheduleNext();
@@ -181,7 +184,7 @@ export class TriggerEngine {
 
     const handler = async (request: HttpRequestData): Promise<{ status?: number; body: unknown }> => {
       try {
-        const { runId } = await this.deps.startTask(taskId, request, { type: 'trigger', triggerId, triggerType: 'http', triggerConfig });
+        const { runId } = await this.deps.startTask(taskId, config.input ?? request, { type: 'trigger', triggerId, triggerType: 'http', triggerConfig });
 
         // Wait for task completion via bus
         const result = await this.deps.busWaitFor(`task:run:${runId}`, 120_000) as {
@@ -220,7 +223,7 @@ export class TriggerEngine {
     }
 
     const unsubscribe = this.deps.busSubscribe(config.topic, (data: unknown) => {
-      this.deps.startTask(taskId, data, { type: 'trigger', triggerId, triggerType: 'event', triggerConfig: config.topic }).catch(err => {
+      this.deps.startTask(taskId, config.input ?? data, { type: 'trigger', triggerId, triggerType: 'event', triggerConfig: config.topic }).catch(err => {
         console.error(`[triggers] Event trigger ${triggerId} failed to start task ${taskId}:`, err);
       });
     });

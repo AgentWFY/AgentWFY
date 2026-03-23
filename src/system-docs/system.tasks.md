@@ -26,7 +26,7 @@ When a task is triggered (by a trigger or by the user from the command palette),
 - **User input**: the user can type optional text when running a task from the command palette
 - **HTTP trigger**: `input` is `{ method, path, headers, query, body }`
 - **Event trigger**: `input` is the published event data
-- **Schedule trigger**: no input
+- **Schedule trigger**: the trigger's `config.input` value (if configured), otherwise no input
 
 ## Completion
 
