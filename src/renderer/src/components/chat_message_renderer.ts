@@ -91,19 +91,18 @@ function formatToolResult(result: unknown): { text: string; images: Array<{ data
 }
 
 function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
-  let html = `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${escapeHtml(tool.id)}">
+  const headerHtml = `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${escapeHtml(tool.id)}">
     <span class="tool-description">${escapeHtml(tool.description)}</span>
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
-  if (isOpen) {
-    const { text: resultText, images } = formatToolResult(tool.result)
-    html += '<div class="tool-body">'
-    if (tool.code) html += `<pre>${escapeHtml(tool.code)}</pre>`
-    if (resultText) html += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${escapeHtml(resultText)}</pre>`
-    if (images.length > 0) html += images.map(img => `<img src="data:${escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
-    html += '</div>'
-  }
-  return html
+  if (!isOpen) return headerHtml
+  const { text: resultText, images } = formatToolResult(tool.result)
+  let bodyHtml = '<div class="tool-body">'
+  if (tool.code) bodyHtml += `<pre>${escapeHtml(tool.code)}</pre>`
+  if (resultText) bodyHtml += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${escapeHtml(resultText)}</pre>`
+  if (images.length > 0) bodyHtml += images.map(img => `<img src="data:${escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
+  bodyHtml += '</div>'
+  return `<div class="tool-card">${headerHtml}${bodyHtml}</div>`
 }
 
 // --- Incremental DOM rendering ---
