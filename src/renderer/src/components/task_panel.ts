@@ -149,10 +149,11 @@ const STYLES = `
     margin: 4px 8px; padding: 8px 10px;
     background: var(--color-bg2); border: 1px solid var(--color-border);
     border-radius: var(--radius-md, 6px); transition: border-color 0.1s;
+    cursor: pointer;
   }
   .task-card:hover { border-color: var(--color-text2); }
   .task-card.expanded { border-color: var(--color-accent); }
-  .task-card-top { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .task-card-top { display: flex; align-items: center; gap: 8px; }
   .tc-name {
     flex: 1; font-size: 12.5px; font-weight: 500; color: var(--color-text4);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -645,8 +646,8 @@ export class TlTaskPanel extends HTMLElement {
     for (const task of this.tasks) {
       const isExpanded = this.expandedTaskId === task.id
       const taskTriggers = this.triggers.filter(t => t.task_id === task.id && t.enabled)
-      html += `<div class="task-card${isExpanded ? ' expanded' : ''}">
-        <div class="task-card-top" data-task-id="${task.id}">
+      html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-id="${task.id}">
+        <div class="task-card-top">
           <span class="tc-name">${escapeHtml(task.name)}</span>
           <button class="tc-run" data-run-task="${task.id}">Run</button>
         </div>`
@@ -820,28 +821,22 @@ export class TlTaskPanel extends HTMLElement {
       })
     })
 
-    // Task card expand
-    this.shadow.querySelectorAll('.task-card-top[data-task-id]').forEach(el => {
+    // Task card expand/collapse
+    this.shadow.querySelectorAll('.task-card[data-task-id]').forEach(el => {
       el.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.tc-run')) return
+        if ((e.target as HTMLElement).closest('.tc-run') || (e.target as HTMLElement).closest('.run-input') || (e.target as HTMLElement).closest('.run-input-btn')) return
         const taskId = Number((el as HTMLElement).dataset.taskId)
         this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId
         this.updateContent()
       })
     })
 
-    // Run button (no input)
+    // Run button — runs task immediately (no input)
     this.shadow.querySelectorAll('.tc-run[data-run-task]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const taskId = Number((btn as HTMLElement).dataset.runTask)
-        this.expandedTaskId = taskId
-        this.updateContent()
-        // Focus input after re-render
-        setTimeout(() => {
-          const inputEl = this.shadow.querySelector(`.run-input[data-input-task="${taskId}"]`) as HTMLInputElement | null
-          if (inputEl) inputEl.focus()
-        }, 0)
+        this.runWithInput(taskId)
       })
     })
 
