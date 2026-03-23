@@ -871,7 +871,6 @@ export class TlAgentChat extends HTMLElement {
   private _defaultProviderId = ''
   private _selectedProviderId = ''
   private _providerStatusLines = new Map<string, string>()
-  private _providerPanelDirty = false
   private _stopBtn: HTMLElement | null = null
   private _providerInfo: HTMLElement | null = null
   private _providerGrid: HTMLElement | null = null
@@ -1737,10 +1736,7 @@ export class TlAgentChat extends HTMLElement {
     if (this._providerPanel) {
       if (this.activePanel === 'providers') {
         this._providerPanel.style.display = ''
-        if (this._providerPanelDirty) {
-          this._providerPanel.innerHTML = this.renderProviderPanelHtml()
-          this._providerPanelDirty = false
-        }
+        this._providerPanel.innerHTML = this.renderProviderPanelHtml()
       } else {
         this._providerPanel.style.display = 'none'
       }
