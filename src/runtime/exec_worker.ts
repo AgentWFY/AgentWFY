@@ -219,12 +219,6 @@ function callHostMethod(
   })
 }
 
-// Methods not listed here are exposed under their original name.
-const exposedNameMap: Record<string, string> = {
-  busPublish: 'publish',
-  busWaitFor: 'waitFor',
-}
-
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
   const { requestId, code, timeoutMs, input, methods } = message
   const abortController = new AbortController()
@@ -251,7 +245,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     const methodArgValues: Function[] = []
 
     for (const method of methods) {
-      methodParamNames.push(exposedNameMap[method] ?? method)
+      methodParamNames.push(method)
 
       if (method === 'captureTab') {
         methodArgValues.push(async (params: unknown) => {
