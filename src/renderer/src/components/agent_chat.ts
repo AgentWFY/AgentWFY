@@ -3,7 +3,7 @@ import {
   buildRenderBlocks,
   updateMessagesEl
 } from './chat_message_renderer.js'
-import { escapeHtml } from './chat_utils.js'
+import { escapeHtml, parseTabLink } from './chat_utils.js'
 
 interface SessionListItem {
   label: string
@@ -1430,6 +1430,20 @@ export class TlAgentChat extends HTMLElement {
           }
           this.render()
         }
+      }
+    })
+    this.messagesEl.addEventListener('click', (e) => {
+      const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      e.preventDefault()
+      const href = anchor.getAttribute('href')
+      if (!href) return
+
+      const tabRequest = parseTabLink(href)
+      if (tabRequest) {
+        window.ipc?.tabs.openTab(tabRequest)
+      } else if (href.startsWith('http://') || href.startsWith('https://')) {
+        window.ipc?.dialog.openExternal(href)
       }
     })
     container.appendChild(this.messagesEl)
