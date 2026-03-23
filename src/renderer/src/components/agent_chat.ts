@@ -57,9 +57,11 @@ const STYLES = `
   .messages * { overflow-anchor: none; }
   .messages #anchor { overflow-anchor: auto; height: 1px; }
   .block {
-    margin-bottom: 8px;
     user-select: text;
     word-break: break-word;
+  }
+  .block-user {
+    margin: 8px 0;
   }
   .block p { margin: 0.4em 0; }
   .block p:last-child { margin-bottom: 0; }
@@ -180,10 +182,13 @@ const STYLES = `
     color: var(--color-text2);
   }
   .block-user {
-    background: var(--color-surface);
+    background: #d0d0d0;
     padding: 6px 10px;
     border-radius: var(--radius-sm);
     color: var(--color-text4);
+  }
+  @media (prefers-color-scheme: dark) {
+    .block-user { background: #3a3a3a; }
   }
   .assistant-text { padding: 2px 0; }
   .thinking-text {
@@ -198,6 +203,12 @@ const STYLES = `
   .tools-group {
     margin-top: 2px;
   }
+  .tool-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 6px 10px;
+    margin: 4px 0;
+  }
   .tool-header {
     display: flex;
     align-items: baseline;
@@ -209,10 +220,6 @@ const STYLES = `
     color: var(--color-text2);
   }
   .tool-header:hover { color: var(--color-text3); }
-  .tool-header.open .tool-description {
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
   .tool-description {
     flex: 1;
     min-width: 0;
@@ -223,7 +230,7 @@ const STYLES = `
     flex-shrink: 0;
   }
   .tool-body {
-    padding: 4px 0 4px 0;
+    padding: 4px 0 0 0;
     font-size: 11px;
   }
   .tool-body pre {
