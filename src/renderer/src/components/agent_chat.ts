@@ -911,6 +911,7 @@ export class TlAgentChat extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     this.snapshotUnsub?.()
     this.snapshotUnsub = null
     this.streamingUnsub?.()
@@ -971,12 +972,23 @@ export class TlAgentChat extends HTMLElement {
     this.loadConfigStatusLine().then(() => this.render())
   }
 
+  private onOpenSessionInChat = (e: Event) => {
+    const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
+    if (file) {
+      this.addOpenSession(file, label || 'Session')
+      this.renderOpenList()
+    }
+    // Ensure the chat panel is visible
+    window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
+  }
+
   private async init() {
     try {
       await this.loadConfigStatusLine()
 
       // Refresh provider list when plugins change
       window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+      window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
 
       const ipc = window.ipc
       if (!ipc?.agent) {

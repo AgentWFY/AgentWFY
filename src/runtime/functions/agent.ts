@@ -1,9 +1,10 @@
+import type { BrowserWindow } from 'electron'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 
-export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager }): void {
-  const { getSessionManager } = deps
+export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager; win: BrowserWindow }): void {
+  const { getSessionManager, win } = deps
 
   registry.register('spawnAgent', async (params) => {
     const request = params as WorkerHostMethodMap['spawnAgent']['params']
@@ -25,5 +26,23 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
     const sessionManager = getSessionManager()
     await sessionManager.sendToAgent(request.sessionId, request.message)
     return undefined
+  })
+
+  registry.register('openSessionInChat', async (params) => {
+    const request = params as WorkerHostMethodMap['openSessionInChat']['params']
+    if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
+      throw new Error('openSessionInChat requires a non-empty sessionId string')
+    }
+    const sessionManager = getSessionManager()
+    const { label } = await sessionManager.openSessionInChat(request.sessionId)
+
+    // Notify the renderer to add this session to the open sessions list and show the chat panel
+    if (!win.isDestroyed()) {
+      const detail = JSON.stringify({ file: request.sessionId, label }).replace(/</g, '\\u003c')
+      win.webContents.executeJavaScript(
+        `window.dispatchEvent(new CustomEvent('agentwfy:open-session-in-chat', { detail: ${detail} }));`,
+        true,
+      ).catch(() => {})
+    }
   })
 }

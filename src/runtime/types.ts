@@ -243,6 +243,10 @@ export interface WorkerHostMethodMap {
     params: { sessionId: string; message: string }
     result: void
   }
+  openSessionInChat: {
+    params: { sessionId: string }
+    result: void
+  }
   startTask: {
     params: WorkerStartTaskRequest
     result: WorkerStartTaskResult
