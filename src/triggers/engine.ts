@@ -31,7 +31,7 @@ type TriggerOrigin = Extract<TaskOrigin, { type: 'trigger' }>;
 interface TriggerEngineDeps {
   getAgentRoot: () => string;
   startTask: (taskId: number, input?: unknown, origin?: TriggerOrigin) => Promise<{ runId: string }>;
-  busWaitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
+  waitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
   httpApi: HttpApiServer;
   busSubscribe: (topic: string, fn: (data: unknown) => void) => () => void;
 }
@@ -184,7 +184,7 @@ export class TriggerEngine {
         const { runId } = await this.deps.startTask(taskId, request, { type: 'trigger', triggerId, triggerType: 'http', triggerConfig });
 
         // Wait for task completion via bus
-        const result = await this.deps.busWaitFor(`task:run:${runId}`, 120_000) as {
+        const result = await this.deps.waitFor(`task:run:${runId}`, 120_000) as {
           status: string;
           result?: unknown;
           error?: string;
