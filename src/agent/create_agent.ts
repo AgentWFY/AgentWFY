@@ -395,7 +395,7 @@ export class AgentWFYAgent {
 
     this.sessionWritePromise = this.sessionWritePromise
       .then(async () => {
-        if (!this._sessionFile || this.disposed) {
+        if (!this._sessionFile) {
           return
         }
 
