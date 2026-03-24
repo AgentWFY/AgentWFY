@@ -128,7 +128,7 @@ registerAgentSessionHandlers(
     });
     ctx.sessionManager = newMgr;
     ctx.agentStateStreamingCleanup = setupAgentStateStreaming(newMgr, ctx.window);
-    await newMgr.createSession();
+    newMgr.resetActive();
     return newMgr;
   },
 );

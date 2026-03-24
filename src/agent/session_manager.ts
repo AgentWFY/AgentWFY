@@ -7,7 +7,6 @@ import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
 import { forwardBusPublish } from '../ipc/bus.js'
 import {
-  createSessionFileName,
   readSessionFile,
   listSessionFiles,
   parseStoredSession,
@@ -122,45 +121,39 @@ export class AgentSessionManager {
     return count
   }
 
-  async createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string> {
-    const sessionFile = createSessionFileName()
-    const label = opts?.label || 'New session'
-    const providerId = opts?.providerId || await this.readDefaultProviderId()
+  async createSession(opts: { label?: string; prompt: string; providerId?: string }): Promise<string> {
+    const label = opts.label || 'New session'
+    const providerId = opts.providerId || await this.readDefaultProviderId()
 
-    if (opts?.prompt) {
-      // Create agent immediately and start streaming
-      const agent = await this.createAgentInstance({ sessionFile, providerId })
-      const sessionId = agent.sessionId
-      this.deps.getJsRuntime().ensureWorker(sessionId)
+    const agent = await this.createAgentInstance({ providerId })
+    const sessionId = agent.sessionId
+    this.deps.getJsRuntime().ensureWorker(sessionId)
 
-      const entry = this.trackSession(sessionId, agent, label)
-      this._activeSessionFile = agent.sessionFile ?? sessionFile
-      this._activeSessionId = sessionId
-      this._activeMessages = []
-      this._activeLabel = label
-      this._activeNotifyOnFinish = false
-      this._activeProviderId = providerId
-
-      this.notify()
-
-      agent.prompt(opts.prompt).catch((err) => {
-        console.error('[AgentSessionManager] auto-prompt failed', err)
-      })
-
-      return sessionId
-    }
-
-    // No prompt — just set up empty active state
-    this._activeSessionFile = sessionFile
-    this._activeSessionId = null
+    this.trackSession(sessionId, agent, label)
+    this._activeSessionFile = agent.sessionFile ?? null
+    this._activeSessionId = sessionId
     this._activeMessages = []
     this._activeLabel = label
+    this._activeNotifyOnFinish = false
     this._activeProviderId = providerId
 
-    this._activeNotifyOnFinish = false
     this.notify()
 
-    return sessionFile
+    agent.prompt(opts.prompt).catch((err) => {
+      console.error('[AgentSessionManager] auto-prompt failed', err)
+    })
+
+    return sessionId
+  }
+
+  resetActive(): void {
+    this._activeSessionFile = null
+    this._activeSessionId = null
+    this._activeMessages = []
+    this._activeLabel = ''
+    this._activeNotifyOnFinish = false
+    this._activeProviderId = ''
+    this.notify()
   }
 
   async sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
@@ -247,14 +240,7 @@ export class AgentSessionManager {
       }
     }
 
-    this._activeSessionFile = null
-    this._activeSessionId = null
-    this._activeMessages = []
-    this._activeLabel = ''
-    this._activeNotifyOnFinish = false
-    this._activeProviderId = ''
-
-    this.notify()
+    this.resetActive()
   }
 
   setNotifyOnFinish(value: boolean): void {
@@ -346,12 +332,7 @@ export class AgentSessionManager {
     }
 
     this.sessions.clear()
-    this._activeSessionFile = null
-    this._activeSessionId = null
-    this._activeMessages = []
-    this._activeLabel = ''
-    this._activeNotifyOnFinish = false
-    this._activeProviderId = ''
+    this.resetActive()
     this.listeners.clear()
   }
 
