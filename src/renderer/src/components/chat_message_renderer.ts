@@ -63,31 +63,38 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
   return blocks
 }
 
-function extractImagesFromResult(result: unknown): { images: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
-  const images: Array<{ data: string; mimeType: string }> = []
-  if (!Array.isArray(result)) return { images, filteredResult: result }
+function extractFilesFromResult(result: unknown): { files: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
+  const files: Array<{ data: string; mimeType: string }> = []
+  if (!Array.isArray(result)) return { files, filteredResult: result }
 
   const filtered = result.filter((item: Record<string, unknown>) => {
-    if (item?.type === 'image' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
-      images.push({ data: item.data, mimeType: item.mimeType })
+    if (item?.type === 'file' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
+      files.push({ data: item.data, mimeType: item.mimeType })
       return false
     }
     return true
   })
 
-  return { images, filteredResult: filtered }
+  return { files, filteredResult: filtered }
 }
 
-function formatToolResult(result: unknown): { text: string; images: Array<{ data: string; mimeType: string }> } {
-  const { images, filteredResult } = extractImagesFromResult(result)
+function renderFile(file: { data: string; mimeType: string }): string {
+  if (file.mimeType.startsWith('image/')) {
+    return `<img src="data:${escapeHtml(file.mimeType)};base64,${file.data}">`
+  }
+  return `<span class="file-badge">${escapeHtml(file.mimeType)}</span>`
+}
+
+function formatToolResult(result: unknown): { text: string; files: Array<{ data: string; mimeType: string }> } {
+  const { files, filteredResult } = extractFilesFromResult(result)
   if (!Array.isArray(filteredResult)) {
-    return { text: typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2), images }
+    return { text: typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2), files }
   }
   const textParts = filteredResult
     .filter((item: Record<string, unknown>) => item?.type === 'text')
     .map((item: Record<string, unknown>) => item.text as string)
   const text = textParts.length > 0 ? textParts.join('\n') : JSON.stringify(filteredResult, null, 2)
-  return { text, images }
+  return { text, files }
 }
 
 function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
@@ -96,11 +103,11 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
   if (!isOpen) return headerHtml
-  const { text: resultText, images } = formatToolResult(tool.result)
+  const { text: resultText, files } = formatToolResult(tool.result)
   let bodyHtml = '<div class="tool-body">'
   if (tool.code) bodyHtml += `<pre>${escapeHtml(tool.code)}</pre>`
   if (resultText) bodyHtml += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${escapeHtml(resultText)}</pre>`
-  if (images.length > 0) bodyHtml += images.map(img => `<img src="data:${escapeHtml(img.mimeType)};base64,${img.data}">`).join('')
+  if (files.length > 0) bodyHtml += files.map(f => renderFile(f)).join('')
   bodyHtml += '</div>'
   return `<div class="tool-card">${headerHtml}${bodyHtml}</div>`
 }

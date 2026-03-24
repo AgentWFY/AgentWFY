@@ -5,6 +5,7 @@ const Channels = {
     read: 'files:read',
     write: 'files:write',
     writeBinary: 'files:writeBinary',
+    readBinary: 'files:readBinary',
     edit: 'files:edit',
     ls: 'files:ls',
     mkdir: 'files:mkdir',
@@ -157,6 +158,9 @@ function buildFilesApi() {
     },
     writeBinary(path: string, base64: string): Promise<string> {
       return ipcRenderer.invoke(Channels.files.writeBinary, path, base64);
+    },
+    readBinary(path: string): Promise<{ base64: string; mimeType: string; size: number }> {
+      return ipcRenderer.invoke(Channels.files.readBinary, path);
     },
     edit(path: string, oldText: string, newText: string): Promise<string> {
       return ipcRenderer.invoke(Channels.files.edit, path, oldText, newText);

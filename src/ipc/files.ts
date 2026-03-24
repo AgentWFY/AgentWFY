@@ -6,6 +6,7 @@ import { Channels } from './channels.js';
 
 const MAX_READ_LINES = 2000;
 const MAX_READ_BYTES = 50 * 1024;
+const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024;
 export const GREP_MAX_LINE_LENGTH = 500;
 export const DEFAULT_GREP_LIMIT = 100;
 export const DEFAULT_FIND_LIMIT = 1000;
@@ -73,6 +74,28 @@ export function matchesGlob(filename: string, pattern: string): boolean {
   return new RegExp(`^${regex}$`).test(filename);
 }
 
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+}
+
+export function mimeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
+
 export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string) {
   const resolveToolPath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean; allowAgentPrivate?: boolean }) =>
     assertPathAllowed(getRoot(event), relativePath, options);
@@ -123,6 +146,21 @@ export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string
     const buffer = Buffer.from(base64, 'base64');
     await fs.writeFile(filePath, buffer);
     return `Successfully wrote ${buffer.length} bytes to ${relativePath}`;
+  });
+
+  // readBinary(path) → { base64, mimeType, size }
+  ipcMain.handle(Channels.files.readBinary, async (event, relativePath: string) => {
+    const filePath = await resolveToolPath(event, relativePath);
+    const stat = await fs.stat(filePath);
+    if (stat.size > MAX_READ_BINARY_BYTES) {
+      throw new Error(`File too large (${stat.size} bytes). readBinary limit is ${MAX_READ_BINARY_BYTES} bytes.`);
+    }
+    const buffer = await fs.readFile(filePath);
+    return {
+      base64: buffer.toString('base64'),
+      mimeType: mimeFromPath(filePath),
+      size: buffer.length,
+    };
   });
 
   // edit(path, oldText, newText) → success message

@@ -5,8 +5,8 @@ export interface TextContent {
   text: string
 }
 
-export interface ImageContent {
-  type: 'image'
+export interface FileContent {
+  type: 'file'
   data: string
   mimeType: string
 }
@@ -16,7 +16,7 @@ export interface ImageContent {
 export type JsonSchema = Record<string, unknown>
 
 export interface AgentToolResult<T = unknown> {
-  content: (TextContent | ImageContent)[]
+  content: (TextContent | FileContent)[]
   details: T
 }
 

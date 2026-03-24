@@ -1,5 +1,5 @@
-export type { TextContent, ImageContent } from './types.js'
-import type { TextContent, ImageContent } from './types.js'
+export type { TextContent, FileContent } from './types.js'
+import type { TextContent, FileContent } from './types.js'
 
 // ── Universal display format for sessions and UI ──
 
@@ -12,10 +12,10 @@ export interface DisplayMessage {
 export type Block =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
-  | { type: 'image'; mimeType: string; data: string }
+  | { type: 'file'; mimeType: string; data: string }
   | { type: 'attachment'; label: string; size: number; content: string }
   | { type: 'exec_js'; id: string; description: string; code: string }
-  | { type: 'exec_js_result'; id: string; content: (TextContent | ImageContent)[]; isError: boolean }
+  | { type: 'exec_js_result'; id: string; content: (TextContent | FileContent)[]; isError: boolean }
   | { type: 'error'; text: string }
 
 // ── Provider session config ──
@@ -29,8 +29,8 @@ export interface ProviderSessionConfig {
 // ── Events core sends to provider ──
 
 export type ProviderInput =
-  | { type: 'user_message'; text: string; images?: ImageContent[] }
-  | { type: 'exec_js_result'; id: string; content: (TextContent | ImageContent)[]; isError: boolean }
+  | { type: 'user_message'; text: string; files?: FileContent[] }
+  | { type: 'exec_js_result'; id: string; content: (TextContent | FileContent)[]; isError: boolean }
   | { type: 'abort' }
 
 // ── Events provider sends to core ──

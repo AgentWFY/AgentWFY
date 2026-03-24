@@ -1,7 +1,7 @@
 import type {
   AgentEvent,
   AgentState,
-  ImageContent,
+  FileContent,
   TextContent,
 } from './types.js'
 import type {
@@ -106,14 +106,14 @@ export class Agent {
     this.followUpQueue = []
   }
 
-  async prompt(text: string, images?: ImageContent[]): Promise<void> {
+  async prompt(text: string, files?: FileContent[]): Promise<void> {
     if (this._state.isStreaming) {
       throw new Error('Agent is already processing a prompt.')
     }
-    await this.runLoop(text, images)
+    await this.runLoop(text, files)
   }
 
-  private async runLoop(text: string, images?: ImageContent[]): Promise<void> {
+  private async runLoop(text: string, files?: FileContent[]): Promise<void> {
     this.runningPrompt = new Promise((resolve) => {
       this.resolveRunningPrompt = resolve
     })
@@ -127,14 +127,14 @@ export class Agent {
       this.emit({ type: 'agent_start' })
 
       let currentText = text
-      let currentImages = images
+      let currentFiles = files
 
       while (true) {
         // Add user message to local display
         const userBlocks: Block[] = [{ type: 'text', text: currentText }]
-        if (currentImages) {
-          for (const img of currentImages) {
-            userBlocks.push({ type: 'image', mimeType: img.mimeType, data: img.data })
+        if (currentFiles) {
+          for (const f of currentFiles) {
+            userBlocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
           }
         }
         this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
@@ -206,7 +206,7 @@ export class Agent {
                         return { ...c, text: truncateHead(c.text) }
                       }
                       return c
-                    }) as (TextContent | ImageContent)[]
+                    }) as (TextContent | FileContent)[]
 
                     streamingBlocks.push({ type: 'exec_js_result', id: event.id, content: contextContent, isError: false })
                     this.emit({ type: 'stream_update' })
@@ -289,7 +289,7 @@ export class Agent {
           session.send({
             type: 'user_message',
             text: currentText,
-            images: currentImages,
+            files: currentFiles,
           })
         })
 
@@ -297,7 +297,7 @@ export class Agent {
         const nextFollowUp = this.followUpQueue.shift()
         if (!nextFollowUp) break
         currentText = nextFollowUp
-        currentImages = undefined
+        currentFiles = undefined
       }
     } catch (err) {
       this._state.error = (err as Error)?.message || String(err)

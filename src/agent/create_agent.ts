@@ -1,5 +1,5 @@
 import { Agent } from './index.js'
-import type { AgentEvent, AgentState, ImageContent } from './types.js'
+import type { AgentEvent, AgentState, FileContent } from './types.js'
 import { createExecJsTool } from './exec_js.js'
 import {
   SESSION_VERSION,
@@ -40,7 +40,7 @@ export interface AgentWFYAgentOptions {
 }
 
 export interface AgentWFYAgentPromptOptions {
-  images?: ImageContent[]
+  files?: FileContent[]
   streamingBehavior?: 'followUp'
 }
 
@@ -284,7 +284,7 @@ export class AgentWFYAgent {
       return
     }
 
-    await this.agent.prompt(text, options.images)
+    await this.agent.prompt(text, options.files)
     await this.persistSession()
   }
 

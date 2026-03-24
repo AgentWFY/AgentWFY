@@ -6,6 +6,7 @@ import {
   truncateLine,
   walkDir,
   matchesGlob,
+  mimeFromPath,
   GREP_MAX_LINE_LENGTH,
   DEFAULT_GREP_LIMIT,
   DEFAULT_FIND_LIMIT,
@@ -16,6 +17,7 @@ import type { WorkerHostMethodMap } from '../types.js'
 
 const MAX_READ_LINES = 2000
 const MAX_READ_BYTES = 50 * 1024
+const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
 
 export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: string }): void {
   const { agentRoot } = deps
@@ -88,6 +90,25 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     const buffer = Buffer.from(request.base64, 'base64')
     await fs.writeFile(filePath, buffer)
     return `Successfully wrote ${buffer.length} bytes to ${request.path}`
+  })
+
+  registry.register('readBinary', async (params) => {
+    const request = params as WorkerHostMethodMap['readBinary']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('readBinary requires a non-empty path string')
+    }
+
+    const filePath = await assertPathAllowed(agentRoot, request.path)
+    const stat = await fs.stat(filePath)
+    if (stat.size > MAX_READ_BINARY_BYTES) {
+      throw new Error(`File too large (${stat.size} bytes). readBinary limit is ${MAX_READ_BINARY_BYTES} bytes.`)
+    }
+    const buffer = await fs.readFile(filePath)
+    return {
+      base64: buffer.toString('base64'),
+      mimeType: mimeFromPath(filePath),
+      size: buffer.length,
+    }
   })
 
   registry.register('edit', async (params) => {

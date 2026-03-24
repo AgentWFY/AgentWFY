@@ -1,5 +1,5 @@
 import type {
-  ExecJsCapturedImage,
+  ExecJsCapturedFile,
   ExecJsDetails,
   ExecJsSerializedError,
   ExecJsLogEntry,
@@ -225,7 +225,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   activeRequests.set(requestId, abortController)
 
   const { logs, restore } = captureConsole(requestId)
-  const capturedImages: ExecJsCapturedImage[] = []
+  const capturedFiles: ExecJsCapturedFile[] = []
 
   try {
     const signal = abortController.signal
@@ -250,8 +250,14 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       if (method === 'captureTab') {
         methodArgValues.push(async (params: unknown) => {
           const result = await call('captureTab', params) as WorkerHostMethodMap['captureTab']['result']
-          capturedImages.push({ base64: result.base64, mimeType: result.mimeType })
-          return { captured: true, mimeType: result.mimeType }
+          capturedFiles.push({ base64: result.base64, mimeType: result.mimeType })
+          return { attached: true, mimeType: result.mimeType }
+        })
+      } else if (method === 'readBinary') {
+        methodArgValues.push(async (params: unknown) => {
+          const result = await call('readBinary', params) as WorkerHostMethodMap['readBinary']['result']
+          capturedFiles.push({ base64: result.base64, mimeType: result.mimeType })
+          return { attached: true, mimeType: result.mimeType, size: result.size }
         })
       } else {
         methodArgValues.push((params: unknown) => call(method, params))
@@ -279,7 +285,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       ok: true,
       value,
       logs,
-      images: capturedImages,
+      files: capturedFiles,
       timeoutMs,
     }
 
@@ -293,7 +299,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       ok: false,
       error: serializeError(error),
       logs,
-      images: capturedImages,
+      files: capturedFiles,
       timeoutMs,
     }
 
