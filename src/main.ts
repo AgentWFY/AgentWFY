@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, protocol, net } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
@@ -32,6 +32,11 @@ import path from 'path';
 import { pathToFileURL } from 'url';
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
+
+const APP_NAME = 'AgentWFY';
+const APP_ICON_PATH = path.join(import.meta.dirname, '..', 'icons', 'icon.png');
+
+app.name = APP_NAME;
 
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
@@ -287,7 +292,21 @@ function buildAndSetMenu() {
     template.unshift({
       label: app.name,
       submenu: [
-        { role: 'about' },
+        {
+          label: `About ${APP_NAME}`,
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow() ?? undefined;
+            dialog.showMessageBox({
+              ...(win ? { window: win } : {}),
+              type: 'info',
+              title: `About ${APP_NAME}`,
+              message: APP_NAME,
+              detail: `Version ${app.getVersion()}`,
+              icon: nativeImage.createFromPath(APP_ICON_PATH),
+              buttons: ['OK'],
+            });
+          },
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },

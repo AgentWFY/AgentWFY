@@ -1,4 +1,5 @@
-import { Notification, type BrowserWindow } from 'electron'
+import { Notification, nativeImage, type BrowserWindow } from 'electron'
+import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
@@ -493,7 +494,8 @@ export class AgentSessionManager {
   private handleStreamingFinished(sessionId: string, entry: SessionEntry): void {
     if (entry.notifyOnFinish) {
       try {
-        new Notification({ title: 'Agent finished', body: entry.label }).show()
+        const icon = nativeImage.createFromPath(path.join(import.meta.dirname, '..', '..', 'icons', 'icon.png'))
+        new Notification({ title: 'Agent finished', body: entry.label, icon }).show()
       } catch {
         // Notifications may not be supported
       }
