@@ -71,20 +71,48 @@ export function registerAgentSessionHandlers(
  * Optimization: only sends the full snapshot (with messages) when non-streaming
  * state changes (session switch, streaming end, etc.). During streaming, only
  * sends the lightweight streaming message on a debounced channel.
+ *
+ * A periodic heartbeat sends full snapshots every few seconds while any session
+ * is streaming, ensuring the renderer stays in sync even during long silent
+ * periods (e.g. model thinking with hidden deltas).
  */
 export function setupAgentStateStreaming(
   manager: AgentSessionManager,
   win: BrowserWindow,
 ): () => void {
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
+  let heartbeat: ReturnType<typeof setInterval> | null = null
+  let heartbeatDirty = false
   let prevIsStreaming = false
   let prevMessages: unknown = null
   let prevNotifyOnFinish = false
 
+  const sendFullSnapshot = () => {
+    if (win.isDestroyed()) return
+    if (!heartbeatDirty) return
+    heartbeatDirty = false
+    const snapshot = manager.getSnapshot()
+    win.webContents.send(Channels.agent.snapshot, snapshot)
+    prevIsStreaming = snapshot.isStreaming
+    prevMessages = snapshot.messages
+    prevNotifyOnFinish = snapshot.notifyOnFinish
+  }
+
   const unsubscribe = manager.subscribe(() => {
     if (win.isDestroyed()) return
+    heartbeatDirty = true
 
     const snapshot = manager.getSnapshot()
+
+    // Start heartbeat when any session begins streaming
+    if ((snapshot.isStreaming || snapshot.streamingSessionsCount > 0) && !heartbeat) {
+      heartbeat = setInterval(sendFullSnapshot, 5_000)
+    }
+    // Stop heartbeat when nothing is streaming
+    if (!snapshot.isStreaming && snapshot.streamingSessionsCount === 0 && heartbeat) {
+      clearInterval(heartbeat)
+      heartbeat = null
+    }
 
     if (snapshot.isStreaming) {
       // During streaming, send the lightweight streaming data (debounced)
@@ -96,6 +124,7 @@ export function setupAgentStateStreaming(
           win.webContents.send(Channels.agent.streaming, {
             message: current.streamingMessage,
             statusLine: current.statusLine,
+            isStreaming: current.isStreaming,
           })
         }, 16) // ~60fps
       }
@@ -122,6 +151,10 @@ export function setupAgentStateStreaming(
     if (streamingDebounce) {
       clearTimeout(streamingDebounce)
       streamingDebounce = null
+    }
+    if (heartbeat) {
+      clearInterval(heartbeat)
+      heartbeat = null
     }
   }
 }
