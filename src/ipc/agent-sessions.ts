@@ -7,7 +7,11 @@ export function registerAgentSessionHandlers(
   onReconnect: (e: IpcMainInvokeEvent) => Promise<AgentSessionManager>,
 ): void {
   ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string }) => {
-    return getManager(event).createSession(opts)
+    if (!opts?.prompt) {
+      getManager(event).resetActive()
+      return null
+    }
+    return getManager(event).createSession(opts as { prompt: string; label?: string; providerId?: string })
   })
 
   ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'followUp' }) => {

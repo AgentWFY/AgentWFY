@@ -299,9 +299,7 @@ class WindowManager {
 
     // Set up agent state streaming and create initial session
     ctx.agentStateStreamingCleanup = setupAgentStateStreaming(sessionManager, window)
-    sessionManager.createSession().catch((err) => {
-      console.error('[session-manager] Initial session creation failed:', err)
-    })
+    sessionManager.resetActive()
 
     window.loadURL('app://index.html');
     window.show();
