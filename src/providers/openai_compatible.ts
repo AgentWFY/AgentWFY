@@ -12,7 +12,7 @@ import type {
   DisplayMessage,
   Block,
   TextContent,
-  ImageContent,
+  FileContent,
 } from '../agent/provider_types.js'
 import { parseSSE } from '../agent/streaming/sse.js'
 
@@ -192,7 +192,7 @@ class OpenAICompatibleSession implements ProviderSession {
   send(event: ProviderInput): void {
     switch (event.type) {
       case 'user_message':
-        this.handleUserMessage(event.text, event.images)
+        this.handleUserMessage(event.text, event.files)
         break
       case 'exec_js_result':
         this.handleExecJsResult(event.id, event.content, event.isError)
@@ -369,25 +369,27 @@ class OpenAICompatibleSession implements ProviderSession {
     }
   }
 
-  private handleUserMessage(text: string, images?: ImageContent[]): void {
+  private handleUserMessage(text: string, files?: FileContent[]): void {
     this.repairOrphanedToolCalls()
     // Build user content
     const content: unknown[] = [{ type: 'text', text }]
-    if (images) {
-      for (const img of images) {
-        content.push({
-          type: 'image_url',
-          image_url: { url: `data:${img.mimeType};base64,${img.data}` },
-        })
+    if (files) {
+      for (const f of files) {
+        if (f.mimeType.startsWith('image/')) {
+          content.push({
+            type: 'image_url',
+            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
+          })
+        }
       }
     }
     this.messages.push({ role: 'user', content })
 
     // Add to display messages
     const blocks: Block[] = [{ type: 'text', text }]
-    if (images) {
-      for (const img of images) {
-        blocks.push({ type: 'image', mimeType: img.mimeType, data: img.data })
+    if (files) {
+      for (const f of files) {
+        blocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
       }
     }
     this.displayMessages.push({ role: 'user', blocks, timestamp: Date.now() })
@@ -397,7 +399,7 @@ class OpenAICompatibleSession implements ProviderSession {
     void this.stream()
   }
 
-  private handleExecJsResult(id: string, content: (TextContent | ImageContent)[], isError: boolean): void {
+  private handleExecJsResult(id: string, content: (TextContent | FileContent)[], isError: boolean): void {
     // Add tool result to internal messages
     const textParts = content
       .filter((c): c is TextContent => c.type === 'text')
@@ -407,6 +409,29 @@ class OpenAICompatibleSession implements ProviderSession {
       tool_call_id: id,
       content: textParts.join('\n'),
     })
+
+    // Forward files as a follow-up user message (OpenAI tool role only supports text)
+    const files = content.filter((c): c is FileContent => c.type === 'file')
+    if (files.length > 0) {
+      const fileBlocks: unknown[] = []
+      for (const f of files) {
+        if (f.mimeType.startsWith('image/')) {
+          fileBlocks.push({
+            type: 'image_url',
+            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
+          })
+        } else {
+          fileBlocks.push({
+            type: 'text',
+            text: `[Attached file (${f.mimeType}) — not supported by this provider]`,
+          })
+        }
+      }
+      this.messages.push({
+        role: 'user',
+        content: fileBlocks,
+      })
+    }
 
     // Add exec_js_result block to last assistant display message
     const lastAssistant = this.displayMessages.length > 0

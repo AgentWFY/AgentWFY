@@ -12,7 +12,7 @@ export interface ExecJsSerializedError {
   stack?: string
 }
 
-export interface ExecJsCapturedImage {
+export interface ExecJsCapturedFile {
   base64: string
   mimeType: string
 }
@@ -22,7 +22,7 @@ export interface ExecJsDetails {
   value?: unknown
   error?: ExecJsSerializedError
   logs: ExecJsLogEntry[]
-  images: ExecJsCapturedImage[]
+  files: ExecJsCapturedFile[]
   timeoutMs: number
 }
 
@@ -151,7 +151,17 @@ export interface WorkerTabConsoleLogEntry {
 
 interface WorkerCaptureTabResult {
   base64: string
-  mimeType: 'image/png'
+  mimeType: string
+}
+
+interface WorkerReadBinaryRequest {
+  path: string
+}
+
+interface WorkerReadBinaryResult {
+  base64: string
+  mimeType: string
+  size: number
 }
 
 export interface WorkerHostMethodMap {
@@ -218,6 +228,10 @@ export interface WorkerHostMethodMap {
   captureTab: {
     params: WorkerCaptureTabRequest
     result: WorkerCaptureTabResult
+  }
+  readBinary: {
+    params: WorkerReadBinaryRequest
+    result: WorkerReadBinaryResult
   }
   getTabConsoleLogs: {
     params: WorkerGetTabConsoleLogsRequest

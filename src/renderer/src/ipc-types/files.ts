@@ -4,6 +4,7 @@ export interface FilesApi {
   read(path: string, offset?: number, limit?: number): Promise<string>
   write(path: string, content: string): Promise<string>
   writeBinary(path: string, base64: string): Promise<string>
+  readBinary(path: string): Promise<{ base64: string; mimeType: string; size: number }>
   edit(path: string, oldText: string, newText: string): Promise<string>
   ls(path?: string, limit?: number): Promise<string>
   mkdir(path: string, recursive?: boolean): Promise<void>

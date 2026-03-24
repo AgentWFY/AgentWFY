@@ -165,7 +165,7 @@ export class JsRuntime {
           message: 'JavaScript execution aborted',
         },
         logs: [],
-        images: [],
+        files: [],
         timeoutMs: timeout,
       }
     }

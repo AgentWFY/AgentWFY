@@ -1,4 +1,4 @@
-import type { AgentTool, AgentToolResult, ImageContent, TextContent } from './types.js'
+import type { AgentTool, AgentToolResult, FileContent, TextContent } from './types.js'
 import type { ExecJsDetails } from '../runtime/types.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
@@ -34,23 +34,23 @@ function toFailureDetails(error: unknown, timeoutMs: number): ExecJsDetails {
     ok: false,
     error: serializeError(error),
     logs: [],
-    images: [],
+    files: [],
     timeoutMs,
   }
 }
 
 function buildToolResult(details: ExecJsDetails): AgentToolResult<ExecJsDetails> {
-  const hasImages = details.images && details.images.length > 0
+  const hasFiles = details.files && details.files.length > 0
 
-  // Strip images from text serialization — they're included as ImageContent
-  const textDetails = hasImages ? { ...details, images: `[${details.images.length} image(s) attached]` } : details
+  // Strip files from text serialization — they're included as FileContent
+  const textDetails = hasFiles ? { ...details, files: `[${details.files.length} file(s) attached]` } : details
   const text = truncate(stringifyUnknown(textDetails), 50000)
-  const content: (TextContent | ImageContent)[] = [{ type: 'text', text }]
+  const content: (TextContent | FileContent)[] = [{ type: 'text', text }]
 
-  if (hasImages) {
-    for (const image of details.images) {
-      if (image.base64) {
-        content.push({ type: 'image', data: image.base64, mimeType: image.mimeType })
+  if (hasFiles) {
+    for (const file of details.files) {
+      if (file.base64) {
+        content.push({ type: 'file', data: file.base64, mimeType: file.mimeType })
       }
     }
   }

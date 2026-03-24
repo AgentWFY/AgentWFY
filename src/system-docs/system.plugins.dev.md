@@ -202,7 +202,7 @@ Also implement `getStatusLine()` on the factory to provide a status line before 
   blocks: [
     { type: 'text', text: '...' },
     { type: 'thinking', text: '...' },
-    { type: 'image', mimeType: '...', data: '<base64>' },
+    { type: 'file', mimeType: '...', data: '<base64>' },
     { type: 'exec_js', id: '...', code: '...' },
     { type: 'exec_js_result', id: '...', content: [...], isError: false },
   ],
