@@ -166,14 +166,12 @@ const STYLES = `
   }
 `
 
-interface AgentSnapshot {
-  streamingSessionsCount: number
-}
+import { agentSessionStore } from '../stores/agent-session-store.js'
 
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
-  private snapshotUnsub: (() => void) | null = null
+  private _storeUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -219,8 +217,8 @@ export class TlStatusLine extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.snapshotUnsub?.()
-    this.snapshotUnsub = null
+    this._storeUnsub?.()
+    this._storeUnsub = null
     window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
@@ -251,17 +249,13 @@ export class TlStatusLine extends HTMLElement {
   }
 
   private subscribeToSnapshots() {
-    const ipc = window.ipc
-    if (!ipc?.agent) return
-
-    this.snapshotUnsub = ipc.agent.onSnapshot((snapshot: unknown) => {
-      const s = snapshot as AgentSnapshot
-      const count = s.streamingSessionsCount ?? 0
-      if (count !== this._agentCount) {
+    this._storeUnsub = agentSessionStore.select(
+      s => s.streamingSessionsCount,
+      (count) => {
         this._agentCount = count
         this.updateAgentIndicator()
       }
-    })
+    )
   }
 
   private updateAgentIndicator() {

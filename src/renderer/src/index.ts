@@ -7,6 +7,7 @@ import { TlStatusLine } from './components/status_line.js'
 import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
 import { initBusBridge } from './bus-bridge.js'
+import { agentSessionStore } from './stores/agent-session-store.js'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -25,6 +26,7 @@ async function init() {
   defineElement('awfy-app', TlApp)
 
   initBusBridge()
+  agentSessionStore.init()
 
   document.body.appendChild(document.createElement('awfy-app'))
 }

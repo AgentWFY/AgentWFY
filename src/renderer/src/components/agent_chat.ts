@@ -4,33 +4,8 @@ import {
   updateMessagesEl
 } from './chat_message_renderer.js'
 import { escapeHtml, parseTabLink } from './chat_utils.js'
-
-interface SessionListItem {
-  label: string
-  updatedAt: number
-  isActive: boolean
-  isStreaming: boolean
-  file: string | null
-  sessionId: string | null
-}
-
-interface AgentSnapshot {
-  messages: DisplayMessage[]
-  isStreaming: boolean
-  label: string
-  streamingSessionsCount: number
-  notifyOnFinish: boolean
-  streamingMessage: DisplayMessage | null
-  statusLine: string | undefined
-  providerId: string
-  activeSessionFile: string | null
-  streamingFiles: string[]
-}
-
-interface OpenSession {
-  file: string
-  label: string
-}
+import { agentSessionStore } from '../stores/agent-session-store.js'
+import type { SessionListItem } from '../stores/types.js'
 
 const STYLES = `
   awfy-agent-chat {
@@ -839,38 +814,24 @@ const STYLES = `
 `
 
 export class TlAgentChat extends HTMLElement {
-  private snapshotUnsub: (() => void) | null = null
-  private streamingUnsub: (() => void) | null = null
-  private messages: DisplayMessage[] = []
-  private streamingMessage: DisplayMessage | null = null
-  private isStreaming = false
+  private _storeUnsub: (() => void) | null = null
   private error: string | null = null
   private inputValue = ''
   private activePanel: 'providers' | null = null
   private isInitializing = true
-  private ready = false
-  private notifyOnFinish = false
   private messagesEl: HTMLElement | null = null
   private openToolSet = new Set<string>()
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
   private userScrolledUp = false
-  private configStatusLine = ''
-  private statusLine = ''
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
-  private _sessionLabel = ''
   private _sessionTitleEl: HTMLElement | null = null
   private _providerPanel: HTMLElement | null = null
-  private _providerList: Array<{ id: string; name: string; settingsView?: string }> = []
-  private _activeProviderId = ''
-  private _defaultProviderId = ''
-  private _selectedProviderId = ''
-  private _providerStatusLines = new Map<string, string>()
   private _stopBtn: HTMLElement | null = null
   private _providerInfo: HTMLElement | null = null
   private _providerGrid: HTMLElement | null = null
@@ -880,9 +841,6 @@ export class TlAgentChat extends HTMLElement {
   private _pasteAttachmentEl: HTMLElement | null = null
   private _pasteLabelEl: HTMLElement | null = null
   private _pastePreviewEl: HTMLElement | null = null
-  private _openSessions: OpenSession[] = []
-  private _activeSessionFile: string | null = null
-  private _streamingFiles: string[] = []
   private _openBox: HTMLElement | null = null
   private _openDotsEl: HTMLElement | null = null
   private _openListEl: HTMLElement | null = null
@@ -918,157 +876,66 @@ export class TlAgentChat extends HTMLElement {
   disconnectedCallback() {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
-    this.snapshotUnsub?.()
-    this.snapshotUnsub = null
-    this.streamingUnsub?.()
-    this.streamingUnsub = null
-    this.messages = []
-    this.isStreaming = false
+    this._storeUnsub?.()
+    this._storeUnsub = null
     this.clearChatRefs()
     this._renderMode = null
   }
 
-  private async loadConfigStatusLine() {
-    try {
-      const ipc = window.ipc
-      if (!ipc?.providers) return
-
-      // Load default provider ID from config
-      try {
-        const rows = await ipc.sql.run({
-          target: 'agent',
-          sql: "SELECT value FROM config WHERE name = 'system.provider'",
-        }) as Array<{ value: string }>
-        this._defaultProviderId = rows[0]?.value ? JSON.parse(rows[0].value) : 'openai-compatible'
-      } catch {
-        this._defaultProviderId = 'openai-compatible'
-      }
-
-      if (!this._activeProviderId) {
-        this._activeProviderId = this._defaultProviderId
-      }
-      if (!this._selectedProviderId) {
-        this._selectedProviderId = this._defaultProviderId
-      }
-
-      // Load provider list and status lines
-      try {
-        this._providerList = await ipc.providers.list()
-        const statusLines = await Promise.all(
-          this._providerList.map(async (p) => {
-            try {
-              return [p.id, await ipc.providers.getStatusLine(p.id)] as const
-            } catch {
-              return [p.id, ''] as const
-            }
-          })
-        )
-        this._providerStatusLines = new Map(statusLines)
-      } catch {
-        this._providerList = []
-      }
-
-      this.configStatusLine = this._providerStatusLines.get(this._activeProviderId) || ''
-    } catch {
-      this.configStatusLine = ''
-    }
-  }
-
   private onPluginChanged = () => {
-    this.loadConfigStatusLine().then(() => this.render())
+    agentSessionStore.loadProviders().then(() => this.render())
   }
 
   private onOpenSessionInChat = (e: Event) => {
     const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
     if (file) {
-      this.addOpenSession(file, label || 'Session')
+      agentSessionStore.addOpenSession(file, label || 'Session')
       this.renderOpenList()
     }
-    // Ensure the chat panel is visible
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
-  private async init() {
-    try {
-      await this.loadConfigStatusLine()
+  private init() {
+    window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
 
-      // Refresh provider list when plugins change
-      window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
-      window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
-
-      const ipc = window.ipc
-      if (!ipc?.agent) {
-        this.activePanel = 'providers'
-        this.isInitializing = false
-        this.render()
-        return
-      }
-
-      // Subscribe to state from main process
-      this.snapshotUnsub = ipc.agent.onSnapshot((snapshot: unknown) => {
-        const s = snapshot as AgentSnapshot
-        this.messages = s.messages
-        this.isStreaming = s.isStreaming
-        this.notifyOnFinish = s.notifyOnFinish
-        this.streamingMessage = s.streamingMessage
-        this._sessionLabel = s.label || ''
-        this.statusLine = s.statusLine || ''
-        this._activeSessionFile = s.activeSessionFile ?? null
-        this._streamingFiles = s.streamingFiles ?? []
-        if (s.providerId && s.providerId !== this._activeProviderId) {
-          this._activeProviderId = s.providerId
-          this.configStatusLine = this._providerStatusLines.get(s.providerId) || ''
-        }
-        // Auto-add active session to open sessions on first message
-        if (this._activeSessionFile && (s.messages.length > 0 || s.isStreaming)) {
-          this.addOpenSession(this._activeSessionFile, s.label || 'New session')
-        }
-        this.error = null
-        this.ready = true
-        this.render()
-      })
-
-      this.streamingUnsub = ipc.agent.onStreaming((data: unknown) => {
-        const d = data as { message: DisplayMessage | null; statusLine?: string }
-        this.streamingMessage = d.message
-        if (d.statusLine) this.statusLine = d.statusLine
-        this.render()
-      })
-
-      // Get initial snapshot
-      const snapshot = await ipc.agent.getSnapshot() as AgentSnapshot | null
-      if (snapshot) {
-        this.messages = snapshot.messages
-        this.isStreaming = snapshot.isStreaming
-        this.notifyOnFinish = snapshot.notifyOnFinish
-        this.streamingMessage = snapshot.streamingMessage
-        this._sessionLabel = snapshot.label || ''
-        this.statusLine = snapshot.statusLine || ''
-        this._activeSessionFile = snapshot.activeSessionFile ?? null
-        this._streamingFiles = snapshot.streamingFiles ?? []
-        if (snapshot.providerId) this._activeProviderId = snapshot.providerId
-        if (this._activeSessionFile && (snapshot.messages.length > 0 || snapshot.isStreaming)) {
-          this.addOpenSession(this._activeSessionFile, snapshot.label || 'New session')
-        }
-        this.ready = true
-      }
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-    } finally {
+    if (!window.ipc?.agent) {
+      this.activePanel = 'providers'
       this.isInitializing = false
       this.render()
+      return
     }
+
+    // Subscribe to the shared store — single source of truth
+    this._storeUnsub = agentSessionStore.subscribe(() => {
+      this.error = null
+      this.render()
+    })
+
+    // Wait for the store to be ready
+    if (agentSessionStore.state.ready) {
+      this.isInitializing = false
+    } else {
+      const unsub = agentSessionStore.select(s => s.ready, (ready) => {
+        if (ready) {
+          this.isInitializing = false
+          this.render()
+          unsub()
+        }
+      })
+    }
+
+    this.render()
   }
 
   private async handleReconnect() {
     this.error = null
-    this.statusLine = ''
-    const keepPanelOpen = this.ready && this.activePanel === 'providers'
+    const keepPanelOpen = agentSessionStore.state.ready && this.activePanel === 'providers'
     this.isInitializing = true
     this.render()
     try {
-      await this.loadConfigStatusLine()
-      await window.ipc?.agent.reconnect()
+      await agentSessionStore.loadProviders()
+      await agentSessionStore.reconnect()
       this.activePanel = keepPanelOpen ? 'providers' : null
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -1079,9 +946,8 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleStop() {
-    if (!this.isStreaming) return
     try {
-      await window.ipc?.agent.abort()
+      await agentSessionStore.abort()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -1090,10 +956,8 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleNewSession() {
     this.activePanel = null
-    this._selectedProviderId = this._defaultProviderId
     try {
-      await window.ipc?.agent.createSession()
-      await this.loadConfigStatusLine()
+      await agentSessionStore.createSession()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     }
@@ -1114,10 +978,6 @@ export class TlAgentChat extends HTMLElement {
       text = typed
     }
 
-    // If this is the first message (empty session), create session with selected provider
-    const isFirstMessage = this.messages.length === 0 && !this.isStreaming
-    const selectedProvider = this._selectedProviderId
-
     this.inputValue = ''
     this._pastedText = null
     this._pastedLineCount = 0
@@ -1131,15 +991,7 @@ export class TlAgentChat extends HTMLElement {
     this.render()
 
     try {
-      if (this.isStreaming) {
-        await window.ipc?.agent.sendMessage(text, { streamingBehavior: 'followUp' })
-      } else {
-        if (isFirstMessage && selectedProvider) {
-          // Create session with selected provider, then send message
-          await window.ipc?.agent.createSession({ providerId: selectedProvider })
-        }
-        await window.ipc?.agent.sendMessage(text)
-      }
+      await agentSessionStore.sendMessage(text)
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -1227,7 +1079,7 @@ export class TlAgentChat extends HTMLElement {
     if (!this.containerEl) return
 
     const mode = this.isInitializing ? 'initializing'
-      : !this.ready ? 'setup'
+      : !agentSessionStore.state.ready ? 'setup'
       : 'chat'
 
     if (mode === 'initializing') {
@@ -1300,8 +1152,8 @@ export class TlAgentChat extends HTMLElement {
       if (dot) {
         e.preventDefault()
         const idx = parseInt(dot.dataset.idx!, 10)
-        const session = this._openSessions[idx]
-        if (session && session.file !== this._activeSessionFile) {
+        const session = agentSessionStore.state.openSessions[idx]
+        if (session && session.file !== agentSessionStore.state.activeSessionFile) {
           this.loadSession(session.file)
         }
       }
@@ -1312,7 +1164,7 @@ export class TlAgentChat extends HTMLElement {
       if (dot) {
         e.preventDefault()
         const idx = parseInt(dot.dataset.idx!, 10)
-        const session = this._openSessions[idx]
+        const session = agentSessionStore.state.openSessions[idx]
         if (session) {
           this.removeOpenSession(session.file)
         }
@@ -1359,8 +1211,8 @@ export class TlAgentChat extends HTMLElement {
       if (openItem) {
         e.preventDefault()
         const idx = parseInt(openItem.dataset.openIdx!, 10)
-        const session = this._openSessions[idx]
-        if (session && session.file !== this._activeSessionFile) {
+        const session = agentSessionStore.state.openSessions[idx]
+        if (session && session.file !== agentSessionStore.state.activeSessionFile) {
           this.loadSession(session.file)
         }
         return
@@ -1371,13 +1223,13 @@ export class TlAgentChat extends HTMLElement {
       if (allItem) {
         e.preventDefault()
         const idx = parseInt(allItem.dataset.allIdx!, 10)
-        const openFiles = new Set(this._openSessions.map(s => s.file))
+        const openFiles = new Set(agentSessionStore.state.openSessions.map(s => s.file))
         const other = this._allSessionsItems.filter(s => s.file && !openFiles.has(s.file))
         const session = other[idx]
         if (session) {
           // Add to open sessions immediately for instant feedback
           if (session.file) {
-            this.addOpenSession(session.file, session.label)
+            agentSessionStore.addOpenSession(session.file, session.label)
             this.renderOpenList()
           }
           if (session.sessionId) {
@@ -1435,7 +1287,7 @@ export class TlAgentChat extends HTMLElement {
       const card = target.closest('.provider-card[data-provider-id]') as HTMLElement | null
       if (card) {
         e.preventDefault()
-        this._selectedProviderId = card.dataset.providerId!
+        agentSessionStore.selectProvider(card.dataset.providerId!)
         this.render()
       }
     })
@@ -1499,7 +1351,7 @@ export class TlAgentChat extends HTMLElement {
         e.preventDefault()
         e.stopPropagation()
         const idx = parseInt(settingsBtn.dataset.providerIdx!, 10)
-        const provider = this._providerList[idx]
+        const provider = agentSessionStore.state.providerList[idx]
         if (provider?.settingsView) {
           this.activePanel = null
           this.render()
@@ -1511,8 +1363,8 @@ export class TlAgentChat extends HTMLElement {
       if (providerItem) {
         e.preventDefault()
         const idx = parseInt(providerItem.dataset.providerIdx!, 10)
-        const provider = this._providerList[idx]
-        if (provider && provider.id !== this._activeProviderId) {
+        const provider = agentSessionStore.state.providerList[idx]
+        if (provider && provider.id !== agentSessionStore.state.providerId) {
           this.handleSelectProvider(provider.id)
         }
       }
@@ -1614,7 +1466,7 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 4 3.5 4 5.5c0 3-1.5 4.5-2 5h12c-.5-.5-2-2-2-5 0-2-1.5-4-4-4z"/><path d="M6.5 12.5c.3.6.9 1 1.5 1s1.2-.4 1.5-1"/></svg>'
     this._notifyBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      window.ipc?.agent.setNotifyOnFinish(!this.notifyOnFinish)
+      agentSessionStore.setNotifyOnFinish(!agentSessionStore.state.notifyOnFinish)
     })
     actionsDiv.appendChild(this._notifyBtn)
 
@@ -1637,12 +1489,13 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private updateChat() {
-    const hasMessages = this.messages.length > 0 || this.isStreaming
+    const s = agentSessionStore.state
+    const hasMessages = s.messages.length > 0 || s.isStreaming
 
     // Combine completed messages + streaming message for rendering
-    const allMessages = this.isStreaming && this.streamingMessage
-      ? [...this.messages, this.streamingMessage]
-      : this.messages
+    const allMessages = s.isStreaming && s.streamingMessage
+      ? [...s.messages, s.streamingMessage]
+      : s.messages
     const displayBlocks = buildRenderBlocks(allMessages)
 
     // 0. Provider grid vs messages visibility
@@ -1663,7 +1516,7 @@ export class TlAgentChat extends HTMLElement {
 
     // 1. Messages area
     if (this.messagesEl && hasMessages) {
-      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.isStreaming)
+      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
 
       // Auto-scroll
       if (!this.userScrolledUp) {
@@ -1673,7 +1526,7 @@ export class TlAgentChat extends HTMLElement {
 
     // 2. Stop button
     if (this._stopBtn) {
-      this._stopBtn.style.display = this.isStreaming ? '' : 'none'
+      this._stopBtn.style.display = s.isStreaming ? '' : 'none'
     }
 
     // 3. Error banner
@@ -1689,17 +1542,17 @@ export class TlAgentChat extends HTMLElement {
     // 4. Button states
     if (this._notifyBtn) {
       this._notifyBtn.style.display = hasMessages ? '' : 'none'
-      this._notifyBtn.classList.toggle('active', this.notifyOnFinish)
+      this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
     }
 
     // 5. Provider info in tools row
     if (this._providerInfo) {
-      const providerId = hasMessages ? this._activeProviderId : this._selectedProviderId
-      const provider = this._providerList.find(p => p.id === providerId)
+      const providerId = hasMessages ? s.providerId : s.selectedProviderId
+      const provider = s.providerList.find(p => p.id === providerId)
       const providerName = provider?.name || providerId || ''
       const currentStatusLine = hasMessages
-        ? (this.statusLine || this.configStatusLine)
-        : (this._providerStatusLines.get(providerId) || '')
+        ? (s.statusLine || s.configStatusLine)
+        : (s.providerStatusLines.get(providerId) || '')
       const contentKey = `${providerName}|${currentStatusLine}`
       if (this._providerInfo.dataset.contentKey !== contentKey) {
         this._providerInfo.dataset.contentKey = contentKey
@@ -1717,19 +1570,13 @@ export class TlAgentChat extends HTMLElement {
 
     // 6. Textarea placeholder
     if (this._textarea) {
-      const newPlaceholder = this.isStreaming ? 'Send follow-up message...' : 'Type your message here...'
+      const newPlaceholder = s.isStreaming ? 'Send follow-up message...' : 'Type your message here...'
       if (this._textarea.placeholder !== newPlaceholder) {
         this._textarea.placeholder = newPlaceholder
       }
     }
 
-    // 7. Open sessions dots — update label if active session is open
-    if (this._activeSessionFile && this._sessionLabel) {
-      const pinIdx = this._openSessions.findIndex(p => p.file === this._activeSessionFile)
-      if (pinIdx >= 0 && this._openSessions[pinIdx].label !== this._sessionLabel) {
-        this._openSessions[pinIdx].label = this._sessionLabel
-      }
-    }
+    // 7. Open sessions dots
     this.updateOpenDots()
 
     // 9. Provider panel
@@ -1745,17 +1592,18 @@ export class TlAgentChat extends HTMLElement {
 
   private renderProviderGrid() {
     if (!this._providerGrid) return
-    if (this._providerList.length === 0) {
+    const s = agentSessionStore.state
+    if (s.providerList.length === 0) {
       this._providerGrid.innerHTML = '<div style="text-align:center;color:var(--color-text2);font-size:13px;">No providers configured</div>'
       return
     }
 
     const gearSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 
-    this._providerGrid.innerHTML = this._providerList.map((p) => {
-      const isSelected = p.id === this._selectedProviderId
-      const isDefault = p.id === this._defaultProviderId
-      const statusLine = this._providerStatusLines.get(p.id) || ''
+    this._providerGrid.innerHTML = s.providerList.map((p) => {
+      const isSelected = p.id === s.selectedProviderId
+      const isDefault = p.id === s.defaultProviderId
+      const statusLine = s.providerStatusLines.get(p.id) || ''
       const cardClass = 'provider-card' + (isSelected ? ' selected' : '')
 
       const settingsBtn = p.settingsView
@@ -1774,17 +1622,8 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleSetDefault(providerId: string) {
-    const ipc = window.ipc
-    if (!ipc) return
-
     try {
-      await ipc.sql.run({
-        target: 'agent',
-        sql: 'UPDATE config SET value = ? WHERE name = ?',
-        params: [JSON.stringify(providerId), 'system.provider'],
-        description: 'Set default provider',
-      })
-      this._defaultProviderId = providerId
+      await agentSessionStore.setDefaultProvider(providerId)
       this.renderProviderGrid()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
@@ -1793,20 +1632,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async handleSelectProvider(providerId: string) {
-    const ipc = window.ipc
-    if (!ipc) return
-
     try {
-      await ipc.sql.run({
-        target: 'agent',
-        sql: 'UPDATE config SET value = ? WHERE name = ?',
-        params: [JSON.stringify(providerId), 'system.provider'],
-        description: 'Set active provider',
-      })
-      this._activeProviderId = providerId
-      this._defaultProviderId = providerId
       this.activePanel = null
-      await this.handleReconnect()
+      await agentSessionStore.switchProvider(providerId)
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -1814,9 +1642,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private openActiveProviderSettings() {
-    // In empty session, use selected provider; in active session, use active provider
-    const providerId = this.messages.length > 0 ? this._activeProviderId : this._selectedProviderId
-    const provider = this._providerList.find(p => p.id === providerId)
+    const s = agentSessionStore.state
+    const providerId = s.messages.length > 0 ? s.providerId : s.selectedProviderId
+    const provider = s.providerList.find(p => p.id === providerId)
     if (provider?.settingsView) {
       this.openProviderSettingsView(provider.settingsView)
     }
@@ -1841,44 +1669,27 @@ export class TlAgentChat extends HTMLElement {
 
   // --- Open sessions ---
 
-  private addOpenSession(file: string, label: string) {
-    if (this._openSessions.some(s => s.file === file)) return
-    this._openSessions.push({ file, label })
-  }
-
   private loadSession(file: string) {
-    window.ipc?.agent.loadSession(file).catch(err => {
+    agentSessionStore.loadSession(file).catch(err => {
       this.error = err instanceof Error ? err.message : String(err)
       this.render()
     })
   }
 
   private removeOpenSession(file: string) {
-    const wasCurrent = file === this._activeSessionFile
-    this._openSessions = this._openSessions.filter(s => s.file !== file)
+    agentSessionStore.removeOpenSession(file)
     this.renderOpenList()
-
-    if (wasCurrent) {
-      // Switch to another open session, or create new session if none left
-      const next = this._openSessions[0]
-      if (next) {
-        this.loadSession(next.file)
-      } else {
-        this.handleNewSession()
-      }
-    } else {
-      this.render()
-    }
   }
 
   private updateOpenDots() {
     if (!this._openDotsEl || !this._openBox || !this._sessionTitleEl) return
-    const open = this._openSessions
+    const s = agentSessionStore.state
+    const open = s.openSessions
 
     this._openBox.style.display = ''
 
-    const activeFile = this._activeSessionFile
-    const streamingSet = new Set(this._streamingFiles)
+    const activeFile = s.activeSessionFile
+    const streamingSet = new Set(s.streamingFiles)
 
     const titleEl = this._sessionTitleEl
     const existingDots = Array.from(this._openDotsEl.querySelectorAll('.open-dot')) as HTMLElement[]
@@ -1903,14 +1714,15 @@ export class TlAgentChat extends HTMLElement {
       dot.dataset.idx = String(i)
     }
 
-    titleEl.textContent = this._sessionLabel || 'New Session'
+    titleEl.textContent = s.label || 'New Session'
   }
 
   private renderOpenList() {
     if (!this._openListEl) return
-    const open = this._openSessions
-    const activeFile = this._activeSessionFile
-    const streamingSet = new Set(this._streamingFiles)
+    const s = agentSessionStore.state
+    const open = s.openSessions
+    const activeFile = s.activeSessionFile
+    const streamingSet = new Set(s.streamingFiles)
 
     let html = ''
     for (let i = 0; i < open.length; i++) {
@@ -1951,11 +1763,12 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private renderProviderPanelHtml(): string {
-    if (this._providerList.length === 0) {
+    const s = agentSessionStore.state
+    if (s.providerList.length === 0) {
       return '<div style="padding:10px;font-size:12px;color:var(--color-text2)">No providers available</div>'
     }
-    return this._providerList.map((p, i) => {
-      const isActive = p.id === this._activeProviderId
+    return s.providerList.map((p, i) => {
+      const isActive = p.id === s.providerId
       const dotClass = isActive ? 'provider-active-dot' : 'provider-active-dot hidden'
       const itemClass = isActive ? 'provider-panel-item active' : 'provider-panel-item'
       const settingsBtn = p.settingsView

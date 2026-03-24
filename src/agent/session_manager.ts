@@ -51,7 +51,7 @@ interface SessionHistoryItem {
   firstUserMessage: string
 }
 
-interface SessionListItem {
+export interface SessionListItem {
   label: string
   updatedAt: number
   isActive: boolean
