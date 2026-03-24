@@ -315,11 +315,15 @@ export class TlTabView extends HTMLElement {
     if (this._hiddenTab) return false
 
     const nextBounds = bounds || this.getWrapperBounds()
+    // Require a minimum useful size — views smaller than this are treated as
+    // not visible so the main process assigns full-window bounds (needed for
+    // capturePage to produce a meaningful screenshot).
+    const MIN_VISIBLE_SIZE = 40
     return (
       document.visibilityState === 'visible' &&
       this.offsetParent !== null &&
-      nextBounds.width > 0 &&
-      nextBounds.height > 0
+      nextBounds.width >= MIN_VISIBLE_SIZE &&
+      nextBounds.height >= MIN_VISIBLE_SIZE
     )
   }
 

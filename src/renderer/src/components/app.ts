@@ -63,7 +63,7 @@ export class TlApp extends HTMLElement {
 
   private onResizeMouseMove = (e: MouseEvent) => {
     if (!this.isResizing) return
-    const newWidth = Math.min(Math.max(e.clientX, 200), 800)
+    const newWidth = Math.min(Math.max(e.clientX, 200), window.innerWidth - 4)
     this.sidebarWidth = newWidth
     this.sidebarEl.style.width = `${newWidth}px`
     this.updateHeaderSpacer()
