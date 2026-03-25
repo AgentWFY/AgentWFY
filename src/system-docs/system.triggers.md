@@ -57,3 +57,25 @@ Subscribes to an internal event bus topic.
 Config: `{ "topic": "my-topic", "input": ... }`
 
 Task receives the published event data as input. Fires each time a message is published to the topic (overridden by `input` when configured).
+
+### File watcher events
+
+Event triggers with topics matching `file:<event>:<directory>` automatically watch the filesystem. The engine starts a watcher on the directory and publishes events to the bus — no extra configuration needed.
+
+Topic format: `file:<event>:<directory>`
+
+Events:
+- `file:created:<dir>` — new file appeared in directory
+- `file:deleted:<dir>` — file removed from directory
+- `file:changed:<dir>` — file modified in directory
+
+`<dir>` is relative to agent root, no leading or trailing slashes. Directory is created automatically if it doesn't exist. Watching is non-recursive (direct children only).
+
+Task input: `{ "event": "created", "filename": "report.csv", "path": "data/imports/report.csv" }`
+
+Examples:
+- `file:created:videos` — fires when a new file appears in `videos/`
+- `file:deleted:downloads/temp` — fires when a file is removed from `downloads/temp/`
+- `file:changed:config` — fires when a file in `config/` is modified
+
+Multiple triggers can use the same topic — each runs its own task. The engine deduplicates watchers per directory. Filtering (by filename, extension, etc.) is done in task code.
