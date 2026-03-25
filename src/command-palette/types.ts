@@ -42,6 +42,9 @@ export type CommandPaletteAction =
     type: 'install-agent'
   }
   | {
+    type: 'install-agent-from-file'
+  }
+  | {
     type: 'switch-agent'
     agentPath: string
   }

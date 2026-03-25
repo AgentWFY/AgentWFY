@@ -20,6 +20,7 @@ import {
   showAgentPickerDialog,
   showOpenAgentDialog,
   showInstallAgentDialog,
+  showInstallAgentFromFileDialog,
   getRecentAgents,
   isAgentDir,
   shortenPath,
@@ -192,6 +193,12 @@ async function handleInstallAgent() {
   await windowManager.openAgentInWindow(picked);
 }
 
+async function handleInstallAgentFromFile() {
+  const picked = await showInstallAgentFromFileDialog(BrowserWindow.getFocusedWindow());
+  if (!picked) return;
+  await windowManager.openAgentInWindow(picked);
+}
+
 async function handleSwitchAgent(agentPath: string) {
   if (!isAgentDir(agentPath)) {
     const picked = await showOpenAgentDialog(BrowserWindow.getFocusedWindow());
@@ -223,6 +230,10 @@ function buildAndSetMenu() {
         {
           label: 'Install Agent...',
           click: () => handleInstallAgent(),
+        },
+        {
+          label: 'Install Agent from .agent.awfy...',
+          click: () => handleInstallAgentFromFile(),
         },
         { type: 'separator' },
         ...(recentItems.length > 0

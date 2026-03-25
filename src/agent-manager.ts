@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { mkdir } from 'fs/promises';
 import { ensureViewsSchema } from './db/views.js';
+import { seedDefaultAgent } from './default-agent.js';
 
 const AGENT_DIR_NAME = '.agentwfy';
 const MAX_RECENT_AGENTS = 10;
@@ -50,6 +51,9 @@ export async function initAgent(dirPath: string, sourceDbPath?: string): Promise
     fs.copyFileSync(sourceDbPath, path.join(agentDir, 'agent.db'));
   }
   await ensureAgentRuntimeBootstrap(dirPath);
+  if (!sourceDbPath) {
+    await seedDefaultAgent(dirPath);
+  }
 }
 
 interface RecentAgent {
@@ -97,41 +101,7 @@ async function showMessageBox(parentWindow: BrowserWindow | null, options: Elect
 // --- Public dialog flows ---
 
 /**
- * Prompt user to choose between default install or from .agent.awfy file.
- * Returns the agentRoot path on success, or null on cancel.
- */
-async function promptInstallChoice(dirPath: string, parentWindow: BrowserWindow | null): Promise<string | null> {
-  const result = await showMessageBox(parentWindow, {
-    type: 'question',
-    title: 'Install Agent',
-    message: `Install agent in "${path.basename(dirPath)}"?`,
-    detail: 'Choose how to initialize:',
-    buttons: ['Default Agent', 'From File (.agent.awfy)', 'Cancel'],
-    defaultId: 0,
-    cancelId: 2,
-  });
-
-  if (result.response === 2) return null;
-
-  if (result.response === 0) {
-    await initAgent(dirPath);
-    return dirPath;
-  }
-
-  // From file
-  const fileResult = await showOpenDialog(parentWindow, {
-    properties: ['openFile'],
-    title: 'Select Agent File',
-    filters: [{ name: 'Agent Files', extensions: ['agent.awfy'] }],
-  });
-  if (fileResult.canceled || fileResult.filePaths.length === 0) return null;
-
-  await initAgent(dirPath, fileResult.filePaths[0]);
-  return dirPath;
-}
-
-/**
- * Open Agent flow: pick a directory, check for .agentwfy, ask user if missing.
+ * Open Agent flow: pick a directory, check for .agentwfy, offer to install default if missing.
  */
 export async function showOpenAgentDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
@@ -148,19 +118,34 @@ export async function showOpenAgentDialog(parentWindow: BrowserWindow | null = n
     type: 'question',
     title: 'No Agent Found',
     message: `"${path.basename(dirPath)}" does not contain an agent.`,
-    detail: 'Would you like to install an agent in this directory?',
-    buttons: ['Install Agent', 'Cancel'],
+    detail: 'Would you like to install a default agent in this directory?',
+    buttons: ['Install', 'Cancel'],
     defaultId: 0,
     cancelId: 1,
   });
 
   if (msgResult.response === 1) return null;
 
-  return promptInstallChoice(dirPath, parentWindow);
+  await initAgent(dirPath);
+  return dirPath;
+}
+
+async function promptOpenExistingAgent(dirPath: string, parentWindow: BrowserWindow | null): Promise<string | null> {
+  const msgResult = await showMessageBox(parentWindow, {
+    type: 'question',
+    title: 'Agent Already Exists',
+    message: `"${path.basename(dirPath)}" already contains an agent.`,
+    detail: 'Would you like to open it instead?',
+    buttons: ['Open Agent', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (msgResult.response === 1) return null;
+  return dirPath;
 }
 
 /**
- * Install Agent flow: pick a directory, install agent in it.
+ * Install Agent flow: pick a directory, install default agent directly.
  */
 export async function showInstallAgentDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
@@ -171,21 +156,35 @@ export async function showInstallAgentDialog(parentWindow: BrowserWindow | null 
 
   const dirPath = result.filePaths[0];
 
-  if (isAgentDir(dirPath)) {
-    const msgResult = await showMessageBox(parentWindow, {
-      type: 'question',
-      title: 'Agent Already Exists',
-      message: `"${path.basename(dirPath)}" already contains an agent.`,
-      detail: 'Would you like to open it instead?',
-      buttons: ['Open Agent', 'Cancel'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (msgResult.response === 1) return null;
-    return dirPath;
-  }
+  if (isAgentDir(dirPath)) return promptOpenExistingAgent(dirPath, parentWindow);
 
-  return promptInstallChoice(dirPath, parentWindow);
+  await initAgent(dirPath);
+  return dirPath;
+}
+
+/**
+ * Install Agent from File flow: pick a directory, then pick a .agent.awfy file.
+ */
+export async function showInstallAgentFromFileDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
+  const dirResult = await showOpenDialog(parentWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Choose Directory for Agent',
+  });
+  if (dirResult.canceled || dirResult.filePaths.length === 0) return null;
+
+  const dirPath = dirResult.filePaths[0];
+
+  if (isAgentDir(dirPath)) return promptOpenExistingAgent(dirPath, parentWindow);
+
+  const fileResult = await showOpenDialog(parentWindow, {
+    properties: ['openFile'],
+    title: 'Select Agent File',
+    filters: [{ name: 'Agent Files', extensions: ['agent.awfy'] }],
+  });
+  if (fileResult.canceled || fileResult.filePaths.length === 0) return null;
+
+  await initAgent(dirPath, fileResult.filePaths[0]);
+  return dirPath;
 }
 
 /**
