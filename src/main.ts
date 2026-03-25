@@ -89,7 +89,10 @@ registerSqlHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (event, change) => windowManager.onDbChange(event, change),
 );
-registerTabsHandlers((e) => windowManager.getContextForSender(e.sender.id).tabTools);
+registerTabsHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).tabTools,
+  (e) => windowManager.getAgentRootForEvent(e),
+);
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerBusHandlers(
   (e) => windowManager.getWindowForEvent(e),

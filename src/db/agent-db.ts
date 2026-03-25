@@ -191,6 +191,21 @@ BEGIN
 END;
 `;
 
+// Enforce view name format: lowercase letters, digits, dots, hyphens, underscores only
+const VIEW_NAME_FORMAT_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _views_name_format_insert BEFORE INSERT ON views
+WHEN NEW.name GLOB '*[^a-z0-9._-]*'
+BEGIN
+  SELECT RAISE(ABORT, 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _views_name_format_update BEFORE UPDATE OF name ON views
+WHEN NEW.name GLOB '*[^a-z0-9._-]*'
+BEGIN
+  SELECT RAISE(ABORT, 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+END;
+`;
+
 // Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
 const SYSTEM_CONFIG_GUARD_SQL = `
 CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_insert BEFORE INSERT ON config
@@ -216,6 +231,8 @@ DROP TRIGGER IF EXISTS _docs_system_guard_delete;
 DROP TRIGGER IF EXISTS _views_system_guard_insert;
 DROP TRIGGER IF EXISTS _views_system_guard_update;
 DROP TRIGGER IF EXISTS _views_system_guard_delete;
+DROP TRIGGER IF EXISTS _views_name_format_insert;
+DROP TRIGGER IF EXISTS _views_name_format_update;
 DROP TRIGGER IF EXISTS _config_system_guard_insert;
 DROP TRIGGER IF EXISTS _config_system_guard_delete;
 `;
@@ -294,6 +311,7 @@ class AgentDb {
     this.db.exec(CHANGE_TRACKING_SQL);
     this.db.exec(SYSTEM_DOCS_GUARD_SQL);
     this.db.exec(SYSTEM_VIEWS_GUARD_SQL);
+    this.db.exec(VIEW_NAME_FORMAT_SQL);
     this.db.exec(SYSTEM_CONFIG_GUARD_SQL);
     this.db.exec(PLUGINS_TABLE_GUARD_SQL);
   }

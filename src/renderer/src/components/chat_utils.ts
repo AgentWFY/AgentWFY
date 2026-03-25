@@ -1,5 +1,6 @@
 interface TabLinkRequest {
   viewId?: string | number
+  viewName?: string
   filePath?: string
   title?: string
   params?: Record<string, string>
@@ -27,7 +28,11 @@ export function parseTabLink(href: string): TabLinkRequest | null {
   const hasParams = Object.keys(params).length > 0
 
   if (hostname === 'view') {
-    return { viewId: rawPath, title, params: hasParams ? params : undefined }
+    const isNumeric = /^\d+$/.test(rawPath)
+    if (isNumeric) {
+      return { viewId: rawPath, title, params: hasParams ? params : undefined }
+    }
+    return { viewName: rawPath, title, params: hasParams ? params : undefined }
   }
   if (hostname === 'file') {
     return { filePath: rawPath, title, params: hasParams ? params : undefined }
