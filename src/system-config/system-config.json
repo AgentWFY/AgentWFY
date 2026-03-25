@@ -1,7 +1,7 @@
 [
   {
     "name": "system.defaultView",
-    "description": "Name of the view to open on startup (default: Home)"
+    "description": "Name of the view to open on startup (default: home)"
   },
   {
     "name": "system.backup.intervalHours",
