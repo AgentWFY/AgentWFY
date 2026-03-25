@@ -646,9 +646,9 @@ class WindowManager {
 
   private async openDefaultViewForContext(ctx: AppWindowContext): Promise<void> {
     try {
-      const configValue = getConfigValue(ctx.agentRoot, 'system.defaultView', 'Home');
+      const configValue = getConfigValue(ctx.agentRoot, 'system.defaultView', 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
-      const viewName = trimmed || 'Home';
+      const viewName = trimmed || 'home';
       const view = await getViewByName(ctx.agentRoot, viewName);
       if (!view) return;
       const state = ctx.tabViewManager.getState();

@@ -53,7 +53,7 @@ await runSql({ target: 'agent', sql: "DELETE FROM config WHERE name = ?", params
 
 | Name | Default | Description |
 |------|---------|-------------|
-| `system.defaultView` | Home | Name of the view to open on startup |
+| `system.defaultView` | home | Name of the view to open on startup |
 | `system.backup.intervalHours` | 24 | How often to back up agent.db in hours |
 | `system.backup.maxCount` | 5 | Maximum number of backups to keep |
 | `system.cleanup.sessionRetentionDays` | 30 | Delete sessions older than this many days, 0 = keep forever |

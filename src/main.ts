@@ -159,9 +159,9 @@ ipcMain.handle('app:getHttpApiPort', (event) => {
 ipcMain.handle('app:getDefaultView', async (event) => {
   try {
     const root = windowManager.getAgentRootForEvent(event);
-    const configValue = getConfigValue(root, 'system.defaultView', 'Home');
+    const configValue = getConfigValue(root, 'system.defaultView', 'home');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
-    const viewName = trimmed || 'Home';
+    const viewName = trimmed || 'home';
     const view = await getViewByName(root, viewName);
     if (!view) return null;
     return { viewId: view.id, title: view.title || view.name, viewUpdatedAt: view.updated_at };

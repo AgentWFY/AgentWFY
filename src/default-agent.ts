@@ -186,6 +186,6 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
 export async function seedDefaultAgent(agentRoot: string): Promise<void> {
   await runAgentDbSql(agentRoot, {
     sql: `INSERT OR IGNORE INTO views (name, title, content) VALUES (?, ?, ?)`,
-    params: ['Home', 'Home', DEFAULT_HOME_VIEW],
+    params: ['home', 'Home', DEFAULT_HOME_VIEW],
   });
 }
