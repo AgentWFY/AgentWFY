@@ -24,6 +24,8 @@ cpSync(join(src, 'renderer', 'index.html'), join(clientDist, 'index.html'))
 cpSync(join(src, 'renderer', 'src', 'global.css'), join(clientDist, 'global.css'))
 cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
 cpSync(join(src, 'confirmation.html'), join(dist, 'confirmation.html'))
+cpSync(join(src, 'welcome.html'), join(dist, 'welcome.html'))
+cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
 cpSync(join(src, 'index.css'), join(dist, 'index.css'))
 
 // ── System data ──
@@ -98,6 +100,18 @@ const builds = [
     format: 'esm',
     outfile: join(clientDist, 'command_palette.js'),
     define: { 'process.env': '{}', 'process.versions': '{}' },
+    sourcemap: watch,
+    logLevel: 'info',
+  },
+  // Welcome preload
+  {
+    entryPoints: [join(src, 'welcome-preload.cts')],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outExtension: { '.js': '.cjs' },
+    outdir: dist,
+    external: ['electron'],
     sourcemap: watch,
     logLevel: 'info',
   },
