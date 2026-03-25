@@ -27,7 +27,7 @@ export function registerAgentSessionHandlers(
   })
 
   ipcMain.handle(Channels.agent.loadSession, async (event, file: string) => {
-    await getManager(event).loadSessionFromDisk(file)
+    await getManager(event).openSessionInChat(file)
   })
 
   ipcMain.handle(Channels.agent.switchTo, async (event, sessionId: string) => {
