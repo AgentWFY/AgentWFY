@@ -12,6 +12,7 @@ import {
   getRecentAgents,
   showOpenAgentDialog,
   showInstallAgentDialog,
+  showInstallAgentFromFileDialog,
   isAgentDir,
   shortenPath,
   initAgent,
@@ -307,6 +308,12 @@ export class CommandPaletteManager {
         title: 'Install Agent',
         group: 'Actions',
         action: { type: 'install-agent' },
+      },
+      {
+        id: 'agent:install-from-file',
+        title: 'Install Agent from .agent.awfy',
+        group: 'Actions',
+        action: { type: 'install-agent-from-file' },
       },
       {
         id: 'agent:recent-agents',
@@ -699,6 +706,13 @@ export class CommandPaletteManager {
       case 'install-agent': {
         this.hide({ focusMain: true });
         const installed = await showInstallAgentDialog(this.deps.getMainWindow());
+        if (installed) await this.deps.openAgentInWindow(installed);
+        return;
+      }
+
+      case 'install-agent-from-file': {
+        this.hide({ focusMain: true });
+        const installed = await showInstallAgentFromFileDialog(this.deps.getMainWindow());
         if (installed) await this.deps.openAgentInWindow(installed);
         return;
       }
