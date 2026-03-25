@@ -1,4 +1,8 @@
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import nodePath from 'node:path';
 import { runAgentDbSql } from '../db/sqlite.js';
+import { resolveInsideRoot } from '../security/path-policy.js';
 import { parseExpression, nextMatch } from './scheduler.js';
 import type { HttpApiServer, HttpRequestData } from '../http-api/server.js';
 
@@ -37,6 +41,7 @@ interface TriggerEngineDeps {
   waitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
   httpApi: HttpApiServer;
   busSubscribe: (topic: string, fn: (data: unknown) => void) => () => void;
+  busPublish: (topic: string, data: unknown) => void;
 }
 
 type ActiveTrigger = {
@@ -44,9 +49,19 @@ type ActiveTrigger = {
   cleanup: () => void;
 };
 
+type FileWatcherEntry = {
+  watcher: fs.FSWatcher;
+  refCount: number;
+  debounceTimers: Map<string, ReturnType<typeof setTimeout>>;
+};
+
+const FILE_EVENT_RE = /^file:(created|deleted|changed):(.+)$/;
+const FILE_DEBOUNCE_MS = 200;
+
 export class TriggerEngine {
   private readonly deps: TriggerEngineDeps;
   private activeTriggers: ActiveTrigger[] = [];
+  private fileWatchers = new Map<string, FileWatcherEntry>();
   private started = false;
 
   constructor(deps: TriggerEngineDeps) {
@@ -110,6 +125,12 @@ export class TriggerEngine {
       }
     }
     this.activeTriggers = [];
+
+    for (const entry of this.fileWatchers.values()) {
+      entry.watcher.close();
+      for (const timer of entry.debounceTimers.values()) clearTimeout(timer);
+    }
+    this.fileWatchers.clear();
   }
 
   private setupTrigger(row: TriggerRow): ActiveTrigger | null {
@@ -222,6 +243,12 @@ export class TriggerEngine {
       throw new Error('Event trigger requires a "topic" field');
     }
 
+    const fileMatch = FILE_EVENT_RE.exec(config.topic);
+    let watcherCleanup: (() => void) | null = null;
+    if (fileMatch) {
+      watcherCleanup = this.ensureFileWatcher(fileMatch[2]);
+    }
+
     const unsubscribe = this.deps.busSubscribe(config.topic, (data: unknown) => {
       this.deps.startTask(taskId, config.input ?? data, { type: 'trigger', triggerId, triggerType: 'event', triggerConfig: config.topic }).catch(err => {
         console.error(`[triggers] Event trigger ${triggerId} failed to start task ${taskId}:`, err);
@@ -230,7 +257,71 @@ export class TriggerEngine {
 
     return {
       id: triggerId,
-      cleanup: unsubscribe,
+      cleanup: () => {
+        unsubscribe();
+        if (watcherCleanup) watcherCleanup();
+      },
+    };
+  }
+
+  private ensureFileWatcher(dir: string): () => void {
+    const agentRoot = this.deps.getAgentRoot();
+    const absDir = resolveInsideRoot(agentRoot, dir);
+
+    const existing = this.fileWatchers.get(absDir);
+    if (existing) {
+      existing.refCount++;
+      return this.createWatcherCleanup(absDir, existing);
+    }
+
+    fs.mkdirSync(absDir, { recursive: true });
+
+    const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const watcher = fs.watch(absDir, (eventType, filename) => {
+      if (!filename) return;
+
+      const prev = debounceTimers.get(filename);
+      if (prev) clearTimeout(prev);
+
+      // Debounce to handle partial writes
+      debounceTimers.set(filename, setTimeout(() => {
+        debounceTimers.delete(filename);
+        const filePath = nodePath.join(absDir, filename);
+        const relativePath = nodePath.join(dir, filename);
+
+        if (eventType === 'rename') {
+          fsp.access(filePath).then(
+            () => this.deps.busPublish(`file:created:${dir}`, { event: 'created', filename, path: relativePath }),
+            () => this.deps.busPublish(`file:deleted:${dir}`, { event: 'deleted', filename, path: relativePath }),
+          );
+        } else if (eventType === 'change') {
+          this.deps.busPublish(`file:changed:${dir}`, { event: 'changed', filename, path: relativePath });
+        }
+      }, FILE_DEBOUNCE_MS));
+    });
+
+    watcher.on('error', (err) => {
+      console.error(`[triggers] File watcher error for "${dir}":`, err);
+    });
+
+    const entry: FileWatcherEntry = { watcher, refCount: 1, debounceTimers };
+    this.fileWatchers.set(absDir, entry);
+    console.log(`[triggers] Started file watcher for "${dir}"`);
+
+    return this.createWatcherCleanup(absDir, entry);
+  }
+
+  private createWatcherCleanup(absDir: string, entry: FileWatcherEntry): () => void {
+    let cleaned = false;
+    return () => {
+      if (cleaned) return;
+      cleaned = true;
+      entry.refCount--;
+      if (entry.refCount <= 0) {
+        entry.watcher.close();
+        for (const timer of entry.debounceTimers.values()) clearTimeout(timer);
+        this.fileWatchers.delete(absDir);
+      }
     };
   }
 }
