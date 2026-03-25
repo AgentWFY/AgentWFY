@@ -2,16 +2,20 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"). Opened via `openTab({ viewId })`. Always bump `updated_at` when updating content.
+- **DB views** — stored in `views` table (target="agent"). Opened via `openTab({ viewId })` or `openTab({ viewName })`. Always bump `updated_at` when updating content.
 - **File views** — HTML files in the working directory. Opened via `openTab({ filePath })`.
 
 Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL tabs (`openTab({ url })`) do NOT get the runtime.
 
-**View params:** Pass custom parameters when opening a view via `openTab({ viewId, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
+**Opening by name:** `openTab({ viewName: 'Home' })` resolves the view by its `name` column and auto-populates the tab title. Prefer `viewName` over `viewId` when the name is known — no need to query the DB for the ID first.
+
+**View params:** Pass custom parameters when opening a view via `openTab({ viewId, params: { key: 'value' } })` or `openTab({ viewName, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 
 ## View Naming Convention
+
+View names must contain only **lowercase letters, digits, dots, hyphens, and underscores** (e.g. `my_dashboard`, `sales.overview`). This is enforced by the database — inserts/updates with invalid names will be rejected.
 
 DB views follow a naming convention with prefixes:
 
