@@ -1,0 +1,3 @@
+- `publish({ topic, data })` — publish a message. If a waiter exists, it receives immediately. Otherwise queued until a waiter arrives.
+- `waitFor({ topic, timeoutMs? })` — wait for next message. Returns immediately if already queued. Default 120s timeout.
+- Messages are consumed: each publish delivers to exactly one waitFor (FIFO). Use unique topic names (e.g. include sessionId) to avoid collisions.
