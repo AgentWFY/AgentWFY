@@ -4,6 +4,7 @@ import fs from 'fs';
 import { mkdir } from 'fs/promises';
 import { ensureViewsSchema } from './db/views.js';
 import { seedDefaultAgent } from './default-agent.js';
+import { showWelcomeWindow } from './welcome.js';
 
 const AGENT_DIR_NAME = '.agentwfy';
 const MAX_RECENT_AGENTS = 10;
@@ -188,14 +189,13 @@ export async function showInstallAgentFromFileDialog(parentWindow: BrowserWindow
 }
 
 /**
- * First-launch dialog when no agent is open.
- * Returns the picked agentRoot path, or null to quit.
+ * First-launch: pick a directory and install the default agent.
+ * Returning users (have recents but none valid) get the full picker.
  */
 export async function showAgentPickerDialog(): Promise<string | null> {
   const recents = getRecentAgents();
 
   if (recents.length > 0) {
-    // Show recents as additional buttons
     const recentLabels = recents.slice(0, 3).map(r => shortenPath(r.path));
     const buttons = ['Open Agent...', 'Install Agent...', ...recentLabels, 'Quit'];
 
@@ -210,35 +210,26 @@ export async function showAgentPickerDialog(): Promise<string | null> {
     });
 
     const idx = result.response;
-    if (idx === buttons.length - 1) return null; // Quit
+    if (idx === buttons.length - 1) return null;
     if (idx === 0) return showOpenAgentDialog();
     if (idx === 1) return showInstallAgentDialog();
 
-    // Recent agent selected
     const recentIdx = idx - 2;
     if (recentIdx >= 0 && recentIdx < recents.length) {
       const recentPath = recents[recentIdx].path;
       if (isAgentDir(recentPath)) return recentPath;
-      // Recent agent no longer exists — fall through to open dialog
       return showOpenAgentDialog();
     }
 
     return null;
   }
 
-  const result = await dialog.showMessageBox({
-    type: 'question',
-    title: 'Welcome to AgentWFY',
-    message: 'No agent is currently open.',
-    detail: 'Open an existing agent directory or install a new one.',
-    buttons: ['Open Agent...', 'Install Agent...', 'Quit'],
-    defaultId: 0,
-    cancelId: 2,
-  });
+  // First-time user: show welcome window
+  const dirPath = await showWelcomeWindow();
+  if (!dirPath) return null;
 
-  if (result.response === 2) return null;
-  if (result.response === 0) return showOpenAgentDialog();
-  if (result.response === 1) return showInstallAgentDialog();
+  if (isAgentDir(dirPath)) return dirPath;
 
-  return null;
+  await initAgent(dirPath);
+  return dirPath;
 }
