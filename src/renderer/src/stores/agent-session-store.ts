@@ -188,6 +188,8 @@ class AgentSessionStore {
     const filtered = this._state.openSessions.filter(s => s.file !== file)
     this.setState({ openSessions: filtered })
 
+    void window.ipc?.agent.disposeSession(file)
+
     if (wasCurrent) {
       const next = filtered[0]
       if (next) {

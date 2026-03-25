@@ -100,6 +100,7 @@ const Channels = {
     streaming: 'agent:streaming',
     spawnAgent: 'agent:spawnAgent',
     sendToAgent: 'agent:sendToAgent',
+    disposeSession: 'agent:disposeSession',
   },
   runtimeFunctions: {
     methods: 'runtime-functions:methods',
@@ -464,6 +465,9 @@ if (isApp) {
         const handler = (_event: unknown, data: unknown) => callback(data);
         ipcRenderer.on(Channels.agent.streaming, handler);
         return () => ipcRenderer.removeListener(Channels.agent.streaming, handler);
+      },
+      disposeSession(file: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.disposeSession, file);
       },
     },
   });

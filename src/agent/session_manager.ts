@@ -158,7 +158,7 @@ export class AgentSessionManager {
   }
 
   async sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
-    // If the active session is currently streaming, queue as followUp
+    // If the active session has an agent in memory, send directly
     const activeAgent = this.activeAgent
     if (activeAgent) {
       const behavior = options?.streamingBehavior ?? (activeAgent.isStreaming ? 'followUp' : undefined)
@@ -226,21 +226,9 @@ export class AgentSessionManager {
   }
 
   async closeActiveSession(): Promise<void> {
-    const agent = this.activeAgent
-    if (agent) {
-      if (agent.isStreaming) {
-        await agent.abort()
-      }
-      const sessionId = this._activeSessionId!
-      this.deps.getJsRuntime().terminateWorker(sessionId)
-      const entry = this.sessions.get(sessionId)
-      if (entry) {
-        entry.unsubscribe()
-        entry.agent.dispose()
-        this.sessions.delete(sessionId)
-      }
+    if (this._activeSessionId) {
+      await this.disposeSession(this._activeSessionId)
     }
-
     this.resetActive()
   }
 
@@ -289,7 +277,7 @@ export class AgentSessionManager {
   }
 
   async sendToAgent(sessionFile: string, message: string): Promise<void> {
-    // Check if this agent is already streaming in memory
+    // Check if this agent is already in memory (streaming or idle)
     for (const [, entry] of this.sessions) {
       if (entry.agent.sessionFile === sessionFile) {
         await entry.agent.prompt(message, { streamingBehavior: 'followUp' })
@@ -323,16 +311,10 @@ export class AgentSessionManager {
   }
 
   async disposeAll(): Promise<void> {
-    for (const [, entry] of this.sessions) {
-      if (entry.agent.isStreaming) {
-        await entry.agent.abort()
-      }
-      this.deps.getJsRuntime().terminateWorker(entry.agent.sessionId)
-      entry.unsubscribe()
-      entry.agent.dispose()
+    const ids = [...this.sessions.keys()]
+    for (const id of ids) {
+      await this.disposeSession(id)
     }
-
-    this.sessions.clear()
     this.resetActive()
     this.listeners.clear()
   }
@@ -349,7 +331,7 @@ export class AgentSessionManager {
     const streamingFiles = new Map<string, string>()
     for (const [id, entry] of this.sessions) {
       const file = entry.agent.sessionFile
-      if (file) streamingFiles.set(file, id)
+      if (file && entry.agent.isStreaming) streamingFiles.set(file, id)
     }
 
     const items: SessionListItem[] = []
@@ -370,7 +352,7 @@ export class AgentSessionManager {
     // Streaming sessions not yet saved to disk
     for (const [id, entry] of this.sessions) {
       const file = entry.agent.sessionFile
-      if (!file || !history.some(h => h.file === file)) {
+      if (entry.agent.isStreaming && (!file || !history.some(h => h.file === file))) {
         items.push({
           label: entry.label || 'New session',
           updatedAt: Date.now(),
@@ -509,19 +491,43 @@ export class AgentSessionManager {
       if (sessionFile && !this.deps.win.isDestroyed()) {
         forwardBusPublish(this.deps.win, `agent:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
       }
+
+      // Dispose spawned/background sessions immediately
+      void this.disposeSession(sessionId)
+      return
     }
 
-    // Cache active session messages before disposal
+    // Regular sessions: keep alive until explicitly closed
+  }
+
+  private async disposeSession(sessionId: string): Promise<void> {
+    const entry = this.sessions.get(sessionId)
+    if (!entry) return
+
+    if (entry.agent.isStreaming) {
+      await entry.agent.abort()
+    }
+
     if (sessionId === this._activeSessionId) {
       this._activeMessages = [...entry.agent.messages]
       this._activeSessionId = null
     }
 
-    // Dispose
     this.deps.getJsRuntime().terminateWorker(sessionId)
     entry.unsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
+
+    this.notify()
+  }
+
+  async disposeSessionByFile(file: string): Promise<void> {
+    for (const [id, entry] of this.sessions) {
+      if (entry.agent.sessionFile === file) {
+        await this.disposeSession(id)
+        return
+      }
+    }
   }
 
   private _notifyScheduled = false

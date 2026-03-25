@@ -48,6 +48,7 @@ export interface AgentApi {
   getSnapshot(): Promise<unknown>
   onSnapshot(callback: (snapshot: unknown) => void): () => void
   onStreaming(callback: (data: unknown) => void): () => void
+  disposeSession(file: string): Promise<void>
 }
 
 export interface AppIpc {
