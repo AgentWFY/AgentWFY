@@ -66,6 +66,11 @@ export function registerAgentSessionHandlers(
     }
     await getManager(event).sendToAgent(sessionId, message)
   })
+
+  ipcMain.handle(Channels.agent.disposeSession, async (event, file: string) => {
+    if (typeof file !== 'string' || file.trim().length === 0) return
+    await getManager(event).disposeSessionByFile(file)
+  })
 }
 
 /**

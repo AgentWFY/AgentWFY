@@ -102,6 +102,7 @@ export const Channels = {
     streaming: 'agent:streaming',
     spawnAgent: 'agent:spawnAgent',
     sendToAgent: 'agent:sendToAgent',
+    disposeSession: 'agent:disposeSession',
   },
   agents: {
     requestInstall: 'agents:requestInstall',
