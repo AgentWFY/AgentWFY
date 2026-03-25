@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { Channels } from './channels.js';
+import { getViewByName } from '../db/views.js';
 
 interface CaptureTabRequest {
   tabId: string
@@ -23,6 +24,7 @@ interface GetTabsResult {
 
 interface OpenTabRequest {
   viewId?: string | number
+  viewName?: string
   filePath?: string
   url?: string
   title?: string
@@ -73,26 +75,44 @@ function parseOptionalNumber(value: unknown, label: string): number | undefined 
   return value;
 }
 
-export function registerTabsHandlers(getTabTools: (e: IpcMainInvokeEvent) => AgentTabTools) {
+export function registerTabsHandlers(
+  getTabTools: (e: IpcMainInvokeEvent) => AgentTabTools,
+  getAgentRoot: (e: IpcMainInvokeEvent) => string,
+) {
   // getTabs() → { tabs: [...] }
   ipcMain.handle(Channels.tabs.getTabs, async (event) => {
     return getTabTools(event).getTabs();
   });
 
-  // openTab({ viewId?, filePath?, url?, title? }) — exactly one of viewId, filePath, url required
+  // openTab({ viewId?, viewName?, filePath?, url?, title? }) — exactly one of viewId, viewName, filePath, url required
   ipcMain.handle(Channels.tabs.openTab, async (event, payload: unknown) => {
     const input = payload as OpenTabRequest | undefined;
     if (!input) {
       throw new Error('openTab requires a request object');
     }
 
-    const hasViewId = typeof input.viewId === 'string' || typeof input.viewId === 'number';
+    // Resolve viewName → viewId
+    const hasViewName = typeof input.viewName === 'string' && input.viewName.length > 0;
+    let resolvedViewId = input.viewId;
+    let resolvedTitle = input.title;
+    if (hasViewName) {
+      const view = await getViewByName(getAgentRoot(event), input.viewName!);
+      if (!view) {
+        throw new Error(`View not found: ${input.viewName}`);
+      }
+      resolvedViewId = view.id;
+      if (typeof resolvedTitle !== 'string') {
+        resolvedTitle = view.title || view.name;
+      }
+    }
+
+    const hasViewId = typeof resolvedViewId === 'string' || typeof resolvedViewId === 'number';
     const hasFilePath = typeof input.filePath === 'string' && input.filePath.length > 0;
     const hasUrl = typeof input.url === 'string' && input.url.length > 0;
     const sourceCount = (hasViewId ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0);
 
     if (sourceCount !== 1) {
-      throw new Error('openTab requires exactly one of viewId, filePath, or url');
+      throw new Error('openTab requires exactly one of viewId, viewName, filePath, or url');
     }
 
     const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
@@ -102,10 +122,10 @@ export function registerTabsHandlers(getTabTools: (e: IpcMainInvokeEvent) => Age
       : undefined;
 
     return getTabTools(event).openTab({
-      viewId: hasViewId ? input.viewId : undefined,
+      viewId: hasViewId ? resolvedViewId : undefined,
       filePath: hasFilePath ? input.filePath : undefined,
       url: hasUrl ? input.url : undefined,
-      title: typeof input.title === 'string' ? input.title : undefined,
+      title: typeof resolvedTitle === 'string' ? resolvedTitle : undefined,
       hidden: typeof input.hidden === 'boolean' ? input.hidden : undefined,
       params: params && Object.keys(params).length > 0 ? params : undefined,
     });
