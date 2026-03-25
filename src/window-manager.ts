@@ -558,6 +558,11 @@ class WindowManager {
             }
           };
         },
+        busPublish: (topic, data) => {
+          if (!win.isDestroyed()) {
+            forwardBusPublish(win, topic, data);
+          }
+        },
         httpApi: ctx.httpApi,
       });
     } catch (err) {
