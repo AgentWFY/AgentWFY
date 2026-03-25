@@ -26,7 +26,7 @@ interface BuiltInFunctionDeps {
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { agentRoot: deps.agentRoot })
   registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
-  registerTabs(registry, { tabTools: deps.tabTools })
+  registerTabs(registry, { tabTools: deps.tabTools, agentRoot: deps.agentRoot })
   registerEvents(registry, { win: deps.win })
   registerAgent(registry, { getSessionManager: deps.getSessionManager, win: deps.win })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })

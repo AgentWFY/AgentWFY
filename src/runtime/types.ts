@@ -108,6 +108,7 @@ export interface WorkerGetTabsResult {
 
 export interface WorkerOpenTabRequest {
   viewId?: string | number
+  viewName?: string
   filePath?: string
   url?: string
   title?: string

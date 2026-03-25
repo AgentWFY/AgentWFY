@@ -1654,14 +1654,7 @@ export class TlAgentChat extends HTMLElement {
     const ipc = window.ipc
     if (!ipc) return
     try {
-      const rows = await ipc.sql.run({
-        target: 'agent',
-        sql: 'SELECT id, title, updated_at FROM views WHERE name = ? LIMIT 1',
-        params: [viewName],
-      }) as Array<{ id: number; title: string; updated_at: number }>
-      const row = rows[0]
-      if (!row) return
-      await ipc.tabs.openTab({ viewId: String(row.id), title: row.title })
+      await ipc.tabs.openTab({ viewName })
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)
     }
