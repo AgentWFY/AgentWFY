@@ -4,7 +4,7 @@ The desktop platform for personal AI agents.
 
 Build, install, and run AI agents that work with your data. Each agent is a single portable file — sandboxed, extensible with plugins, and entirely yours.
 
-https://agentwfy.com/demo.mp4
+https://github.com/user-attachments/assets/f3fb80b1-bf40-4d30-96e5-177415881b93
 
 ## Features
 
