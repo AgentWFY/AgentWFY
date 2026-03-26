@@ -234,7 +234,7 @@ export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string
       return matchesGlob(name, pattern) || matchesGlob(path.basename(name), pattern);
     });
 
-    if (matched.length === 0) return 'No files found matching pattern';
+    if (matched.length === 0) return '';
 
     const limited = matched.slice(0, effectiveLimit);
     let output = limited.join('\n');
@@ -307,7 +307,7 @@ export function registerFilesHandlers(getRoot: (e: IpcMainInvokeEvent) => string
       }
     }
 
-    if (matchCount === 0) return 'No matches found';
+    if (matchCount === 0) return '';
 
     let output = outputLines.join('\n');
     const notices: string[] = [];

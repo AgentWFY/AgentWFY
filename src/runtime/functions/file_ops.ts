@@ -225,7 +225,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
       return matchesGlob(name, request.pattern) || matchesGlob(path.basename(name), request.pattern)
     })
 
-    if (matched.length === 0) return 'No files found matching pattern'
+    if (matched.length === 0) return ''
 
     const limited = matched.slice(0, effectiveLimit)
     let output = limited.join('\n')
@@ -303,7 +303,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
       }
     }
 
-    if (matchCount === 0) return 'No matches found'
+    if (matchCount === 0) return ''
 
     let output = outputLines.join('\n')
     const notices: string[] = []
