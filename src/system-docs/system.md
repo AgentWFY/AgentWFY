@@ -39,6 +39,17 @@ Tab-based UI with view, file, and URL tab types. Use `openTab`, `closeTab`, `sel
 - `openExternal({ url })` — open a URL in the user's default browser.
 - `getAvailableFunctions()` → list all available runtime functions.
 
+## Database Restrictions
+
+The agent database (`agent.db`) enforces the following restrictions:
+
+- **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
+- **`system.*` and `plugin.*` namespaces are read-only** in `docs` and `views` tables (inserts, updates, and deletes are rejected).
+- **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
+- **`plugins` table is entirely read-only.**
+
+Everything outside these protected namespaces is freely writable.
+
 ## Docs
 
 Docs are stored in the `docs` table (target="agent"). Docs without dots in the name are preloaded into this prompt. Read others on demand:
@@ -46,11 +57,6 @@ Docs are stored in the `docs` table (target="agent"). Docs without dots in the n
 ```js
 const rows = await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['section-name'] })
 ```
-
-Naming conventions:
-- `system.*` — app platform docs, read-only (writes will be rejected).
-- `plugin.*` — plugin docs, read-only (managed by plugins).
-- Everything else is agent-managed.
 
 Other docs:
 - `system.views` — how to create views, CSS variables, view runtime
