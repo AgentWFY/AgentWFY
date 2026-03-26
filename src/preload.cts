@@ -35,6 +35,7 @@ const Channels = {
     reorderTabs: 'tabs:reorderTabs',
     togglePin: 'tabs:togglePin',
     revealTab: 'tabs:revealTab',
+    toggleDevTools: 'tabs:toggleDevTools',
   },
   sessions: {
     list: 'sessions:list',
@@ -283,6 +284,9 @@ if (isApp) {
       },
       revealTab(tabId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.revealTab, tabId);
+      },
+      toggleDevTools(tabId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.toggleDevTools, tabId);
       },
     },
     sessions: {
