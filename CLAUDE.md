@@ -4,112 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AgentWFY is an Electron desktop app with an AI agent that can interact with a local SQLite database and render views in tabs. The agent uses a custom `Agent` class (`src/renderer/src/agent/index.ts`) for the LLM tool-calling loop with zero external LLM dependencies — streaming, OAuth, and model config are all implemented in-house.
+AgentWFY is an Electron desktop app that provides a local AI agent runtime. Users create "agents" (directories with a `.agentwfy/agent.db` SQLite database) and interact with LLM-powered agents that can execute JavaScript, manage files, run tasks, and control browser tabs.
 
 ## Commands
 
-- `npm run dev` — Start dev mode (esbuild watch + Electron, reload with Cmd+R)
-- `npm run build` — Full production build (esbuild bundles everything)
-- `npm run lint` — Type-check all TypeScript files (tsc --noEmit)
-- `npm start` — Launch Electron from dist/
+- **Build**: `npm run build`
+- **Dev** (watch + launch): `npm run dev`
+- **Lint** (TypeScript check): `npm run lint`
+- **Start** (run built app): `npm run start`
+- **Package**: `npm run package`
+
+No test framework is configured.
 
 ## Architecture
 
 ### Process Model
 
-- **Main process** (`src/main.ts`): Electron window management, IPC handlers, SQLite, custom protocols (`app://`, `agentview://`), file I/O, security enforcement
-- **Renderer process** (`src/renderer/`): UI built with vanilla Web Components, agent session management, esbuild-bundled
-- **Web Workers** (`src/renderer/src/runtime/exec_worker.ts`): Agent JS runtime runs in a dedicated worker
+The app runs as three Electron process types:
+
+- **Main process** (`src/main.ts`): Orchestrates windows, database, IPC, plugins, triggers
+- **Renderer process** (`src/renderer/`): UI built with plain Web Components (no framework), Shadow DOM scoping, custom EventBus pub/sub
+- **Utility processes** (`src/runtime/exec_worker.ts`): Per-session JS workers for agent code execution, spawned via `utilityProcess.fork()`
 
 ### Build System
 
-Single unified esbuild script (`scripts/build.mjs`) bundles all 5 entry points:
-- `src/main.ts` → `dist/main.js` (Node/ESM, electron external)
-- `src/preload.cts` → `dist/preload.cjs` (Node/CJS, electron external)
-- `src/command-palette/preload.cts` → `dist/command-palette/preload.cjs` (Node/CJS)
-- `src/renderer/src/index.ts` → `dist/client/index.js` (browser/ESM)
-- `src/renderer/src/runtime/exec_worker.ts` → `dist/client/exec_worker.js` (browser/ESM)
+esbuild bundles 8 separate entry points (main, renderer, preload scripts, exec worker, command palette, confirmation dialog, welcome window). Build script at `scripts/build.mjs`. System docs, views, and config are compiled from source files into `dist/` during build.
 
-Static assets (HTML, CSS) are copied to dist/. One `tsconfig.json` for type checking only (`noEmit: true`, module NodeNext).
+### Key Subsystems
 
-### IPC Channels
+**Agent (`src/agent/`)**: Core `Agent` class streams LLM responses via events (`agent_start`, `stream_update`, `agent_end`). The only tool agents can call is `execJs`. `AgentSessionManager` tracks active sessions in memory and lazy-loads idle sessions from disk (`.agentwfy/sessions/*.json`). Provider state (not display messages) is persisted; display state is rebuilt on restore.
 
-All IPC flows through `src/preload.cts` which exposes two global APIs:
-- `window.agentwfy` — Agent tool operations: file ops (read/write/writeBinary/edit/ls/mkdir/remove/find/grep), SQL queries, tab management, event bus, agent spawning
-- `window.electronClientTools` — App operations: dialogs, store, sessions, auth, external views
+**Providers (`src/providers/`)**: Abstracted via `ProviderFactory`/`ProviderSession` interfaces. The built-in `openai_compatible` provider handles OpenRouter, DeepSeek, Groq, etc. Providers maintain internal message history in OpenAI format, separate from display messages. Context compaction summarizes old messages when approaching token limits. Plugin-registered providers go through the same registry.
 
-Channel prefixes: `agentwfy:*` (agent tools), `app:*` (app-level), `bus:*` (event bus), `electronExternalView:*` (view management), `dialog:*`, `electron-store:*`
+**Database (`src/db/`)**: Each agent has its own SQLite database (`.agentwfy/agent.db`). Tables: `docs`, `views`, `tasks`, `triggers`, `config`, `plugins`. Guard triggers on the DB prevent agents from writing to `system.*` and `plugin.*` namespaces. Change tracking via `_changes` temp table enables IPC notifications.
 
-### UI Framework
+**Plugins (`src/plugins/`)**: Stored as code strings in the `plugins` table, executed via `new Function()` with full Node.js `require()` access. Each plugin gets a `PluginApi` for registering functions, providers, and pub/sub handlers. Plugin data is namespaced as `plugin.{name}.*` in docs/views/config and auto-cleaned on uninstall.
 
-Custom Web Components (no React/Vue). Components are in `src/renderer/src/components/` with `awfy-` prefix:
-- `awfy-app` — Root shell: header (sidebar buttons + tab bar) + sidebar + main tab area
-- `awfy-tabs` — Tab management with external BrowserWindow views
-- `awfy-agent-chat` — Chat interface for the AI agent
+**Runtime Functions (`src/runtime/`)**: `FunctionRegistry` maps function names to handlers. Built-in functions: `runSql`, file ops (`read`, `write`, `ls`, `find`, `grep`, `mkdir`), tab management, tasks, events, sub-agents, fetch. Plugins can register additional functions.
 
-Components use direct DOM manipulation (no virtual DOM), class properties for local state, and CustomEvents for communication.
+**IPC (`src/ipc/`)**: Channels defined in `channels.ts`. Each domain (files, sql, tabs, sessions, bus, plugins, providers, agents) has its own handler module. All handlers are async.
 
-### Event Bus
+**Triggers (`src/triggers/`)**: Three types: `schedule` (cron), `http` (REST endpoints), `event` (pub/sub). The `TriggerEngine` manages lifecycle and auto-reloads on DB changes.
 
-`src/renderer/src/event-bus.ts` provides pub/sub with message queuing. `bus-bridge.ts` bridges IPC ↔ EventBus. Key events: `agentwfy:toggle-agent-chat`, `agentwfy:open-view`, `agentwfy:views-db-changed`, `agentwfy:remove-current-tab`, `agentwfy:refresh-view`.
+**HTTP API (`src/http-api/`)**: Local HTTP server (default port 9877) for external integrations. Routes are dynamically built from HTTP triggers. Lockfile records the active port.
 
-### Agent System
+**Window Manager (`src/window-manager.ts`)**: Creates `BrowserWindow` and initializes all subsystems (TabViewManager, CommandPalette, TriggerEngine, AgentSessionManager, TaskRunner, RendererBridge). Handles graceful shutdown checking for active streams/tasks.
 
-- `Agent` (`src/renderer/src/agent/index.ts`): Core LLM tool-calling loop with streaming, steering, and follow-up message support
-- `AgentWFYAgent` (`src/renderer/src/agent/create_agent.ts`): Higher-level wrapper with session persistence (`.agentwfy/sessions/`), auto-compaction on context overflow, model/thinking-level management
-- `AgentSessionManager` (`src/renderer/src/agent/session_manager.ts`): Manages concurrent agent sessions
-- Streaming (`src/renderer/src/agent/streaming/`): Own SSE parser and provider-specific streaming for OpenAI-compatible, Anthropic Messages, and OpenAI Codex Responses APIs
-- OAuth (`src/renderer/src/agent/oauth/`): Own PKCE implementation, Anthropic OAuth, OpenAI Codex OAuth
-- Models (`src/renderer/src/agent/models.ts`): Config-driven model/provider registry loaded from `.agentwfy/models.json` (user-editable)
-- System prompt is loaded from SQLite `docs` table (rows with `preload = 1`)
-- Default provider: `openrouter`, default model: `deepseek/deepseek-v3.2`
-- 3 provider types: Anthropic (OAuth), OpenAI Codex (OAuth), OpenAI-compatible (API key — OpenRouter, DeepSeek, etc.)
+### Module Conventions
 
-### Database
-
-Node.js built-in `sqlite` module (not better-sqlite3). Schema in `src/db/sqlite.ts`:
-- `views`: id, name, content, created_at, updated_at
-- `docs`: id, name, content, preload, updated_at
-- `tasks`: id, name, description, content (JavaScript), timeout_ms, created_at, updated_at
-- `triggers`: id, task_id, type (schedule/http/event), config (JSON), description, enabled, created_at, updated_at
-- `db_changes`: auto-populated change tracking via triggers
-
-SQL routing (`src/db/sql-router.ts`) supports two targets: `agent` (built-in agent.db) and `sqlite-file` (arbitrary .sqlite files).
-
-### Task System
-
-- `TaskRunner` (`src/renderer/src/tasks/task_runner.ts`): Manages task execution lifecycle — start, stop, log persistence, completion notifications
-- Tasks are JavaScript code stored in the `tasks` table, executed in Web Workers via `JsRuntime`
-- Task code has access to host methods: `runSql`, `read`, `write`, `writeBinary`, `edit`, `ls`, `mkdir`, `remove`, `find`, `grep`, `getTabs`, `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `getTabConsoleLogs`, `execTabJs`, `publish`, `waitFor`, `fetch`, `WebSocket`, `spawnAgent`, `startTask`, `stopTask`
-- Task receives `input` parameter (provided by caller)
-- Task logs persisted to `.agentwfy/task_logs/`
-- Origins: command-palette, task-panel, agent, trigger, view
-
-### Trigger Engine
-
-`src/triggers/engine.ts` — Loads enabled triggers from DB, sets up handlers, auto-reloads on changes.
-
-Three trigger types:
-- **schedule**: Cron-like expressions, fires task at scheduled times
-- **http**: Registers dynamic HTTP route on the HTTP API server, executes task with request data as input (`{ method, path, headers, query, body }`), waits up to 120s for response
-- **event**: Subscribes to event bus topic, fires task with event data
-
-### HTTP API
-
-`src/http-api/server.ts` — Localhost-only HTTP server (Node built-in `http`, no frameworks). Default port 9877, configured per-agent in `.agentwfy/config.json` (`httpApi.port`). CORS enabled for all origins.
-
-- `GET /files/*` — Static file serving with path security validation
-- Dynamic routes registered by trigger engine (HTTP triggers)
-- Lockfile at `.agentwfy/http-api.pid` tracks port and process
-
-### Security
-
-`src/security/path-policy.ts` enforces file access sandboxing. The `.agentwfy/` directory has restricted paths. Agent views run under the `agentview://` protocol with a separate, more restricted preload API.
-
-### Design System
-
-Custom CSS design tokens in `src/renderer/src/global.css`.
-
-## No Test Framework
-
-There is currently no test framework configured in this project.
+- ESM throughout (`"type": "module"` in package.json), `.js` extensions in imports
+- Preload scripts use `.cts` extension (CommonJS required by Electron)
+- Electron nightly (`electron-nightly@^41`) is used, aliased as `electron` in package.json
+- TypeScript strict-ish config: `noImplicitAny` enabled, `noEmit` (type-checking only, esbuild handles compilation)
