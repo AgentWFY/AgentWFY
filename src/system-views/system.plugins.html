@@ -259,9 +259,10 @@
   async function installPluginFromRegistry(pluginId, downloadUrl) {
     if (installingPlugins.has(pluginId)) return;
     installingPlugins.add(pluginId); render();
-    try { await downloadPackage(downloadUrl, '.tmp/registry-plugin.plugins.awfy'); const result = await window.agentwfy.requestInstallPlugin({ packagePath: '.tmp/registry-plugin.plugins.awfy' }); if (result.installed && result.installed.length > 0) await loadPlugins(); }
+    const tmpPath = '.tmp/registry-plugin-' + pluginId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.plugins.awfy';
+    try { await downloadPackage(downloadUrl, tmpPath); const result = await window.agentwfy.requestInstallPlugin({ packagePath: tmpPath }); if (result.installed && result.installed.length > 0) await loadPlugins(); }
     catch (err) { console.error('Install failed:', err); alert('Install failed: ' + err.message); }
-    finally { installingPlugins.delete(pluginId); render(); }
+    finally { installingPlugins.delete(pluginId); window.agentwfy.remove({ path: tmpPath }).catch(() => {}); render(); }
   }
 
   async function loadInstalledPluginDetail(pluginName) {
