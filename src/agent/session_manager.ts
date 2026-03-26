@@ -461,6 +461,18 @@ export class AgentSessionManager {
           }
         }
       }
+      // Update label when the provider generates a title (e.g. via summarization)
+      const providerTitle = agent.agent.getProviderTitle()
+      if (providerTitle && providerTitle !== entry.label) {
+        const userLabel = extractFirstUserMessage(agent.messages, 60)
+        // Only update if the provider title differs from the first-message fallback
+        if (providerTitle !== userLabel) {
+          entry.label = providerTitle
+          if (sessionId === this._activeSessionId) {
+            this._activeLabel = providerTitle
+          }
+        }
+      }
       const wasStreaming = entry.wasStreaming
       entry.wasStreaming = agent.isStreaming
       if (wasStreaming && !agent.isStreaming) {
