@@ -683,7 +683,7 @@ class OpenAICompatibleSession implements ProviderSession {
 // ── Provider config and factory ──
 
 const OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
-const DEFAULT_MODEL_ID = 'moonshotai/kimi-k2.5'
+const DEFAULT_MODEL_ID = 'deepseek/deepseek-v3.2'
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api'
 
 const CONFIG_PREFIX = 'system.openai-compatible-provider'

@@ -62,7 +62,7 @@ Components use direct DOM manipulation (no virtual DOM), class properties for lo
 - OAuth (`src/renderer/src/agent/oauth/`): Own PKCE implementation, Anthropic OAuth, OpenAI Codex OAuth
 - Models (`src/renderer/src/agent/models.ts`): Config-driven model/provider registry loaded from `.agentwfy/models.json` (user-editable)
 - System prompt is loaded from SQLite `docs` table (rows with `preload = 1`)
-- Default provider: `openrouter`, default model: `moonshotai/kimi-k2.5`
+- Default provider: `openrouter`, default model: `deepseek/deepseek-v3.2`
 - 3 provider types: Anthropic (OAuth), OpenAI Codex (OAuth), OpenAI-compatible (API key — OpenRouter, DeepSeek, etc.)
 
 ### Database

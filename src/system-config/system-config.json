@@ -33,7 +33,7 @@
   },
   {
     "name": "system.openai-compatible-provider.modelId",
-    "description": "Model ID for the built-in provider (default: moonshotai/kimi-k2.5)"
+    "description": "Model ID for the built-in provider (default: deepseek/deepseek-v3.2)"
   },
   {
     "name": "system.openai-compatible-provider.baseUrl",
