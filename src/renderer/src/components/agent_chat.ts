@@ -1646,7 +1646,12 @@ export class TlAgentChat extends HTMLElement {
     const s = agentSessionStore.state
     const open = s.openSessions
 
-    if (open.length <= 1) {
+    const hasMessages = s.messages.length > 0 || s.isStreaming
+    if (open.length <= 1 && hasMessages) {
+      this._openBox.style.display = 'none'
+      return
+    }
+    if (open.length === 0) {
       this._openBox.style.display = 'none'
       return
     }
