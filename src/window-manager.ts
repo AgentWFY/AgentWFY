@@ -510,9 +510,10 @@ class WindowManager {
       tabViewManager.markViewChanged(change.rowId);
     }
 
-    // Reschedule backup when config changes
+    // Reschedule backup and reload shortcuts when config changes
     if (change.table === 'config') {
       rescheduleBackupForAgent(ctx.agentRoot);
+      ctx.shortcutManager.reload(ctx.agentRoot);
     }
 
     // Debounced reload of triggers when the triggers table changes

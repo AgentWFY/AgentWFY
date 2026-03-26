@@ -212,7 +212,7 @@ class AgentSessionStore {
         target: 'agent',
         sql: "SELECT value FROM config WHERE name = 'system.provider'",
       }) as Array<{ value: string }>
-      if (rows[0]?.value) defaultId = JSON.parse(rows[0].value)
+      if (rows[0]?.value) defaultId = rows[0].value
     } catch { /* use fallback */ }
 
     let providerList: ProviderInfo[] = []

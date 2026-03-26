@@ -114,7 +114,7 @@ export class TlAgentSettings extends HTMLElement {
       }) as Array<{ name: string; value: string | null }>
 
       for (const row of rows) {
-        const val = row.value ? JSON.parse(row.value) : ''
+        const val = row.value ?? ''
         switch (row.name) {
           case 'system.openai-compatible-provider.apiKey': this.apiKeyInput = val; break
           case 'system.openai-compatible-provider.modelId': this.modelIdInput = val; break
