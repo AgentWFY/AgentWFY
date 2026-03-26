@@ -378,6 +378,34 @@ const STYLES = `
     height: 100%;
     color: var(--color-text2);
   }
+  .scroll-to-bottom {
+    position: sticky;
+    bottom: 8px;
+    display: none;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 14px;
+    background: var(--color-bg1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--color-text3);
+    font-size: 11px;
+    font-weight: 500;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    width: fit-content;
+    margin: 0 auto;
+  }
+  .scroll-to-bottom:hover {
+    background: var(--color-bg2);
+    color: var(--color-text4);
+  }
+  .scroll-to-bottom svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+  }
   .thinking-dots {
     display: flex;
     align-items: center;
@@ -768,7 +796,11 @@ export class TlAgentChat extends HTMLElement {
   private openToolSet = new Set<string>()
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
+  private static readonly SCROLL_THRESHOLD = 50
   private userScrolledUp = false
+  private _programmaticScrollCount = 0
+  private _scrollToBottomBtn: HTMLElement | null = null
+  private _scrollBtnVisible = false
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
@@ -1020,10 +1052,26 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private handleMessagesScroll = () => {
-    if (!this.messagesEl) return
-    const threshold = 50
+    if (!this.messagesEl || this._programmaticScrollCount > 0) return
     const distanceFromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
-    this.userScrolledUp = distanceFromBottom > threshold
+    this.userScrolledUp = distanceFromBottom > TlAgentChat.SCROLL_THRESHOLD
+    this.updateScrollToBottomBtn()
+  }
+
+  private scrollToBottom() {
+    if (!this.messagesEl) return
+    this._programmaticScrollCount++
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight
+    requestAnimationFrame(() => { this._programmaticScrollCount-- })
+  }
+
+  private updateScrollToBottomBtn() {
+    if (!this._scrollToBottomBtn) return
+    const show = this.userScrolledUp && agentSessionStore.state.isStreaming
+    if (show !== this._scrollBtnVisible) {
+      this._scrollBtnVisible = show
+      this._scrollToBottomBtn.style.display = show ? 'flex' : 'none'
+    }
   }
 
   private render() {
@@ -1080,6 +1128,7 @@ export class TlAgentChat extends HTMLElement {
     this._openBox = null
     this._sessionListEl = null
     this._sessionCountEl = null
+    this._scrollToBottomBtn = null
   }
 
   private buildChatLayout() {
@@ -1218,6 +1267,17 @@ export class TlAgentChat extends HTMLElement {
         window.ipc?.dialog.openExternal(href)
       }
     })
+    // Scroll-to-bottom button (inside messages for sticky positioning)
+    this._scrollToBottomBtn = document.createElement('div')
+    this._scrollToBottomBtn.className = 'scroll-to-bottom'
+    this._scrollToBottomBtn.innerHTML = '<svg viewBox="0 0 12 12"><path d="M6 9L1.5 4.5 2.56 3.44 6 6.88 9.44 3.44 10.5 4.5z"/></svg> New messages'
+    this._scrollToBottomBtn.addEventListener('click', () => {
+      this.userScrolledUp = false
+      this.updateScrollToBottomBtn()
+      this.scrollToBottom()
+    })
+    this.messagesEl.appendChild(this._scrollToBottomBtn)
+
     container.appendChild(this.messagesEl)
 
     // Error banner (hidden by default)
@@ -1417,12 +1477,23 @@ export class TlAgentChat extends HTMLElement {
 
     // 1. Messages area
     if (this.messagesEl && hasMessages) {
+      const prevChildCount = this.messagesEl.childElementCount
       updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
 
-      // Auto-scroll
-      if (!this.userScrolledUp) {
-        this.messagesEl.scrollTop = this.messagesEl.scrollHeight
+      // Reposition button only when DOM children changed (new messages added/removed)
+      if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
+        this.messagesEl.appendChild(this._scrollToBottomBtn)
       }
+
+      if (!this.userScrolledUp) {
+        // Only force-scroll when significantly behind (new message block, initial load).
+        // CSS overflow-anchor (#anchor div) handles smooth following during streaming deltas.
+        const gap = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
+        if (gap > TlAgentChat.SCROLL_THRESHOLD) {
+          this.scrollToBottom()
+        }
+      }
+      this.updateScrollToBottomBtn()
     }
 
     // 2. Stop button
