@@ -231,12 +231,13 @@ class AgentSessionStore {
       providerStatusLines = new Map(statusEntries)
     } catch { /* empty list */ }
 
+    const selectedStillValid = providerList.some(p => p.id === this._state.selectedProviderId)
     const activeId = this._state.providerId || defaultId
     this.setState({
       providerList,
       providerStatusLines,
       defaultProviderId: defaultId,
-      selectedProviderId: this._state.selectedProviderId || defaultId,
+      selectedProviderId: selectedStillValid ? this._state.selectedProviderId : defaultId,
       configStatusLine: providerStatusLines.get(activeId) || '',
     })
   }
