@@ -27,7 +27,7 @@ config (name TEXT PRIMARY KEY, value TEXT, description TEXT NOT NULL DEFAULT '')
 ```
 
 - `name` — unique setting identifier
-- `value` — JSON-encoded value, or NULL (no override, use global/default)
+- `value` — plain text value, or NULL (no override, use global/default)
 - `description` — human-readable description including default value info
 
 ## SQL Examples
@@ -37,13 +37,13 @@ config (name TEXT PRIMARY KEY, value TEXT, description TEXT NOT NULL DEFAULT '')
 await runSql({ target: 'agent', sql: "SELECT name, value, description FROM config" })
 
 // Update a system setting
-await runSql({ target: 'agent', sql: "UPDATE config SET value = ? WHERE name = ?", params: ['"8080"', 'system.httpApi.port'] })
+await runSql({ target: 'agent', sql: "UPDATE config SET value = ? WHERE name = ?", params: ['8080', 'system.httpApi.port'] })
 
 // Revert a setting to default (set value to NULL)
 await runSql({ target: 'agent', sql: "UPDATE config SET value = NULL WHERE name = ?", params: ['system.httpApi.port'] })
 
 // Add a custom user setting
-await runSql({ target: 'agent', sql: "INSERT INTO config (name, value, description) VALUES (?, ?, ?)", params: ['myKey', '"myValue"', 'My custom setting'] })
+await runSql({ target: 'agent', sql: "INSERT INTO config (name, value, description) VALUES (?, ?, ?)", params: ['myKey', 'myValue', 'My custom setting'] })
 
 // Delete a custom user setting
 await runSql({ target: 'agent', sql: "DELETE FROM config WHERE name = ?", params: ['myKey'] })
@@ -59,3 +59,17 @@ await runSql({ target: 'agent', sql: "DELETE FROM config WHERE name = ?", params
 | `system.cleanup.sessionRetentionDays` | 30 | Delete sessions older than this many days, 0 = keep forever |
 | `system.cleanup.taskLogRetentionDays` | 30 | Delete task logs older than this many days, 0 = keep forever |
 | `system.httpApi.port` | 9877 | Preferred port for the local HTTP API server, restart required |
+
+## Keyboard Shortcuts
+
+Shortcuts are configured via `system.shortcuts.*` config keys. Values are plain strings in the format `mod+key` where `mod` maps to Cmd on macOS and Ctrl on Windows/Linux. Set to `disabled` to unbind.
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `system.shortcuts.toggle-command-palette` | mod+k | Command Palette |
+| `system.shortcuts.toggle-agent-chat` | mod+i | Toggle AI Panel |
+| `system.shortcuts.toggle-task-panel` | mod+j | Toggle Task Panel |
+| `system.shortcuts.close-current-tab` | mod+w | Close Current Tab |
+| `system.shortcuts.reload-current-tab` | mod+r | Reload Current Tab |
+| `system.shortcuts.reload-window` | mod+shift+r | Reload Window |
+| `system.shortcuts.open-agent` | mod+o | Open Agent |

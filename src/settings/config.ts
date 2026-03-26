@@ -1,7 +1,7 @@
 import { storeGet } from '../ipc/store.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 
-function readAgentConfigValue(agentRoot: string, name: string): unknown {
+function readAgentConfigValue(agentRoot: string, name: string): string | undefined {
   try {
     const rows = getOrCreateAgentDb(agentRoot).run({
       sql: 'SELECT value FROM config WHERE name = ?',
@@ -9,8 +9,8 @@ function readAgentConfigValue(agentRoot: string, name: string): unknown {
     });
     if (rows.length === 0) return undefined;
     const row = rows[0] as Record<string, unknown>;
-    if (row.value === null) return undefined;
-    return JSON.parse(row.value as string);
+    if (row.value === null || row.value === undefined) return undefined;
+    return String(row.value);
   } catch {
     return undefined;
   }
@@ -28,12 +28,12 @@ export function getConfigValue(agentRoot: string, name: string, fallback?: unkno
 
 export function setAgentConfig(agentRoot: string, name: string, value: unknown): void {
   const db = getOrCreateAgentDb(agentRoot);
-  const jsonValue = JSON.stringify(value);
+  const strValue = String(value);
   // UPDATE first — works for all existing rows (including guarded system/plugin rows)
-  db.run({ sql: 'UPDATE config SET value = ? WHERE name = ?', params: [jsonValue, name] });
+  db.run({ sql: 'UPDATE config SET value = ? WHERE name = ?', params: [strValue, name] });
   // INSERT for new user rows — guard blocks this for system/plugin, but those already exist from sync
   try {
-    db.run({ sql: 'INSERT INTO config (name, value) VALUES (?, ?)', params: [name, jsonValue] });
+    db.run({ sql: 'INSERT INTO config (name, value) VALUES (?, ?)', params: [name, strValue] });
   } catch {
     // Row already exists (UPDATE handled it) or guard blocked system/plugin INSERT
   }

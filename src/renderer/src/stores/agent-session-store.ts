@@ -252,7 +252,7 @@ class AgentSessionStore {
     await ipc.sql.run({
       target: 'agent',
       sql: 'UPDATE config SET value = ? WHERE name = ?',
-      params: [JSON.stringify(id), 'system.provider'],
+      params: [id, 'system.provider'],
       description: 'Set default provider',
     })
     this.setState({ defaultProviderId: id })
@@ -265,7 +265,7 @@ class AgentSessionStore {
     await ipc.sql.run({
       target: 'agent',
       sql: 'UPDATE config SET value = ? WHERE name = ?',
-      params: [JSON.stringify(id), 'system.provider'],
+      params: [id, 'system.provider'],
       description: 'Set active provider',
     })
     this.setState({

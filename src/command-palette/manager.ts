@@ -41,6 +41,7 @@ export interface CommandPaletteManagerDeps {
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
   getSessionManager: () => AgentSessionManager;
+  getDisplayShortcut: (actionId: string) => string | null;
 }
 
 export class CommandPaletteManager {
@@ -256,33 +257,33 @@ export class CommandPaletteManager {
       };
     });
 
-    const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
+    const ds = (id: string) => this.deps.getDisplayShortcut(id) ?? undefined;
     const actionItems: CommandPaletteItem[] = [
       {
         id: 'action:toggle-agent-chat',
         title: 'Toggle AI Panel',
-        shortcut: `${mod}I`,
+        shortcut: ds('toggle-agent-chat'),
         group: 'Actions',
         action: { type: 'toggle-agent-chat' },
       },
       {
         id: 'action:toggle-task-panel',
         title: 'Toggle Task Panel',
-        shortcut: `${mod}J`,
+        shortcut: ds('toggle-task-panel'),
         group: 'Actions',
         action: { type: 'toggle-task-panel' },
       },
       {
         id: 'action:close-current-tab',
         title: 'Close Current Tab',
-        shortcut: `${mod}W`,
+        shortcut: ds('close-current-tab'),
         group: 'Actions',
         action: { type: 'close-current-tab' },
       },
       {
         id: 'action:reload-current-tab',
         title: 'Reload Current Tab',
-        shortcut: `${mod}R`,
+        shortcut: ds('reload-current-tab'),
         group: 'Actions',
         action: { type: 'reload-current-tab' },
       },
