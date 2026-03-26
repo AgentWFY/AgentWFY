@@ -193,7 +193,7 @@ export class TlAgentSettings extends HTMLElement {
                 <input
                   type="text"
                   value="${escapeHtml(this.modelIdInput)}"
-                  placeholder="moonshotai/kimi-k2.5"
+                  placeholder="deepseek/deepseek-v3.2"
                   ${disabledAttr}
                   data-action="model-input"
                 >

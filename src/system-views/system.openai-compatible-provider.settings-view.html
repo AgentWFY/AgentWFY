@@ -103,7 +103,7 @@
     <div class="field">
       <span class="field-label">Model ID</span>
       <div class="field-row">
-        <input type="text" id="modelId" placeholder="moonshotai/kimi-k2.5">
+        <input type="text" id="modelId" placeholder="deepseek/deepseek-v3.2">
         <button class="btn" id="saveModelId">Save</button>
       </div>
     </div>
@@ -183,7 +183,7 @@
       saveValue(KEYS.apiKey, $('#apiKey').value.trim());
     });
     $('#saveModelId').addEventListener('click', () => {
-      saveValue(KEYS.modelId, $('#modelId').value.trim() || 'moonshotai/kimi-k2.5');
+      saveValue(KEYS.modelId, $('#modelId').value.trim() || 'deepseek/deepseek-v3.2');
     });
     $('#saveBaseUrl').addEventListener('click', () => {
       saveValue(KEYS.baseUrl, $('#baseUrl').value.trim() || 'https://openrouter.ai/api');
