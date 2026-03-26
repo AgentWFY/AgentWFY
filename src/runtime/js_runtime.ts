@@ -42,7 +42,6 @@ function serializeError(error: unknown): ExecJsSerializedError {
     return {
       name: error.name,
       message: error.message,
-      stack: error.stack,
     }
   }
 
