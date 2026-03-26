@@ -5,7 +5,6 @@ import {
 } from './chat_message_renderer.js'
 import { escapeHtml, parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
-import type { SessionListItem } from '../stores/types.js'
 
 const STYLES = `
   awfy-agent-chat {
@@ -659,157 +658,103 @@ const STYLES = `
   }
   /* Open sessions area */
   .open-sessions-box {
-    position: relative;
     flex-shrink: 0;
-    margin-bottom: 4px;
-    border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s, padding 0.15s;
-    z-index: 20;
-  }
-  .open-sessions-box:hover {
-    border-color: var(--color-border);
-    background: var(--color-bg2);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  }
-  .open-dots {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 8px 8px;
-  }
-  .session-title {
-    flex: 1;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text3);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 60px;
-  }
-  .open-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--color-text2);
-    opacity: 0.35;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: opacity 0.15s, box-shadow 0.15s;
-  }
-  .open-dot:hover {
-    opacity: 0.6;
-  }
-  .open-dot.active {
-    box-shadow: 0 0 0 2px var(--color-bg1), 0 0 0 3.5px var(--color-text3);
-    opacity: 0.7;
-  }
-  .open-dot.streaming {
-    background: #4caf50;
-    opacity: 1;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  .open-dot.streaming.active {
-    box-shadow: 0 0 0 2px var(--color-bg1), 0 0 0 3.5px #4caf50;
-  }
-  .open-list {
-    display: none;
-    position: absolute;
-    left: -1px;
-    right: -1px;
-    top: 100%;
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-top: none;
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-bottom: 1px solid var(--color-border);
     padding-bottom: 4px;
-    max-height: 400px;
-    overflow-y: auto;
+    margin-bottom: 4px;
   }
-  .open-sessions-box:hover .open-list {
-    display: block;
-  }
-  .open-list-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--color-text3);
-  }
-  .open-list-item:hover {
-    background: var(--color-item-hover);
-  }
-  .open-list-item.active {
-    font-weight: 600;
-  }
-  .open-list-item-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--color-text2);
-    opacity: 0.4;
-  }
-  .open-list-item-dot.streaming {
-    background: #4caf50;
-    opacity: 1;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  .open-list-item-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .open-list-item-action {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 4px;
-    color: var(--color-text2);
-    font-size: 12px;
-    line-height: 1;
-    border-radius: 3px;
-    display: flex;
-    align-items: center;
-    opacity: 0;
-    transition: opacity 0.1s;
-  }
-  .open-list-item:hover .open-list-item-action {
-    opacity: 1;
-  }
-  .open-list-item-action:hover {
-    color: var(--color-text4);
-    background: var(--color-bg3);
-  }
-  .all-sessions-btn {
+  .session-list-header {
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 5px 10px;
+    padding: 4px 8px;
     cursor: pointer;
-    font-size: 11px;
-    color: var(--color-text2);
-    border-top: 1px solid var(--color-border);
-    margin-top: 2px;
     user-select: none;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text2);
   }
-  .all-sessions-btn:hover {
+  .session-list-header:hover {
     color: var(--color-text3);
+  }
+  .session-list-header svg {
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+  .session-list-header.collapsed svg {
+    transform: rotate(-90deg);
+  }
+  .session-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .session-list.collapsed {
+    display: none;
+  }
+  .session-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+  .session-item:hover {
     background: var(--color-item-hover);
   }
-  .all-sessions-btn svg {
-    transition: transform 0.15s;
+  .session-item.active {
+    background: var(--color-item-hover);
   }
-  .all-sessions-btn.expanded svg {
-    transform: rotate(90deg);
+  .session-item-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-text2);
+    opacity: 0.5;
+    flex-shrink: 0;
+  }
+  .session-item.active .session-item-dot {
+    background: var(--color-text3);
+    opacity: 1;
+  }
+  .session-item.streaming .session-item-dot {
+    background: var(--color-green-fg);
+    opacity: 1;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  .session-item-label {
+    font-size: 12px;
+    color: var(--color-text3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+  }
+  .session-item.active .session-item-label {
+    font-weight: 600;
+    color: var(--color-text4);
+  }
+  .session-item-close {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0;
+    color: var(--color-text2);
+  }
+  .session-item-close:hover {
+    background: var(--color-item-active);
+    color: var(--color-text4);
+  }
+  .session-item:hover .session-item-close {
+    display: flex;
   }
 `
 
@@ -830,7 +775,6 @@ export class TlAgentChat extends HTMLElement {
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
-  private _sessionTitleEl: HTMLElement | null = null
   private _providerPanel: HTMLElement | null = null
   private _stopBtn: HTMLElement | null = null
   private _providerInfo: HTMLElement | null = null
@@ -842,10 +786,8 @@ export class TlAgentChat extends HTMLElement {
   private _pasteLabelEl: HTMLElement | null = null
   private _pastePreviewEl: HTMLElement | null = null
   private _openBox: HTMLElement | null = null
-  private _openDotsEl: HTMLElement | null = null
-  private _openListEl: HTMLElement | null = null
-  private _allSessionsExpanded = false
-  private _allSessionsItems: SessionListItem[] = []
+  private _sessionListEl: HTMLElement | null = null
+  private _sessionCountEl: HTMLElement | null = null
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -876,6 +818,7 @@ export class TlAgentChat extends HTMLElement {
   disconnectedCallback() {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
+    window.removeEventListener('agentwfy:load-session', this.onLoadSession)
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
@@ -890,14 +833,22 @@ export class TlAgentChat extends HTMLElement {
     const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
     if (file) {
       agentSessionStore.addOpenSession(file, label || 'Session')
-      this.renderOpenList()
     }
+    window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
+  }
+
+  private onLoadSession = (e: Event) => {
+    const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
+    if (!file) return
+    agentSessionStore.addOpenSession(file, label || 'Session')
+    this.loadSession(file)
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
   private init() {
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
+    window.addEventListener('agentwfy:load-session', this.onLoadSession)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'
@@ -1127,9 +1078,8 @@ export class TlAgentChat extends HTMLElement {
     this._pasteLabelEl = null
     this._pastePreviewEl = null
     this._openBox = null
-    this._openDotsEl = null
-    this._openListEl = null
-    this._sessionTitleEl = null
+    this._sessionListEl = null
+    this._sessionCountEl = null
   }
 
   private buildChatLayout() {
@@ -1140,120 +1090,60 @@ export class TlAgentChat extends HTMLElement {
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;'
 
-    // Open sessions box (dots + hover list)
+    // Open sessions list
     this._openBox = document.createElement('div')
     this._openBox.className = 'open-sessions-box'
     this._openBox.style.display = 'none'
 
-    this._openDotsEl = document.createElement('div')
-    this._openDotsEl.className = 'open-dots'
-    this._openDotsEl.addEventListener('mousedown', (e) => {
-      const dot = (e.target as HTMLElement).closest('.open-dot') as HTMLElement | null
-      if (dot) {
-        e.preventDefault()
-        const idx = parseInt(dot.dataset.idx!, 10)
-        const session = agentSessionStore.state.openSessions[idx]
-        if (session && session.file !== agentSessionStore.state.activeSessionFile) {
-          this.loadSession(session.file)
-        }
-      }
+    const header = document.createElement('div')
+    header.className = 'session-list-header'
+    header.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg><span></span>'
+    this._sessionCountEl = header.querySelector('span')
+    header.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      header.classList.toggle('collapsed')
+      this._sessionListEl?.classList.toggle('collapsed')
     })
-    this._openDotsEl.addEventListener('auxclick', (e) => {
-      if (e.button !== 1) return
-      const dot = (e.target as HTMLElement).closest('.open-dot') as HTMLElement | null
-      if (dot) {
-        e.preventDefault()
-        const idx = parseInt(dot.dataset.idx!, 10)
-        const session = agentSessionStore.state.openSessions[idx]
-        if (session) {
-          this.removeOpenSession(session.file)
-        }
-      }
-    })
-    this._sessionTitleEl = document.createElement('span')
-    this._sessionTitleEl.className = 'session-title'
-    this._openDotsEl.appendChild(this._sessionTitleEl)
+    this._openBox.appendChild(header)
 
-    this._openBox.appendChild(this._openDotsEl)
-
-    this._openListEl = document.createElement('div')
-    this._openListEl.className = 'open-list'
-    this._openListEl.addEventListener('mousedown', (e) => {
+    this._sessionListEl = document.createElement('div')
+    this._sessionListEl.className = 'session-list'
+    this._sessionListEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
-
-      // Close button
-      const closeBtn = target.closest('[data-close-file]') as HTMLElement | null
+      const closeBtn = target.closest('.session-item-close') as HTMLElement | null
       if (closeBtn) {
         e.preventDefault()
         e.stopPropagation()
-        this.removeOpenSession(closeBtn.dataset.closeFile!)
-        return
-      }
-
-      // "All sessions" toggle
-      const allBtn = target.closest('.all-sessions-btn')
-      if (allBtn) {
-        e.preventDefault()
-        this._allSessionsExpanded = !this._allSessionsExpanded
-        if (this._allSessionsExpanded && this._allSessionsItems.length === 0) {
-          window.ipc?.agent.getSessionList().then((items) => {
-            this._allSessionsItems = (items ?? []) as SessionListItem[]
-            this.renderOpenList()
-          }).catch(() => {})
-          return
+        const item = closeBtn.closest('.session-item') as HTMLElement | null
+        if (item) {
+          const idx = parseInt(item.dataset.idx!, 10)
+          const session = agentSessionStore.state.openSessions[idx]
+          if (session) agentSessionStore.removeOpenSession(session.file)
         }
-        this.renderOpenList()
         return
       }
-
-      // Click open session item
-      const openItem = target.closest('[data-open-idx]') as HTMLElement | null
-      if (openItem) {
+      const item = target.closest('.session-item') as HTMLElement | null
+      if (item) {
         e.preventDefault()
-        const idx = parseInt(openItem.dataset.openIdx!, 10)
+        const idx = parseInt(item.dataset.idx!, 10)
         const session = agentSessionStore.state.openSessions[idx]
         if (session && session.file !== agentSessionStore.state.activeSessionFile) {
           this.loadSession(session.file)
         }
-        return
       }
-
-      // Click "all sessions" item — open it (adds to open sessions automatically via snapshot)
-      const allItem = target.closest('[data-all-idx]') as HTMLElement | null
-      if (allItem) {
+    })
+    this._sessionListEl.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return
+      const item = (e.target as HTMLElement).closest('.session-item') as HTMLElement | null
+      if (item) {
         e.preventDefault()
-        const idx = parseInt(allItem.dataset.allIdx!, 10)
-        const openFiles = new Set(agentSessionStore.state.openSessions.map(s => s.file))
-        const other = this._allSessionsItems.filter(s => s.file && !openFiles.has(s.file))
-        const session = other[idx]
-        if (session) {
-          // Add to open sessions immediately for instant feedback
-          if (session.file) {
-            agentSessionStore.addOpenSession(session.file, session.label)
-            this.renderOpenList()
-          }
-          if (session.sessionId) {
-            window.ipc?.agent.switchTo(session.sessionId).catch(err => {
-              this.error = err instanceof Error ? err.message : String(err)
-              this.render()
-            })
-          } else if (session.file) {
-            this.loadSession(session.file)
-          }
-        }
-        return
+        const idx = parseInt(item.dataset.idx!, 10)
+        const session = agentSessionStore.state.openSessions[idx]
+        if (session) agentSessionStore.removeOpenSession(session.file)
       }
     })
 
-    this._openBox.appendChild(this._openListEl)
-
-    this._openBox.addEventListener('mouseenter', () => {
-      this.renderOpenList()
-    })
-    this._openBox.addEventListener('mouseleave', () => {
-      this._allSessionsExpanded = false
-      this._allSessionsItems = []
-    })
+    this._openBox.appendChild(this._sessionListEl)
 
     container.appendChild(this._openBox)
 
@@ -1470,6 +1360,17 @@ export class TlAgentChat extends HTMLElement {
     })
     actionsDiv.appendChild(this._notifyBtn)
 
+    // Sessions button
+    const sessionsBtn = document.createElement('button')
+    sessionsBtn.className = 'gear-btn'
+    sessionsBtn.title = 'All sessions'
+    sessionsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8a6.5 6.5 0 1 1 1.1 3.6"/><polyline points="1 5 1.5 8 4.5 8"/><polyline points="8 4.5 8 8 10.5 9.5"/></svg>'
+    sessionsBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      window.ipc?.commandPalette?.show({ screen: 'sessions' })
+    })
+    actionsDiv.appendChild(sessionsBtn)
+
     // Settings button
     this._settingsBtn = document.createElement('button')
     this._settingsBtn.className = 'gear-btn'
@@ -1669,90 +1570,45 @@ export class TlAgentChat extends HTMLElement {
     })
   }
 
-  private removeOpenSession(file: string) {
-    agentSessionStore.removeOpenSession(file)
-    this.renderOpenList()
-  }
-
   private updateOpenDots() {
-    if (!this._openDotsEl || !this._openBox || !this._sessionTitleEl) return
+    if (!this._sessionListEl || !this._openBox) return
     const s = agentSessionStore.state
     const open = s.openSessions
+
+    if (open.length <= 1) {
+      this._openBox.style.display = 'none'
+      return
+    }
 
     this._openBox.style.display = ''
+    if (this._sessionCountEl) this._sessionCountEl.textContent = `${open.length} sessions`
 
     const activeFile = s.activeSessionFile
     const streamingSet = new Set(s.streamingFiles)
 
-    const titleEl = this._sessionTitleEl
-    const existingDots = Array.from(this._openDotsEl.querySelectorAll('.open-dot')) as HTMLElement[]
-    while (existingDots.length > open.length) {
-      existingDots.pop()!.remove()
+    const existing = Array.from(this._sessionListEl.querySelectorAll('.session-item')) as HTMLElement[]
+    while (existing.length > open.length) {
+      existing.pop()!.remove()
     }
-    while (existingDots.length < open.length) {
-      const dot = document.createElement('div')
-      dot.className = 'open-dot'
-      this._openDotsEl.insertBefore(dot, titleEl)
-      existingDots.push(dot)
+    while (existing.length < open.length) {
+      const item = document.createElement('div')
+      item.className = 'session-item'
+      item.innerHTML = '<span class="session-item-dot"></span><span class="session-item-label"></span><button class="session-item-close"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>'
+      this._sessionListEl.appendChild(item)
+      existing.push(item)
     }
 
     for (let i = 0; i < open.length; i++) {
-      const dot = existingDots[i]
+      const item = existing[i]
       const isActive = open[i].file === activeFile
       const isStreaming = streamingSet.has(open[i].file)
-      dot.className = 'open-dot'
+      item.className = 'session-item'
         + (isActive ? ' active' : '')
         + (isStreaming ? ' streaming' : '')
-      dot.title = open[i].label
-      dot.dataset.idx = String(i)
+      item.dataset.idx = String(i)
+      const label = item.querySelector('.session-item-label') as HTMLElement
+      if (label) label.textContent = isActive ? (s.label || 'New Session') : open[i].label
     }
-
-    titleEl.textContent = s.label || 'New Session'
-  }
-
-  private renderOpenList() {
-    if (!this._openListEl) return
-    const s = agentSessionStore.state
-    const open = s.openSessions
-    const activeFile = s.activeSessionFile
-    const streamingSet = new Set(s.streamingFiles)
-
-    let html = ''
-    for (let i = 0; i < open.length; i++) {
-      const s = open[i]
-      const isActive = s.file === activeFile
-      const isStreaming = streamingSet.has(s.file)
-      html += `<div class="open-list-item${isActive ? ' active' : ''}" data-open-idx="${i}">
-        <span class="open-list-item-dot${isStreaming ? ' streaming' : ''}"></span>
-        <span class="open-list-item-label">${escapeHtml(s.label)}</span>
-        <button class="open-list-item-action" data-close-file="${escapeHtml(s.file)}" title="Close">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
-        </button>
-      </div>`
-    }
-
-    html += `<div class="all-sessions-btn${this._allSessionsExpanded ? ' expanded' : ''}">
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,2 7,5 3,8"/></svg>
-      All sessions
-    </div>`
-
-    if (this._allSessionsExpanded) {
-      const openFiles = new Set(open.map(s => s.file))
-      const other = this._allSessionsItems.filter(s => s.file && !openFiles.has(s.file))
-      if (other.length === 0) {
-        html += '<div style="padding:6px 10px;font-size:11px;color:var(--color-text2)">No other sessions</div>'
-      }
-      for (let i = 0; i < other.length; i++) {
-        const s = other[i]
-        const isActive = s.file === activeFile
-        html += `<div class="open-list-item${isActive ? ' active' : ''}" data-all-idx="${i}">
-          <span class="open-list-item-dot${s.isStreaming ? ' streaming' : ''}"></span>
-          <span class="open-list-item-label">${escapeHtml(s.label)}</span>
-        </div>`
-      }
-    }
-
-    this._openListEl.innerHTML = html
   }
 
   private renderProviderPanelHtml(): string {

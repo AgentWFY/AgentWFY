@@ -6,6 +6,7 @@ import { SettingsScreen } from './screens/settings.js'
 import { RestoreScreen } from './screens/restore.js'
 import { TaskDetailScreen } from './screens/task-detail.js'
 import type { TaskDetailParams } from './screens/task-detail.js'
+import { SessionsScreen } from './screens/sessions.js'
 
 declare global {
   interface Window {
@@ -18,6 +19,7 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
   'settings': (bridge) => new SettingsScreen(bridge),
   'restore': (bridge) => new RestoreScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
+  'sessions': (bridge) => new SessionsScreen(bridge),
 }
 
 function init(): void {
