@@ -411,7 +411,7 @@ export class AgentSessionManager {
         sql: "SELECT value FROM config WHERE name = 'system.provider'",
       })
       const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ value: string }>
-      if (rows[0]?.value) return JSON.parse(rows[0].value)
+      if (rows[0]?.value) return rows[0].value
     } catch {}
     return 'openai-compatible'
   }

@@ -155,7 +155,7 @@
           sql: "SELECT name, value FROM config WHERE name LIKE 'system.openai-compatible-provider.%'",
         });
         for (const row of rows) {
-          const val = row.value ? JSON.parse(row.value) : '';
+          const val = row.value ?? '';
           if (row.name === KEYS.apiKey) $('#apiKey').value = val;
           else if (row.name === KEYS.modelId) $('#modelId').value = val;
           else if (row.name === KEYS.baseUrl) $('#baseUrl').value = val;

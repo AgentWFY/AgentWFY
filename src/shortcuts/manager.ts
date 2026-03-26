@@ -8,6 +8,7 @@ interface ParsedShortcut {
   ctrl: boolean;
   shift: boolean;
   alt: boolean;
+  mod: boolean; // true when 'mod' was used (cross-platform: Cmd on macOS, Ctrl elsewhere)
   key: string;
 }
 
@@ -28,6 +29,7 @@ function parseShortcut(str: string): ParsedShortcut | null {
     ctrl:  mods.has('ctrl') || (hasMod && !IS_DARWIN),
     shift: mods.has('shift'),
     alt:   mods.has('alt'),
+    mod:   hasMod,
     key,
   };
 }
@@ -36,60 +38,45 @@ function serializeCombo(meta: boolean, ctrl: boolean, shift: boolean, alt: boole
   return `${meta ? 1 : 0}:${ctrl ? 1 : 0}:${shift ? 1 : 0}:${alt ? 1 : 0}:${key.toLowerCase()}`;
 }
 
-function formatDisplay(str: string): string | null {
-  if (!str || str === DISABLED) return null;
-
-  const parts = str.toLowerCase().split('+');
-  const key = parts.pop();
-  if (!key) return null;
-
-  const mods = new Set(parts);
-  const hasMod = mods.has('mod');
+function formatDisplay(parsed: ParsedShortcut): string {
   const segments: string[] = [];
 
   if (IS_DARWIN) {
-    if (mods.has('ctrl'))                        segments.push('⌃');
-    if (mods.has('alt'))                         segments.push('⌥');
-    if (mods.has('shift'))                       segments.push('⇧');
-    if (mods.has('cmd') || mods.has('meta') || hasMod) segments.push('⌘');
+    if (parsed.ctrl)  segments.push('⌃');
+    if (parsed.alt)   segments.push('⌥');
+    if (parsed.shift) segments.push('⇧');
+    if (parsed.meta)  segments.push('⌘');
   } else {
-    if (mods.has('ctrl') || hasMod) segments.push('Ctrl+');
-    if (mods.has('alt'))            segments.push('Alt+');
-    if (mods.has('shift'))          segments.push('Shift+');
-    if (mods.has('cmd') || mods.has('meta')) segments.push('Meta+');
+    if (parsed.ctrl)  segments.push('Ctrl+');
+    if (parsed.alt)   segments.push('Alt+');
+    if (parsed.shift) segments.push('Shift+');
+    if (parsed.meta)  segments.push('Meta+');
   }
 
-  segments.push(key.toUpperCase());
+  segments.push(parsed.key.toUpperCase());
   return segments.join('');
 }
 
-function toElectronAccelerator(str: string): string | null {
-  if (!str || str === DISABLED) return null;
-
-  const parts = str.toLowerCase().split('+');
-  const key = parts.pop();
-  if (!key) return null;
-
-  const mods = new Set(parts);
-  const hasMod = mods.has('mod');
+function toElectronAccelerator(parsed: ParsedShortcut): string {
   const segments: string[] = [];
 
-  if (hasMod)            segments.push('CmdOrCtrl');
-  if (mods.has('cmd') || mods.has('meta')) segments.push('Cmd');
-  if (mods.has('ctrl'))  segments.push('Ctrl');
-  if (mods.has('shift')) segments.push('Shift');
-  if (mods.has('alt'))   segments.push('Alt');
+  if (parsed.mod)        segments.push('CmdOrCtrl');
+  else if (parsed.meta)  segments.push('Cmd');
+  else if (parsed.ctrl)  segments.push('Ctrl');
+  if (parsed.shift) segments.push('Shift');
+  if (parsed.alt)   segments.push('Alt');
 
   // Electron expects uppercase first letter for single chars
-  segments.push(key.length === 1 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1));
+  const k = parsed.key;
+  segments.push(k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1));
   return segments.join('+');
 }
 
 export class ShortcutManager {
   // serialized combo → action ID
   private keyMap = new Map<string, string>();
-  // action ID → raw shortcut string (resolved from config or default)
-  private resolved = new Map<string, string>();
+  // action ID → parsed shortcut (for display/accelerator without re-parsing)
+  private parsed = new Map<string, ParsedShortcut>();
 
   constructor(agentRoot: string) {
     this.reload(agentRoot);
@@ -97,19 +84,18 @@ export class ShortcutManager {
 
   reload(agentRoot: string): void {
     this.keyMap.clear();
-    this.resolved.clear();
+    this.parsed.clear();
 
     for (const [actionId, action] of Object.entries(SHORTCUT_ACTIONS)) {
       const configKey = SHORTCUT_CONFIG_PREFIX + actionId;
       const raw = getConfigValue(agentRoot, configKey, action.defaultKey) as string;
-
-      this.resolved.set(actionId, raw);
 
       if (raw === DISABLED) continue;
 
       const parsed = parseShortcut(raw);
       if (!parsed) continue;
 
+      this.parsed.set(actionId, parsed);
       const combo = serializeCombo(parsed.meta, parsed.ctrl, parsed.shift, parsed.alt, parsed.key);
       this.keyMap.set(combo, actionId);
     }
@@ -121,14 +107,14 @@ export class ShortcutManager {
   }
 
   getDisplayShortcut(actionId: string): string | null {
-    const raw = this.resolved.get(actionId);
-    if (!raw) return null;
-    return formatDisplay(raw);
+    const parsed = this.parsed.get(actionId);
+    if (!parsed) return null;
+    return formatDisplay(parsed);
   }
 
   getElectronAccelerator(actionId: string): string | null {
-    const raw = this.resolved.get(actionId);
-    if (!raw) return null;
-    return toElectronAccelerator(raw);
+    const parsed = this.parsed.get(actionId);
+    if (!parsed) return null;
+    return toElectronAccelerator(parsed);
   }
 }

@@ -27,7 +27,7 @@ config (name TEXT PRIMARY KEY, value TEXT, description TEXT NOT NULL DEFAULT '')
 ```
 
 - `name` — unique setting identifier
-- `value` — plain text value, or NULL (no override, use global/default)
+- `value` — plain text string, or NULL (no override, use global/default). All values are stored and returned as strings — no JSON encoding. Numbers, booleans, and other types are represented as their string form (e.g. `'8080'`, `'true'`, `'false'`).
 - `description` — human-readable description including default value info
 
 ## SQL Examples
