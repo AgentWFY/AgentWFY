@@ -557,6 +557,8 @@ export class CommandPaletteManager {
   }
 
   async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
+    const agentRoot = this.deps.getAgentRoot();
+    packagePath = path.isAbsolute(packagePath) ? packagePath : path.resolve(agentRoot, packagePath);
     const metadata = readPackageMetadata(packagePath);
     const confirmation = this.deps.getConfirmation();
     const result = await confirmation.requestConfirmation('confirm-plugin-install', {
