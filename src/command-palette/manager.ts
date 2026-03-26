@@ -23,6 +23,7 @@ import type { TabViewManager } from '../tab-views/manager.js';
 import { handleProviderFallback } from '../plugins/registry.js';
 import type { PluginRegistry } from '../plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
+import type { AgentSessionManager } from '../agent/session_manager.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
 import type { CommandPaletteAction, CommandPaletteItem } from './types.js';
 
@@ -39,6 +40,7 @@ export interface CommandPaletteManagerDeps {
   openAgentInWindow: (agentRoot: string) => Promise<void>;
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
+  getSessionManager: () => AgentSessionManager;
 }
 
 export class CommandPaletteManager {
@@ -348,6 +350,13 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'install-plugin' },
       },
+      {
+        id: 'action:enter-sessions',
+        title: 'Sessions',
+        expandable: true,
+        group: 'Actions',
+        action: { type: 'enter-sessions' },
+      },
     ];
 
     return [...actionItems, ...viewItems];
@@ -444,6 +453,31 @@ export class CommandPaletteManager {
         },
       };
     });
+  }
+
+  async buildSessionItems(): Promise<CommandPaletteItem[]> {
+    try {
+      const sessions = await this.deps.getSessionManager().getSessionList();
+      return sessions
+        .filter((s) => s.file)
+        .map((s) => {
+          const subtitle = s.isStreaming ? 'streaming' : new Date(s.updatedAt).toLocaleString();
+          return {
+            id: `session:${s.file}`,
+            title: s.label,
+            subtitle,
+            group: 'Sessions' as const,
+            action: {
+              type: 'load-session' as const,
+              file: s.file!,
+              label: s.label,
+            },
+          };
+        });
+    } catch (err) {
+      console.error('[command-palette] getSessionList failed:', err);
+      return [];
+    }
   }
 
   performInstall(packagePath: string): { installed: string[] } {
@@ -683,8 +717,19 @@ export class CommandPaletteManager {
       case 'enter-settings':
       case 'enter-recent-agents':
       case 'enter-tasks':
+      case 'enter-sessions':
         // Handled entirely in the palette UI
         return;
+
+      case 'load-session': {
+        const loadAction = action as Extract<CommandPaletteAction, { type: 'load-session' }>;
+        this.hide({ focusMain: true });
+        this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:load-session', {
+          file: loadAction.file,
+          label: loadAction.label,
+        });
+        return;
+      }
 
       case 'install-plugin': {
         this.hide({ focusMain: true });

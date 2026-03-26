@@ -14,5 +14,6 @@ export interface CommandPaletteBridge {
   listRecentAgents(): Promise<CommandPaletteItem[]>
   listBackups(): Promise<CommandPaletteItem[]>
   listTasks(): Promise<CommandPaletteItem[]>
+  listSessions(): Promise<CommandPaletteItem[]>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
 }

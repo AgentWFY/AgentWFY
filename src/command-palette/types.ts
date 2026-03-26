@@ -67,6 +67,14 @@ export type CommandPaletteAction =
     type: 'restore-agent-db-confirm'
     backupVersion: number
   }
+  | {
+    type: 'enter-sessions'
+  }
+  | {
+    type: 'load-session'
+    file: string
+    label: string
+  }
 
 export interface CommandPaletteItem {
   id: string
@@ -74,7 +82,7 @@ export interface CommandPaletteItem {
   subtitle?: string
   shortcut?: string
   expandable?: boolean
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -96,4 +104,5 @@ export const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',
+  LIST_SESSIONS: 'app:command-palette:list-sessions',
 } as const

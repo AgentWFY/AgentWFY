@@ -138,6 +138,7 @@ class WindowManager {
       openAgentInWindow: (root) => this.openAgentInWindow(root).then(() => {}),
       getPluginRegistry: () => ctx.pluginRegistry,
       getConfirmation: () => ctx.confirmation,
+      getSessionManager: () => ctx.sessionManager,
     });
 
     const confirmation = new ConfirmationManager({
