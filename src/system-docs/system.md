@@ -52,7 +52,9 @@ Everything outside these protected namespaces is freely writable.
 
 ## Docs
 
-Docs are stored in the `docs` table (target="agent"). Docs without dots in the name are preloaded into this prompt. Read others on demand:
+Docs are stored in the `docs` table (target="agent"). The docs table must only be used for storing instructions for the agent — do not use it for storing any other data. Use files or separate SQLite tables for general data storage.
+
+Docs without dots in the name are preloaded into this prompt. Read others on demand:
 
 ```js
 const rows = await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['section-name'] })
