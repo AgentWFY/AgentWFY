@@ -227,7 +227,6 @@ function buildAndSetMenu() {
       submenu: [
         {
           label: 'Open Agent...',
-          accelerator: 'CmdOrCtrl+O',
           click: () => handleOpenAgent(),
         },
         {

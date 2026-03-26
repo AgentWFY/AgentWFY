@@ -263,7 +263,7 @@
 
   function parseValue(raw) {
     if (raw === null) return '';
-    try { return JSON.parse(raw); } catch { return raw; }
+    return raw;
   }
 
   async function loadSettings() {
@@ -289,24 +289,13 @@
     const val = pendingChanges[name];
     if (val === undefined) return;
 
-    let jsonVal;
-    if (val === '') {
-      jsonVal = null;
-    } else {
-      const trimmed = val.trim();
-      if (trimmed === 'true' || trimmed === 'false' || trimmed === 'null' ||
-          (trimmed !== '' && !isNaN(Number(trimmed)))) {
-        jsonVal = trimmed;
-      } else {
-        jsonVal = JSON.stringify(trimmed);
-      }
-    }
+    const storeVal = val === '' ? null : val;
 
     try {
       await window.agentwfy.runSql({
         target: 'agent',
         sql: 'UPDATE config SET value = ? WHERE name = ?',
-        params: [jsonVal, name]
+        params: [storeVal, name]
       });
       delete pendingChanges[name];
       await loadSettings();

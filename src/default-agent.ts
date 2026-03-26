@@ -157,9 +157,30 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
 
   <script>
     const mod = navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl';
-    document.querySelectorAll('kbd.mod-shortcut').forEach(el => {
-      el.textContent = mod + '+' + el.textContent;
-    });
+    async function resolveShortcutLabel(actionId, defaultKey) {
+      try {
+        const rows = await window.agentwfy.runSql({
+          target: 'agent',
+          sql: "SELECT value FROM config WHERE name = ?",
+          params: ['system.shortcuts.' + actionId]
+        });
+        const raw = rows[0]?.value || defaultKey;
+        if (raw === 'disabled') return null;
+        const parts = raw.split('+');
+        const key = parts.pop().toUpperCase();
+        const mods = parts.map(m => m === 'mod' ? mod : m.charAt(0).toUpperCase() + m.slice(1));
+        return [...mods, key].join('+');
+      } catch { return mod + '+' + defaultKey.split('+').pop().toUpperCase(); }
+    }
+    (async () => {
+      const chatLabel = await resolveShortcutLabel('toggle-agent-chat', 'mod+i');
+      const paletteLabel = await resolveShortcutLabel('toggle-command-palette', 'mod+k');
+      const els = document.querySelectorAll('kbd.mod-shortcut');
+      if (els[0] && chatLabel) els[0].textContent = chatLabel;
+      else if (els[0] && !chatLabel) els[0].parentElement.style.display = 'none';
+      if (els[1] && paletteLabel) els[1].textContent = paletteLabel;
+      else if (els[1] && !paletteLabel) els[1].parentElement.style.display = 'none';
+    })();
 
     document.addEventListener('click', async (e) => {
       const link = e.target.closest('[data-view]');

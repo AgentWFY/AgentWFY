@@ -42,5 +42,33 @@
   {
     "name": "system.openai-compatible-provider.reasoning",
     "description": "Reasoning effort level: off, minimal, low, medium, high, xhigh (default: off)"
+  },
+  {
+    "name": "system.shortcuts.toggle-command-palette",
+    "description": "Shortcut for Command Palette (default: mod+k). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.toggle-agent-chat",
+    "description": "Shortcut for Toggle AI Panel (default: mod+i). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.toggle-task-panel",
+    "description": "Shortcut for Toggle Task Panel (default: mod+j). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.close-current-tab",
+    "description": "Shortcut for Close Current Tab (default: mod+w). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.reload-current-tab",
+    "description": "Shortcut for Reload Current Tab (default: mod+r). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.reload-window",
+    "description": "Shortcut for Reload Window (default: mod+shift+r). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.open-agent",
+    "description": "Shortcut for Open Agent (default: mod+o). Set to 'disabled' to unbind."
   }
 ]

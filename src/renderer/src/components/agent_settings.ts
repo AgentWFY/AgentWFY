@@ -132,11 +132,10 @@ export class TlAgentSettings extends HTMLElement {
     const ipc = window.ipc
     if (!ipc) return
 
-    const jsonValue = JSON.stringify(value)
     await ipc.sql.run({
       target: 'agent',
       sql: `UPDATE config SET value = ? WHERE name = ?`,
-      params: [jsonValue, name],
+      params: [value, name],
       description: `Save config ${name}`,
     })
   }

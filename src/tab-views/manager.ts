@@ -189,6 +189,7 @@ interface TabViewManagerDeps {
   focusMainRendererWindow: () => void;
   dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
   dispatchRendererWindowEvent: (name: string) => void;
+  matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   agentHash?: string;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
@@ -304,46 +305,38 @@ export class TabViewManager {
 
     viewWebContents.on('before-input-event', (event, input) => {
       const key = String(input.key || '').toLowerCase();
-      if (!key || input.alt || input.isAutoRepeat) {
-        return;
-      }
+      if (!key || input.isAutoRepeat) return;
 
-      const hasCommandModifier = IS_DARWIN ? input.meta : input.control;
-      if (!hasCommandModifier || input.shift) {
-        return;
-      }
+      const action = this.deps.matchShortcut(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
+      if (!action) return;
 
-      if (key === 'k') {
-        event.preventDefault();
-        this.deps.toggleCommandPalette();
-        return;
+      event.preventDefault();
+      switch (action) {
+        case 'toggle-command-palette':
+          this.deps.toggleCommandPalette();
+          break;
+        case 'toggle-agent-chat':
+          this.deps.focusMainRendererWindow();
+          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
+          break;
+        case 'toggle-task-panel':
+          this.deps.focusMainRendererWindow();
+          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+          break;
+        case 'close-current-tab':
+          this.deps.focusMainRendererWindow();
+          this.closeCurrentTab();
+          break;
+        case 'reload-current-tab':
+          this.reloadCurrentTab();
+          break;
+        case 'reload-window': {
+          const win = this.deps.getMainWindow();
+          if (win && !win.isDestroyed()) win.reload();
+          break;
+        }
       }
-
-      if (key === 'i') {
-        event.preventDefault();
-        this.deps.focusMainRendererWindow();
-        this.deps.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
-        return;
-      }
-
-      if (key === 'j') {
-        event.preventDefault();
-        this.deps.focusMainRendererWindow();
-        this.deps.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
-        return;
-      }
-
-      if (key === 'w') {
-        event.preventDefault();
-        this.deps.focusMainRendererWindow();
-        this.closeCurrentTab();
-        return;
-      }
-
-      if (key === 'r') {
-        event.preventDefault();
-        this.reloadCurrentTab();
-      }
+      // Note: 'open-agent' is handled at window-manager level only
     });
 
     viewWebContents.on('focus', () => {

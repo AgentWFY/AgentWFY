@@ -7,6 +7,7 @@ import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palett
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
 import { getConfigValue, setAgentConfig } from './settings/config.js';
+import { ShortcutManager } from './shortcuts/manager.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
@@ -50,6 +51,7 @@ interface AppWindowContext {
   sessionManager: AgentSessionManager;
   taskRunner: TaskRunner;
   jsRuntime: JsRuntime;
+  shortcutManager: ShortcutManager;
   agentStateStreamingCleanup: (() => void) | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
@@ -139,6 +141,7 @@ class WindowManager {
       getPluginRegistry: () => ctx.pluginRegistry,
       getConfirmation: () => ctx.confirmation,
       getSessionManager: () => ctx.sessionManager,
+      getDisplayShortcut: (actionId) => shortcutManager.getDisplayShortcut(actionId),
     });
 
     const confirmation = new ConfirmationManager({
@@ -155,6 +158,7 @@ class WindowManager {
       focusMainRendererWindow: () => rendererBridge.focusMainRendererWindow(),
       dispatchRendererCustomEvent: (name, detail) => rendererBridge.dispatchRendererCustomEvent(name, detail),
       dispatchRendererWindowEvent: (name) => rendererBridge.dispatchRendererWindowEvent(name),
+      matchShortcut: (key, meta, ctrl, shift, alt) => shortcutManager.match(key, meta, ctrl, shift, alt),
       agentHash,
       registerSender,
       unregisterSender,
@@ -202,6 +206,8 @@ class WindowManager {
       getJsRuntime: () => jsRuntime,
     })
 
+    const shortcutManager = new ShortcutManager(agentRoot);
+
     const ctx: AppWindowContext = {
       window,
       agentRoot,
@@ -217,6 +223,7 @@ class WindowManager {
       sessionManager,
       taskRunner,
       jsRuntime,
+      shortcutManager,
       agentStateStreamingCleanup: null,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
@@ -307,38 +314,34 @@ class WindowManager {
 
     window.webContents.on('before-input-event', (event, input) => {
       const key = String(input.key || '').toLowerCase();
-      if (!key || input.alt || input.isAutoRepeat) return;
+      if (!key || input.isAutoRepeat) return;
 
-      const hasCommandModifier = process.platform === 'darwin' ? input.meta : input.control;
-      if (!hasCommandModifier) return;
+      const action = shortcutManager.match(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
+      if (!action) return;
 
-      if (!input.shift && key === 'k') {
-        event.preventDefault();
-        commandPalette.toggle();
-        return;
-      }
-      if (!input.shift && key === 'i') {
-        event.preventDefault();
-        rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
-        return;
-      }
-      if (!input.shift && key === 'j') {
-        event.preventDefault();
-        rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
-        return;
-      }
-      if (!input.shift && key === 'w') {
-        event.preventDefault();
-        tabViewManager.closeCurrentTab();
-        return;
-      }
-      if (!input.shift && key === 'r') {
-        event.preventDefault();
-        tabViewManager.reloadCurrentTab();
-      }
-      if (input.shift && key === 'r') {
-        event.preventDefault();
-        window.reload();
+      event.preventDefault();
+      switch (action) {
+        case 'toggle-command-palette':
+          commandPalette.toggle();
+          break;
+        case 'toggle-agent-chat':
+          rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
+          break;
+        case 'toggle-task-panel':
+          rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+          break;
+        case 'close-current-tab':
+          tabViewManager.closeCurrentTab();
+          break;
+        case 'reload-current-tab':
+          tabViewManager.reloadCurrentTab();
+          break;
+        case 'reload-window':
+          window.reload();
+          break;
+        case 'open-agent':
+          commandPalette.runAction({ type: 'open-agent' }).catch(() => {});
+          break;
       }
     });
 
@@ -535,7 +538,7 @@ class WindowManager {
   private async startHttpServerForContext(ctx: AppWindowContext): Promise<void> {
     const { agentRoot, window: win } = ctx;
     cleanStaleLockfile(agentRoot);
-    const preferredPort = getConfigValue(agentRoot, 'system.httpApi.port', 9877) as number;
+    const preferredPort = Number(getConfigValue(agentRoot, 'system.httpApi.port', '9877'));
 
     try {
       ctx.httpApi = await startHttpApi({ getAgentRoot: () => agentRoot, preferredPort });
