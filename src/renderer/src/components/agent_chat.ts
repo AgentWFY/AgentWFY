@@ -851,6 +851,7 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.removeEventListener('agentwfy:load-session', this.onLoadSession)
+    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
@@ -858,6 +859,10 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private onPluginChanged = () => {
+    agentSessionStore.loadProviders().then(() => this.render())
+  }
+
+  private onConfigDbChanged = () => {
     agentSessionStore.loadProviders().then(() => this.render())
   }
 
@@ -881,6 +886,7 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.addEventListener('agentwfy:load-session', this.onLoadSession)
+    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'
