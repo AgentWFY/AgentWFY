@@ -86,13 +86,14 @@ interface TabContextMenuPayload {
   tabId?: string
 }
 
-type TabContextMenuAction = 'toggle-pin' | 'reload' | null;
+type TabContextMenuAction = 'toggle-pin' | 'reload' | 'toggle-devtools' | null;
 
 const VIEW_LOG_BUFFER_MAX = 1000;
 const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 const FALLBACK_VIEW_WIDTH = 1280;
 const FALLBACK_VIEW_HEIGHT = 720;
+const IS_DARWIN = process.platform === 'darwin';
 
 const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
@@ -307,7 +308,7 @@ export class TabViewManager {
         return;
       }
 
-      const hasCommandModifier = process.platform === 'darwin' ? input.meta : input.control;
+      const hasCommandModifier = IS_DARWIN ? input.meta : input.control;
       if (!hasCommandModifier || input.shift) {
         return;
       }
@@ -524,6 +525,14 @@ export class TabViewManager {
     if (!state.view.webContents.isDestroyed()) {
       state.view.webContents.reload();
     }
+  }
+
+  toggleDevTools(tabId: string): void {
+    const state = this.tabViewsByTabId.get(tabId);
+    if (!state || state.view.webContents.isDestroyed()) {
+      return;
+    }
+    state.view.webContents.toggleDevTools();
   }
 
   // --- Tab resolution ---
@@ -897,6 +906,16 @@ export class TabViewManager {
         if (tabId) this.togglePin(tabId);
       },
     });
+
+    if (tabId) {
+      template.push({
+        label: 'Toggle DevTools',
+        click: () => {
+          selectedAction = 'toggle-devtools';
+          this.toggleDevTools(tabId!);
+        },
+      });
+    }
 
     const menu = Menu.buildFromTemplate(template);
     return new Promise<TabContextMenuAction>((resolve) => {

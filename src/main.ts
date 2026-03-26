@@ -248,13 +248,6 @@ function buildAndSetMenu() {
               { type: 'separator' as const },
             ]
           : []),
-        {
-          label: 'Devtools',
-          click: () => {
-            const win = BrowserWindow.getFocusedWindow();
-            win?.webContents.openDevTools();
-          },
-        },
       ],
     },
     {

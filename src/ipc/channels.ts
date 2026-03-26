@@ -33,6 +33,7 @@ export const Channels = {
     reorderTabs: 'tabs:reorderTabs',
     togglePin: 'tabs:togglePin',
     revealTab: 'tabs:revealTab',
+    toggleDevTools: 'tabs:toggleDevTools',
   },
   sessions: {
     list: 'sessions:list',
