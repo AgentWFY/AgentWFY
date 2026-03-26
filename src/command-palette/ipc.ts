@@ -50,4 +50,8 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).buildTaskItems();
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS, async (event) => {
+    return getCommandPalette(event).buildSessionItems();
+  });
+
 }
