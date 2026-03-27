@@ -88,8 +88,9 @@ typings/
 # Vite
 .vite/
 
-# Electron-Forge
+# Build output
 out/
+vendor/
 
 tmp
 dist

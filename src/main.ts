@@ -27,6 +27,7 @@ import {
 } from './agent-manager.js';
 import { windowManager } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
+import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
 import path from 'path';
@@ -360,6 +361,10 @@ function buildAndSetMenu() {
             });
           },
         },
+        {
+          label: 'Check for Updates...',
+          click: () => checkForUpdates(false),
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -466,6 +471,8 @@ app.on('ready', async () => {
   // Rebuild menu whenever a new window is created (updates recent agents list)
   windowManager.onWindowCreated = () => buildAndSetMenu();
 
+  startAutoUpdater();
+
   createInitialWindow();
 });
 
@@ -507,6 +514,7 @@ let quitDialogOpen = false;
 function doQuitCleanup() {
   stopFileWatcher();
   stopBackupScheduler();
+  stopAutoUpdater();
   windowManager.destroyAll();
 }
 
