@@ -14,7 +14,7 @@ AgentWFY is an Electron desktop app that provides a local AI agent runtime. User
 - **Start** (run built app): `npm run start`
 - **Package**: `npm run package`
 
-No test framework is configured.
+No test framework is configured. See [TESTING.md](TESTING.md) for how to launch the app with CDP, interact with it programmatically, and visually verify changes.
 
 ## Architecture
 

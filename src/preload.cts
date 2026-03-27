@@ -372,6 +372,15 @@ if (isApp) {
         return ipcRenderer.invoke('app:command-palette:show-filtered', query);
       },
     },
+    restart(): Promise<void> {
+      return ipcRenderer.invoke('app:restart');
+    },
+    stop(): Promise<void> {
+      return ipcRenderer.invoke('app:stop');
+    },
+    reloadRenderer(): Promise<void> {
+      return ipcRenderer.invoke('app:reloadRenderer');
+    },
     getAgentRoot(): Promise<string | null> {
       return ipcRenderer.invoke('app:getAgentRoot');
     },

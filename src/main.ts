@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
@@ -142,6 +142,20 @@ registerAgentSessionHandlers(
   },
 );
 
+ipcMain.handle('app:restart', () => {
+  app.exit(0); // dev.sh respawns on exit code 0
+});
+
+ipcMain.handle('app:stop', () => {
+  app.exit(1); // dev.sh exits on exit code 1
+});
+
+ipcMain.handle('app:reloadRenderer', () => {
+  for (const wc of webContents.getAllWebContents()) {
+    wc.reloadIgnoringCache();
+  }
+});
+
 ipcMain.handle('app:getAgentRoot', (event) => {
   try {
     return windowManager.getAgentRootForEvent(event);
@@ -267,6 +281,23 @@ function buildAndSetMenu() {
       label: 'View',
       submenu: [
         { role: 'toggleDevTools' },
+        { type: 'separator' },
+        {
+          label: 'Reload Renderer',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => {
+            for (const wc of webContents.getAllWebContents()) {
+              wc.reloadIgnoringCache();
+            }
+          },
+        },
+        {
+          label: 'Restart App',
+          accelerator: 'CmdOrCtrl+Shift+Alt+R',
+          click: () => {
+            app.exit(0);
+          },
+        },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
