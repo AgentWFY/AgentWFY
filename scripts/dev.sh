@@ -11,7 +11,6 @@ if [ ! -d "$ROOT_DIR/node_modules" ]; then
 fi
 
 ELECTRON="$ROOT_DIR/node_modules/.bin/electron"
-LOGFILE="$ROOT_DIR/.dev.log"
 
 cleanup() {
   trap '' EXIT INT TERM
@@ -32,10 +31,8 @@ done
 
 # Respawn Electron when it exits (e.g., via Cmd+Shift+Option+R or cdp.mjs restart).
 # Ctrl+C triggers cleanup() and exits everything.
-# Logs are written to .dev.log (readable via cdp.mjs logs).
 while true; do
-  : > "$LOGFILE"
-  NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR" "$@" >>"$LOGFILE" 2>&1 &
+  NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR" "$@" &
   ELECTRON_PID=$!
   wait "$ELECTRON_PID" 2>/dev/null
   EXIT_CODE=$?

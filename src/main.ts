@@ -30,9 +30,25 @@ import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
 import path from 'path';
+import fs from 'fs';
 import { pathToFileURL } from 'url';
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
+
+// Write main process logs to .dev.log when not packaged (readable via scripts/cdp.mjs logs)
+if (!app.isPackaged) {
+  const devLogStream = fs.createWriteStream(path.join(import.meta.dirname, '..', '.dev.log'), { flags: 'w' });
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stdout.write = (chunk: any, ...args: any[]) => {
+    devLogStream.write(chunk);
+    return origStdoutWrite(chunk, ...args);
+  };
+  process.stderr.write = (chunk: any, ...args: any[]) => {
+    devLogStream.write(chunk);
+    return origStderrWrite(chunk, ...args);
+  };
+}
 
 const APP_NAME = 'AgentWFY';
 const APP_ICON_PATH = path.join(import.meta.dirname, '..', 'icons', 'icon.png');
