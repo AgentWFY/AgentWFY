@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+# =============================================================================
+# macos-control.sh — Native macOS screen-level automation (Layer 2)
+#
+# Zero-dependency screen control using built-in macOS tools:
+#   - screencapture: screenshots
+#   - osascript: AppleScript for mouse, keyboard, window management
+#
+# Usage:
+#   scripts/macos-control.sh <command> [args...]
+#
+# Commands:
+#   screenshot [path]            — Capture full screen
+#   screenshot-window [path]     — Capture the frontmost window
+#   screenshot-app <name> [path] — Capture a specific app's window
+#   click <x> <y>               — Click at screen coordinates
+#   double-click <x> <y>        — Double-click at coordinates
+#   right-click <x> <y>         — Right-click at coordinates
+#   type <text>                 — Type text (keystroke)
+#   key <key> [modifiers]       — Press a key (e.g., "return", "tab", "k" "command")
+#   move <x> <y>                — Move mouse to coordinates
+#   list-windows [app]          — List windows (optionally for a specific app)
+#   focus-app <name>            — Bring app to front
+#   window-bounds <app>         — Get window position and size
+#   menu <app> <menu> <item>    — Click a menu item
+# =============================================================================
+
+set -euo pipefail
+
+APP_NAME="${MACOS_APP_NAME:-Electron}"
+
+log() { echo "[macos-control] $*" >&2; }
+
+do_screenshot() {
+  local path="${1:-/tmp/agentwfy-screen.png}"
+  screencapture -x "$path"
+  echo "$path"
+}
+
+do_screenshot_window() {
+  local path="${1:-/tmp/agentwfy-window.png}"
+  # -l requires a window ID; use -w for interactive or -o for frontmost window shadow
+  screencapture -x -o "$path"
+  echo "$path"
+}
+
+do_screenshot_app() {
+  local app="${1:-$APP_NAME}"
+  local path="${2:-/tmp/agentwfy-app-screenshot.png}"
+
+  # Get the window ID of the app
+  local window_id
+  window_id=$(osascript -e "
+    tell application \"System Events\"
+      set appProc to first process whose name is \"$app\"
+      set frontWindow to first window of appProc
+      return id of frontWindow
+    end tell
+  " 2>/dev/null || echo "")
+
+  if [ -n "$window_id" ]; then
+    screencapture -x -l "$window_id" "$path"
+  else
+    # Fallback: focus the app then capture frontmost window
+    osascript -e "tell application \"$app\" to activate" 2>/dev/null || true
+    sleep 0.3
+    screencapture -x -o "$path"
+  fi
+  echo "$path"
+}
+
+do_click() {
+  local x="$1" y="$2"
+  osascript -e "
+    tell application \"System Events\"
+      click at {$x, $y}
+    end tell
+  "
+  echo "clicked at $x,$y"
+}
+
+do_double_click() {
+  local x="$1" y="$2"
+  osascript -e "
+    tell application \"System Events\"
+      click at {$x, $y}
+      delay 0.05
+      click at {$x, $y}
+    end tell
+  "
+  echo "double-clicked at $x,$y"
+}
+
+do_right_click() {
+  local x="$1" y="$2"
+  # AppleScript doesn't support right-click directly, use JavaScript for Automation
+  osascript -l JavaScript -e "
+    ObjC.import('CoreGraphics');
+    var point = $.CGPointMake($x, $y);
+    var down = $.CGEventCreateMouseEvent(null, $.kCGEventRightMouseDown, point, $.kCGMouseButtonRight);
+    $.CGEventPost($.kCGHIDEventTap, down);
+    delay(0.05);
+    var up = $.CGEventCreateMouseEvent(null, $.kCGEventRightMouseUp, point, $.kCGMouseButtonRight);
+    $.CGEventPost($.kCGHIDEventTap, up);
+  " 2>/dev/null || \
+  osascript -e "
+    tell application \"System Events\"
+      -- Fallback: Ctrl+click for right-click
+      click at {$x, $y} with {control down}
+    end tell
+  "
+  echo "right-clicked at $x,$y"
+}
+
+do_type() {
+  local text="$1"
+  osascript -e "
+    tell application \"System Events\"
+      keystroke \"$text\"
+    end tell
+  "
+  echo "typed: $text"
+}
+
+do_key() {
+  local key="$1"
+  local modifiers="${2:-}"
+
+  if [ -n "$modifiers" ]; then
+    osascript -e "
+      tell application \"System Events\"
+        key code (key code \"$key\") using {${modifiers} down}
+      end tell
+    " 2>/dev/null || \
+    osascript -e "
+      tell application \"System Events\"
+        keystroke \"$key\" using {${modifiers} down}
+      end tell
+    "
+  else
+    osascript -e "
+      tell application \"System Events\"
+        keystroke \"$key\"
+      end tell
+    " 2>/dev/null || \
+    osascript -e "
+      tell application \"System Events\"
+        key code \"$key\"
+      end tell
+    "
+  fi
+  echo "pressed: $key ${modifiers:+(with $modifiers)}"
+}
+
+do_move() {
+  local x="$1" y="$2"
+  osascript -l JavaScript -e "
+    ObjC.import('CoreGraphics');
+    var point = $.CGPointMake($x, $y);
+    var event = $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, point, $.kCGMouseButtonLeft);
+    $.CGEventPost($.kCGHIDEventTap, event);
+  "
+  echo "moved to $x,$y"
+}
+
+do_list_windows() {
+  local app="${1:-}"
+  if [ -n "$app" ]; then
+    osascript -e "
+      tell application \"System Events\"
+        set appProc to first process whose name is \"$app\"
+        set windowList to every window of appProc
+        set output to \"\"
+        repeat with w in windowList
+          set winName to name of w
+          set winPos to position of w
+          set winSize to size of w
+          set output to output & winName & \" | pos=\" & (item 1 of winPos as text) & \",\" & (item 2 of winPos as text) & \" | size=\" & (item 1 of winSize as text) & \"x\" & (item 2 of winSize as text) & \"\n\"
+        end repeat
+        return output
+      end tell
+    "
+  else
+    osascript -e "
+      tell application \"System Events\"
+        set output to \"\"
+        repeat with proc in (every process whose visible is true)
+          set procName to name of proc
+          set windowList to every window of proc
+          repeat with w in windowList
+            set winName to name of w
+            set output to output & procName & \" | \" & winName & \"\n\"
+          end repeat
+        end repeat
+        return output
+      end tell
+    "
+  fi
+}
+
+do_focus_app() {
+  local app="$1"
+  osascript -e "tell application \"$app\" to activate"
+  echo "focused: $app"
+}
+
+do_window_bounds() {
+  local app="${1:-$APP_NAME}"
+  osascript -e "
+    tell application \"System Events\"
+      set appProc to first process whose name is \"$app\"
+      set frontWindow to first window of appProc
+      set winPos to position of frontWindow
+      set winSize to size of frontWindow
+      return (item 1 of winPos as text) & \",\" & (item 2 of winPos as text) & \",\" & (item 1 of winSize as text) & \",\" & (item 2 of winSize as text)
+    end tell
+  "
+}
+
+do_menu() {
+  local app="$1"
+  local menu_name="$2"
+  local menu_item="$3"
+  osascript -e "
+    tell application \"System Events\"
+      tell process \"$app\"
+        click menu item \"$menu_item\" of menu \"$menu_name\" of menu bar 1
+      end tell
+    end tell
+  "
+  echo "clicked menu: $app > $menu_name > $menu_item"
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+  screenshot)        do_screenshot "${2:-}" ;;
+  screenshot-window) do_screenshot_window "${2:-}" ;;
+  screenshot-app)    do_screenshot_app "${2:-$APP_NAME}" "${3:-}" ;;
+  click)             do_click "$2" "$3" ;;
+  double-click)      do_double_click "$2" "$3" ;;
+  right-click)       do_right_click "$2" "$3" ;;
+  type)              do_type "$2" ;;
+  key)               do_key "$2" "${3:-}" ;;
+  move)              do_move "$2" "$3" ;;
+  list-windows)      do_list_windows "${2:-}" ;;
+  focus-app)         do_focus_app "$2" ;;
+  window-bounds)     do_window_bounds "${2:-$APP_NAME}" ;;
+  menu)              do_menu "$2" "$3" "$4" ;;
+  *)
+    echo "Usage: $0 <command> [args...]"
+    echo ""
+    echo "Commands:"
+    echo "  screenshot [path]            — Full screen capture"
+    echo "  screenshot-window [path]     — Frontmost window"
+    echo "  screenshot-app <name> [path] — Specific app window"
+    echo "  click <x> <y>               — Left click"
+    echo "  double-click <x> <y>        — Double click"
+    echo "  right-click <x> <y>         — Right click"
+    echo "  type <text>                 — Type text"
+    echo "  key <key> [modifiers]       — Press key"
+    echo "  move <x> <y>               — Move mouse"
+    echo "  list-windows [app]          — List windows"
+    echo "  focus-app <name>            — Focus application"
+    echo "  window-bounds [app]         — Get window position/size"
+    echo "  menu <app> <menu> <item>    — Click menu item"
+    exit 1
+    ;;
+esac

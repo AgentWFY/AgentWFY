@@ -11,10 +11,12 @@ if [ ! -d "$ROOT_DIR/node_modules" ]; then
 fi
 
 ELECTRON="$ROOT_DIR/node_modules/.bin/electron"
+LOGFILE="$ROOT_DIR/.dev.log"
 
 cleanup() {
   trap '' EXIT INT TERM
   [ -n "$ESBUILD_PID" ] && kill "$ESBUILD_PID" 2>/dev/null
+  [ -n "$ELECTRON_PID" ] && kill "$ELECTRON_PID" 2>/dev/null
   wait 2>/dev/null
   exit
 }
@@ -28,4 +30,17 @@ while [ ! -f "$ROOT_DIR/dist/client/index.js" ]; do
   sleep 0.2
 done
 
-NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR" "$@"
+# Respawn Electron when it exits (e.g., via Cmd+Shift+Option+R or cdp.mjs restart).
+# Ctrl+C triggers cleanup() and exits everything.
+# Logs are written to .dev.log (readable via cdp.mjs logs).
+while true; do
+  : > "$LOGFILE"
+  NODE_OPTIONS="--disable-warning=ExperimentalWarning" "$ELECTRON" "$ROOT_DIR" "$@" >>"$LOGFILE" 2>&1 &
+  ELECTRON_PID=$!
+  wait "$ELECTRON_PID" 2>/dev/null
+  EXIT_CODE=$?
+  # Signal kill (Ctrl+C) or exit code 1 (stop) → don't respawn
+  if [ $EXIT_CODE -gt 128 ] || [ $EXIT_CODE -eq 1 ]; then
+    break
+  fi
+done
