@@ -88,6 +88,7 @@ export function registerAgentSessionHandlers(
 export function setupAgentStateStreaming(
   manager: AgentSessionManager,
   win: BrowserWindow,
+  isActive?: () => boolean,
 ): () => void {
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
@@ -99,6 +100,7 @@ export function setupAgentStateStreaming(
   const sendFullSnapshot = () => {
     if (win.isDestroyed()) return
     if (!heartbeatDirty) return
+    if (isActive && !isActive()) return
     heartbeatDirty = false
     const snapshot = manager.getSnapshot()
     win.webContents.send(Channels.agent.snapshot, snapshot)
@@ -123,12 +125,16 @@ export function setupAgentStateStreaming(
       heartbeat = null
     }
 
+    // Skip sending to renderer if this agent is not the active one
+    if (isActive && !isActive()) return
+
     if (snapshot.isStreaming) {
       // During streaming, send the lightweight streaming data (debounced)
       if (!streamingDebounce) {
         streamingDebounce = setTimeout(() => {
           streamingDebounce = null
           if (win.isDestroyed()) return
+          if (isActive && !isActive()) return
           const current = manager.getSnapshot()
           win.webContents.send(Channels.agent.streaming, {
             message: current.streamingMessage,
@@ -138,15 +144,10 @@ export function setupAgentStateStreaming(
         }, 16) // ~60fps
       }
 
-      // Send full snapshot when messages change (new turn committed during
-      // multi-turn tool calling, or messages replaced on done), on transition
-      // into streaming, or when non-streaming state like notifyOnFinish changes.
-      // Compare by reference to detect replacements (Agent always creates new arrays).
       if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
         win.webContents.send(Channels.agent.snapshot, snapshot)
       }
     } else {
-      // Not streaming — send full snapshot (session changes, streaming ended, etc.)
       win.webContents.send(Channels.agent.snapshot, snapshot)
     }
 

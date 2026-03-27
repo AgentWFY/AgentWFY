@@ -3,7 +3,6 @@ import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
 import { SettingsScreen } from './settings.js'
 import { RestoreScreen } from './restore.js'
-import { RecentAgentsScreen } from './recent-agents.js'
 import { TasksScreen } from './tasks.js'
 import { SessionsScreen } from './sessions.js'
 
@@ -45,10 +44,6 @@ export class NormalScreen implements PaletteScreen {
 
     if (item.action.type === 'enter-settings') {
       return { type: 'push', screen: new SettingsScreen(this.bridge) }
-    }
-
-    if (item.action.type === 'enter-recent-agents') {
-      return { type: 'push', screen: new RecentAgentsScreen(this.bridge) }
     }
 
     if (item.action.type === 'restore-agent-db') {

@@ -8,6 +8,8 @@ const TASKS_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
   <polygon points="5 3 19 12 5 21 5 3"/>
 </svg>`
 
+const AGENT_SIDEBAR_WIDTH = 48
+
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
   private sidebarEl!: HTMLDivElement
@@ -63,7 +65,8 @@ export class TlApp extends HTMLElement {
 
   private onResizeMouseMove = (e: MouseEvent) => {
     if (!this.isResizing) return
-    const newWidth = Math.min(Math.max(e.clientX, 200), window.innerWidth - 4)
+    // Account for agent sidebar width when calculating sidebar width
+    const newWidth = Math.min(Math.max(e.clientX - AGENT_SIDEBAR_WIDTH, 200), window.innerWidth - AGENT_SIDEBAR_WIDTH - 4)
     this.sidebarWidth = newWidth
     this.sidebarEl.style.width = `${newWidth}px`
     this.updateHeaderSpacer()
@@ -89,11 +92,16 @@ export class TlApp extends HTMLElement {
 
     const style = document.createElement('style')
     style.textContent = `
+      .awfy-app-root {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+      }
       .awfy-app-outer {
         display: flex;
         flex-direction: column;
-        width: 100vw;
-        height: 100vh;
+        flex: 1;
+        min-width: 0;
       }
       .awfy-app-header {
         display: flex;
@@ -121,7 +129,7 @@ export class TlApp extends HTMLElement {
         gap: 2px;
         padding: 0 4px 2px;
         -webkit-app-region: no-drag;
-        ${isMac ? 'padding-left: 78px;' : ''}
+        ${isMac ? 'padding-left: 30px;' : ''}
       }
       .awfy-app-sidebar-btn {
         display: flex;
@@ -214,6 +222,14 @@ export class TlApp extends HTMLElement {
     `
     this.appendChild(style)
 
+    // Root: agent-sidebar on the left, then the main app column
+    const root = document.createElement('div')
+    root.className = 'awfy-app-root'
+
+    // Agent sidebar (Discord-style)
+    const agentSidebar = document.createElement('awfy-agent-sidebar')
+    root.appendChild(agentSidebar)
+
     const outer = document.createElement('div')
     outer.className = 'awfy-app-outer'
 
@@ -262,7 +278,7 @@ export class TlApp extends HTMLElement {
     const container = document.createElement('div')
     container.className = 'awfy-app-container'
 
-    // Sidebar
+    // Sidebar (chat/tasks panel)
     this.sidebarEl = document.createElement('div')
     this.sidebarEl.className = 'awfy-app-sidebar awfy-app-sidebar-hidden'
     this.sidebarEl.style.width = `${this.sidebarWidth}px`
@@ -307,7 +323,8 @@ export class TlApp extends HTMLElement {
     const statusLine = document.createElement('awfy-status-line')
     outer.appendChild(statusLine)
 
-    this.appendChild(outer)
+    root.appendChild(outer)
+    this.appendChild(root)
 
     // Reparent tab bar from awfy-tabs into the header
     const tabsComponent = this.tabsEl as HTMLElement & { tabBarEl?: HTMLDivElement }

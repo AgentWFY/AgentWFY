@@ -5,7 +5,7 @@ import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
-import { registerBusHandlers } from './ipc/bus.js';
+import { registerBusHandlers, forwardBusPublish } from './ipc/bus.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
@@ -17,19 +17,17 @@ import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
-  showAgentPickerDialog,
   showOpenAgentDialog,
   showInstallAgentDialog,
   showInstallAgentFromFileDialog,
-  getRecentAgents,
   isAgentDir,
-  shortenPath,
 } from './agent-manager.js';
-import { windowManager } from './window-manager.js';
+import { windowManager, getPersistedAgentRoots } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
+import { Channels } from './ipc/channels.js';
 import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -146,14 +144,22 @@ registerAgentSessionHandlers(
     await ctx.sessionManager.disposeAll();
     // Create new session manager
     const { AgentSessionManager } = await import('./agent/session_manager.js');
+    const agentRootForReconnect = ctx.agentRoot;
     const newMgr = new AgentSessionManager({
-      agentRoot: ctx.agentRoot,
+      agentRoot: agentRootForReconnect,
       win: ctx.window,
       providerRegistry: ctx.providerRegistry,
       getJsRuntime: () => ctx.jsRuntime,
+      busPublish: (topic, data) => {
+        if (!ctx.window.isDestroyed() && windowManager.getActiveAgentRoot() === agentRootForReconnect) {
+          forwardBusPublish(ctx.window, topic, data);
+        }
+      },
     });
     ctx.sessionManager = newMgr;
-    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(newMgr, ctx.window);
+    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
+      newMgr, ctx.window, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
+    );
     newMgr.resetActive();
     return newMgr;
   },
@@ -173,26 +179,22 @@ ipcMain.handle('app:reloadRenderer', () => {
   }
 });
 
-ipcMain.handle('app:getAgentRoot', (event) => {
+ipcMain.handle('app:getAgentRoot', () => {
+  return windowManager.getActiveAgentRoot();
+});
+
+ipcMain.handle('app:getHttpApiPort', () => {
   try {
-    return windowManager.getAgentRootForEvent(event);
+    return windowManager.getActiveHttpApiPort();
   } catch {
     return null;
   }
 });
 
-ipcMain.handle('app:getHttpApiPort', (event) => {
+ipcMain.handle('app:getDefaultView', async () => {
   try {
-    const ctx = windowManager.getContextForSender(event.sender.id);
-    return ctx.httpApi?.port() ?? null;
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle('app:getDefaultView', async (event) => {
-  try {
-    const root = windowManager.getAgentRootForEvent(event);
+    const root = windowManager.getActiveAgentRoot();
+    if (!root) return null;
     const configValue = getConfigValue(root, 'system.defaultView', 'home');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
     const viewName = trimmed || 'home';
@@ -204,80 +206,83 @@ ipcMain.handle('app:getDefaultView', async (event) => {
   }
 });
 
-ipcMain.handle('app:getBackupStatus', (event) => {
+ipcMain.handle('app:getBackupStatus', () => {
   try {
-    const root = windowManager.getAgentRootForEvent(event);
+    const root = windowManager.getActiveAgentRoot();
+    if (!root) return null;
     return getBackupStatus(root);
   } catch {
     return null;
   }
 });
 
-// --- Agent actions from menu / command palette ---
+// --- Agent sidebar IPC handlers ---
 
-async function handleOpenAgent() {
-  const picked = await showOpenAgentDialog(BrowserWindow.getFocusedWindow());
-  if (!picked) return;
-  await windowManager.openAgentInWindow(picked);
-}
+ipcMain.handle(Channels.agentSidebar.getInstalled, () => {
+  return windowManager.getInstalledAgentsList();
+});
 
-async function handleInstallAgent() {
-  const picked = await showInstallAgentDialog(BrowserWindow.getFocusedWindow());
-  if (!picked) return;
-  await windowManager.openAgentInWindow(picked);
-}
-
-async function handleInstallAgentFromFile() {
-  const picked = await showInstallAgentFromFileDialog(BrowserWindow.getFocusedWindow());
-  if (!picked) return;
-  await windowManager.openAgentInWindow(picked);
-}
-
-async function handleSwitchAgent(agentPath: string) {
-  if (!isAgentDir(agentPath)) {
-    const picked = await showOpenAgentDialog(BrowserWindow.getFocusedWindow());
-    if (!picked) return;
-    await windowManager.openAgentInWindow(picked);
-    return;
+ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentRoot: string) => {
+  // If agent isn't loaded yet, add it first
+  const installed = windowManager.getInstalledAgentsList();
+  if (!installed.some(a => a.path === agentRoot)) {
+    await windowManager.addAgent(agentRoot);
+  } else {
+    await windowManager.switchAgent(agentRoot);
   }
-  await windowManager.openAgentInWindow(agentPath);
-}
+});
+
+ipcMain.handle(Channels.agentSidebar.add, async () => {
+  const win = windowManager.getMainBrowserWindow();
+  const picked = await showOpenAgentDialog(win);
+  if (!picked) return null;
+  await windowManager.addAgent(picked);
+  return picked;
+});
+
+ipcMain.handle(Channels.agentSidebar.addFromFile, async () => {
+  const win = windowManager.getMainBrowserWindow();
+  const picked = await showInstallAgentFromFileDialog(win);
+  if (!picked) return null;
+  await windowManager.addAgent(picked);
+  return picked;
+});
+
+ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentRoot: string) => {
+  await windowManager.removeAgent(agentRoot);
+});
 
 // --- Menu ---
 
 function buildAndSetMenu() {
-  const recents = getRecentAgents();
-  const recentItems: Electron.MenuItemConstructorOptions[] = recents.map((r) => ({
-    label: shortenPath(r.path),
-    click: () => handleSwitchAgent(r.path),
-  }));
-
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'File',
       submenu: [
         {
-          label: 'Open Agent...',
-          click: () => handleOpenAgent(),
+          label: 'Add Agent...',
+          click: async () => {
+            const win = windowManager.getMainBrowserWindow();
+            const picked = await showOpenAgentDialog(win);
+            if (picked) await windowManager.addAgent(picked);
+          },
         },
         {
           label: 'Install Agent...',
-          click: () => handleInstallAgent(),
+          click: async () => {
+            const win = windowManager.getMainBrowserWindow();
+            const picked = await showInstallAgentDialog(win);
+            if (picked) await windowManager.addAgent(picked);
+          },
         },
         {
           label: 'Install Agent from .agent.awfy...',
-          click: () => handleInstallAgentFromFile(),
+          click: async () => {
+            const win = windowManager.getMainBrowserWindow();
+            const picked = await showInstallAgentFromFileDialog(win);
+            if (picked) await windowManager.addAgent(picked);
+          },
         },
-        { type: 'separator' },
-        ...(recentItems.length > 0
-          ? [
-              {
-                label: 'Recent Agents',
-                submenu: recentItems,
-              } as Electron.MenuItemConstructorOptions,
-              { type: 'separator' as const },
-            ]
-          : []),
       ],
     },
     {
@@ -383,7 +388,6 @@ function buildAndSetMenu() {
 // --- CLI argument parsing ---
 
 function getAgentPathFromArgs(): string | null {
-  // Skip electron binary and app path; look for --agent-path=<path> or --agent-path <path>
   const args = process.argv.slice(1);
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--agent-path=')) {
@@ -399,37 +403,46 @@ function getAgentPathFromArgs(): string | null {
 // --- Initial window creation ---
 
 async function createInitialWindow() {
-  // Check for --agent-path CLI argument first
+  // 1. Check CLI argument
   const cliAgentPath = getAgentPathFromArgs();
   if (cliAgentPath) {
     const resolved = path.resolve(cliAgentPath);
     if (isAgentDir(resolved)) {
-      await windowManager.createWindow(resolved, { skipRecents: true });
-      buildAndSetMenu();
+      await windowManager.createMainWindow(resolved);
+      await restorePersistedAgents(resolved);
       return;
     }
     console.error(`[main] --agent-path "${cliAgentPath}" is not a valid agent directory (missing .agentwfy/)`);
   }
 
-  // Try most recent agent on fresh launch
-  const recents = getRecentAgents();
-  const agentRoot = recents[0] && isAgentDir(recents[0].path) ? recents[0].path : null;
-
-  if (agentRoot) {
-    await windowManager.createWindow(agentRoot);
-    buildAndSetMenu();
+  // 2. Try persisted agents
+  const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
+  if (persisted.length > 0) {
+    await windowManager.createMainWindow(persisted[0]);
+    for (const root of persisted.slice(1)) {
+      await windowManager.addAgent(root);
+    }
+    await windowManager.switchAgent(persisted[0]);
     return;
   }
 
-  // No agent found — show picker
+  // 3. No persisted agents — show picker
+  const { showAgentPickerDialog } = await import('./agent-manager.js');
   const picked = await showAgentPickerDialog();
   if (!picked) {
     app.quit();
     return;
   }
 
-  await windowManager.createWindow(picked);
-  buildAndSetMenu();
+  await windowManager.createMainWindow(picked);
+}
+
+async function restorePersistedAgents(initialRoot: string): Promise<void> {
+  const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r) && r !== initialRoot);
+  for (const root of persisted) {
+    await windowManager.addAgent(root);
+  }
+  await windowManager.switchAgent(initialRoot);
 }
 
 // --- App lifecycle ---
@@ -457,7 +470,6 @@ app.on('ready', async () => {
       if (hash) {
         return windowManager.getAgentRootForHash(hash);
       }
-      // Fallback: if no hash, try to find the only open agent
       const contexts = windowManager.getAllContexts();
       if (contexts.length === 1) return contexts[0].agentRoot;
       return null;
@@ -468,9 +480,6 @@ app.on('ready', async () => {
     return handleViewRequest(request);
   });
 
-  // Rebuild menu whenever a new window is created (updates recent agents list)
-  windowManager.onWindowCreated = () => buildAndSetMenu();
-
   startAutoUpdater();
 
   createInitialWindow();
@@ -479,7 +488,6 @@ app.on('ready', async () => {
 app.on('web-contents-created', (_event, webContents) => {
   if (webContents.getType() !== 'webview') return;
 
-  // Find owning window via hostWebContents → BrowserWindow lookup
   const hostWc = (webContents as Electron.WebContents & { hostWebContents?: Electron.WebContents }).hostWebContents;
   const ownerWin = hostWc
     ? BrowserWindow.fromWebContents(hostWc)
@@ -493,7 +501,6 @@ app.on('web-contents-created', (_event, webContents) => {
     }
   }
 
-  // Fallback: only register if there's exactly one window (unambiguous owner)
   const contexts = windowManager.getAllContexts();
   if (contexts.length === 1) {
     contexts[0].tabViewManager.registerWebContentsTracking(_event, webContents);

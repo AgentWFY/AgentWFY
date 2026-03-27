@@ -91,6 +91,15 @@ export class TlAgentSettings extends HTMLElement {
 
   connectedCallback() {
     this.loadConfig()
+    window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('agentwfy:agent-switched', this._onAgentSwitched)
+  }
+
+  private _onAgentSwitched = () => {
+    this.loadConfig()
   }
 
   private queueRender() {

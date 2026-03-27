@@ -42,6 +42,7 @@ interface TaskRunnerDeps {
   agentRoot: string
   win: BrowserWindow
   getJsRuntime: () => JsRuntime
+  busPublish?: (topic: string, data: unknown) => void
 }
 
 export class TaskRunner {
@@ -155,15 +156,16 @@ export class TaskRunner {
       }
       this.removeFinishedRun(run.runId)
 
-      // Always publish bus events
+      // Publish bus events (gated via deps.busPublish if provided)
       if (!this.deps.win.isDestroyed()) {
         const payload = {
           runId: run.runId, taskId: run.taskId, name: run.name,
           status: run.status, origin: run.origin, startedAt: run.startedAt,
           finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
         }
-        forwardBusPublish(this.deps.win, `task:run:${run.runId}`, payload)
-        forwardBusPublish(this.deps.win, 'task:run:finished', payload)
+        const publish = this.deps.busPublish ?? ((topic: string, data: unknown) => forwardBusPublish(this.deps.win, topic, data))
+        publish(`task:run:${run.runId}`, payload)
+        publish('task:run:finished', payload)
       }
     }
   }

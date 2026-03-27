@@ -9,12 +9,9 @@ import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plu
 import { storeSet } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
-  getRecentAgents,
   showOpenAgentDialog,
   showInstallAgentDialog,
   showInstallAgentFromFileDialog,
-  isAgentDir,
-  shortenPath,
   initAgent,
 } from '../agent-manager.js';
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
@@ -37,7 +34,7 @@ export interface CommandPaletteManagerDeps {
   getStorePath: () => string;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
-  openAgentInWindow: (agentRoot: string) => Promise<void>;
+  addAgent: (agentRoot: string) => Promise<void>;
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
   getSessionManager: () => AgentSessionManager;
@@ -302,7 +299,7 @@ export class CommandPaletteManager {
       },
       {
         id: 'agent:open',
-        title: 'Open Agent',
+        title: 'Add Agent',
         group: 'Actions',
         action: { type: 'open-agent' },
       },
@@ -317,13 +314,6 @@ export class CommandPaletteManager {
         title: 'Install Agent from .agent.awfy',
         group: 'Actions',
         action: { type: 'install-agent-from-file' },
-      },
-      {
-        id: 'agent:recent-agents',
-        title: 'Recent Agents',
-        expandable: true,
-        group: 'Actions',
-        action: { type: 'enter-recent-agents' },
       },
       {
         id: 'agent:backup-db',
@@ -402,17 +392,6 @@ export class CommandPaletteManager {
     } else {
       removeAgentConfig(this.deps.getAgentRoot(), name);
     }
-  }
-
-  buildRecentAgentItems(): CommandPaletteItem[] {
-    const recents = getRecentAgents();
-    return recents.map((recent) => ({
-      id: `agent:recent:${recent.path}`,
-      title: shortenPath(recent.path),
-      subtitle: 'Switch agent',
-      group: 'Recent Agents' as const,
-      action: { type: 'switch-agent' as const, agentPath: recent.path },
-    }));
   }
 
   async buildTaskItems(): Promise<CommandPaletteItem[]> {
@@ -657,7 +636,7 @@ export class CommandPaletteManager {
     const targetDir = result.data.directoryPath as string;
     await initAgent(targetDir, filePath);
 
-    await this.deps.openAgentInWindow(targetDir);
+    await this.deps.addAgent(targetDir);
     return { installed: true, agentRoot: targetDir };
   }
 
@@ -718,7 +697,6 @@ export class CommandPaletteManager {
         break;
 
       case 'enter-settings':
-      case 'enter-recent-agents':
       case 'enter-tasks':
       case 'enter-sessions':
         // Handled entirely in the palette UI
@@ -747,35 +725,24 @@ export class CommandPaletteManager {
       case 'open-agent': {
         this.hide({ focusMain: true });
         const picked = await showOpenAgentDialog(this.deps.getMainWindow());
-        if (picked) await this.deps.openAgentInWindow(picked);
+        if (picked) await this.deps.addAgent(picked);
         return;
       }
 
       case 'install-agent': {
         this.hide({ focusMain: true });
         const installed = await showInstallAgentDialog(this.deps.getMainWindow());
-        if (installed) await this.deps.openAgentInWindow(installed);
+        if (installed) await this.deps.addAgent(installed);
         return;
       }
 
       case 'install-agent-from-file': {
         this.hide({ focusMain: true });
         const installed = await showInstallAgentFromFileDialog(this.deps.getMainWindow());
-        if (installed) await this.deps.openAgentInWindow(installed);
+        if (installed) await this.deps.addAgent(installed);
         return;
       }
 
-      case 'switch-agent': {
-        const switchAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
-        this.hide({ focusMain: true });
-        if (isAgentDir(switchAction.agentPath)) {
-          await this.deps.openAgentInWindow(switchAction.agentPath);
-        } else {
-          const picked = await showOpenAgentDialog(this.deps.getMainWindow());
-          if (picked) await this.deps.openAgentInWindow(picked);
-        }
-        return;
-      }
 
       case 'backup-agent-db': {
         const result = await backupAgentDb(this.deps.getAgentRoot());

@@ -113,6 +113,18 @@ class AgentSessionStore {
     }).catch(() => {})
 
     this.loadProviders()
+
+    window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
+  }
+
+  /** Reset renderer-only state and re-fetch for the newly active agent. */
+  private _onAgentSwitched = () => {
+    this._state = {
+      ...defaultState(),
+      ready: false, // Snapshot from switchAgent will set ready: true
+    }
+    this.notify()
+    this.loadProviders()
   }
 
   destroy(): void {
@@ -121,6 +133,7 @@ class AgentSessionStore {
     this._streamingUnsub?.()
     this._streamingUnsub = null
     this._subscriptions.length = 0
+    window.removeEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
 
   // ── Session actions ──

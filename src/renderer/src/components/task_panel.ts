@@ -460,6 +460,7 @@ export class TlTaskPanel extends HTMLElement {
     window.addEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.addEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.addEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
+    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
   }
 
   disconnectedCallback() {
@@ -472,10 +473,18 @@ export class TlTaskPanel extends HTMLElement {
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
+    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
   }
 
   private onTasksChanged = () => { this.loadTasks() }
   private onTriggersChanged = () => { this.loadTriggers() }
+  private onAgentSwitched = () => {
+    this.detailView = null
+    this.loadTasks()
+    this.loadTriggers()
+    this.loadLogHistory()
+    this.loadRunningTasks()
+  }
 
   private onRunTaskEvent = (e: CustomEvent<{ taskId: number; input?: string }>) => {
     const taskId = e.detail?.taskId

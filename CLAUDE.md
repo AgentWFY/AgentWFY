@@ -22,7 +22,7 @@ No test framework is configured. See [TESTING.md](TESTING.md) for how to launch 
 
 The app runs as three Electron process types:
 
-- **Main process** (`src/main.ts`): Orchestrates windows, database, IPC, plugins, triggers
+- **Main process** (`src/main.ts`): Orchestrates the single app window, agent contexts, database, IPC, plugins, triggers
 - **Renderer process** (`src/renderer/`): UI built with plain Web Components (no framework), Shadow DOM scoping, custom EventBus pub/sub
 - **Utility processes** (`src/runtime/exec_worker.ts`): Per-session JS workers for agent code execution, spawned via `utilityProcess.fork()`
 
@@ -48,7 +48,9 @@ esbuild bundles 8 separate entry points (main, renderer, preload scripts, exec w
 
 **HTTP API (`src/http-api/`)**: Local HTTP server (default port 9877) for external integrations. Routes are dynamically built from HTTP triggers. Lockfile records the active port.
 
-**Window Manager (`src/window-manager.ts`)**: Creates `BrowserWindow` and initializes all subsystems (TabViewManager, CommandPalette, TriggerEngine, AgentSessionManager, TaskRunner, RendererBridge). Handles graceful shutdown checking for active streams/tasks.
+**Window Manager (`src/window-manager.ts`)**: Single-window architecture — one `BrowserWindow` hosts multiple agent contexts. Shared components (RendererBridge, CommandPalette, ConfirmationManager) are created once. Per-agent components (TabViewManager, TriggerEngine, AgentSessionManager, TaskRunner, JsRuntime, FunctionRegistry, PluginRegistry) are isolated in `AgentContext` objects. Agent switching hides/shows tab views and pushes fresh state to the renderer. `getContextForSender()` returns an `AppWindowContext` Proxy that routes IPC calls to the correct agent — tab view senders map to their owning agent, all other senders map to the active agent.
+
+**Agent Sidebar (`src/renderer/src/components/agent_sidebar.ts`)**: Discord-style sidebar on the far left listing loaded agents. Users click to switch between agents within the single window. The `+` button opens an agent picker dialog. Agent list is managed via `agentSidebar` IPC channels.
 
 ### Module Conventions
 

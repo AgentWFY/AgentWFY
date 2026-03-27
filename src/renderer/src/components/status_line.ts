@@ -6,7 +6,7 @@ const STYLES = `
     width: 100%;
     height: var(--status-line-height, 24px);
     flex-shrink: 0;
-    background: var(--color-border);
+    background: var(--color-bg3);
     border-top: 1px solid var(--color-border);
     padding: 0 10px;
     box-sizing: border-box;
@@ -204,6 +204,12 @@ export class TlStatusLine extends HTMLElement {
     }
   }
 
+  private onAgentSwitched = () => {
+    this.loadPortInfo()
+    this.loadDataDir()
+    this.loadBackupInfo()
+  }
+
   connectedCallback() {
     this.render()
     this.bindBackupClick()
@@ -212,8 +218,10 @@ export class TlStatusLine extends HTMLElement {
     this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
+    this._clicksBound = true
     window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
   }
 
   disconnectedCallback() {
@@ -221,6 +229,7 @@ export class TlStatusLine extends HTMLElement {
     this._storeUnsub = null
     window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
+    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
   }
 
@@ -272,19 +281,27 @@ export class TlStatusLine extends HTMLElement {
     }
   }
 
+  private _clicksBound = false
+
   private async loadPortInfo() {
     const portEl = this.shadow.querySelector('#port-info') as HTMLButtonElement | null
     const sepEl = this.shadow.querySelector('#port-sep') as HTMLSpanElement | null
     if (!portEl || !sepEl) return
-    portEl.addEventListener('click', () => {
-      window.ipc?.commandPalette?.show({ screen: 'agent-settings' })
-    })
+    if (!this._clicksBound) {
+      portEl.addEventListener('click', () => {
+        window.ipc?.commandPalette?.show({ screen: 'agent-settings' })
+      })
+    }
     try {
       const port = await window.ipc?.getHttpApiPort()
       if (port != null) {
         portEl.innerHTML = `<svg class="port-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/><path d="M5 11A4.5 4.5 0 0 1 5 5"/><path d="M11 5a4.5 4.5 0 0 1 0 6"/><path d="M3 13A7.5 7.5 0 0 1 3 3"/><path d="M13 3a7.5 7.5 0 0 1 0 10"/></svg><span class="port-number">:${port}</span>`
         portEl.setAttribute('title', `HTTP API on port ${port}`)
         sepEl.textContent = '|'
+      } else {
+        portEl.innerHTML = ''
+        portEl.removeAttribute('title')
+        sepEl.textContent = ''
       }
     } catch {
       // ignore — IPC not available
@@ -294,14 +311,19 @@ export class TlStatusLine extends HTMLElement {
   private async loadDataDir() {
     const dirEl = this.shadow.querySelector('#data-dir') as HTMLButtonElement | null
     if (!dirEl) return
-    dirEl.addEventListener('click', () => {
-      window.ipc?.commandPalette?.showFiltered('Agent')
-    })
+    if (!this._clicksBound) {
+      dirEl.addEventListener('click', () => {
+        window.ipc?.commandPalette?.showFiltered('Agent')
+      })
+    }
     try {
       const agentRoot = await window.ipc?.getAgentRoot()
       if (agentRoot) {
         dirEl.textContent = this.shortenPath(agentRoot)
         dirEl.setAttribute('title', agentRoot)
+      } else {
+        dirEl.textContent = ''
+        dirEl.removeAttribute('title')
       }
     } catch {
       // ignore — IPC not available

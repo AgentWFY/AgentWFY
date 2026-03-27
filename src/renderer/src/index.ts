@@ -6,6 +6,7 @@ import { TlAgentSettings } from './components/agent_settings.js'
 import { TlStatusLine } from './components/status_line.js'
 import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
+import { TlAgentSidebar } from './components/agent_sidebar.js'
 import { initBusBridge } from './bus-bridge.js'
 import { agentSessionStore } from './stores/agent-session-store.js'
 
@@ -23,6 +24,7 @@ async function init() {
   defineElement('awfy-status-line', TlStatusLine)
   defineElement('awfy-select', TlSelect)
   defineElement('awfy-task-panel', TlTaskPanel)
+  defineElement('awfy-agent-sidebar', TlAgentSidebar)
   defineElement('awfy-app', TlApp)
 
   initBusBridge()

@@ -14,13 +14,12 @@ import { TriggerEngine } from './triggers/engine.js';
 import { forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
 import { AgentSessionManager } from './agent/session_manager.js';
 import { TaskRunner } from './task-runner/task_runner.js';
-import { getOrCreateRuntime } from './ipc/exec-js.js';
+import { getOrCreateRuntime, disposeRuntime } from './ipc/exec-js.js';
 import type { AgentTabTools } from './ipc/tabs.js';
 import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
-import { getStorePath } from './ipc/store.js';
+import { getStorePath, storeGet, storeSet } from './ipc/store.js';
 import {
   ensureAgentRuntimeBootstrap,
-  addToRecentAgents,
 } from './agent-manager.js';
 import { runCleanup } from './cleanup.js';
 import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
@@ -35,14 +34,35 @@ import { ConfirmationManager } from './confirmation/manager.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
+import { Channels } from './ipc/channels.js';
 
-interface AppWindowContext {
+// --- Kept for backward-compat: every IPC handler sees this shape ---
+export interface AppWindowContext {
   window: BrowserWindow;
   agentRoot: string;
   rendererBridge: RendererBridge;
   tabViewManager: TabViewManager;
   commandPalette: CommandPaletteManager;
   confirmation: ConfirmationManager;
+  httpApi: HttpApiServer | null;
+  triggerEngine: TriggerEngine | null;
+  pluginRegistry: PluginRegistry | null;
+  providerRegistry: ProviderRegistry;
+  functionRegistry: FunctionRegistry;
+  sessionManager: AgentSessionManager;
+  taskRunner: TaskRunner;
+  jsRuntime: JsRuntime;
+  shortcutManager: ShortcutManager;
+  agentStateStreamingCleanup: (() => void) | null;
+  dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
+  triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
+  tabTools: AgentTabTools;
+}
+
+/** Per-agent context (everything that is agent-specific). */
+interface AgentContext {
+  agentRoot: string;
+  tabViewManager: TabViewManager;
   httpApi: HttpApiServer | null;
   triggerEngine: TriggerEngine | null;
   pluginRegistry: PluginRegistry | null;
@@ -67,39 +87,36 @@ function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, a
 }
 
 class WindowManager {
-  private windows = new Map<number, AppWindowContext>();
-  private senderMap = new Map<number, number>(); // webContents.id → BrowserWindow.id
+  // Shared single window + components
+  private mainWindow: BrowserWindow | null = null;
+  private rendererBridge: RendererBridge | null = null;
+  private commandPalette: CommandPaletteManager | null = null;
+  private confirmation: ConfirmationManager | null = null;
+
+  // Agent contexts
+  private agentContexts = new Map<string, AgentContext>(); // agentRoot → AgentContext
+  private activeAgentRoot: string | null = null;
+
+  // IPC routing: webContents.id → agentRoot (for tab views / child webcontents)
+  private tabSenderMap = new Map<number, string>();
+
+  // Protocol support
   private agentHashes = new Map<string, string>(); // hash → agentRoot
-  private forceCloseIds = new Set<number>();
-  onWindowCreated: (() => void) | null = null;
 
-  async createWindow(agentRoot: string, options?: { skipRecents?: boolean }): Promise<AppWindowContext> {
-    await ensureAgentRuntimeBootstrap(agentRoot);
-    if (!options?.skipRecents) addToRecentAgents(agentRoot);
+  private forceClose = false;
 
-    // Init DB (creates schema, syncs platform docs, generates system.plugins)
-    getOrCreateAgentDb(agentRoot);
+  // --- Window creation (single window) ---
 
-    const providerRegistry = new ProviderRegistry()
-    providerRegistry.register(createOpenAICompatibleFactory({
-      getConfig: (key, fallback) => getConfigValue(agentRoot, key, fallback),
-      setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
-    }))
-
-    const functionRegistry = new FunctionRegistry()
-
-    // Load plugins from DB — window doesn't exist yet, so publish defers via a mutable ref
-    let winRef: BrowserWindow | null = null;
-    const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
-      if (winRef && !winRef.isDestroyed()) {
-        forwardBusPublish(winRef, topic, data);
-      }
-    }, providerRegistry, functionRegistry);
+  async createMainWindow(initialAgentRoot: string): Promise<void> {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      await this.addAgent(initialAgentRoot);
+      return;
+    }
 
     const window = new BrowserWindow({
       show: false,
       icon: path.join(import.meta.dirname, '..', 'icons', 'icon.png'),
-      title: agentRoot,
+      title: 'AgentWFY',
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'
         ? { trafficLightPosition: { x: 13, y: 12 } }
@@ -116,122 +133,42 @@ class WindowManager {
       },
     });
 
-    winRef = window;
+    this.mainWindow = window;
 
-    const rendererBridge = new RendererBridge({
-      getMainWindow: () => window,
+    this.rendererBridge = new RendererBridge({
+      getMainWindow: () => this.mainWindow!,
     });
 
     const registerSender = (webContentsId: number) => {
-      this.senderMap.set(webContentsId, window.id);
+      // Tab view senders map to active agent at registration time
+      if (this.activeAgentRoot) {
+        this.tabSenderMap.set(webContentsId, this.activeAgentRoot);
+      }
     };
     const unregisterSender = (webContentsId: number) => {
-      this.senderMap.delete(webContentsId);
+      this.tabSenderMap.delete(webContentsId);
     };
 
-    const commandPalette = new CommandPaletteManager({
-      getMainWindow: () => window,
-      getAgentRoot: () => agentRoot,
-      rendererBridge,
-      getTabViewManager: () => ctx.tabViewManager,
+    this.commandPalette = new CommandPaletteManager({
+      getMainWindow: () => this.mainWindow!,
+      getAgentRoot: () => this.activeAgentRoot!,
+      rendererBridge: this.rendererBridge,
+      getTabViewManager: () => this.getActiveAgentContext()!.tabViewManager,
       getStorePath,
       registerSender,
       unregisterSender,
-      openAgentInWindow: (root) => this.openAgentInWindow(root).then(() => {}),
-      getPluginRegistry: () => ctx.pluginRegistry,
-      getConfirmation: () => ctx.confirmation,
-      getSessionManager: () => ctx.sessionManager,
-      getDisplayShortcut: (actionId) => shortcutManager.getDisplayShortcut(actionId),
+      addAgent: (root) => this.addAgent(root),
+      getPluginRegistry: () => this.getActiveAgentContext()?.pluginRegistry ?? null,
+      getConfirmation: () => this.confirmation!,
+      getSessionManager: () => this.getActiveAgentContext()!.sessionManager,
+      getDisplayShortcut: (actionId) => this.getActiveAgentContext()?.shortcutManager.getDisplayShortcut(actionId) ?? null,
     });
 
-    const confirmation = new ConfirmationManager({
-      getMainWindow: () => window,
+    this.confirmation = new ConfirmationManager({
+      getMainWindow: () => this.mainWindow!,
       registerSender,
       unregisterSender,
     });
-
-    const agentHash = this.getHashForAgentRoot(agentRoot);
-
-    const tabViewManager = new TabViewManager({
-      getMainWindow: () => window,
-      toggleCommandPalette: () => commandPalette.toggle(),
-      focusMainRendererWindow: () => rendererBridge.focusMainRendererWindow(),
-      dispatchRendererCustomEvent: (name, detail) => rendererBridge.dispatchRendererCustomEvent(name, detail),
-      dispatchRendererWindowEvent: (name) => rendererBridge.dispatchRendererWindowEvent(name),
-      matchShortcut: (key, meta, ctrl, shift, alt) => shortcutManager.match(key, meta, ctrl, shift, alt),
-      agentHash,
-      registerSender,
-      unregisterSender,
-    });
-
-    // Create shared tabTools, JsRuntime, SessionManager, TaskRunner
-    const tabTools = {
-      getTabs: () => tabViewManager.getTabsHandler(),
-      openTab: (req: Parameters<TabViewManager['openTabHandler']>[0]) => tabViewManager.openTabHandler(req),
-      closeTab: (req: Parameters<TabViewManager['closeTabHandler']>[0]) => tabViewManager.closeTabHandler(req),
-      selectTab: (req: Parameters<TabViewManager['selectTabHandler']>[0]) => tabViewManager.selectTabHandler(req),
-      reloadTab: (req: Parameters<TabViewManager['reloadTabHandler']>[0]) => tabViewManager.reloadTabHandler(req),
-      captureTab: (req: Parameters<TabViewManager['captureTabById']>[0]) => tabViewManager.captureTabById(req),
-      getTabConsoleLogs: (req: Parameters<TabViewManager['getTabConsoleLogsById']>[0]) => tabViewManager.getTabConsoleLogsById(req),
-      execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
-    };
-
-    registerAllBuiltInFunctions(functionRegistry, {
-      agentRoot,
-      win: window,
-      tabTools,
-      onDbChange: (change) => {
-        if (window.isDestroyed()) return;
-        window.webContents.send('db:changed', change);
-      },
-      getSessionManager: () => ctx.sessionManager,
-      getTaskRunner: () => ctx.taskRunner,
-      getCommandPalette: () => ctx.commandPalette,
-    })
-
-    const jsRuntime = getOrCreateRuntime(window, {
-      functionRegistry,
-    })
-
-    const sessionManager = new AgentSessionManager({
-      agentRoot,
-      win: window,
-      providerRegistry,
-      getJsRuntime: () => jsRuntime,
-    })
-
-    const taskRunner = new TaskRunner({
-      agentRoot,
-      win: window,
-      getJsRuntime: () => jsRuntime,
-    })
-
-    const shortcutManager = new ShortcutManager(agentRoot);
-
-    const ctx: AppWindowContext = {
-      window,
-      agentRoot,
-      rendererBridge,
-      tabViewManager,
-      commandPalette,
-      confirmation,
-      httpApi: null,
-      triggerEngine: null,
-      pluginRegistry,
-      providerRegistry,
-      functionRegistry,
-      sessionManager,
-      taskRunner,
-      jsRuntime,
-      shortcutManager,
-      agentStateStreamingCleanup: null,
-      dbChangeDebounceTimer: null,
-      triggerReloadDebounceTimer: null,
-      tabTools,
-    };
-
-    this.windows.set(window.id, ctx);
-    this.senderMap.set(window.webContents.id, window.id);
 
     // Wire up window events
     window.on('page-title-updated', (evt) => {
@@ -239,16 +176,12 @@ class WindowManager {
     });
 
     window.on('close', (event) => {
-      const wCtx = this.windows.get(window.id);
-      if (!wCtx) return;
-
-      if (this.forceCloseIds.has(window.id)) {
-        this.forceCloseIds.delete(window.id);
+      if (this.forceClose) {
+        this.forceClose = false;
         return;
       }
 
-      const runningTasks = wCtx.taskRunner.runningCount;
-      const streamingAgents = wCtx.sessionManager.streamingSessionsCount;
+      const { runningTasks, streamingAgents } = this.getActiveWorkCounts();
       if (runningTasks === 0 && streamingAgents === 0) return;
 
       event.preventDefault();
@@ -262,29 +195,32 @@ class WindowManager {
         message: buildActiveWorkWarning(runningTasks, streamingAgents, 'Closing'),
       }).then(({ response }) => {
         if (response === 1) {
-          this.forceCloseIds.add(window.id);
+          this.forceClose = true;
           window.close();
         }
       });
     });
 
     window.on('closed', () => {
-      this.destroyWindow(window.id);
+      this.destroyAll();
+      this.mainWindow = null;
+      this.rendererBridge = null;
+      this.commandPalette = null;
+      this.confirmation = null;
     });
 
     window.on('move', () => {
-      commandPalette.syncBounds();
-      confirmation.syncBounds();
+      this.commandPalette?.syncBounds();
+      this.confirmation?.syncBounds();
     });
 
     window.on('resize', () => {
-      commandPalette.syncBounds();
-      confirmation.syncBounds();
+      this.commandPalette?.syncBounds();
+      this.confirmation?.syncBounds();
     });
 
     window.maximize();
 
-    // Prevent the main window from navigating away (e.g. clicking links in agent chat)
     window.webContents.on('will-navigate', (event, url) => {
       if (!url.startsWith('app://')) {
         event.preventDefault();
@@ -300,154 +236,405 @@ class WindowManager {
     });
 
     window.webContents.on('did-start-loading', () => {
-      commandPalette.destroy();
-      confirmation.destroy();
-      tabViewManager.destroyAllTabViews();
+      this.commandPalette?.destroy();
+      this.confirmation?.destroy();
+      for (const ctx of this.agentContexts.values()) {
+        ctx.tabViewManager.destroyAllTabViews();
+        ctx.tabViewManager.clearTrackedViewWebContents();
+      }
     });
-
-    // Set up agent state streaming and create initial session
-    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(sessionManager, window)
-    sessionManager.resetActive()
-
-    window.loadURL('app://index.html');
-    window.show();
 
     window.webContents.on('before-input-event', (event, input) => {
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
 
-      const action = shortcutManager.match(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
+      const activeCtx = this.getActiveAgentContext();
+      if (!activeCtx) return;
+
+      const action = activeCtx.shortcutManager.match(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
       if (!action) return;
 
       event.preventDefault();
       switch (action) {
         case 'toggle-command-palette':
-          commandPalette.toggle();
+          this.commandPalette?.toggle();
           break;
         case 'toggle-agent-chat':
-          rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
+          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
           break;
         case 'toggle-task-panel':
-          rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
           break;
         case 'close-current-tab':
-          tabViewManager.closeCurrentTab();
+          activeCtx.tabViewManager.closeCurrentTab();
           break;
         case 'reload-current-tab':
-          tabViewManager.reloadCurrentTab();
+          activeCtx.tabViewManager.reloadCurrentTab();
           break;
         case 'reload-window':
           window.reload();
           break;
         case 'open-agent':
-          commandPalette.runAction({ type: 'open-agent' }).catch(() => {});
+          this.commandPalette?.runAction({ type: 'open-agent' }).catch(() => {});
           break;
       }
     });
 
-    // Start HTTP API + triggers
-    await this.startHttpServerForContext(ctx);
+    // Initialize the first agent context
+    await this.initAgentContext(initialAgentRoot);
+    this.activeAgentRoot = initialAgentRoot;
 
+    window.loadURL('app://index.html');
+    window.show();
+
+    // After renderer loads: start triggers and open default view for active agent
     window.webContents.once('did-finish-load', () => {
-      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
-
-      // Open default view tab
-      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+      const ctx = this.getActiveAgentContext();
+      if (ctx) {
+        ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
+        this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+      }
     });
+
+  }
+
+  // --- Agent context lifecycle ---
+
+  private async initAgentContext(agentRoot: string): Promise<AgentContext> {
+    if (this.agentContexts.has(agentRoot)) {
+      return this.agentContexts.get(agentRoot)!;
+    }
+
+    const win = this.mainWindow!;
+
+    await ensureAgentRuntimeBootstrap(agentRoot);
+
+    getOrCreateAgentDb(agentRoot);
+
+    const providerRegistry = new ProviderRegistry();
+    providerRegistry.register(createOpenAICompatibleFactory({
+      getConfig: (key, fallback) => getConfigValue(agentRoot, key, fallback),
+      setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
+    }));
+
+    const functionRegistry = new FunctionRegistry();
+
+    const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed() && this.activeAgentRoot === agentRoot) {
+        forwardBusPublish(this.mainWindow, topic, data);
+      }
+    }, providerRegistry, functionRegistry);
+
+    const agentHash = this.getHashForAgentRoot(agentRoot);
+
+    const registerSender = (webContentsId: number) => {
+      this.tabSenderMap.set(webContentsId, agentRoot);
+    };
+    const unregisterSender = (webContentsId: number) => {
+      this.tabSenderMap.delete(webContentsId);
+    };
+
+    const tabViewManager = new TabViewManager({
+      getMainWindow: () => this.mainWindow!,
+      toggleCommandPalette: () => this.commandPalette?.toggle(),
+      focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
+      dispatchRendererCustomEvent: (name, detail) => this.rendererBridge?.dispatchRendererCustomEvent(name, detail),
+      dispatchRendererWindowEvent: (name) => this.rendererBridge?.dispatchRendererWindowEvent(name),
+      matchShortcut: (key, meta, ctrl, shift, alt) => {
+        const ctx = this.agentContexts.get(agentRoot);
+        return ctx?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;
+      },
+      agentHash,
+      registerSender,
+      unregisterSender,
+    });
+
+    const tabTools: AgentTabTools = {
+      getTabs: () => tabViewManager.getTabsHandler(),
+      openTab: (req: Parameters<TabViewManager['openTabHandler']>[0]) => tabViewManager.openTabHandler(req),
+      closeTab: (req: Parameters<TabViewManager['closeTabHandler']>[0]) => tabViewManager.closeTabHandler(req),
+      selectTab: (req: Parameters<TabViewManager['selectTabHandler']>[0]) => tabViewManager.selectTabHandler(req),
+      reloadTab: (req: Parameters<TabViewManager['reloadTabHandler']>[0]) => tabViewManager.reloadTabHandler(req),
+      captureTab: (req: Parameters<TabViewManager['captureTabById']>[0]) => tabViewManager.captureTabById(req),
+      getTabConsoleLogs: (req: Parameters<TabViewManager['getTabConsoleLogsById']>[0]) => tabViewManager.getTabConsoleLogsById(req),
+      execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
+    };
+
+    const gatedBusPublish = (topic: string, data: unknown) => {
+      if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
+        forwardBusPublish(win, topic, data);
+      }
+    };
+
+    registerAllBuiltInFunctions(functionRegistry, {
+      agentRoot,
+      win,
+      tabTools,
+      onDbChange: (change) => {
+        if (win.isDestroyed()) return;
+        // Only forward DB changes to renderer if this is the active agent
+        if (this.activeAgentRoot === agentRoot) {
+          win.webContents.send('db:changed', change);
+        }
+      },
+      getSessionManager: () => agentCtx.sessionManager,
+      getTaskRunner: () => agentCtx.taskRunner,
+      getCommandPalette: () => this.commandPalette!,
+      busPublish: gatedBusPublish,
+    });
+
+    const jsRuntime = getOrCreateRuntime(agentRoot, {
+      functionRegistry,
+    });
+
+    const sessionManager = new AgentSessionManager({
+      agentRoot,
+      win,
+      providerRegistry,
+      getJsRuntime: () => jsRuntime,
+      busPublish: gatedBusPublish,
+    });
+
+    const taskRunner = new TaskRunner({
+      agentRoot,
+      win,
+      getJsRuntime: () => jsRuntime,
+      busPublish: (topic, data) => {
+        if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
+          forwardBusPublish(win, topic, data);
+        }
+      },
+    });
+
+    const shortcutManager = new ShortcutManager(agentRoot);
+
+    const agentCtx: AgentContext = {
+      agentRoot,
+      tabViewManager,
+      httpApi: null,
+      triggerEngine: null,
+      pluginRegistry,
+      providerRegistry,
+      functionRegistry,
+      sessionManager,
+      taskRunner,
+      jsRuntime,
+      shortcutManager,
+      agentStateStreamingCleanup: null,
+      dbChangeDebounceTimer: null,
+      triggerReloadDebounceTimer: null,
+      tabTools,
+    };
+
+    this.agentContexts.set(agentRoot, agentCtx);
+
+    // Set up agent state streaming
+    agentCtx.agentStateStreamingCleanup = setupAgentStateStreaming(
+      sessionManager, win, () => this.activeAgentRoot === agentRoot
+    );
+    sessionManager.resetActive();
+
+    // Start HTTP API + triggers
+    await this.startHttpServerForAgentContext(agentCtx);
 
     // Schedule backup
     scheduleBackup(agentRoot).then(() => {
-      rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
+      this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:backup-changed');
     }).catch((err) => console.error('[backup] Schedule failed:', err));
 
     // Cleanup
     runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
 
-    this.onWindowCreated?.();
-
-    return ctx;
+    return agentCtx;
   }
 
-  destroyWindow(windowId: number): void {
-    const ctx = this.windows.get(windowId);
+  private destroyAgentContext(agentRoot: string): void {
+    const ctx = this.agentContexts.get(agentRoot);
     if (!ctx) return;
 
-    // Dispose agent state streaming, session manager, task runner
     ctx.agentStateStreamingCleanup?.();
     ctx.agentStateStreamingCleanup = null;
     ctx.sessionManager.disposeAll().catch(() => {});
     ctx.taskRunner.dispose();
 
-    // Clear debounce timers
     if (ctx.dbChangeDebounceTimer) {
       clearTimeout(ctx.dbChangeDebounceTimer);
       ctx.dbChangeDebounceTimer = null;
     }
 
     ctx.pluginRegistry?.deactivateAll();
-    ctx.commandPalette.destroy();
-    ctx.confirmation.destroy();
     ctx.tabViewManager.destroyAllTabViews();
     ctx.tabViewManager.clearTrackedViewWebContents();
-    this.stopHttpServerForContext(ctx);
-    stopBackupSchedulerForAgent(ctx.agentRoot);
+    this.stopHttpServerForAgentContext(ctx);
+    stopBackupSchedulerForAgent(agentRoot);
+    disposeRuntime(agentRoot);
 
-    // Clean up sender map entries
-    for (const [senderId, winId] of this.senderMap) {
-      if (winId === windowId) {
-        this.senderMap.delete(senderId);
+    // Clean up sender map entries for this agent
+    for (const [senderId, root] of this.tabSenderMap) {
+      if (root === agentRoot) {
+        this.tabSenderMap.delete(senderId);
       }
     }
 
-    this.windows.delete(windowId);
-    this.forceCloseIds.delete(windowId);
-
-    // Clean up agent hash if no other window uses this agent
-    let agentStillOpen = false;
-    for (const other of this.windows.values()) {
-      if (other.agentRoot === ctx.agentRoot) {
-        agentStillOpen = true;
+    closeAgentDb(agentRoot);
+    for (const [hash, root] of this.agentHashes) {
+      if (root === agentRoot) {
+        this.agentHashes.delete(hash);
         break;
       }
     }
-    if (!agentStillOpen) {
-      closeAgentDb(ctx.agentRoot);
-      for (const [hash, root] of this.agentHashes) {
-        if (root === ctx.agentRoot) {
-          this.agentHashes.delete(hash);
-          break;
-        }
+
+    this.agentContexts.delete(agentRoot);
+  }
+
+  // --- Public agent management API ---
+
+  async addAgent(agentRoot: string): Promise<void> {
+    const isNew = !this.agentContexts.has(agentRoot);
+    const ctx = await this.initAgentContext(agentRoot);
+    if (!this.activeAgentRoot) {
+      this.activeAgentRoot = agentRoot;
+    }
+    if (isNew) {
+      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Start failed:', err));
+      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+      this.persistInstalledAgents();
+    }
+    if (this.activeAgentRoot === agentRoot && !isNew) return;
+    await this.switchAgent(agentRoot);
+  }
+
+  async switchAgent(agentRoot: string): Promise<void> {
+    if (!this.agentContexts.has(agentRoot)) return;
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    if (agentRoot === this.activeAgentRoot) return;
+
+    const prevRoot = this.activeAgentRoot;
+    const win = this.mainWindow;
+
+    if (prevRoot && prevRoot !== agentRoot) {
+      const prevCtx = this.agentContexts.get(prevRoot);
+      if (prevCtx) {
+        prevCtx.tabViewManager.hideAllViews();
+      }
+    }
+
+    this.activeAgentRoot = agentRoot;
+
+    const ctx = this.agentContexts.get(agentRoot)!;
+
+    ctx.tabViewManager.showAllViews();
+
+    // Notify renderer first (triggers state reset in stores/components)
+    win.webContents.send(Channels.agentSidebar.switched, {
+      agentRoot,
+      agents: this.getInstalledAgentsList(),
+    });
+
+    // Then push fresh snapshot (after reset, so it's applied correctly)
+    const snapshot = ctx.sessionManager.getSnapshot();
+    win.webContents.send(Channels.agent.snapshot, snapshot);
+  }
+
+  async removeAgent(agentRoot: string): Promise<void> {
+    if (!this.agentContexts.has(agentRoot)) return;
+    if (this.agentContexts.size <= 1) return;
+
+    const wasActive = this.activeAgentRoot === agentRoot;
+
+    this.destroyAgentContext(agentRoot);
+    this.persistInstalledAgents();
+
+    if (wasActive) {
+      const firstRoot = this.agentContexts.keys().next().value;
+      if (firstRoot) {
+        await this.switchAgent(firstRoot);
+      }
+    } else {
+      // Notify renderer so the sidebar updates even when the removed agent wasn't active
+      const win = this.mainWindow;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(Channels.agentSidebar.switched, {
+          agentRoot: this.activeAgentRoot,
+          agents: this.getInstalledAgentsList(),
+        });
       }
     }
   }
 
-  findWindowForAgent(agentRoot: string): AppWindowContext | null {
-    for (const ctx of this.windows.values()) {
-      if (ctx.agentRoot === agentRoot) return ctx;
-    }
-    return null;
+  private persistInstalledAgents(): void {
+    const roots = Array.from(this.agentContexts.keys());
+    storeSet('installedAgents', roots);
   }
 
-  // --- IPC routing ---
+  getInstalledAgentsList(): Array<{ path: string; name: string; active: boolean }> {
+    return Array.from(this.agentContexts.keys()).map(root => ({
+      path: root,
+      name: path.basename(root),
+      active: root === this.activeAgentRoot,
+    }));
+  }
+
+  getActiveAgentRoot(): string | null {
+    return this.activeAgentRoot;
+  }
+
+  getMainBrowserWindow(): BrowserWindow | null {
+    return this.mainWindow;
+  }
+
+  getActiveHttpApiPort(): number | null {
+    const ctx = this.getActiveAgentContext();
+    return ctx?.httpApi?.port() ?? null;
+  }
+
+  // --- IPC routing (backward-compat facade) ---
+
+  private getActiveAgentContext(): AgentContext | null {
+    if (!this.activeAgentRoot) return null;
+    return this.agentContexts.get(this.activeAgentRoot) ?? null;
+  }
+
+  /** Build a facade that delegates reads/writes to the underlying AgentContext. */
+  private buildAppWindowContext(agentCtx: AgentContext): AppWindowContext {
+    const wm = this;
+    return new Proxy(agentCtx, {
+      get(target, prop, receiver) {
+        switch (prop) {
+          case 'window': return wm.mainWindow!;
+          case 'rendererBridge': return wm.rendererBridge!;
+          case 'commandPalette': return wm.commandPalette!;
+          case 'confirmation': return wm.confirmation!;
+          default: return Reflect.get(target, prop, receiver);
+        }
+      },
+      set(target, prop, value, receiver) {
+        switch (prop) {
+          case 'window':
+          case 'rendererBridge':
+          case 'commandPalette':
+          case 'confirmation':
+            return false; // shared props are read-only through facade
+          default:
+            return Reflect.set(target, prop, value, receiver);
+        }
+      },
+    }) as unknown as AppWindowContext;
+  }
 
   getContextForSender(senderId: number): AppWindowContext {
-    // Check explicit map first
-    const windowId = this.senderMap.get(senderId);
-    if (windowId !== undefined) {
-      const ctx = this.windows.get(windowId);
-      if (ctx) return ctx;
+    // Check tab sender map (tab views map to specific agents)
+    const agentRoot = this.tabSenderMap.get(senderId);
+    if (agentRoot) {
+      const ctx = this.agentContexts.get(agentRoot);
+      if (ctx) return this.buildAppWindowContext(ctx);
     }
 
-    // Try to find via Electron's BrowserWindow API
-    for (const ctx of this.windows.values()) {
-      if (ctx.window.isDestroyed()) continue;
-      if (ctx.window.webContents.id === senderId) {
-        this.senderMap.set(senderId, ctx.window.id);
-        return ctx;
-      }
-    }
+    // Main renderer or command palette → active agent
+    const activeCtx = this.getActiveAgentContext();
+    if (activeCtx) return this.buildAppWindowContext(activeCtx);
 
-    throw new Error(`No window context found for sender ${senderId}`);
+    throw new Error(`No agent context found for sender ${senderId}`);
   }
 
   tryGetContextForSender(senderId: number): AppWindowContext | null {
@@ -462,8 +649,8 @@ class WindowManager {
     return this.getContextForSender(event.sender.id).agentRoot;
   }
 
-  getWindowForEvent(event: IpcMainInvokeEvent): BrowserWindow {
-    return this.getContextForSender(event.sender.id).window;
+  getWindowForEvent(_event: IpcMainInvokeEvent): BrowserWindow {
+    return this.mainWindow!;
   }
 
   // --- Protocol support ---
@@ -473,7 +660,6 @@ class WindowManager {
   }
 
   getHashForAgentRoot(agentRoot: string): string {
-    // Reverse lookup: small map, O(N) is fine for typical window counts
     for (const [hash, root] of this.agentHashes) {
       if (root === agentRoot) return hash;
     }
@@ -482,7 +668,6 @@ class WindowManager {
     let len = 10;
     let hash = fullHex.slice(0, len);
 
-    // Handle collision: extend hash until unique
     while (this.agentHashes.has(hash) && this.agentHashes.get(hash) !== agentRoot) {
       len += 4;
       if (len >= fullHex.length) {
@@ -499,45 +684,49 @@ class WindowManager {
   // --- DB change routing ---
 
   onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
-    const ctx = this.getContextForSender(event.sender.id);
-    const { window: win, rendererBridge, triggerEngine, tabViewManager } = ctx;
+    // Resolve agent root via sender map, avoiding full AppWindowContext allocation
+    const agentRoot = this.tabSenderMap.get(event.sender.id) ?? this.activeAgentRoot;
+    if (!agentRoot) return;
+    const agentCtx = this.agentContexts.get(agentRoot);
+    if (!agentCtx) return;
 
-    if (win.isDestroyed()) return;
-    win.webContents.send('db:changed', change);
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) return;
 
-    // Mark view tabs as changed when the views table is modified
+    if (this.activeAgentRoot === agentRoot) {
+      win.webContents.send('db:changed', change);
+    }
+
     if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {
-      tabViewManager.markViewChanged(change.rowId);
+      agentCtx.tabViewManager.markViewChanged(change.rowId);
     }
 
-    // Reschedule backup and reload shortcuts when config changes
     if (change.table === 'config') {
-      rescheduleBackupForAgent(ctx.agentRoot);
-      ctx.shortcutManager.reload(ctx.agentRoot);
+      rescheduleBackupForAgent(agentRoot);
+      agentCtx.shortcutManager.reload(agentRoot);
     }
 
-    // Debounced reload of triggers when the triggers table changes
-    if (change.table === 'triggers' && triggerEngine) {
-      if (ctx.triggerReloadDebounceTimer) clearTimeout(ctx.triggerReloadDebounceTimer);
-      ctx.triggerReloadDebounceTimer = setTimeout(() => {
-        triggerEngine?.reload().catch(err => {
+    if (change.table === 'triggers' && agentCtx.triggerEngine) {
+      if (agentCtx.triggerReloadDebounceTimer) clearTimeout(agentCtx.triggerReloadDebounceTimer);
+      agentCtx.triggerReloadDebounceTimer = setTimeout(() => {
+        agentCtx.triggerEngine?.reload().catch(err => {
           console.error('[triggers] Reload failed:', err);
         });
       }, 500);
     }
 
-    // Debounced backup status refresh
-    if (ctx.dbChangeDebounceTimer) clearTimeout(ctx.dbChangeDebounceTimer);
-    ctx.dbChangeDebounceTimer = setTimeout(() => {
-      if (win.isDestroyed()) return;
-      rendererBridge.dispatchRendererWindowEvent('agentwfy:backup-changed');
+    if (agentCtx.dbChangeDebounceTimer) clearTimeout(agentCtx.dbChangeDebounceTimer);
+    agentCtx.dbChangeDebounceTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return;
+      this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:backup-changed');
     }, 5000);
   }
 
-  // --- HTTP server + triggers lifecycle ---
+  // --- HTTP server + triggers ---
 
-  private async startHttpServerForContext(ctx: AppWindowContext): Promise<void> {
-    const { agentRoot, window: win } = ctx;
+  private async startHttpServerForAgentContext(ctx: AgentContext): Promise<void> {
+    const { agentRoot } = ctx;
+    const win = this.mainWindow!;
     cleanStaleLockfile(agentRoot);
     const preferredPort = Number(getConfigValue(agentRoot, 'system.httpApi.port', '9877'));
 
@@ -564,7 +753,7 @@ class WindowManager {
           };
         },
         busPublish: (topic, data) => {
-          if (!win.isDestroyed()) {
+          if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
             forwardBusPublish(win, topic, data);
           }
         },
@@ -575,7 +764,7 @@ class WindowManager {
     }
   }
 
-  private stopHttpServerForContext(ctx: AppWindowContext): void {
+  private stopHttpServerForAgentContext(ctx: AgentContext): void {
     if (ctx.triggerEngine) {
       if (ctx.triggerReloadDebounceTimer) {
         clearTimeout(ctx.triggerReloadDebounceTimer);
@@ -594,7 +783,7 @@ class WindowManager {
   // --- Lifecycle ---
 
   hasActiveWork(): boolean {
-    for (const ctx of this.windows.values()) {
+    for (const ctx of this.agentContexts.values()) {
       if (ctx.taskRunner.runningCount > 0 || ctx.sessionManager.streamingSessionsCount > 0) return true;
     }
     return false;
@@ -618,7 +807,7 @@ class WindowManager {
   private getActiveWorkCounts(): { runningTasks: number; streamingAgents: number } {
     let runningTasks = 0;
     let streamingAgents = 0;
-    for (const ctx of this.windows.values()) {
+    for (const ctx of this.agentContexts.values()) {
       runningTasks += ctx.taskRunner.runningCount;
       streamingAgents += ctx.sessionManager.streamingSessionsCount;
     }
@@ -626,35 +815,22 @@ class WindowManager {
   }
 
   destroyAll(): void {
-    // Copy IDs to avoid mutation during iteration (destroyWindow deletes from map)
-    const windowIds = Array.from(this.windows.keys());
-    for (const id of windowIds) {
-      this.destroyWindow(id);
+    const roots = Array.from(this.agentContexts.keys());
+    for (const root of roots) {
+      this.destroyAgentContext(root);
     }
+    this.commandPalette?.destroy();
+    this.confirmation?.destroy();
+    this.activeAgentRoot = null;
   }
 
   getAllContexts(): AppWindowContext[] {
-    return Array.from(this.windows.values());
-  }
-
-  // --- Open agent in window (focus existing or create new) ---
-
-  async openAgentInWindow(agentRoot: string): Promise<AppWindowContext> {
-    const existing = this.findWindowForAgent(agentRoot);
-    if (existing) {
-      if (!existing.window.isDestroyed()) {
-        existing.window.focus();
-        return existing;
-      }
-      // Window is destroyed but context lingers — clean it up
-      this.destroyWindow(existing.window.id);
-    }
-    return this.createWindow(agentRoot);
+    return Array.from(this.agentContexts.values()).map(ctx => this.buildAppWindowContext(ctx));
   }
 
   // --- Default view ---
 
-  private async openDefaultViewForContext(ctx: AppWindowContext): Promise<void> {
+  private async openDefaultViewForContext(ctx: AgentContext): Promise<void> {
     try {
       const configValue = getConfigValue(ctx.agentRoot, 'system.defaultView', 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
@@ -672,16 +848,19 @@ class WindowManager {
     }
   }
 
-  // --- Broadcast to all windows ---
+  // --- Broadcast ---
 
   broadcastSettingChanged(key: string, value: unknown): void {
-    for (const ctx of this.windows.values()) {
-      const cpWindow = ctx.commandPalette.getWindow();
-      if (cpWindow && !cpWindow.isDestroyed()) {
-        cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
-      }
+    const cpWindow = this.commandPalette?.getWindow();
+    if (cpWindow && !cpWindow.isDestroyed()) {
+      cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
     }
   }
 }
 
 export const windowManager = new WindowManager();
+
+export function getPersistedAgentRoots(): string[] {
+  const val = storeGet('installedAgents');
+  return Array.isArray(val) ? val.filter(v => typeof v === 'string') : [];
+}

@@ -108,4 +108,12 @@ export const Channels = {
   agents: {
     requestInstall: 'agents:requestInstall',
   },
+  agentSidebar: {
+    getInstalled: 'agent-sidebar:getInstalled',
+    switch: 'agent-sidebar:switch',
+    add: 'agent-sidebar:add',
+    addFromFile: 'agent-sidebar:addFromFile',
+    remove: 'agent-sidebar:remove',
+    switched: 'agent-sidebar:switched',
+  },
 } as const;
