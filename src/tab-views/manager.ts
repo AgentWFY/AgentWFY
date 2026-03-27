@@ -508,6 +508,35 @@ export class TabViewManager {
     this.selectedTabId = null;
   }
 
+  /** Detach all tab views from the window without destroying them (used when switching agents). */
+  hideAllViews(): void {
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    for (const state of this.tabViewsByTabId.values()) {
+      state.view.setVisible(false);
+      try {
+        mainWindow.contentView.removeChildView(state.view);
+      } catch {
+        // Already detached
+      }
+    }
+  }
+
+  /** Re-attach tab views to the window and restore visibility for the selected tab. */
+  showAllViews(): void {
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    for (const state of this.tabViewsByTabId.values()) {
+      try {
+        mainWindow.contentView.addChildView(state.view);
+      } catch {
+        // Already attached
+      }
+    }
+    // Push current state to renderer so it re-mounts views with correct bounds
+    this.pushStateToRenderer();
+  }
+
   reloadTabView(tabId: string): void {
     const state = this.tabViewsByTabId.get(tabId);
     if (!state) {

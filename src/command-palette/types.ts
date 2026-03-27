@@ -45,14 +45,7 @@ export type CommandPaletteAction =
     type: 'install-agent-from-file'
   }
   | {
-    type: 'switch-agent'
-    agentPath: string
-  }
-  | {
     type: 'backup-agent-db'
-  }
-  | {
-    type: 'enter-recent-agents'
   }
   | {
     type: 'restore-agent-db'
@@ -82,7 +75,7 @@ export interface CommandPaletteItem {
   subtitle?: string
   shortcut?: string
   expandable?: boolean
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Recent Agents' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -100,7 +93,6 @@ export const COMMAND_PALETTE_CHANNEL = {
   SHOW_FILTERED: 'app:command-palette:show-filtered',
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
-  LIST_RECENT_AGENTS: 'app:command-palette:list-recent-agents',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',

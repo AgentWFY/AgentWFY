@@ -852,6 +852,7 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.removeEventListener('agentwfy:load-session', this.onLoadSession)
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
@@ -882,11 +883,24 @@ export class TlAgentChat extends HTMLElement {
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
+  private onAgentSwitched = () => {
+    this.inputValue = ''
+    this.activePanel = null
+    this.error = null
+    this.openToolSet.clear()
+    this.userScrolledUp = false
+    if (this._textarea) {
+      this._textarea.value = ''
+      this._textarea.style.height = 'auto'
+    }
+  }
+
   private init() {
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.addEventListener('agentwfy:load-session', this.onLoadSession)
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'

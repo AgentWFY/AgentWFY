@@ -7,7 +7,6 @@ import { seedDefaultAgent } from './default-agent.js';
 import { showWelcomeWindow } from './welcome.js';
 
 const AGENT_DIR_NAME = '.agentwfy';
-const MAX_RECENT_AGENTS = 10;
 
 // --- Agent dir helpers ---
 
@@ -33,10 +32,6 @@ export async function ensureAgentRuntimeBootstrap(agentRoot: string): Promise<vo
   }
 }
 
-function getRecentAgentsPath(): string {
-  return path.join(app.getPath('userData'), 'recent-agents.json');
-}
-
 export function isAgentDir(dirPath: string): boolean {
   try {
     return fs.statSync(path.join(dirPath, AGENT_DIR_NAME)).isDirectory();
@@ -57,34 +52,6 @@ export async function initAgent(dirPath: string, sourceDbPath?: string): Promise
   }
 }
 
-interface RecentAgent {
-  path: string;
-  openedAt: number;
-}
-
-export function getRecentAgents(): RecentAgent[] {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getRecentAgentsPath(), 'utf-8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function addToRecentAgents(dirPath: string): void {
-  const recents = getRecentAgents().filter(r => r.path !== dirPath);
-  recents.unshift({ path: dirPath, openedAt: Date.now() });
-  fs.writeFileSync(getRecentAgentsPath(), JSON.stringify(recents.slice(0, MAX_RECENT_AGENTS), null, 2));
-}
-
-export function shortenPath(fullPath: string): string {
-  const home = process.env.HOME || process.env.USERPROFILE;
-  if (home && fullPath.startsWith(home)) {
-    return '~' + fullPath.slice(home.length);
-  }
-  return fullPath;
-}
-
 // --- Dialog helpers ---
 
 async function showOpenDialog(parentWindow: BrowserWindow | null, options: Electron.OpenDialogOptions) {
@@ -102,12 +69,12 @@ async function showMessageBox(parentWindow: BrowserWindow | null, options: Elect
 // --- Public dialog flows ---
 
 /**
- * Open Agent flow: pick a directory, check for .agentwfy, offer to install default if missing.
+ * Add Agent flow: pick a directory, check for .agentwfy, offer to install default if missing.
  */
 export async function showOpenAgentDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
     properties: ['openDirectory'],
-    title: 'Open Agent',
+    title: 'Add Agent',
   });
   if (result.canceled || result.filePaths.length === 0) return null;
 
@@ -189,42 +156,9 @@ export async function showInstallAgentFromFileDialog(parentWindow: BrowserWindow
 }
 
 /**
- * First-launch: pick a directory and install the default agent.
- * Returning users (have recents but none valid) get the full picker.
+ * First-launch: show welcome window to pick/create an agent directory.
  */
 export async function showAgentPickerDialog(): Promise<string | null> {
-  const recents = getRecentAgents();
-
-  if (recents.length > 0) {
-    const recentLabels = recents.slice(0, 3).map(r => shortenPath(r.path));
-    const buttons = ['Open Agent...', 'Install Agent...', ...recentLabels, 'Quit'];
-
-    const result = await dialog.showMessageBox({
-      type: 'question',
-      title: 'Welcome to AgentWFY',
-      message: 'No agent is currently open.',
-      detail: 'Open an existing agent or install a new one.',
-      buttons,
-      defaultId: 0,
-      cancelId: buttons.length - 1,
-    });
-
-    const idx = result.response;
-    if (idx === buttons.length - 1) return null;
-    if (idx === 0) return showOpenAgentDialog();
-    if (idx === 1) return showInstallAgentDialog();
-
-    const recentIdx = idx - 2;
-    if (recentIdx >= 0 && recentIdx < recents.length) {
-      const recentPath = recents[recentIdx].path;
-      if (isAgentDir(recentPath)) return recentPath;
-      return showOpenAgentDialog();
-    }
-
-    return null;
-  }
-
-  // First-time user: show welcome window
   const dirPath = await showWelcomeWindow();
   if (!dirPath) return null;
 

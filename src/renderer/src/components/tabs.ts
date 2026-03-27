@@ -552,6 +552,7 @@ export class TlTabs extends HTMLElement {
         align-items: center;
         justify-content: center;
         height: 100%;
+        background: var(--color-bg2);
         color: var(--color-text2);
         font-size: 14px;
         -webkit-app-region: drag;

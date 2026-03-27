@@ -11,7 +11,6 @@ export interface CommandPaletteBridge {
   updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }>
   clearAgentOverride(key: string): Promise<void>
   openSettingsFile(): Promise<void>
-  listRecentAgents(): Promise<CommandPaletteItem[]>
   listBackups(): Promise<CommandPaletteItem[]>
   listTasks(): Promise<CommandPaletteItem[]>
   listSessions(): Promise<CommandPaletteItem[]>

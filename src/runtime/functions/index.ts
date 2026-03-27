@@ -21,13 +21,14 @@ interface BuiltInFunctionDeps {
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
   getCommandPalette: () => CommandPaletteManager
+  busPublish?: (topic: string, data: unknown) => void
 }
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { agentRoot: deps.agentRoot })
   registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
   registerTabs(registry, { tabTools: deps.tabTools, agentRoot: deps.agentRoot })
-  registerEvents(registry, { win: deps.win })
+  registerEvents(registry, { win: deps.win, busPublish: deps.busPublish })
   registerAgent(registry, { getSessionManager: deps.getSessionManager, win: deps.win })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
   registerPlugins(registry, {

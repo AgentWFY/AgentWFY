@@ -51,6 +51,21 @@ export interface AgentApi {
   disposeSession(file: string): Promise<void>
 }
 
+export interface InstalledAgent {
+  path: string
+  name: string
+  active: boolean
+}
+
+export interface AgentSidebarApi {
+  getInstalled(): Promise<InstalledAgent[]>
+  switch(agentRoot: string): Promise<void>
+  add(): Promise<string | null>
+  addFromFile(): Promise<string | null>
+  remove(agentRoot: string): Promise<void>
+  onSwitched(callback: (data: { agentRoot: string; agents: InstalledAgent[] }) => void): () => void
+}
+
 export interface AppIpc {
   files: FilesApi
   sql: SqlApi
@@ -65,6 +80,7 @@ export interface AppIpc {
   providers: ProvidersApi
   commandPalette: CommandPaletteApi
   agent: AgentApi
+  agentSidebar: AgentSidebarApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>

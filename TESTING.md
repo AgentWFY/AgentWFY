@@ -66,9 +66,9 @@ node scripts/cdp.mjs test                                 # Full connection test
 
 Set `CDP_PORT` env var if using a different port (default: 9223).
 
-### Inspecting other windows
+### Inspecting other targets
 
-Every window and tab is a separate CDP target. Use `targets` to list them, then `screenshot-target` or `eval-target` to interact:
+The app uses a single main window. Agent view tabs (rendered as WebContentsViews) and floating child windows (command palette, confirmation dialog) appear as separate CDP targets. Use `targets` to list them, then `screenshot-target` or `eval-target` to interact:
 
 ```bash
 node scripts/cdp.mjs targets
@@ -110,10 +110,15 @@ window.ipc.agent.createSession({ prompt: '...' })
 window.ipc.agent.sendMessage('Hello')
 window.ipc.agent.getSnapshot()
 
+// Agent sidebar (switch between agents in single window)
+window.ipc.agentSidebar.getInstalled()            // List loaded agents
+window.ipc.agentSidebar.switch('/path/to/agent')  // Switch or add agent
+window.ipc.agentSidebar.add()                     // Open agent picker dialog
+
 // App control
 window.ipc.restart()                              // Exit app (dev.sh respawns)
 window.ipc.stop()                                 // Exit app and dev.sh
-window.ipc.reloadRenderer()                       // Reload all windows
+window.ipc.reloadRenderer()                       // Reload renderer
 
 // Files, plugins, providers, tasks
 window.ipc.files.read('path')

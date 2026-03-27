@@ -65,6 +65,7 @@ interface AgentSessionManagerDeps {
   win: BrowserWindow
   providerRegistry: ProviderRegistry
   getJsRuntime: () => JsRuntime
+  busPublish?: (topic: string, data: unknown) => void
 }
 
 export class AgentSessionManager {
@@ -501,7 +502,8 @@ export class AgentSessionManager {
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
       const sessionFile = entry.agent.sessionFile
       if (sessionFile && !this.deps.win.isDestroyed()) {
-        forwardBusPublish(this.deps.win, `agent:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
+        const publish = this.deps.busPublish ?? ((topic: string, data: unknown) => forwardBusPublish(this.deps.win, topic, data))
+        publish(`agent:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
       }
 
       // Dispose spawned/background sessions immediately

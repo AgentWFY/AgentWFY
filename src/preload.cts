@@ -110,6 +110,14 @@ const Channels = {
   agents: {
     requestInstall: 'agents:requestInstall',
   },
+  agentSidebar: {
+    getInstalled: 'agent-sidebar:getInstalled',
+    switch: 'agent-sidebar:switch',
+    add: 'agent-sidebar:add',
+    addFromFile: 'agent-sidebar:addFromFile',
+    remove: 'agent-sidebar:remove',
+    switched: 'agent-sidebar:switched',
+  },
 } as const;
 
 // --- Helpers ---
@@ -481,6 +489,28 @@ if (isApp) {
       },
       disposeSession(file: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.disposeSession, file);
+      },
+    },
+    agentSidebar: {
+      getInstalled(): Promise<Array<{ path: string; name: string; active: boolean }>> {
+        return ipcRenderer.invoke(Channels.agentSidebar.getInstalled);
+      },
+      switch(agentRoot: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.switch, agentRoot);
+      },
+      add(): Promise<string | null> {
+        return ipcRenderer.invoke(Channels.agentSidebar.add);
+      },
+      addFromFile(): Promise<string | null> {
+        return ipcRenderer.invoke(Channels.agentSidebar.addFromFile);
+      },
+      remove(agentRoot: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.remove, agentRoot);
+      },
+      onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean }> }) => void): () => void {
+        const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean }> }) => callback(data);
+        ipcRenderer.on(Channels.agentSidebar.switched, handler);
+        return () => ipcRenderer.removeListener(Channels.agentSidebar.switched, handler);
       },
     },
   });
