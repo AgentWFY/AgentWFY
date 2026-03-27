@@ -42,6 +42,7 @@ https://github.com/user-attachments/assets/f3fb80b1-bf40-4d30-96e5-177415881b93
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Creative Use Cases & Recipes](#creative-use-cases--recipes)
 - [Tech Stack](#tech-stack)
+- [Releasing](#releasing)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -1602,6 +1603,31 @@ Agent:
 - **[SQLite](https://www.sqlite.org/)** (via better-sqlite3) — Per-agent embedded database
 - **[Web Components](https://developer.mozilla.org/en-US/docs/Web/API/Web_Components)** — Framework-free UI with Shadow DOM scoping and custom EventBus pub/sub
 - **ESM** — ES modules throughout (`"type": "module"`)
+
+---
+
+## Releasing
+
+To publish a new version:
+
+```bash
+# 1. Bump version (updates package.json and creates a git tag)
+npm version patch   # 1.0.0 → 1.0.1 (bug fixes)
+npm version minor   # 1.0.0 → 1.1.0 (new features)
+npm version major   # 1.0.0 → 2.0.0 (breaking changes)
+
+# 2. Push the commit and tag
+git push origin master --tags
+```
+
+GitHub Actions automatically builds for all platforms and creates a **draft release** with:
+- **macOS**: `.dmg` installer + `.zip` (arm64 and x64)
+- **Linux**: `.deb` package (x64)
+- **Windows**: `Setup.exe` installer (x64)
+
+Go to [Releases](https://github.com/AgentWFY/AgentWFY/releases), edit the draft, add release notes, and click **Publish**.
+
+Once published, running apps will detect the update within 4 hours (or immediately via the menu: AgentWFY → Check for Updates).
 
 ---
 

@@ -1,0 +1,187 @@
+// Package the Electron app into a platform-specific bundle.
+// macOS: creates AgentWFY.app bundle
+// Linux: creates agentwfy directory with executable
+// Windows: creates AgentWFY directory with .exe
+
+import { cpSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, renameSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+import { execSync } from 'child_process'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+const electronDist = join(root, 'node_modules', 'electron', 'dist')
+const outDir = join(root, 'out')
+
+const APP_NAME = 'AgentWFY'
+const BUNDLE_ID = 'app.agentwfy'
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'))
+const VERSION = pkg.version
+
+const platform = process.argv.includes('--platform')
+  ? process.argv[process.argv.indexOf('--platform') + 1]
+  : process.platform
+
+const arch = process.argv.includes('--arch')
+  ? process.argv[process.argv.indexOf('--arch') + 1]
+  : process.arch
+
+console.log(`Packaging ${APP_NAME} for ${platform}-${arch}...`)
+
+// Ensure dist/ exists (app must be built first)
+if (!existsSync(join(root, 'dist', 'main.js'))) {
+  console.error('dist/ not found. Run `npm run build` first.')
+  process.exit(1)
+}
+
+// Clean output
+const platformOutDir = join(outDir, `${APP_NAME}-${platform}-${arch}`)
+if (existsSync(platformOutDir)) rmSync(platformOutDir, { recursive: true })
+mkdirSync(platformOutDir, { recursive: true })
+
+if (platform === 'darwin') {
+  packageMacOS()
+} else if (platform === 'linux') {
+  packageLinux()
+} else if (platform === 'win32') {
+  packageWindows()
+} else {
+  console.error(`Unsupported platform: ${platform}`)
+  process.exit(1)
+}
+
+console.log(`Packaged to: ${platformOutDir}`)
+
+// ── macOS ──
+
+function packageMacOS() {
+  const appBundle = join(platformOutDir, `${APP_NAME}.app`)
+  const electronApp = join(electronDist, 'Electron.app')
+
+  // Copy Electron.app as our app bundle
+  cpSync(electronApp, appBundle, { recursive: true })
+
+  // Replace default app with our code
+  const resources = join(appBundle, 'Contents', 'Resources')
+  rmSync(join(resources, 'default_app.asar'), { force: true })
+  const appDir = join(resources, 'app')
+  mkdirSync(appDir, { recursive: true })
+  cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
+
+  // Replace icon
+  rmSync(join(resources, 'electron.icns'), { force: true })
+  cpSync(join(root, 'icons', 'icon.icns'), join(resources, 'icon.icns'))
+
+  // Update main Info.plist
+  const plistPath = join(appBundle, 'Contents', 'Info.plist')
+  updatePlist(plistPath, {
+    CFBundleDisplayName: APP_NAME,
+    CFBundleName: APP_NAME,
+    CFBundleIdentifier: BUNDLE_ID,
+    CFBundleIconFile: 'icon.icns',
+    CFBundleShortVersionString: VERSION,
+    CFBundleVersion: VERSION,
+  })
+  // Remove ElectronAsarIntegrity since we're not using asar
+  removePlistKey(plistPath, 'ElectronAsarIntegrity')
+
+  // Update helper app plists
+  const helpers = [
+    'Electron Helper.app',
+    'Electron Helper (GPU).app',
+    'Electron Helper (Plugin).app',
+    'Electron Helper (Renderer).app',
+  ]
+  const frameworks = join(appBundle, 'Contents', 'Frameworks')
+  for (const helper of helpers) {
+    const helperPlist = join(frameworks, helper, 'Contents', 'Info.plist')
+    if (existsSync(helperPlist)) {
+      const suffix = helper.replace('Electron Helper', '').replace('.app', '').trim()
+      const helperName = suffix ? `${APP_NAME} Helper ${suffix}` : `${APP_NAME} Helper`
+      const helperId = suffix
+        ? `${BUNDLE_ID}.helper.${suffix.replace(/[()]/g, '').trim().toLowerCase()}`
+        : `${BUNDLE_ID}.helper`
+      updatePlist(helperPlist, {
+        CFBundleIdentifier: helperId,
+        CFBundleName: helperName,
+      })
+      // Rename the helper executable
+      const helperExecDir = join(frameworks, helper, 'Contents', 'MacOS')
+      const oldExec = helper.replace('.app', '')
+      const newExec = helperName
+      if (existsSync(join(helperExecDir, oldExec))) {
+        renameSync(join(helperExecDir, oldExec), join(helperExecDir, newExec))
+      }
+      // Update CFBundleExecutable in plist
+      updatePlist(helperPlist, { CFBundleExecutable: newExec })
+      // Rename the .app directory
+      const newHelperDir = join(frameworks, `${helperName}.app`)
+      renameSync(join(frameworks, helper), newHelperDir)
+    }
+  }
+}
+
+// ── Linux ──
+
+function packageLinux() {
+  const electronBin = join(electronDist, 'electron')
+
+  if (!existsSync(electronBin)) {
+    console.error('Electron binary not found. Are you on Linux or have the Linux electron binary?')
+    process.exit(1)
+  }
+
+  // Copy electron dist contents
+  cpSync(electronDist, platformOutDir, { recursive: true })
+
+  // Rename binary
+  renameSync(join(platformOutDir, 'electron'), join(platformOutDir, 'agentwfy'))
+
+  // Replace default app with our code
+  const resources = join(platformOutDir, 'resources')
+  rmSync(join(resources, 'default_app.asar'), { force: true })
+  const appDir = join(resources, 'app')
+  mkdirSync(appDir, { recursive: true })
+  cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
+}
+
+// ── Windows ──
+
+function packageWindows() {
+  const electronExe = join(electronDist, 'electron.exe')
+
+  if (!existsSync(electronExe)) {
+    console.error('Electron.exe not found. Are you on Windows or have the Windows electron binary?')
+    process.exit(1)
+  }
+
+  // Copy electron dist contents
+  cpSync(electronDist, platformOutDir, { recursive: true })
+
+  // Rename binary
+  renameSync(join(platformOutDir, 'electron.exe'), join(platformOutDir, `${APP_NAME}.exe`))
+
+  // Replace default app with our code
+  const resources = join(platformOutDir, 'resources')
+  rmSync(join(resources, 'default_app.asar'), { force: true })
+  const appDir = join(resources, 'app')
+  mkdirSync(appDir, { recursive: true })
+  cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
+}
+
+// ── Plist helpers (uses macOS `defaults` and PlistBuddy) ──
+
+function updatePlist(plistPath, values) {
+  for (const [key, value] of Object.entries(values)) {
+    execSync(`/usr/libexec/PlistBuddy -c "Set :${key} '${value}'" "${plistPath}" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :${key} string '${value}'" "${plistPath}"`)
+  }
+}
+
+function removePlistKey(plistPath, key) {
+  try {
+    execSync(`/usr/libexec/PlistBuddy -c "Delete :${key}" "${plistPath}" 2>/dev/null`)
+  } catch { /* key may not exist */ }
+}
