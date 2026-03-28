@@ -24,7 +24,6 @@ function launchElectron() {
 
   child.on('exit', (code, signal) => {
     if (!signal && code === 100) {
-      // Exit code 100 = restart requested
       launchElectron()
       return
     }
