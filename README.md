@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/AgentWFY/AgentWFY/releases/latest"><img src="https://img.shields.io/github/v/release/AgentWFY/AgentWFY" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS">
+  <img src="https://img.shields.io/badge/platform-macOS%20|%20Windows%20|%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <a href="https://github.com/AgentWFY/AgentWFY/stargazers"><img src="https://img.shields.io/github/stars/AgentWFY/AgentWFY" alt="Stars"></a>
 </p>
 
