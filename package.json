@@ -7,7 +7,6 @@
   "main": "dist/main.js",
   "scripts": {
     "setup": "node scripts/setup",
-    "lint": "vendor/tsgo/lib/tsgo --noEmit",
     "build": "node scripts/build",
     "start": "node scripts/start",
     "package": "node scripts/build && node scripts/package",
