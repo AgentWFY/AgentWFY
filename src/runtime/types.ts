@@ -250,11 +250,11 @@ export interface WorkerHostMethodMap {
     params: { topic: string; timeoutMs?: number }
     result: unknown
   }
-  spawnAgent: {
+  spawnSession: {
     params: { prompt: string }
     result: { sessionId: string }
   }
-  sendToAgent: {
+  sendToSession: {
     params: { sessionId: string; message: string }
     result: void
   }

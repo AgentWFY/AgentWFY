@@ -35,7 +35,7 @@ Tab-based UI with view, file, and URL tab types. Use `openTab`, `closeTab`, `sel
 
 - Tasks & Triggers: `startTask({ taskId, input? })`, `stopTask({ runId })`. See `system.tasks` and `system.triggers`.
 - EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `system.eventbus`.
-- Sub-agents: `spawnAgent({ prompt })`. See `system.agents`.
+- Sessions: `spawnSession({ prompt })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
 - `getAvailableFunctions()` → list all available runtime functions.
 

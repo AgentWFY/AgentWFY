@@ -6,25 +6,25 @@ import type { WorkerHostMethodMap } from '../types.js'
 export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager; win: BrowserWindow }): void {
   const { getSessionManager, win } = deps
 
-  registry.register('spawnAgent', async (params) => {
-    const request = params as WorkerHostMethodMap['spawnAgent']['params']
+  registry.register('spawnSession', async (params) => {
+    const request = params as WorkerHostMethodMap['spawnSession']['params']
     if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
-      throw new Error('spawnAgent requires a non-empty prompt string')
+      throw new Error('spawnSession requires a non-empty prompt string')
     }
     const sessionManager = getSessionManager()
     return sessionManager.spawnSession(request.prompt)
   })
 
-  registry.register('sendToAgent', async (params) => {
-    const request = params as WorkerHostMethodMap['sendToAgent']['params']
+  registry.register('sendToSession', async (params) => {
+    const request = params as WorkerHostMethodMap['sendToSession']['params']
     if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty sessionId string')
+      throw new Error('sendToSession requires a non-empty sessionId string')
     }
     if (typeof request.message !== 'string' || request.message.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty message string')
+      throw new Error('sendToSession requires a non-empty message string')
     }
     const sessionManager = getSessionManager()
-    await sessionManager.sendToAgent(request.sessionId, request.message)
+    await sessionManager.sendToSession(request.sessionId, request.message)
     return undefined
   })
 

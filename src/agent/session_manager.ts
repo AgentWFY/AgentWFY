@@ -266,7 +266,7 @@ export class AgentSessionManager {
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
 
-    const entry = this.trackSession(sessionId, agent, 'Spawned agent')
+    const entry = this.trackSession(sessionId, agent, 'Spawned session')
     entry.autoPublishResponse = true
     this.notify()
 
@@ -277,8 +277,8 @@ export class AgentSessionManager {
     return { sessionId: agent.sessionFile! }
   }
 
-  async sendToAgent(sessionFile: string, message: string): Promise<void> {
-    // Check if this agent is already in memory (streaming or idle)
+  async sendToSession(sessionFile: string, message: string): Promise<void> {
+    // Check if this session is already in memory (streaming or idle)
     for (const [, entry] of this.sessions) {
       if (entry.agent.sessionFile === sessionFile) {
         await entry.agent.prompt(message, { streamingBehavior: 'followUp' })
@@ -291,7 +291,7 @@ export class AgentSessionManager {
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
 
-    const entry = this.trackSession(sessionId, agent, 'sendToAgent')
+    const entry = this.trackSession(sessionId, agent, 'sendToSession')
     entry.autoPublishResponse = true
     this.notify()
 
@@ -453,7 +453,7 @@ export class AgentSessionManager {
   private trackSession(sessionId: string, agent: AgentWFYAgent, label: string): SessionEntry {
     const entry: SessionEntry = { agent, label, unsubscribe: () => {}, wasStreaming: false }
     entry.unsubscribe = agent.subscribe(() => {
-      if (entry.label === 'New session' || entry.label === 'Spawned agent' || entry.label === 'sendToAgent') {
+      if (entry.label === 'New session' || entry.label === 'Spawned session' || entry.label === 'sendToSession') {
         const userLabel = extractFirstUserMessage(agent.messages, 60)
         if (userLabel) {
           entry.label = userLabel
@@ -496,14 +496,14 @@ export class AgentSessionManager {
       }
     }
 
-    // Auto-publish response for spawned/sendToAgent agents
+    // Auto-publish response for spawned/sendToSession sessions
     if (entry.autoPublishResponse) {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
       const sessionFile = entry.agent.sessionFile
       if (sessionFile && !this.deps.win.isDestroyed()) {
         const publish = this.deps.busPublish ?? ((topic: string, data: unknown) => forwardBusPublish(this.deps.win, topic, data))
-        publish(`agent:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
+        publish(`session:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
       }
 
       // Dispose spawned/background sessions immediately

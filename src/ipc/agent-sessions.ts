@@ -50,21 +50,21 @@ export function registerAgentSessionHandlers(
     return getManager(event).getSnapshot()
   })
 
-  ipcMain.handle(Channels.agent.spawnAgent, async (event, prompt: string) => {
+  ipcMain.handle(Channels.agent.spawnSession, async (event, prompt: string) => {
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
-      throw new Error('spawnAgent requires a non-empty prompt string')
+      throw new Error('spawnSession requires a non-empty prompt string')
     }
     return getManager(event).spawnSession(prompt)
   })
 
-  ipcMain.handle(Channels.agent.sendToAgent, async (event, sessionId: string, message: string) => {
+  ipcMain.handle(Channels.agent.sendToSession, async (event, sessionId: string, message: string) => {
     if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty sessionId string')
+      throw new Error('sendToSession requires a non-empty sessionId string')
     }
     if (typeof message !== 'string' || message.trim().length === 0) {
-      throw new Error('sendToAgent requires a non-empty message string')
+      throw new Error('sendToSession requires a non-empty message string')
     }
-    await getManager(event).sendToAgent(sessionId, message)
+    await getManager(event).sendToSession(sessionId, message)
   })
 
   ipcMain.handle(Channels.agent.disposeSession, async (event, file: string) => {

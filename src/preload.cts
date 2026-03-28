@@ -99,8 +99,8 @@ const Channels = {
     getSnapshot: 'agent:getSnapshot',
     snapshot: 'agent:snapshot',
     streaming: 'agent:streaming',
-    spawnAgent: 'agent:spawnAgent',
-    sendToAgent: 'agent:sendToAgent',
+    spawnSession: 'agent:spawnSession',
+    sendToSession: 'agent:sendToSession',
     disposeSession: 'agent:disposeSession',
   },
   runtimeFunctions: {

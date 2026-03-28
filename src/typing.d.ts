@@ -29,7 +29,7 @@ declare global {
       execTabJs(request: { tabId: string; code: string; timeoutMs?: number }): Promise<unknown>;
       publish(topic: string, data: unknown): Promise<void>;
       waitFor(topic: string, timeoutMs?: number): Promise<unknown>;
-      spawnAgent(prompt: string): Promise<{ sessionId: string }>;
+      spawnSession(prompt: string): Promise<{ sessionId: string }>;
       startTask(taskId: number, input?: unknown): Promise<{ runId: string }>;
       stopTask(runId: string): Promise<void>;
     };
