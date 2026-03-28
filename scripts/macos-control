@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# macos-control.sh — Native macOS screen-level automation (Layer 2)
+# macos-control — Native macOS screen-level automation (Layer 2)
 #
 # Zero-dependency screen control using built-in macOS tools:
 #   - screencapture: screenshots
 #   - osascript: AppleScript for mouse, keyboard, window management
 #
 # Usage:
-#   scripts/macos-control.sh <command> [args...]
+#   ./scripts/macos-control <command> [args...]
 #
 # Commands:
 #   screenshot [path]            — Capture full screen

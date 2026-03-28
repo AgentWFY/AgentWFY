@@ -1,0 +1,185 @@
+#!/usr/bin/env node
+// Downloads electron and tsgo into vendor/ directory.
+// Skips download if already cached. Verifies checksums for electron.
+//
+// Usage: ./scripts/setup
+//
+// Environment variables:
+//   ELECTRON_VERSION  - override electron version
+//   TSGO_VERSION      - override tsgo version
+
+import { createHash } from 'crypto'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { pipeline } from 'stream/promises'
+import { fileURLToPath } from 'url'
+import { execSync } from 'child_process'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+const vendorDir = join(root, 'vendor')
+
+const versions = JSON.parse(readFileSync(join(__dirname, 'vendor-versions.json'), 'utf-8'))
+const ELECTRON_VERSION = process.env.ELECTRON_VERSION || versions.electron
+const TSGO_VERSION = process.env.TSGO_VERSION || versions.tsgo
+
+// ── Platform detection ──
+
+const PLATFORM = process.env.npm_config_platform || process.platform
+const ARCH = process.env.npm_config_arch || process.arch
+
+function electronZipName() {
+  return `electron-v${ELECTRON_VERSION}-${PLATFORM}-${ARCH}.zip`
+}
+
+function electronUrl() {
+  const base = ELECTRON_VERSION.includes('nightly')
+    ? 'https://github.com/electron/nightlies/releases/download'
+    : 'https://github.com/electron/electron/releases/download'
+  return `${base}/v${ELECTRON_VERSION}/${electronZipName()}`
+}
+
+function electronShasumsUrl() {
+  const base = ELECTRON_VERSION.includes('nightly')
+    ? 'https://github.com/electron/nightlies/releases/download'
+    : 'https://github.com/electron/electron/releases/download'
+  return `${base}/v${ELECTRON_VERSION}/SHASUMS256.txt`
+}
+
+function tsgoPackageName() {
+  return `native-preview-${PLATFORM}-${ARCH}`
+}
+
+function tsgoUrl() {
+  return `https://registry.npmjs.org/@typescript/${tsgoPackageName()}/-/${tsgoPackageName()}-${TSGO_VERSION}.tgz`
+}
+
+// ── Download helpers ──
+
+async function download(url, dest) {
+  const res = await fetch(url, { redirect: 'follow' })
+  if (!res.ok) throw new Error(`Download failed: ${res.status} ${res.statusText} — ${url}`)
+  await pipeline(res.body, createWriteStream(dest))
+}
+
+async function sha256(filePath) {
+  const data = readFileSync(filePath)
+  return createHash('sha256').update(data).digest('hex')
+}
+
+// ── Electron ──
+
+async function setupElectron() {
+  const electronDir = join(vendorDir, 'electron')
+  const versionFile = join(electronDir, 'version')
+
+  // Check if already installed
+  if (existsSync(versionFile)) {
+    const installed = readFileSync(versionFile, 'utf-8').trim()
+    if (installed === ELECTRON_VERSION) {
+      console.log(`[setup] electron ${ELECTRON_VERSION} already installed`)
+      return
+    }
+  }
+
+  console.log(`[setup] downloading electron ${ELECTRON_VERSION} for ${PLATFORM}-${ARCH}...`)
+
+  // Clean and create
+  if (existsSync(electronDir)) rmSync(electronDir, { recursive: true })
+  mkdirSync(electronDir, { recursive: true })
+
+  const zipPath = join(vendorDir, electronZipName())
+
+  try {
+    // Download zip
+    await download(electronUrl(), zipPath)
+
+    // Verify checksum
+    console.log('[setup] verifying checksum...')
+    const shasumsRes = await fetch(electronShasumsUrl(), { redirect: 'follow' })
+    if (!shasumsRes.ok) throw new Error(`Failed to fetch SHASUMS256.txt: ${shasumsRes.status}`)
+    const shasums = await shasumsRes.text()
+
+    const zipName = electronZipName()
+    const expectedLine = shasums.split('\n').find(l => l.includes(zipName))
+    if (!expectedLine) throw new Error(`No checksum found for ${zipName}`)
+    const expectedHash = expectedLine.split(/\s+/)[0]
+
+    const actualHash = await sha256(zipPath)
+    if (actualHash !== expectedHash) {
+      throw new Error(`Checksum mismatch!\n  expected: ${expectedHash}\n  actual:   ${actualHash}`)
+    }
+    console.log('[setup] checksum OK')
+
+    // Extract
+    console.log('[setup] extracting...')
+    if (PLATFORM === 'win32') {
+      execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${electronDir}' -Force"`)
+    } else {
+      execSync(`unzip -q -o "${zipPath}" -d "${electronDir}"`)
+    }
+
+    // Write version marker
+    writeFileSync(versionFile, ELECTRON_VERSION)
+    console.log(`[setup] electron ${ELECTRON_VERSION} installed`)
+  } finally {
+    // Clean up zip
+    if (existsSync(zipPath)) rmSync(zipPath)
+  }
+}
+
+// ── tsgo (TypeScript native compiler) ──
+
+async function setupTsgo() {
+  const tsgoDir = join(vendorDir, 'tsgo')
+  const versionFile = join(tsgoDir, 'version')
+
+  // Check if already installed
+  if (existsSync(versionFile)) {
+    const installed = readFileSync(versionFile, 'utf-8').trim()
+    if (installed === TSGO_VERSION) {
+      console.log(`[setup] tsgo ${TSGO_VERSION} already installed`)
+      return
+    }
+  }
+
+  console.log(`[setup] downloading tsgo ${TSGO_VERSION} for ${PLATFORM}-${ARCH}...`)
+
+  // Clean and create
+  if (existsSync(tsgoDir)) rmSync(tsgoDir, { recursive: true })
+  mkdirSync(tsgoDir, { recursive: true })
+
+  const tgzPath = join(vendorDir, `tsgo-${TSGO_VERSION}.tgz`)
+
+  try {
+    await download(tsgoUrl(), tgzPath)
+
+    // Extract (npm tarballs have a `package/` prefix)
+    console.log('[setup] extracting...')
+    execSync(`tar xzf "${tgzPath}" -C "${tsgoDir}" --strip-components=1`)
+
+    // Make binary executable
+    const binaryName = PLATFORM === 'win32' ? 'tsgo.exe' : 'tsgo'
+    const binaryPath = join(tsgoDir, 'lib', binaryName)
+    if (existsSync(binaryPath) && PLATFORM !== 'win32') {
+      execSync(`chmod +x "${binaryPath}"`)
+    }
+
+    // Write version marker
+    writeFileSync(versionFile, TSGO_VERSION)
+    console.log(`[setup] tsgo ${TSGO_VERSION} installed`)
+  } finally {
+    if (existsSync(tgzPath)) rmSync(tgzPath)
+  }
+}
+
+// ── Main ──
+
+mkdirSync(vendorDir, { recursive: true })
+
+await Promise.all([
+  setupElectron(),
+  setupTsgo(),
+])
+
+console.log('[setup] done')

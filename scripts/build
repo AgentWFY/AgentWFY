@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+import { execSync } from 'child_process'
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+import { ensureVendor } from './lib/ensure-vendor.mjs'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+
+ensureVendor(root)
+const src = join(root, 'src')
+const dist = join(root, 'dist')
+
+rmSync(dist, { recursive: true, force: true })
+
+// ── Static assets ──
+
+mkdirSync(join(dist, 'renderer'), { recursive: true })
+cpSync(join(src, 'renderer', 'index.html'), join(dist, 'renderer', 'index.html'))
+cpSync(join(src, 'renderer', 'src', 'global.css'), join(dist, 'renderer', 'global.css'))
+cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
+cpSync(join(src, 'confirmation.html'), join(dist, 'confirmation.html'))
+cpSync(join(src, 'welcome.html'), join(dist, 'welcome.html'))
+cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
+cpSync(join(src, 'index.css'), join(dist, 'index.css'))
+
+// ── System data ──
+
+// Docs
+const docsDir = join(src, 'system-docs')
+const docFiles = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
+const docs = docFiles.map(f => ({ name: f.replace(/\.md$/, ''), content: readFileSync(join(docsDir, f), 'utf-8') }))
+writeFileSync(join(dist, 'system-docs.json'), JSON.stringify(docs))
+console.log(`[system-docs] Built ${docs.length} docs`)
+
+// Views
+const viewsDir = join(src, 'system-views')
+const viewFiles = readdirSync(viewsDir).filter(f => f.endsWith('.html')).sort()
+const views = viewFiles.map(f => {
+  const content = readFileSync(join(viewsDir, f), 'utf-8')
+  const name = f.replace(/\.html$/, '')
+  const titleMatch = content.match(/<title>([^<]+)<\/title>/i)
+  const title = titleMatch ? titleMatch[1].trim() : name.split('.').pop().charAt(0).toUpperCase() + name.split('.').pop().slice(1)
+  return { name, title, content }
+})
+writeFileSync(join(dist, 'system-views.json'), JSON.stringify(views))
+console.log(`[system-views] Built ${views.length} views`)
+
+// Config
+const configData = readFileSync(join(src, 'system-config', 'system-config.json'), 'utf-8')
+const configItems = JSON.parse(configData)
+writeFileSync(join(dist, 'system-config.json'), JSON.stringify(configItems))
+console.log(`[system-config] Built ${configItems.length} config entries`)
+
+// ── TypeScript compilation ──
+
+const tsgo = join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo')
+execSync(`"${tsgo}"`, { cwd: root, stdio: 'inherit' })

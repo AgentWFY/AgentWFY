@@ -29,11 +29,24 @@ import { getConfigValue } from './settings/config.js';
 import { Channels } from './ipc/channels.js';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
 import { pathToFileURL } from 'url';
+
+function devRebuild(): Promise<void> {
+  if (app.isPackaged) return Promise.resolve();
+  const root = path.join(import.meta.dirname, '..');
+  const tsgo = path.join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo');
+  return new Promise((resolve) => {
+    execFile(tsgo, [], { cwd: root }, (err) => {
+      if (err) console.error('[dev-rebuild] build failed:', err.message);
+      resolve();
+    });
+  });
+}
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
 
-// Write main process logs to .dev.log when not packaged (readable via scripts/cdp.mjs logs)
+// Write main process logs to .dev.log when not packaged (readable via scripts/cdp logs)
 if (!app.isPackaged) {
   const devLogStream = fs.createWriteStream(path.join(import.meta.dirname, '..', '.dev.log'), { flags: 'w' });
   const origStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -87,7 +100,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-const clientPath = path.join(import.meta.dirname, 'client', 'index.html');
+const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 
 // --- IPC registration (global, routes via windowManager) ---
 
@@ -164,15 +177,17 @@ registerAgentSessionHandlers(
   },
 );
 
-ipcMain.handle('app:restart', () => {
-  app.exit(0); // dev.sh respawns on exit code 0
+ipcMain.handle('app:restart', async () => {
+  await devRebuild();
+  app.exit(100); // exit 100 = start.mjs respawns
 });
 
 ipcMain.handle('app:stop', () => {
-  app.exit(1); // dev.sh exits on exit code 1
+  app.exit(0);
 });
 
-ipcMain.handle('app:reloadRenderer', () => {
+ipcMain.handle('app:reloadRenderer', async () => {
+  await devRebuild();
   for (const wc of webContents.getAllWebContents()) {
     wc.reloadIgnoringCache();
   }
@@ -313,16 +328,18 @@ function buildAndSetMenu() {
           label: 'Reload Renderer',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => {
-            for (const wc of webContents.getAllWebContents()) {
-              wc.reloadIgnoringCache();
-            }
+            devRebuild().then(() => {
+              for (const wc of webContents.getAllWebContents()) {
+                wc.reloadIgnoringCache();
+              }
+            });
           },
         },
         {
           label: 'Restart App',
           accelerator: 'CmdOrCtrl+Shift+Alt+R',
           click: () => {
-            app.exit(0);
+            devRebuild().then(() => app.exit(100));
           },
         },
         { type: 'separator' },

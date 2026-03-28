@@ -28,13 +28,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
-      - run: npm ci
+      - run: node scripts/setup
 
-      - run: npm run package
+      - run: node scripts/build
 
-      - run: npm run make
+      - run: node scripts/package
+
+      - run: node scripts/make
 
       - uses: actions/upload-artifact@v4
         with:

@@ -123,7 +123,7 @@ export class CommandPaletteManager {
       roundedCorners: true,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
       webPreferences: {
-        preload: path.join(import.meta.dirname, 'command-palette', 'preload.cjs'),
+        preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: true,
@@ -156,7 +156,7 @@ export class CommandPaletteManager {
 
     this.deps.registerSender?.(cpWebContentsId);
 
-    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, 'command_palette.html')).toString())
+    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'command_palette.html')).toString())
       .catch((error) => {
         console.error('[command-palette] failed to load native command palette window', error);
       });

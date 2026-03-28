@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Create distributable files from a packaged app.
 // macOS: .dmg (+ optional code signing & notarization)
 // Linux: .deb

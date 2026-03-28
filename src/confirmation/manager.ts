@@ -65,7 +65,7 @@ export class ConfirmationManager {
       roundedCorners: true,
       backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
       webPreferences: {
-        preload: path.join(import.meta.dirname, 'confirmation', 'preload.cjs'),
+        preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: true,
@@ -93,7 +93,7 @@ export class ConfirmationManager {
       this.window = null
     })
 
-    void this.window.loadURL(pathToFileURL(path.join(import.meta.dirname, 'confirmation.html')).toString())
+    void this.window.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'confirmation.html')).toString())
       .catch((error) => {
         console.error('[confirmation] failed to load confirmation window', error)
       })
