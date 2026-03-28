@@ -413,9 +413,8 @@ export class TlTabs extends HTMLElement {
       .tab-bar {
         display: flex;
         overflow-x: auto;
-        background: var(--color-bg3);
         flex-shrink: 0;
-        height: 42px;
+        align-self: stretch;
         align-items: center;
         padding: 0 4px;
         gap: 4px;
