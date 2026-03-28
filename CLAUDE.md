@@ -8,11 +8,12 @@ AgentWFY is an Electron desktop app that provides a local AI agent runtime. User
 
 ## Commands
 
-- **Build**: `npm run build`
-- **Dev** (watch + launch): `npm run dev`
-- **Lint** (TypeScript check): `npm run lint`
-- **Start** (run built app): `npm run start`
-- **Package**: `npm run package`
+- **Setup** (first time): `./scripts/setup`
+- **Build**: `./scripts/build`
+- **Start** (run built app): `./scripts/start`
+- **Package**: `./scripts/package`
+
+Build runs tsgo which does full type checking during compilation. A separate lint step is not needed — if the build succeeds, types are correct.
 
 No test framework is configured. See [TESTING.md](TESTING.md) for how to launch the app with CDP, interact with it programmatically, and visually verify changes.
 
@@ -28,7 +29,7 @@ The app runs as three Electron process types:
 
 ### Build System
 
-esbuild bundles 8 separate entry points (main, renderer, preload scripts, exec worker, command palette, confirmation dialog, welcome window). Build script at `scripts/build.mjs`. System docs, views, and config are compiled from source files into `dist/` during build.
+tsgo (native TypeScript compiler) compiles all source files to `dist/`, preserving the `src/` directory structure. No bundling — each `.ts` file produces a corresponding `.js` file. Build script at `scripts/build`. System docs, views, and config are compiled from source files into `dist/` during build. Electron and tsgo binaries are downloaded to `vendor/` by `scripts/setup`.
 
 ### Key Subsystems
 
@@ -56,5 +57,5 @@ esbuild bundles 8 separate entry points (main, renderer, preload scripts, exec w
 
 - ESM throughout (`"type": "module"` in package.json), `.js` extensions in imports
 - Preload scripts use `.cts` extension (CommonJS required by Electron)
-- Electron nightly (`electron-nightly@^41`) is used, aliased as `electron` in package.json
-- TypeScript strict-ish config: `noImplicitAny` enabled, `noEmit` (type-checking only, esbuild handles compilation)
+- Electron nightly (`v41`) is downloaded as a binary to `vendor/electron/` by `scripts/setup`
+- TypeScript strict-ish config: `noImplicitAny` enabled, compiled by tsgo (native TypeScript compiler) in `vendor/tsgo/`

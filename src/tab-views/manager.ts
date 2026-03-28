@@ -235,7 +235,7 @@ export class TabViewManager {
 
     const view = new WebContentsView({
       webPreferences: {
-        preload: path.join(import.meta.dirname, 'preload.cjs'),
+        preload: path.join(import.meta.dirname, '..', 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: isUrlTab,

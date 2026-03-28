@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+import { spawn } from 'child_process'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+import { ensureVendor } from './lib/ensure-vendor.mjs'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+
+ensureVendor(root)
+const electronDir = join(root, 'vendor', 'electron')
+
+const binaryPath = process.platform === 'darwin'
+  ? join(electronDir, 'Electron.app', 'Contents', 'MacOS', 'Electron')
+  : process.platform === 'win32'
+    ? join(electronDir, 'electron.exe')
+    : join(electronDir, 'electron')
+
+function launchElectron() {
+  const child = spawn(binaryPath, [root, ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    env: { ...process.env, NODE_OPTIONS: '--disable-warning=ExperimentalWarning' },
+  })
+
+  child.on('exit', (code, signal) => {
+    if (!signal && code === 100) {
+      // Exit code 100 = restart requested
+      launchElectron()
+      return
+    }
+    process.exit(code ?? 0)
+  })
+}
+
+launchElectron()

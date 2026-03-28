@@ -27,9 +27,10 @@ const nodeStreamToWeb = (nodeStream: import('fs').ReadStream) => {
 
   return new ReadableStream({
     start(controller) {
-      nodeStream.on('data', (chunk: Buffer) => {
+      nodeStream.on('data', (chunk: Buffer | string) => {
         if (closed) return;
-        controller.enqueue(new Uint8Array(chunk));
+        const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        controller.enqueue(new Uint8Array(buf));
         if (controller.desiredSize !== null && controller.desiredSize <= 0) {
           nodeStream.pause();
         }

@@ -4,7 +4,7 @@ import { Channels } from './channels.js';
 export const registerDialogSubscribers = () => {
   ipcMain.handle(Channels.dialog.open, async (event, options: OpenDialogOptions) => {
     const window = BrowserWindow.fromWebContents(event.sender);
-    const { canceled, filePaths } = await dialog.showOpenDialog(window, options);
+    const { canceled, filePaths } = await dialog.showOpenDialog(window!, options);
 
     if (!canceled) {
       return filePaths;

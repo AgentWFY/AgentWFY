@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Package the Electron app into a platform-specific bundle.
 // macOS: creates AgentWFY.app bundle
 // Linux: creates agentwfy directory with executable
@@ -10,7 +11,7 @@ import { execSync } from 'child_process'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
-const electronDist = join(root, 'node_modules', 'electron', 'dist')
+const electronDist = join(root, 'vendor', 'electron')
 const outDir = join(root, 'out')
 
 const APP_NAME = 'AgentWFY'

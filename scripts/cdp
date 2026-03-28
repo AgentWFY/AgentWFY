@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // =============================================================================
-// cdp.mjs — Zero-dependency CDP client for Electron app interaction
+// cdp — Zero-dependency CDP client for Electron app interaction
 //
 // Talks directly to Chrome DevTools Protocol via HTTP + WebSocket.
 // No Playwright, no npm dependencies — just Node.js builtins.
 //
 // Usage:
-//   node scripts/cdp.mjs <command> [args...]
+//   ./scripts/cdp <command> [args...]
 //
 // Commands:
 //   targets                      — List all CDP targets (pages/windows)
@@ -379,7 +379,7 @@ const commands = {
 };
 
 if (!cmd || !commands[cmd]) {
-  console.log('Usage: node scripts/cdp.mjs <command> [args...]');
+  console.log('Usage: ./scripts/cdp <command> [args...]');
   console.log('');
   console.log('Commands:');
   console.log('  targets                       List all CDP targets');

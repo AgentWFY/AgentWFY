@@ -485,9 +485,9 @@ export function getOrCreateAgentDb(dataDir: string): AgentDb {
   const agentDir = path.join(dataDir, '.agentwfy');
   fs.mkdirSync(agentDir, { recursive: true });
   const agentDbPath = path.join(agentDir, 'agent.db');
-  const systemDocsPath = path.join(import.meta.dirname, 'system-docs.json');
-  const systemViewsPath = path.join(import.meta.dirname, 'system-views.json');
-  const systemConfigPath = path.join(import.meta.dirname, 'system-config.json');
+  const systemDocsPath = path.join(import.meta.dirname, '..', 'system-docs.json');
+  const systemViewsPath = path.join(import.meta.dirname, '..', 'system-views.json');
+  const systemConfigPath = path.join(import.meta.dirname, '..', 'system-config.json');
 
   conn = new AgentDb({ dbPath: agentDbPath, systemDocsPath, systemViewsPath, systemConfigPath });
   connections.set(dataDir, conn);

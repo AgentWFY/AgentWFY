@@ -55,15 +55,9 @@ https://github.com/user-attachments/assets/f3fb80b1-bf40-4d30-96e5-177415881b93
 ```bash
 git clone https://github.com/agentWFY/agentWFY.git
 cd agentWFY
-npm install
-npm run build
-npm start
-```
-
-For development with hot reload:
-
-```bash
-npm run dev
+./scripts/setup
+./scripts/build
+./scripts/start
 ```
 
 ### First Launch
