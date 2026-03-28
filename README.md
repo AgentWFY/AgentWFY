@@ -1,25 +1,42 @@
-# AgentWFY
+<p align="center">
+  <img src="icons/icon.png" width="128" height="128" alt="AgentWFY">
+</p>
 
-The desktop platform for personal AI agents.
+<h1 align="center">AgentWFY</h1>
 
-Build, install, and run AI agents that work with your data. Each agent is a single portable file — sandboxed, extensible with plugins, and entirely yours.
+<p align="center"><strong>A local runtime for AI agents.</strong></p>
 
-https://github.com/user-attachments/assets/c3ff490b-bbc7-41a1-9807-2823c09d0624
+<p align="center">
+  <a href="https://github.com/AgentWFY/AgentWFY/releases/latest"><img src="https://img.shields.io/github/v/release/AgentWFY/AgentWFY" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS">
+  <a href="https://github.com/AgentWFY/AgentWFY/stargazers"><img src="https://img.shields.io/github/stars/AgentWFY/AgentWFY" alt="Stars"></a>
+</p>
+
+<p align="center">
+AgentWFY is an open-source desktop app that gives AI agents a real runtime on your machine. Each agent gets its own SQLite database, file system access, JavaScript execution, browser control, and automation triggers.
+</p>
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/c3ff490b-bbc7-41a1-9807-2823c09d0624" width="720" autoplay loop muted playsinline></video>
+</p>
 
 ## Features
 
-- **One file, portable** — Each agent is a self-contained directory with a single SQLite database. Copy it, share it, back it up — sessions, plugins, views, tasks, everything travels together
-- **Views & dashboards** — Agents build dashboards, tables, charts, forms, and custom interfaces rendered as live tabs with full theming support
-- **Plugin system** — Extend agents with custom functions, LLM providers, documentation, views, and configuration. Plugins are installed from `.plugins.awfy` packages
-- **Any AI model** — OpenAI-compatible APIs (OpenRouter, DeepSeek, Groq, Ollama, LM Studio) work out of the box. Plugins can add any other provider (Anthropic, Google, etc.)
-- **Sandboxed execution** — Each agent only accesses its own folder. Code runs in isolated Node.js utility processes with path traversal protection
-- **Tasks & automation** — Define reusable JavaScript tasks triggered manually, on cron schedules, via HTTP webhooks, or by file system / event bus events
-- **Sub-agents** — Spawn independent agent sessions that run in parallel, communicate via pub/sub, and can be orchestrated into multi-agent workflows
-- **HTTP API** — Local REST server exposes agent capabilities as endpoints for external integrations, scripts, and automations
-- **Browser automation** — Open hidden tabs, execute DOM JavaScript, capture screenshots — built-in web scraping and monitoring
-- **Context compaction** — Automatic conversation summarization when approaching token limits, enabling very long conversations without manual management
-- **Command palette** — Quick access to views, agents, plugins, tasks, sessions, settings, and backups via `Cmd+K`
-- **Private by default** — Your data stays on your machine. No telemetry, no cloud dependency
+| Feature | Description |
+|---------|-------------|
+| **Code Execution** | Agents run JavaScript in sandboxed Node.js utility processes |
+| **SQLite Per Agent** | Every agent has its own portable database — copy, share, back up |
+| **File System** | Read, write, search, and organize files within the agent's sandbox |
+| **Browser Control** | Open tabs, capture screenshots, execute DOM JavaScript |
+| **Triggers** | Cron schedules, HTTP webhooks, file watchers, event bus |
+| **Plugin System** | Extend with plugins — custom functions, LLM providers, views, and config |
+| **Multi-Provider** | OpenRouter, Ollama, DeepSeek, Groq, LM Studio, or any OpenAI-compatible API |
+| **Sub-Agents** | Spawn child agents for parallel, multi-agent workflows via pub/sub |
+| **HTML Views** | Agents create live dashboards, charts, forms, and custom interfaces |
+| **HTTP API** | Local REST endpoints for external integrations and automations |
+| **Context Compaction** | Automatic conversation summarization for very long sessions |
+| **Private by Default** | Your data stays on your machine — no telemetry, no cloud dependency |
 
 ---
 
