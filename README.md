@@ -40,39 +40,29 @@ AgentWFY is an open-source desktop app that gives AI agents a real runtime on yo
 
 ---
 
-## Table of Contents
+## Quick Start
 
-- [Getting Started](#getting-started)
-- [Core Concepts](#core-concepts)
-- [The Chat Interface](#the-chat-interface)
-- [Sessions](#sessions)
-- [Runtime Functions (execJs)](#runtime-functions-execjs)
-- [Database System](#database-system)
-- [Views System](#views-system)
-- [Tasks & Automation](#tasks--automation)
-- [Triggers](#triggers)
-- [HTTP API](#http-api)
-- [Plugin System](#plugin-system)
-- [Publishing Plugins & Agents](#publishing-plugins--agents)
-- [Provider System](#provider-system)
-- [Configuration Reference](#configuration-reference)
-- [Command Palette](#command-palette)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Creative Use Cases & Recipes](#creative-use-cases--recipes)
-- [Tech Stack](#tech-stack)
-- [Releasing](#releasing)
-- [Contributing](#contributing)
-- [License](#license)
+### Install
 
----
+Download the latest release for your platform from [GitHub Releases](https://github.com/AgentWFY/AgentWFY/releases/latest):
 
-## Getting Started
+- **macOS** — `.dmg` (Apple Silicon)
+- **Windows** — `.exe` installer
+- **Linux** — `.deb` package
 
-### Installation
+### Your First Agent
+
+1. Open AgentWFY
+2. Pick or create a directory for your agent
+3. Configure a provider in settings (OpenRouter, Ollama, DeepSeek, etc.)
+4. Type: *"Create a bookmark manager with search and tags"*
+5. Watch it build a working app in 30 seconds
+
+### Build from Source
 
 ```bash
-git clone https://github.com/agentWFY/agentWFY.git
-cd agentWFY
+git clone https://github.com/AgentWFY/AgentWFY.git
+cd AgentWFY
 ./scripts/setup
 ./scripts/build
 ./scripts/start
@@ -109,6 +99,31 @@ The built-in provider works with any OpenAI-compatible API: OpenRouter, DeepSeek
 ### Your First Conversation
 
 Type a message in the chat input and press Enter. The agent will respond and can execute JavaScript code via its `execJs` tool to interact with your files, database, tabs, and more. Everything the agent does is visible in the chat as expandable code blocks showing what was executed and what it returned.
+
+---
+
+## Table of Contents
+
+- [Core Concepts](#core-concepts)
+- [The Chat Interface](#the-chat-interface)
+- [Sessions](#sessions)
+- [Runtime Functions (execJs)](#runtime-functions-execjs)
+- [Database System](#database-system)
+- [Views System](#views-system)
+- [Tasks & Automation](#tasks--automation)
+- [Triggers](#triggers)
+- [HTTP API](#http-api)
+- [Plugin System](#plugin-system)
+- [Publishing Plugins & Agents](#publishing-plugins--agents)
+- [Provider System](#provider-system)
+- [Configuration Reference](#configuration-reference)
+- [Command Palette](#command-palette)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Creative Use Cases & Recipes](#creative-use-cases--recipes)
+- [Tech Stack](#tech-stack)
+- [Releasing](#releasing)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
