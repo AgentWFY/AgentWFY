@@ -36,6 +36,7 @@ https://github.com/user-attachments/assets/f3fb80b1-bf40-4d30-96e5-177415881b93
 - [Triggers](#triggers)
 - [HTTP API](#http-api)
 - [Plugin System](#plugin-system)
+- [Publishing Plugins & Agents](#publishing-plugins--agents)
 - [Provider System](#provider-system)
 - [Configuration Reference](#configuration-reference)
 - [Command Palette](#command-palette)
@@ -1230,6 +1231,162 @@ class MySession {
 - `{ type: 'error', error: '...' }` — Error occurred
 - `{ type: 'status_line', text: '...' }` — Update status display
 - `{ type: 'state_changed' }` — Commit state for persistence
+
+---
+
+## Publishing Plugins & Agents
+
+Plugins and agents are distributed through the AgentWFY registry. Users discover and install them from the **Browse Plugins** and **Browse Agents** tabs in the `system.plugins` view.
+
+### Browsing & Installing from the Registry
+
+Open the `system.plugins` view (via command palette or by asking the agent) to access three tabs:
+
+- **Installed Plugins** — manage plugins already in the agent
+- **Browse Plugins** — search and install plugins from the registry
+- **Browse Agents** — search and install agent templates from the registry
+
+Clicking **Install** downloads the package and installs it into the current agent. Installed plugins can be toggled on/off or uninstalled from the Installed tab.
+
+### Building a Plugin Package
+
+A plugin project has this structure:
+
+```
+my-plugin/
+├── package.json       # metadata (name must start with agentwfy-plugin-)
+├── build.mjs          # build script
+├── src/
+│   └── index.js       # plugin code (exports activate)
+├── docs/              # optional markdown docs
+├── views/             # optional HTML views
+└── config/
+    └── config.json    # optional default settings
+```
+
+**package.json** provides the metadata embedded into the package:
+
+```json
+{
+  "name": "agentwfy-plugin-my-plugin",
+  "version": "1.0.0",
+  "description": "What it does",
+  "author": "your-name",
+  "license": "MIT",
+  "repository": "https://github.com/you/my-plugin"
+}
+```
+
+The plugin name in the registry is derived by stripping the `agentwfy-plugin-` prefix (e.g., `agentwfy-plugin-my-plugin` becomes `my-plugin`).
+
+**build.mjs** compiles everything into a `.plugins.awfy` SQLite package:
+
+```js
+#!/usr/bin/env node
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'fs';
+import path from 'path';
+
+const root = import.meta.dirname;
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
+const pluginName = pkg.name.replace('agentwfy-plugin-', '');
+
+const dist = path.join(root, 'dist');
+fs.mkdirSync(dist, { recursive: true });
+
+const outPath = path.join(dist, `${pluginName}.plugins.awfy`);
+try { fs.unlinkSync(outPath); } catch {}
+
+const db = new DatabaseSync(outPath);
+
+db.exec(`
+  CREATE TABLE plugins (name TEXT NOT NULL, description TEXT NOT NULL, version TEXT NOT NULL, code TEXT NOT NULL, author TEXT, repository TEXT, license TEXT);
+  CREATE TABLE docs (name TEXT NOT NULL, content TEXT NOT NULL);
+  CREATE TABLE views (name TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL);
+  CREATE TABLE config (name TEXT NOT NULL, value TEXT, description TEXT NOT NULL DEFAULT '');
+`);
+
+const code = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf-8');
+db.prepare('INSERT INTO plugins VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+  pluginName, pkg.description, pkg.version, code,
+  pkg.author || null, pkg.repository || null, pkg.license || null
+);
+
+// Docs
+const docsDir = path.join(root, 'docs');
+if (fs.existsSync(docsDir)) {
+  for (const file of fs.readdirSync(docsDir).filter(f => f.endsWith('.md'))) {
+    const name = `plugin.${pluginName}.${file.replace(/\.md$/, '')}`;
+    const content = fs.readFileSync(path.join(docsDir, file), 'utf-8');
+    db.prepare('INSERT INTO docs VALUES (?, ?)').run(name, content);
+  }
+}
+
+// Views
+const viewsDir = path.join(root, 'views');
+if (fs.existsSync(viewsDir)) {
+  for (const file of fs.readdirSync(viewsDir).filter(f => f.endsWith('.html'))) {
+    const viewName = `plugin.${pluginName}.${file.replace(/\.html$/, '')}`;
+    const content = fs.readFileSync(path.join(viewsDir, file), 'utf-8');
+    const titleMatch = content.match(/<title>([^<]+)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : viewName;
+    db.prepare('INSERT INTO views VALUES (?, ?, ?)').run(viewName, title, content);
+  }
+}
+
+// Config
+const configFile = path.join(root, 'config', 'config.json');
+if (fs.existsSync(configFile)) {
+  for (const entry of JSON.parse(fs.readFileSync(configFile, 'utf-8'))) {
+    db.prepare('INSERT INTO config VALUES (?, ?, ?)').run(
+      entry.name, entry.value ?? null, entry.description || ''
+    );
+  }
+}
+
+db.close();
+console.log(`Built: ${outPath}`);
+```
+
+Run `node build.mjs` to produce `dist/my-plugin.plugins.awfy`.
+
+### Publishing a Plugin to the Registry
+
+Registry repository: [github.com/AgentWFY/plugins](https://github.com/AgentWFY/plugins)
+
+1. **Build** your `.plugins.awfy` package
+2. **Upload** the package as a GitHub Release asset in your plugin's repository
+3. **Open an issue** in [AgentWFY/plugins](https://github.com/AgentWFY/plugins/issues/new/choose) using the **Publish Plugin** template — provide the HTTPS download URL to the release asset
+4. A maintainer reviews and adds the `approved` label
+5. A GitHub Actions workflow automatically validates the package (checks required fields, license, no duplicates) and adds it to the registry
+
+**Validation requirements:**
+- Package must contain exactly one plugin
+- Required fields: `name`, `description`, `version`, `author`, `license`
+- Accepted licenses: MIT, Apache-2.0, GPL-2.0, GPL-3.0, LGPL-2.1, LGPL-3.0, BSD-2-Clause, BSD-3-Clause, MPL-2.0, ISC, Unlicense, CC0-1.0
+
+**Updating a plugin:** Open an issue using the **Update Plugin** template with the new download URL. The version must be higher than the existing one. Only the original publisher can update.
+
+**Removing a plugin:** Open an issue using the **Remove Plugin** template with the plugin name and reason. Only the original publisher can remove.
+
+### Building an Agent Package
+
+An agent package (`.agent.awfy`) is a SQLite database that must contain at least a `views` and `docs` table. It can also include `tasks` and `plugins` tables.
+
+To create a shareable agent, export its database content into the `.agent.awfy` format with the required tables.
+
+### Publishing an Agent to the Registry
+
+Registry repository: [github.com/AgentWFY/agents](https://github.com/AgentWFY/agents)
+
+1. **Upload** the `.agent.awfy` file as a GitHub Release asset
+2. **Open an issue** in [AgentWFY/agents](https://github.com/AgentWFY/agents/issues/new/choose) using the **Publish Agent** template — provide the agent name, description, author, and download URL
+3. A maintainer reviews and adds the `approved` label
+4. A GitHub Actions workflow validates the file (checks for required `views` and `docs` tables) and adds it to the registry
+
+**Updating an agent:** Open an issue using the **Update Agent** template. Only the original publisher can update.
+
+**Removing an agent:** Open an issue using the **Remove Agent** template. Only the original publisher can remove.
 
 ---
 
