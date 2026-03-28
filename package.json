@@ -9,6 +9,7 @@
     "setup": "node scripts/setup",
     "build": "node scripts/build",
     "start": "node scripts/start",
+    "dev": "node scripts/build && node scripts/start",
     "package": "node scripts/build && node scripts/package",
     "make": "node scripts/make"
   },
