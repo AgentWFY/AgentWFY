@@ -1,4 +1,4 @@
 {
-  "electron": "41.0.0-nightly.20251219",
+  "electron": "42.0.0-alpha.5",
   "tsgo": "7.0.0-dev.20260327.2"
 }
