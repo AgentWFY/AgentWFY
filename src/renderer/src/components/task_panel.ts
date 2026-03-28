@@ -572,14 +572,9 @@ export class TlTaskPanel extends HTMLElement {
     const runCount = this.activeRuns.length
     let html = ''
 
-    // Header with tabs
     html += `<div class="hdr">
-      <div class="hdr-row">
-        <span class="hdr-title">Tasks</span>
-        <span class="hdr-badge${runCount === 0 ? ' hidden' : ''}">${runCount} running</span>
-      </div>
       <div class="tabs">
-        <button class="tab${this.activeTab === 'runs' ? ' active' : ''}" data-tab="runs">Runs</button>
+        <button class="tab${this.activeTab === 'runs' ? ' active' : ''}" data-tab="runs">Runs${runCount > 0 ? ' (' + runCount + ')' : ''}</button>
         <button class="tab${this.activeTab === 'tasks' ? ' active' : ''}" data-tab="tasks">Tasks</button>
         <button class="tab${this.activeTab === 'triggers' ? ' active' : ''}" data-tab="triggers">Triggers</button>
       </div>

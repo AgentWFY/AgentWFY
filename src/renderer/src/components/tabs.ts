@@ -141,7 +141,6 @@ export class TlTabs extends HTMLElement {
       // Still need to manage panels for hidden tabs below
     } else {
       const tabBar = this.tabBarEl
-      const pinnedEnd = visible.filter(t => t.pinned).length
 
       visible.forEach((tab, index) => {
         const tabItem = document.createElement('div')
@@ -263,12 +262,7 @@ export class TlTabs extends HTMLElement {
 
         tabBar.insertBefore(tabItem, this.hiddenTabsBtnEl)
 
-        // Add separator after last pinned tab
-        if (tab.pinned && index === pinnedEnd - 1 && pinnedEnd < visible.length) {
-          const separator = document.createElement('div')
-          separator.className = 'pinned-separator'
-          tabBar.insertBefore(separator, this.hiddenTabsBtnEl)
-        }
+
       })
 
       // Render expanded hidden tabs inline after the toggle button
@@ -421,10 +415,10 @@ export class TlTabs extends HTMLElement {
         overflow-x: auto;
         background: var(--color-bg3);
         flex-shrink: 0;
-        min-height: 36px;
-        align-items: flex-end;
+        height: 42px;
+        align-items: center;
         padding: 0 4px;
-        gap: 2px;
+        gap: 4px;
         -webkit-app-region: drag;
         ${isWindows ? 'padding-right: 138px;' : ''}
       }
@@ -432,27 +426,30 @@ export class TlTabs extends HTMLElement {
       .tab-item {
         display: flex;
         align-items: center;
-        padding: 6px 10px 6px 10px;
+        justify-content: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 12px;
         white-space: nowrap;
         max-width: 200px;
         flex-shrink: 0;
-        gap: 6px;
-        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        border-radius: var(--radius-md);
         position: relative;
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
+        background: transparent;
       }
       .tab-item.pinned {
         max-width: none;
-        padding: 6px 10px;
-        justify-content: center;
+        width: 28px;
+        padding: 0;
       }
       .tab-item:hover {
         color: var(--color-text3);
-        background: var(--color-bg2);
+        background: var(--color-item-hover);
       }
       .tab-item.dragging { opacity: 0.4; }
       .tab-item.drag-over-left { box-shadow: inset 2px 0 0 var(--color-accent); }
@@ -460,6 +457,8 @@ export class TlTabs extends HTMLElement {
       .tab-item.active {
         color: var(--color-text4);
         background: var(--color-bg1);
+        font-weight: 500;
+        box-shadow: 0 0.5px 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
       }
       .tab-type-icon {
         display: flex;
@@ -467,14 +466,14 @@ export class TlTabs extends HTMLElement {
         flex-shrink: 0;
         width: 14px;
         height: 14px;
-        opacity: 0.5;
+        opacity: 0.45;
         transition: opacity var(--transition-fast);
       }
       .tab-item.active .tab-type-icon {
-        opacity: 0.8;
+        opacity: 0.75;
       }
       .tab-item:hover .tab-type-icon {
-        opacity: 0.7;
+        opacity: 0.65;
       }
       .tab-title {
         overflow: hidden;
@@ -493,6 +492,7 @@ export class TlTabs extends HTMLElement {
         opacity: 0;
         flex-shrink: 0;
         cursor: pointer;
+        margin-right: -4px;
         transition: opacity var(--transition-fast), background var(--transition-fast);
       }
       .tab-close:hover {
@@ -504,28 +504,25 @@ export class TlTabs extends HTMLElement {
       .tab-pin-icon {
         flex-shrink: 0;
         width: 14px;
-        height: 16px;
+        height: 14px;
         display: flex;
         align-items: center;
         opacity: 0.5;
       }
       .tab-item.active .tab-pin-icon {
-        opacity: 0.8;
+        opacity: 0.85;
+      }
+      .tab-item:hover .tab-pin-icon {
+        opacity: 0.7;
       }
       .tab-changed-dot {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
         border-radius: 50%;
         background: var(--color-accent);
         flex-shrink: 0;
       }
-      .pinned-separator {
-        width: 1px;
-        background: var(--color-divider);
-        margin: 6px 2px;
-        flex-shrink: 0;
-        align-self: stretch;
-      }
+
       .tab-panel-container {
         flex: 1;
         overflow: hidden;
@@ -561,24 +558,25 @@ export class TlTabs extends HTMLElement {
         display: flex;
         align-items: center;
         gap: 4px;
-        padding: 6px 8px;
+        padding: 0 8px;
+        height: 28px;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 11px;
         white-space: nowrap;
         flex-shrink: 0;
-        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        border-radius: var(--radius-md);
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
         margin-left: auto;
       }
       .hidden-tabs-btn:hover {
         color: var(--color-text3);
-        background: var(--color-bg2);
+        background: var(--color-item-hover);
       }
       .hidden-tabs-btn.active {
         color: var(--color-text4);
-        background: var(--color-bg2);
+        background: var(--color-item-hover);
       }
       .hidden-tabs-count {
         display: inline-flex;
@@ -597,14 +595,16 @@ export class TlTabs extends HTMLElement {
       .hidden-separator {
         width: 1px;
         background: var(--color-divider);
-        margin: 6px 2px;
+        margin: 0 2px;
         flex-shrink: 0;
-        align-self: stretch;
+        height: 14px;
+        align-self: center;
       }
       .hidden-tab-item {
         display: flex;
         align-items: center;
-        padding: 6px 10px;
+        height: 28px;
+        padding: 0 10px;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 12px;
@@ -612,16 +612,15 @@ export class TlTabs extends HTMLElement {
         max-width: 200px;
         flex-shrink: 0;
         gap: 6px;
-        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        border-radius: var(--radius-md);
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
         opacity: 0.6;
-        border-bottom: 1px dashed var(--color-divider);
       }
       .hidden-tab-item:hover {
         opacity: 1;
         color: var(--color-text3);
-        background: var(--color-bg2);
+        background: var(--color-item-hover);
       }
       .hidden-tab-item:hover .tab-close { opacity: 1; }
     `
