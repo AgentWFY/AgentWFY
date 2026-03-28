@@ -72,4 +72,4 @@ Shortcuts are configured via `system.shortcuts.*` config keys. Values are plain 
 | `system.shortcuts.close-current-tab` | mod+w | Close Current Tab |
 | `system.shortcuts.reload-current-tab` | mod+r | Reload Current Tab |
 | `system.shortcuts.reload-window` | mod+shift+r | Reload Window |
-| `system.shortcuts.open-agent` | mod+o | Open Agent |
+| `system.shortcuts.add-agent` | mod+o | Add Agent |

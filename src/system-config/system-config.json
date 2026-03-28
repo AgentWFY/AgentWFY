@@ -68,7 +68,7 @@
     "description": "Shortcut for Reload Window (default: mod+shift+r). Set to 'disabled' to unbind."
   },
   {
-    "name": "system.shortcuts.open-agent",
-    "description": "Shortcut for Open Agent (default: mod+o). Set to 'disabled' to unbind."
+    "name": "system.shortcuts.add-agent",
+    "description": "Shortcut for Add Agent (default: mod+o). Set to 'disabled' to unbind."
   }
 ]

@@ -336,7 +336,7 @@ export class TabViewManager {
           break;
         }
       }
-      // Note: 'open-agent' is handled at window-manager level only
+      // Note: 'add-agent' is handled at window-manager level only
     });
 
     viewWebContents.on('focus', () => {
@@ -513,6 +513,9 @@ export class TabViewManager {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) return;
     for (const state of this.tabViewsByTabId.values()) {
+      if (state.view.webContents.isLoading()) {
+        state.view.webContents.stop();
+      }
       state.view.setVisible(false);
       try {
         mainWindow.contentView.removeChildView(state.view);

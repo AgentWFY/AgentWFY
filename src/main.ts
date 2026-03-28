@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents, type MenuItemConstructorOptions } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
@@ -18,7 +18,6 @@ import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/ag
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
   showOpenAgentDialog,
-  showInstallAgentDialog,
   showInstallAgentFromFileDialog,
   isAgentDir,
 } from './agent-manager.js';
@@ -151,7 +150,7 @@ registerAgentSessionHandlers(
       providerRegistry: ctx.providerRegistry,
       getJsRuntime: () => ctx.jsRuntime,
       busPublish: (topic, data) => {
-        if (!ctx.window.isDestroyed() && windowManager.getActiveAgentRoot() === agentRootForReconnect) {
+        if (!ctx.window.isDestroyed()) {
           forwardBusPublish(ctx.window, topic, data);
         }
       },
@@ -223,13 +222,7 @@ ipcMain.handle(Channels.agentSidebar.getInstalled, () => {
 });
 
 ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentRoot: string) => {
-  // If agent isn't loaded yet, add it first
-  const installed = windowManager.getInstalledAgentsList();
-  if (!installed.some(a => a.path === agentRoot)) {
-    await windowManager.addAgent(agentRoot);
-  } else {
-    await windowManager.switchAgent(agentRoot);
-  }
+  await windowManager.switchAgent(agentRoot);
 });
 
 ipcMain.handle(Channels.agentSidebar.add, async () => {
@@ -252,6 +245,26 @@ ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentRoot: string) =
   await windowManager.removeAgent(agentRoot);
 });
 
+ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: string) => {
+  const win = windowManager.getMainBrowserWindow();
+  if (!win || win.isDestroyed()) return;
+
+  const agents = windowManager.getInstalledAgentsList();
+  const canRemove = agents.length > 1;
+
+  const template: MenuItemConstructorOptions[] = [];
+  if (canRemove) {
+    template.push({
+      label: 'Close Agent',
+      click: () => windowManager.removeAgent(agentRoot),
+    });
+  }
+
+  if (template.length === 0) return;
+  const menu = Menu.buildFromTemplate(template);
+  menu.popup({ window: win });
+});
+
 // --- Menu ---
 
 function buildAndSetMenu() {
@@ -268,15 +281,7 @@ function buildAndSetMenu() {
           },
         },
         {
-          label: 'Install Agent...',
-          click: async () => {
-            const win = windowManager.getMainBrowserWindow();
-            const picked = await showInstallAgentDialog(win);
-            if (picked) await windowManager.addAgent(picked);
-          },
-        },
-        {
-          label: 'Install Agent from .agent.awfy...',
+          label: 'Import Agent from File...',
           click: async () => {
             const win = windowManager.getMainBrowserWindow();
             const picked = await showInstallAgentFromFileDialog(win);
@@ -408,21 +413,27 @@ async function createInitialWindow() {
   if (cliAgentPath) {
     const resolved = path.resolve(cliAgentPath);
     if (isAgentDir(resolved)) {
+      // Register all persisted agents in sidebar without initializing
+      const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
+      for (const root of persisted) {
+        windowManager.addPersistedAgent(root);
+      }
+      // Ensure CLI agent is in the list
+      windowManager.addPersistedAgent(resolved);
+      // Only initialize and activate the CLI agent
       await windowManager.createMainWindow(resolved);
-      await restorePersistedAgents(resolved);
       return;
     }
     console.error(`[main] --agent-path "${cliAgentPath}" is not a valid agent directory (missing .agentwfy/)`);
   }
 
-  // 2. Try persisted agents
+  // 2. Try persisted agents (register all, only init the first one)
   const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
   if (persisted.length > 0) {
-    await windowManager.createMainWindow(persisted[0]);
-    for (const root of persisted.slice(1)) {
-      await windowManager.addAgent(root);
+    for (const root of persisted) {
+      windowManager.addPersistedAgent(root);
     }
-    await windowManager.switchAgent(persisted[0]);
+    await windowManager.createMainWindow(persisted[0]);
     return;
   }
 
@@ -434,15 +445,8 @@ async function createInitialWindow() {
     return;
   }
 
+  windowManager.addPersistedAgent(picked);
   await windowManager.createMainWindow(picked);
-}
-
-async function restorePersistedAgents(initialRoot: string): Promise<void> {
-  const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r) && r !== initialRoot);
-  for (const root of persisted) {
-    await windowManager.addAgent(root);
-  }
-  await windowManager.switchAgent(initialRoot);
 }
 
 // --- App lifecycle ---

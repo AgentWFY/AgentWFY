@@ -117,6 +117,7 @@ const Channels = {
     addFromFile: 'agent-sidebar:addFromFile',
     remove: 'agent-sidebar:remove',
     switched: 'agent-sidebar:switched',
+    showContextMenu: 'agent-sidebar:showContextMenu',
   },
 } as const;
 
@@ -492,7 +493,7 @@ if (isApp) {
       },
     },
     agentSidebar: {
-      getInstalled(): Promise<Array<{ path: string; name: string; active: boolean }>> {
+      getInstalled(): Promise<Array<{ path: string; name: string; active: boolean; initialized: boolean }>> {
         return ipcRenderer.invoke(Channels.agentSidebar.getInstalled);
       },
       switch(agentRoot: string): Promise<void> {
@@ -507,8 +508,11 @@ if (isApp) {
       remove(agentRoot: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.remove, agentRoot);
       },
-      onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean }> }) => void): () => void {
-        const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean }> }) => callback(data);
+      showContextMenu(agentRoot: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentRoot);
+      },
+      onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => void): () => void {
+        const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => callback(data);
         ipcRenderer.on(Channels.agentSidebar.switched, handler);
         return () => ipcRenderer.removeListener(Channels.agentSidebar.switched, handler);
       },

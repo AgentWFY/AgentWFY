@@ -115,5 +115,6 @@ export const Channels = {
     addFromFile: 'agent-sidebar:addFromFile',
     remove: 'agent-sidebar:remove',
     switched: 'agent-sidebar:switched',
+    showContextMenu: 'agent-sidebar:showContextMenu',
   },
 } as const;

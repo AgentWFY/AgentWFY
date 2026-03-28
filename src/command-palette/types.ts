@@ -36,13 +36,10 @@ export type CommandPaletteAction =
     settingLabel: string
   }
   | {
-    type: 'open-agent'
+    type: 'add-agent'
   }
   | {
-    type: 'install-agent'
-  }
-  | {
-    type: 'install-agent-from-file'
+    type: 'import-agent-from-file'
   }
   | {
     type: 'backup-agent-db'

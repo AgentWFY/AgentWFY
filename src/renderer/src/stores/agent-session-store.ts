@@ -61,6 +61,8 @@ class AgentSessionStore {
   private _subscriptions: Subscription[] = []
   private _snapshotUnsub: (() => void) | null = null
   private _streamingUnsub: (() => void) | null = null
+  private _stateCache = new Map<string, AgentSessionState>()
+  private _currentAgentRoot: string | null = null
 
   get state(): Readonly<AgentSessionState> {
     return this._state
@@ -114,15 +116,41 @@ class AgentSessionStore {
 
     this.loadProviders()
 
+    window.ipc?.getAgentRoot().then(root => {
+      this._currentAgentRoot = root
+    }).catch(() => {})
+
     window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
 
-  /** Reset renderer-only state and re-fetch for the newly active agent. */
-  private _onAgentSwitched = () => {
-    this._state = {
-      ...defaultState(),
-      ready: false, // Snapshot from switchAgent will set ready: true
+  /** Save current state per-agent and restore cached state for the new agent. */
+  private _onAgentSwitched = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    const newAgentRoot: string | null = detail?.agentRoot ?? null
+    const agents: Array<{ path: string }> | undefined = detail?.agents
+
+    // Save current state for the previous agent
+    if (this._currentAgentRoot) {
+      this._stateCache.set(this._currentAgentRoot, { ...this._state })
     }
+
+    // Restore cached state or use default
+    const cached = newAgentRoot ? this._stateCache.get(newAgentRoot) : null
+    if (cached) {
+      this._state = { ...cached, ready: false }
+    } else {
+      this._state = { ...defaultState(), ready: false }
+    }
+
+    // Clean up cache entries for removed agents
+    if (agents) {
+      const activePaths = new Set(agents.map(a => a.path))
+      for (const key of this._stateCache.keys()) {
+        if (!activePaths.has(key)) this._stateCache.delete(key)
+      }
+    }
+
+    this._currentAgentRoot = newAgentRoot
     this.notify()
     this.loadProviders()
   }
