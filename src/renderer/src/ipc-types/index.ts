@@ -55,6 +55,7 @@ export interface InstalledAgent {
   path: string
   name: string
   active: boolean
+  initialized: boolean
 }
 
 export interface AgentSidebarApi {
@@ -63,6 +64,7 @@ export interface AgentSidebarApi {
   add(): Promise<string | null>
   addFromFile(): Promise<string | null>
   remove(agentRoot: string): Promise<void>
+  showContextMenu(agentRoot: string): Promise<void>
   onSwitched(callback: (data: { agentRoot: string; agents: InstalledAgent[] }) => void): () => void
 }
 

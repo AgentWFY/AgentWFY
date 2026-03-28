@@ -10,7 +10,6 @@ import { storeSet } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
   showOpenAgentDialog,
-  showInstallAgentDialog,
   showInstallAgentFromFileDialog,
   initAgent,
 } from '../agent-manager.js';
@@ -298,22 +297,16 @@ export class CommandPaletteManager {
         action: { type: 'open-settings-file' },
       },
       {
-        id: 'agent:open',
+        id: 'agent:add',
         title: 'Add Agent',
         group: 'Actions',
-        action: { type: 'open-agent' },
+        action: { type: 'add-agent' },
       },
       {
-        id: 'agent:install',
-        title: 'Install Agent',
+        id: 'agent:import-from-file',
+        title: 'Import Agent from File',
         group: 'Actions',
-        action: { type: 'install-agent' },
-      },
-      {
-        id: 'agent:install-from-file',
-        title: 'Install Agent from .agent.awfy',
-        group: 'Actions',
-        action: { type: 'install-agent-from-file' },
+        action: { type: 'import-agent-from-file' },
       },
       {
         id: 'agent:backup-db',
@@ -722,21 +715,14 @@ export class CommandPaletteManager {
         // Handled entirely in the palette UI
         return;
 
-      case 'open-agent': {
+      case 'add-agent': {
         this.hide({ focusMain: true });
         const picked = await showOpenAgentDialog(this.deps.getMainWindow());
         if (picked) await this.deps.addAgent(picked);
         return;
       }
 
-      case 'install-agent': {
-        this.hide({ focusMain: true });
-        const installed = await showInstallAgentDialog(this.deps.getMainWindow());
-        if (installed) await this.deps.addAgent(installed);
-        return;
-      }
-
-      case 'install-agent-from-file': {
+      case 'import-agent-from-file': {
         this.hide({ focusMain: true });
         const installed = await showInstallAgentFromFileDialog(this.deps.getMainWindow());
         if (installed) await this.deps.addAgent(installed);

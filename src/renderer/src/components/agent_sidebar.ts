@@ -102,6 +102,15 @@ export class TlAgentSidebar extends HTMLElement {
         background: var(--color-accent);
         color: #fff;
       }
+      .agent-item-wrapper.uninitialized .agent-item {
+        background: transparent;
+        border: 1.5px dashed var(--color-text2);
+        color: var(--color-text2);
+        opacity: 0.5;
+      }
+      .agent-item-wrapper.uninitialized:hover .agent-item {
+        opacity: 1;
+      }
       .bottom-section {
         display: flex;
         flex-direction: column;
@@ -183,7 +192,7 @@ export class TlAgentSidebar extends HTMLElement {
       this.render()
       // Dispatch global event so all components refresh their agent-specific data
       window.dispatchEvent(new CustomEvent('agentwfy:agent-switched', {
-        detail: { agentRoot: data.agentRoot },
+        detail: { agentRoot: data.agentRoot, agents: data.agents },
       }))
     })
   }
@@ -194,7 +203,10 @@ export class TlAgentSidebar extends HTMLElement {
 
     for (const agent of this.agents) {
       const wrapper = document.createElement('div')
-      wrapper.className = 'agent-item-wrapper' + (agent.active ? ' active' : '')
+      let cls = 'agent-item-wrapper'
+      if (agent.active) cls += ' active'
+      if (!agent.initialized) cls += ' uninitialized'
+      wrapper.className = cls
 
       const indicator = document.createElement('div')
       indicator.className = 'agent-indicator'
@@ -207,6 +219,11 @@ export class TlAgentSidebar extends HTMLElement {
 
       item.addEventListener('click', () => {
         if (!agent.active) window.ipc?.agentSidebar.switch(agent.path)
+      })
+
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        window.ipc?.agentSidebar.showContextMenu(agent.path)
       })
 
       wrapper.appendChild(item)

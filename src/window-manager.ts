@@ -93,9 +93,12 @@ class WindowManager {
   private commandPalette: CommandPaletteManager | null = null;
   private confirmation: ConfirmationManager | null = null;
 
-  // Agent contexts
+  // Agent contexts (initialized agents only)
   private agentContexts = new Map<string, AgentContext>(); // agentRoot → AgentContext
   private activeAgentRoot: string | null = null;
+
+  // All known agent paths (includes uninitialized agents shown in sidebar)
+  private persistedAgentPaths: string[] = [];
 
   // IPC routing: webContents.id → agentRoot (for tab views / child webcontents)
   private tabSenderMap = new Map<number, string>();
@@ -104,6 +107,8 @@ class WindowManager {
   private agentHashes = new Map<string, string>(); // hash → agentRoot
 
   private forceClose = false;
+
+  private pendingInits = new Map<string, Promise<AgentContext>>();
 
   // --- Window creation (single window) ---
 
@@ -139,24 +144,12 @@ class WindowManager {
       getMainWindow: () => this.mainWindow!,
     });
 
-    const registerSender = (webContentsId: number) => {
-      // Tab view senders map to active agent at registration time
-      if (this.activeAgentRoot) {
-        this.tabSenderMap.set(webContentsId, this.activeAgentRoot);
-      }
-    };
-    const unregisterSender = (webContentsId: number) => {
-      this.tabSenderMap.delete(webContentsId);
-    };
-
     this.commandPalette = new CommandPaletteManager({
       getMainWindow: () => this.mainWindow!,
       getAgentRoot: () => this.activeAgentRoot!,
       rendererBridge: this.rendererBridge,
       getTabViewManager: () => this.getActiveAgentContext()!.tabViewManager,
       getStorePath,
-      registerSender,
-      unregisterSender,
       addAgent: (root) => this.addAgent(root),
       getPluginRegistry: () => this.getActiveAgentContext()?.pluginRegistry ?? null,
       getConfirmation: () => this.confirmation!,
@@ -166,8 +159,6 @@ class WindowManager {
 
     this.confirmation = new ConfirmationManager({
       getMainWindow: () => this.mainWindow!,
-      registerSender,
-      unregisterSender,
     });
 
     // Wire up window events
@@ -274,15 +265,16 @@ class WindowManager {
         case 'reload-window':
           window.reload();
           break;
-        case 'open-agent':
-          this.commandPalette?.runAction({ type: 'open-agent' }).catch(() => {});
+        case 'add-agent':
+          this.commandPalette?.runAction({ type: 'add-agent' }).catch(() => {});
           break;
       }
     });
 
-    // Initialize the first agent context
+    this.addPersistedAgent(initialAgentRoot);
     await this.initAgentContext(initialAgentRoot);
     this.activeAgentRoot = initialAgentRoot;
+    this.persistInstalledAgents();
 
     window.loadURL('app://index.html');
     window.show();
@@ -305,6 +297,19 @@ class WindowManager {
       return this.agentContexts.get(agentRoot)!;
     }
 
+    const pending = this.pendingInits.get(agentRoot);
+    if (pending) return pending;
+
+    const promise = this.doInitAgentContext(agentRoot);
+    this.pendingInits.set(agentRoot, promise);
+    try {
+      return await promise;
+    } finally {
+      this.pendingInits.delete(agentRoot);
+    }
+  }
+
+  private async doInitAgentContext(agentRoot: string): Promise<AgentContext> {
     const win = this.mainWindow!;
 
     await ensureAgentRuntimeBootstrap(agentRoot);
@@ -319,11 +324,13 @@ class WindowManager {
 
     const functionRegistry = new FunctionRegistry();
 
-    const pluginRegistry = loadPlugins(agentRoot, (topic, data) => {
-      if (this.mainWindow && !this.mainWindow.isDestroyed() && this.activeAgentRoot === agentRoot) {
-        forwardBusPublish(this.mainWindow, topic, data);
+    const busPublish = (topic: string, data: unknown) => {
+      if (!win.isDestroyed()) {
+        forwardBusPublish(win, topic, data);
       }
-    }, providerRegistry, functionRegistry);
+    };
+
+    const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry);
 
     const agentHash = this.getHashForAgentRoot(agentRoot);
 
@@ -360,19 +367,12 @@ class WindowManager {
       execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
     };
 
-    const gatedBusPublish = (topic: string, data: unknown) => {
-      if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
-        forwardBusPublish(win, topic, data);
-      }
-    };
-
     registerAllBuiltInFunctions(functionRegistry, {
       agentRoot,
       win,
       tabTools,
       onDbChange: (change) => {
         if (win.isDestroyed()) return;
-        // Only forward DB changes to renderer if this is the active agent
         if (this.activeAgentRoot === agentRoot) {
           win.webContents.send('db:changed', change);
         }
@@ -380,7 +380,7 @@ class WindowManager {
       getSessionManager: () => agentCtx.sessionManager,
       getTaskRunner: () => agentCtx.taskRunner,
       getCommandPalette: () => this.commandPalette!,
-      busPublish: gatedBusPublish,
+      busPublish,
     });
 
     const jsRuntime = getOrCreateRuntime(agentRoot, {
@@ -392,18 +392,14 @@ class WindowManager {
       win,
       providerRegistry,
       getJsRuntime: () => jsRuntime,
-      busPublish: gatedBusPublish,
+      busPublish,
     });
 
     const taskRunner = new TaskRunner({
       agentRoot,
       win,
       getJsRuntime: () => jsRuntime,
-      busPublish: (topic, data) => {
-        if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
-          forwardBusPublish(win, topic, data);
-        }
-      },
+      busPublish,
     });
 
     const shortcutManager = new ShortcutManager(agentRoot);
@@ -428,7 +424,7 @@ class WindowManager {
 
     this.agentContexts.set(agentRoot, agentCtx);
 
-    // Set up agent state streaming
+    // Gate streaming IPC to active agent (background agents keep processing internally)
     agentCtx.agentStateStreamingCleanup = setupAgentStateStreaming(
       sessionManager, win, () => this.activeAgentRoot === agentRoot
     );
@@ -461,6 +457,10 @@ class WindowManager {
       clearTimeout(ctx.dbChangeDebounceTimer);
       ctx.dbChangeDebounceTimer = null;
     }
+    if (ctx.triggerReloadDebounceTimer) {
+      clearTimeout(ctx.triggerReloadDebounceTimer);
+      ctx.triggerReloadDebounceTimer = null;
+    }
 
     ctx.pluginRegistry?.deactivateAll();
     ctx.tabViewManager.destroyAllTabViews();
@@ -489,29 +489,42 @@ class WindowManager {
 
   // --- Public agent management API ---
 
+  /** Register an agent path without initializing it (shown in sidebar, lazy-loaded on first switch). */
+  addPersistedAgent(agentRoot: string): void {
+    if (!this.persistedAgentPaths.includes(agentRoot)) {
+      this.persistedAgentPaths.push(agentRoot);
+    }
+  }
+
+  /** Add an agent and switch to it. Initializes lazily via switchAgent. */
   async addAgent(agentRoot: string): Promise<void> {
-    const isNew = !this.agentContexts.has(agentRoot);
-    const ctx = await this.initAgentContext(agentRoot);
-    if (!this.activeAgentRoot) {
-      this.activeAgentRoot = agentRoot;
-    }
-    if (isNew) {
-      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Start failed:', err));
-      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
-      this.persistInstalledAgents();
-    }
-    if (this.activeAgentRoot === agentRoot && !isNew) return;
+    this.addPersistedAgent(agentRoot);
+    this.persistInstalledAgents();
     await this.switchAgent(agentRoot);
   }
 
   async switchAgent(agentRoot: string): Promise<void> {
-    if (!this.agentContexts.has(agentRoot)) return;
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
     if (agentRoot === this.activeAgentRoot) return;
+    if (!this.persistedAgentPaths.includes(agentRoot) && !this.agentContexts.has(agentRoot)) return;
 
     const prevRoot = this.activeAgentRoot;
     const win = this.mainWindow;
 
+    // Lazy-init: initialize agent context on first switch
+    let ctx = this.agentContexts.get(agentRoot);
+    if (!ctx) {
+      try {
+        ctx = await this.initAgentContext(agentRoot);
+      } catch (err) {
+        console.error(`[agent] Failed to initialize agent ${agentRoot}:`, err);
+        return;
+      }
+      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Start failed:', err));
+      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+    }
+
+    // Hide previous agent's views (after successful init to avoid blank state on failure)
     if (prevRoot && prevRoot !== agentRoot) {
       const prevCtx = this.agentContexts.get(prevRoot);
       if (prevCtx) {
@@ -521,37 +534,41 @@ class WindowManager {
 
     this.activeAgentRoot = agentRoot;
 
-    const ctx = this.agentContexts.get(agentRoot)!;
-
     ctx.tabViewManager.showAllViews();
 
-    // Notify renderer first (triggers state reset in stores/components)
+    // Notify renderer (triggers state reset in stores/components)
     win.webContents.send(Channels.agentSidebar.switched, {
       agentRoot,
       agents: this.getInstalledAgentsList(),
     });
 
-    // Then push fresh snapshot (after reset, so it's applied correctly)
+    // Push fresh snapshot so renderer shows current agent state
     const snapshot = ctx.sessionManager.getSnapshot();
     win.webContents.send(Channels.agent.snapshot, snapshot);
   }
 
   async removeAgent(agentRoot: string): Promise<void> {
-    if (!this.agentContexts.has(agentRoot)) return;
-    if (this.agentContexts.size <= 1) return;
+    if (this.persistedAgentPaths.length <= 1) return;
 
     const wasActive = this.activeAgentRoot === agentRoot;
 
-    this.destroyAgentContext(agentRoot);
+    // Remove from persisted list
+    this.persistedAgentPaths = this.persistedAgentPaths.filter(p => p !== agentRoot);
+
+    // Destroy context if initialized
+    if (this.agentContexts.has(agentRoot)) {
+      this.destroyAgentContext(agentRoot);
+    }
     this.persistInstalledAgents();
 
     if (wasActive) {
-      const firstRoot = this.agentContexts.keys().next().value;
-      if (firstRoot) {
-        await this.switchAgent(firstRoot);
+      // Switch to first available agent
+      const nextRoot = this.persistedAgentPaths[0];
+      if (nextRoot) {
+        this.activeAgentRoot = null; // Clear so switchAgent doesn't skip
+        await this.switchAgent(nextRoot);
       }
     } else {
-      // Notify renderer so the sidebar updates even when the removed agent wasn't active
       const win = this.mainWindow;
       if (win && !win.isDestroyed()) {
         win.webContents.send(Channels.agentSidebar.switched, {
@@ -563,15 +580,15 @@ class WindowManager {
   }
 
   private persistInstalledAgents(): void {
-    const roots = Array.from(this.agentContexts.keys());
-    storeSet('installedAgents', roots);
+    storeSet('installedAgents', this.persistedAgentPaths);
   }
 
-  getInstalledAgentsList(): Array<{ path: string; name: string; active: boolean }> {
-    return Array.from(this.agentContexts.keys()).map(root => ({
+  getInstalledAgentsList(): Array<{ path: string; name: string; active: boolean; initialized: boolean }> {
+    return this.persistedAgentPaths.map(root => ({
       path: root,
       name: path.basename(root),
       active: root === this.activeAgentRoot,
+      initialized: this.agentContexts.has(root),
     }));
   }
 
@@ -753,7 +770,7 @@ class WindowManager {
           };
         },
         busPublish: (topic, data) => {
-          if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
+          if (!win.isDestroyed()) {
             forwardBusPublish(win, topic, data);
           }
         },
@@ -822,6 +839,7 @@ class WindowManager {
     this.commandPalette?.destroy();
     this.confirmation?.destroy();
     this.activeAgentRoot = null;
+    this.persistedAgentPaths = [];
   }
 
   getAllContexts(): AppWindowContext[] {

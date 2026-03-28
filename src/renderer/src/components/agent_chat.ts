@@ -883,16 +883,51 @@ export class TlAgentChat extends HTMLElement {
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
-  private onAgentSwitched = () => {
-    this.inputValue = ''
+  private _chatStateCache = new Map<string, { inputValue: string; userScrolledUp: boolean; openToolSet: Set<string> }>()
+  private _currentAgentRoot: string | null = null
+
+  private onAgentSwitched = (e: Event) => {
+    const detail = (e as CustomEvent).detail
+    const newAgentRoot: string | null = detail?.agentRoot ?? null
+    const agents: Array<{ path: string }> | undefined = detail?.agents
+
+    // Save current chat UI state
+    if (this._currentAgentRoot) {
+      this._chatStateCache.set(this._currentAgentRoot, {
+        inputValue: this.inputValue,
+        userScrolledUp: this.userScrolledUp,
+        openToolSet: new Set(this.openToolSet),
+      })
+    }
+
+    // Restore cached state or reset
+    const cached = newAgentRoot ? this._chatStateCache.get(newAgentRoot) : null
+    if (cached) {
+      this.inputValue = cached.inputValue
+      this.userScrolledUp = cached.userScrolledUp
+      this.openToolSet = new Set(cached.openToolSet)
+    } else {
+      this.inputValue = ''
+      this.userScrolledUp = false
+      this.openToolSet.clear()
+    }
+
+    // Clean up cache entries for removed agents
+    if (agents) {
+      const activePaths = new Set(agents.map(a => a.path))
+      for (const key of this._chatStateCache.keys()) {
+        if (!activePaths.has(key)) this._chatStateCache.delete(key)
+      }
+    }
+
     this.activePanel = null
     this.error = null
-    this.openToolSet.clear()
-    this.userScrolledUp = false
     if (this._textarea) {
-      this._textarea.value = ''
+      this._textarea.value = this.inputValue
       this._textarea.style.height = 'auto'
     }
+
+    this._currentAgentRoot = newAgentRoot
   }
 
   private init() {

@@ -10,7 +10,7 @@ export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'close-current-tab':     { label: 'Close Current Tab',  defaultKey: 'mod+w' },
   'reload-current-tab':    { label: 'Reload Current Tab', defaultKey: 'mod+r' },
   'reload-window':         { label: 'Reload Window',      defaultKey: 'mod+shift+r' },
-  'open-agent':            { label: 'Add Agent',          defaultKey: 'mod+o' },
+  'add-agent':             { label: 'Add Agent',          defaultKey: 'mod+o' },
 };
 
 export const SHORTCUT_CONFIG_PREFIX = 'system.shortcuts.';
