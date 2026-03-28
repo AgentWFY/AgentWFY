@@ -446,39 +446,39 @@ console.log(result.file) // 'report.csv'
 - Use for agent-to-task, task-to-task, and view-to-agent communication
 - Messages queue if published before anyone is waiting
 
-### Sub-Agents
+### Sessions
 
-Spawn independent agent sessions that run in parallel with their own execution context.
+Spawn sessions that run in parallel with their own execution context.
 
-#### `spawnAgent({ prompt })`
-Spawn a new agent session with an initial prompt.
-- `prompt` (string): Initial message for the sub-agent
+#### `spawnSession({ prompt })`
+Spawn a session with an initial prompt.
+- `prompt` (string): Initial message for the session
 - Returns: `{ sessionId }` — the session file path
-- The sub-agent runs independently and publishes its response to `agent:response:{sessionId}`
+- The session runs independently and publishes its response to `session:response:{sessionId}`
 
 ```js
 // Spawn and wait for result
-const { sessionId } = await spawnAgent({ prompt: 'Analyze data/sales.csv and return a JSON summary' })
-const response = await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 120000 })
+const { sessionId } = await spawnSession({ prompt: 'Analyze data/sales.csv and return a JSON summary' })
+const response = await waitFor({ topic: `session:response:${sessionId}`, timeoutMs: 120000 })
 ```
 
-#### `sendToAgent({ sessionId, message })`
-Send a follow-up message to a running sub-agent.
-- `sessionId` (string): Session file from `spawnAgent`
+#### `sendToSession({ sessionId, message })`
+Send a follow-up message to a session.
+- `sessionId` (string): Session file from `spawnSession`
 - `message` (string): Follow-up message
-- The sub-agent publishes its response to the same `agent:response:{sessionId}` topic
+- The session publishes its response to the same `session:response:{sessionId}` topic
 
 ```js
-// Multi-turn sub-agent conversation
-const { sessionId } = await spawnAgent({ prompt: 'You are a data analyst.' })
-await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 60000 })
+// Multi-turn session conversation
+const { sessionId } = await spawnSession({ prompt: 'You are a data analyst.' })
+await waitFor({ topic: `session:response:${sessionId}`, timeoutMs: 60000 })
 
-await sendToAgent({ sessionId, message: 'What are the top 5 products by revenue?' })
-const answer = await waitFor({ topic: `agent:response:${sessionId}`, timeoutMs: 60000 })
+await sendToSession({ sessionId, message: 'What are the top 5 products by revenue?' })
+const answer = await waitFor({ topic: `session:response:${sessionId}`, timeoutMs: 60000 })
 ```
 
 #### `openSessionInChat({ sessionId })`
-Open a sub-agent's session in the main chat panel for interactive use.
+Open a spawned session in the main chat panel for interactive use. Works for both running and finished sessions.
 
 ### Task Management Functions
 
@@ -552,7 +552,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db`. The database ha
 - `system.files` — File operation APIs
 - `system.tabs` — Tab management
 - `system.eventbus` — Event bus pub/sub
-- `system.agents` — Sub-agent spawning
+- `system.sessions` — Session spawning and interaction
 
 **Example — Shaping Agent Behavior:**
 
@@ -1451,7 +1451,7 @@ You: Create a SQL assistant view. It should have a chat interface where I can as
 
 Agent creates a view with:
 - A chat-like interface
-- Uses spawnAgent/sendToAgent for the backend
+- Uses spawnSession/sendToSession for the backend
 - Displays SQL queries and formatted result tables
 - Saves query history
 ```
