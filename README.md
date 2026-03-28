@@ -1632,7 +1632,7 @@ Contributions are welcome! To get started:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b my-feature`)
 3. Make your changes
-4. Run the type checker (`npm run lint`)
+4. Build (`./scripts/build`) — this includes full type checking
 5. Test your changes — see [TESTING.md](TESTING.md) for how to interact with the running app programmatically
 6. Commit your changes
 7. Push to your branch and open a Pull Request
