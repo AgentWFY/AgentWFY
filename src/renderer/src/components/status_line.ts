@@ -6,8 +6,8 @@ const STYLES = `
     width: 100%;
     height: var(--status-line-height, 24px);
     flex-shrink: 0;
-    background: var(--color-bg3);
-    border-top: 1px solid var(--color-border);
+    background: var(--color-chrome-bg);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
     padding: 0 10px;
     box-sizing: border-box;
     font-family: var(--font-family);
