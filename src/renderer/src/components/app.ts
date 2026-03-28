@@ -8,7 +8,7 @@ const TASKS_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
   <polygon points="5 3 19 12 5 21 5 3"/>
 </svg>`
 
-const AGENT_SIDEBAR_WIDTH = 48
+const AGENT_SIDEBAR_WIDTH = 78
 
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = null
@@ -88,14 +88,18 @@ export class TlApp extends HTMLElement {
     this.style.minHeight = '0'
     this.style.minWidth = '0'
 
-    const isMac = navigator.platform.includes('Mac')
-
     const style = document.createElement('style')
     style.textContent = `
       .awfy-app-root {
         display: flex;
+        flex-direction: column;
         width: 100vw;
         height: 100vh;
+      }
+      .awfy-app-body {
+        display: flex;
+        flex: 1;
+        min-height: 0;
       }
       .awfy-app-outer {
         display: flex;
@@ -128,8 +132,8 @@ export class TlApp extends HTMLElement {
         height: 36px;
         gap: 2px;
         padding: 0 4px 2px;
+        padding-left: 8px;
         -webkit-app-region: no-drag;
-        ${isMac ? 'padding-left: 30px;' : ''}
       }
       .awfy-app-sidebar-btn {
         display: flex;
@@ -222,13 +226,17 @@ export class TlApp extends HTMLElement {
     `
     this.appendChild(style)
 
-    // Root: agent-sidebar on the left, then the main app column
+    // Root: column with body + status line
     const root = document.createElement('div')
     root.className = 'awfy-app-root'
 
+    // Body: agent-sidebar on the left, then the main app column
+    const body = document.createElement('div')
+    body.className = 'awfy-app-body'
+
     // Agent sidebar (Discord-style)
     const agentSidebar = document.createElement('awfy-agent-sidebar')
-    root.appendChild(agentSidebar)
+    body.appendChild(agentSidebar)
 
     const outer = document.createElement('div')
     outer.className = 'awfy-app-outer'
@@ -319,11 +327,13 @@ export class TlApp extends HTMLElement {
 
     outer.appendChild(container)
 
-    // Status line
-    const statusLine = document.createElement('awfy-status-line')
-    outer.appendChild(statusLine)
+    body.appendChild(outer)
+    root.appendChild(body)
 
-    root.appendChild(outer)
+    // Status line (full width, below everything)
+    const statusLine = document.createElement('awfy-status-line')
+    root.appendChild(statusLine)
+
     this.appendChild(root)
 
     // Reparent tab bar from awfy-tabs into the header

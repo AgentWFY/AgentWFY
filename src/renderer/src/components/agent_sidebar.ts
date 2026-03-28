@@ -8,22 +8,20 @@ const PLUS_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 export class TlAgentSidebar extends HTMLElement {
   private agents: InstalledAgent[] = []
   private listEl!: HTMLDivElement
-  private bottomEl!: HTMLDivElement
   private unlistenSwitched: (() => void) | null = null
 
   connectedCallback() {
     const shadow = this.attachShadow({ mode: 'open' })
-    const isMac = navigator.platform.includes('Mac')
 
     const style = document.createElement('style')
     style.textContent = `
       :host {
         display: flex;
         flex-direction: column;
-        width: 48px;
-        min-width: 48px;
+        width: 78px;
+        min-width: 78px;
         flex-shrink: 0;
-        background: var(--color-bg3);
+        background: var(--color-chrome-bg);
         box-sizing: border-box;
         user-select: none;
         -webkit-app-region: drag;
@@ -33,10 +31,10 @@ export class TlAgentSidebar extends HTMLElement {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 2px;
+        gap: 6px;
         flex: 1;
         width: 100%;
-        padding-top: ${isMac ? '44px' : '36px'};
+        padding-top: 44px;
         padding-bottom: 4px;
         overflow-y: auto;
         overflow-x: hidden;
@@ -74,8 +72,8 @@ export class TlAgentSidebar extends HTMLElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 34px;
-        height: 34px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         background: var(--color-agent-item-bg);
         color: var(--color-text3);
@@ -84,21 +82,17 @@ export class TlAgentSidebar extends HTMLElement {
         font-weight: 600;
         letter-spacing: 0.3px;
         cursor: pointer;
-        transition: border-radius 0.15s cubic-bezier(0.2, 0, 0, 1),
-                    background 0.12s ease,
-                    color 0.12s ease;
+        transition: background 0.12s ease, color 0.12s ease;
         border: none;
         padding: 0;
         -webkit-app-region: no-drag;
         outline: none;
       }
       .agent-item:hover {
-        border-radius: 10px;
         background: var(--color-accent);
         color: #fff;
       }
       .agent-item-wrapper.active .agent-item {
-        border-radius: 10px;
         background: var(--color-accent);
         color: #fff;
       }
@@ -110,13 +104,6 @@ export class TlAgentSidebar extends HTMLElement {
       }
       .agent-item-wrapper.uninitialized:hover .agent-item {
         opacity: 1;
-      }
-      .bottom-section {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        padding-bottom: 8px;
       }
       .separator {
         width: 24px;
@@ -138,22 +125,19 @@ export class TlAgentSidebar extends HTMLElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 34px;
-        height: 34px;
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
         background: var(--color-agent-item-bg);
         color: var(--color-text2);
         cursor: pointer;
-        transition: border-radius 0.15s cubic-bezier(0.2, 0, 0, 1),
-                    background 0.12s ease,
-                    color 0.12s ease;
+        transition: background 0.12s ease, color 0.12s ease;
         border: none;
         padding: 0;
         -webkit-app-region: no-drag;
         outline: none;
       }
       .add-btn:hover {
-        border-radius: 10px;
         background: var(--color-accent);
         color: #fff;
       }
@@ -163,10 +147,6 @@ export class TlAgentSidebar extends HTMLElement {
     this.listEl = document.createElement('div')
     this.listEl.className = 'agent-list'
     shadow.appendChild(this.listEl)
-
-    this.bottomEl = document.createElement('div')
-    this.bottomEl.className = 'bottom-section'
-    shadow.appendChild(this.bottomEl)
 
     this.loadAgents()
     this.subscribeToSwitches()
@@ -199,7 +179,6 @@ export class TlAgentSidebar extends HTMLElement {
 
   private render() {
     this.listEl.innerHTML = ''
-    this.bottomEl.innerHTML = ''
 
     for (const agent of this.agents) {
       const wrapper = document.createElement('div')
@@ -232,7 +211,7 @@ export class TlAgentSidebar extends HTMLElement {
 
     const sep = document.createElement('div')
     sep.className = 'separator'
-    this.bottomEl.appendChild(sep)
+    this.listEl.appendChild(sep)
 
     const addWrapper = document.createElement('div')
     addWrapper.className = 'add-btn-wrapper'
@@ -246,7 +225,7 @@ export class TlAgentSidebar extends HTMLElement {
     })
 
     addWrapper.appendChild(addBtn)
-    this.bottomEl.appendChild(addWrapper)
+    this.listEl.appendChild(addWrapper)
   }
 
   private getInitials(name: string): string {
