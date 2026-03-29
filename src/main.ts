@@ -107,7 +107,11 @@ const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 registerStoreHandlers();
 registerDialogSubscribers();
 
+// Apply theme before window creation so titleBarOverlay picks up the right colors
+windowManager.applyTheme();
+
 onAnyChange((key, newValue) => {
+  if (key === 'system.theme') windowManager.applyTheme();
   windowManager.broadcastSettingChanged(key, newValue);
 });
 

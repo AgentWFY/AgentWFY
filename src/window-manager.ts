@@ -536,6 +536,7 @@ class WindowManager {
     }
 
     this.activeAgentRoot = agentRoot;
+    this.applyTheme();
 
     ctx.tabViewManager.showAllViews();
 
@@ -724,6 +725,7 @@ class WindowManager {
     if (change.table === 'config') {
       rescheduleBackupForAgent(agentRoot);
       agentCtx.shortcutManager.reload(agentRoot);
+      if (this.activeAgentRoot === agentRoot) this.applyTheme();
     }
 
     if (change.table === 'triggers' && agentCtx.triggerEngine) {
@@ -875,6 +877,15 @@ class WindowManager {
     const cpWindow = this.commandPalette?.getWindow();
     if (cpWindow && !cpWindow.isDestroyed()) {
       cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
+    }
+  }
+
+  applyTheme(): void {
+    const agentRoot = this.activeAgentRoot;
+    const value = agentRoot ? getConfigValue(agentRoot, 'system.theme', 'system') : storeGet('system.theme');
+    const source = (value === 'light' || value === 'dark') ? value : 'system';
+    if (nativeTheme.themeSource !== source) {
+      nativeTheme.themeSource = source;
     }
   }
 }
