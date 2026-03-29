@@ -467,7 +467,7 @@ export class SettingsScreen implements PaletteScreen {
     try {
       for (const row of dirtyRows) {
         if (row.target === 'default') {
-          await this.bridge.clearAgentOverride(row.key)
+          await this.bridge.clearToDefault(row.key)
           row.value = ''
           row.originalValue = ''
           row.originalTarget = 'default'

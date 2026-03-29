@@ -1,5 +1,9 @@
 [
   {
+    "name": "system.theme",
+    "description": "Color theme: system, light, or dark (default: system)"
+  },
+  {
     "name": "system.defaultView",
     "description": "Name of the view to open on startup (default: home)"
   },
