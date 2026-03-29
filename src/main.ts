@@ -264,6 +264,10 @@ ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentRoot: string) =
   await windowManager.removeAgent(agentRoot);
 });
 
+ipcMain.handle(Channels.agentSidebar.reorder, async (_event, agentPaths: string[]) => {
+  windowManager.reorderAgents(agentPaths);
+});
+
 ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: string) => {
   const win = windowManager.getMainBrowserWindow();
   if (!win || win.isDestroyed()) return;
