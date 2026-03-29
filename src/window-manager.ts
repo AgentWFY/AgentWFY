@@ -541,10 +541,7 @@ class WindowManager {
     ctx.tabViewManager.showAllViews();
 
     // Notify renderer (triggers state reset in stores/components)
-    win.webContents.send(Channels.agentSidebar.switched, {
-      agentRoot,
-      agents: this.getInstalledAgentsList(),
-    });
+    this.broadcastSidebarState();
 
     // Push fresh snapshot so renderer shows current agent state
     const snapshot = ctx.sessionManager.getSnapshot();
@@ -573,13 +570,25 @@ class WindowManager {
         await this.switchAgent(nextRoot);
       }
     } else {
-      const win = this.mainWindow;
-      if (win && !win.isDestroyed()) {
-        win.webContents.send(Channels.agentSidebar.switched, {
-          agentRoot: this.activeAgentRoot,
-          agents: this.getInstalledAgentsList(),
-        });
-      }
+      this.broadcastSidebarState();
+    }
+  }
+
+  reorderAgents(newOrder: string[]): void {
+    const currentSet = new Set(this.persistedAgentPaths);
+    if (newOrder.length !== currentSet.size || !newOrder.every(p => currentSet.has(p))) return;
+    this.persistedAgentPaths = [...newOrder];
+    this.persistInstalledAgents();
+    this.broadcastSidebarState();
+  }
+
+  private broadcastSidebarState(): void {
+    const win = this.mainWindow;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(Channels.agentSidebar.switched, {
+        agentRoot: this.activeAgentRoot,
+        agents: this.getInstalledAgentsList(),
+      });
     }
   }
 

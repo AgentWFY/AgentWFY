@@ -9,6 +9,8 @@ export class TlAgentSidebar extends HTMLElement {
   private agents: InstalledAgent[] = []
   private listEl!: HTMLDivElement
   private unlistenSwitched: (() => void) | null = null
+  private dragSourceIndex: number = -1
+  private dropTargetIndex: number = -1
 
   connectedCallback() {
     const shadow = this.attachShadow({ mode: 'open' })
@@ -141,6 +143,31 @@ export class TlAgentSidebar extends HTMLElement {
         background: var(--color-accent);
         color: #fff;
       }
+      .agent-item-wrapper.drag-over-above::before {
+        content: '';
+        position: absolute;
+        top: -3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 28px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--color-accent);
+      }
+      .agent-item-wrapper.drag-over-below::after {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 28px;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--color-accent);
+      }
+      .agent-item-wrapper.dragging {
+        opacity: 0.3;
+      }
     `
     shadow.appendChild(style)
 
@@ -180,12 +207,14 @@ export class TlAgentSidebar extends HTMLElement {
   private render() {
     this.listEl.innerHTML = ''
 
-    for (const agent of this.agents) {
+    for (let i = 0; i < this.agents.length; i++) {
+      const agent = this.agents[i]
       const wrapper = document.createElement('div')
       let cls = 'agent-item-wrapper'
       if (agent.active) cls += ' active'
       if (!agent.initialized) cls += ' uninitialized'
       wrapper.className = cls
+      wrapper.draggable = true
 
       const indicator = document.createElement('div')
       indicator.className = 'agent-indicator'
@@ -203,6 +232,47 @@ export class TlAgentSidebar extends HTMLElement {
       item.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         window.ipc?.agentSidebar.showContextMenu(agent.path)
+      })
+
+      wrapper.addEventListener('dragstart', (e) => {
+        this.dragSourceIndex = i
+        wrapper.classList.add('dragging')
+        e.dataTransfer!.effectAllowed = 'move'
+      })
+
+      wrapper.addEventListener('dragend', () => {
+        wrapper.classList.remove('dragging')
+        this.clearDropIndicators()
+        if (this.dropTargetIndex !== -1 && this.dropTargetIndex !== this.dragSourceIndex) {
+          const newOrder = [...this.agents]
+          const [moved] = newOrder.splice(this.dragSourceIndex, 1)
+          const insertAt = this.dropTargetIndex > this.dragSourceIndex
+            ? this.dropTargetIndex - 1
+            : this.dropTargetIndex
+          newOrder.splice(insertAt, 0, moved)
+          window.ipc?.agentSidebar.reorder(newOrder.map(a => a.path))
+        }
+        this.dragSourceIndex = -1
+        this.dropTargetIndex = -1
+      })
+
+      wrapper.addEventListener('dragover', (e) => {
+        e.preventDefault()
+        e.dataTransfer!.dropEffect = 'move'
+        const rect = wrapper.getBoundingClientRect()
+        const midY = rect.top + rect.height / 2
+        this.clearDropIndicators()
+        if (e.clientY < midY) {
+          wrapper.classList.add('drag-over-above')
+          this.dropTargetIndex = i
+        } else {
+          wrapper.classList.add('drag-over-below')
+          this.dropTargetIndex = i + 1
+        }
+      })
+
+      wrapper.addEventListener('dragleave', () => {
+        wrapper.classList.remove('drag-over-above', 'drag-over-below')
       })
 
       wrapper.appendChild(item)
@@ -226,6 +296,12 @@ export class TlAgentSidebar extends HTMLElement {
 
     addWrapper.appendChild(addBtn)
     this.listEl.appendChild(addWrapper)
+  }
+
+  private clearDropIndicators() {
+    this.listEl.querySelectorAll('.drag-over-above, .drag-over-below').forEach(el => {
+      el.classList.remove('drag-over-above', 'drag-over-below')
+    })
   }
 
   private getInitials(name: string): string {
