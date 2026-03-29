@@ -3,7 +3,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Channels } from './channels.js';
 
-const storePath = path.join(app.getPath('userData'), 'config.json');
+// Lazy-initialized: storePath depends on app.name which is set after ESM imports resolve.
+let storePath = '';
+let cache: Record<string, unknown> = {};
+let storeReady = false;
+
+function ensureInit(): void {
+  if (storeReady) return;
+  storeReady = true;
+  storePath = path.join(app.getPath('userData'), 'config.json');
+  cache = readStoreFromDisk();
+}
 
 function readStoreFromDisk(): Record<string, unknown> {
   try {
@@ -17,13 +27,13 @@ function writeStoreToDisk(data: Record<string, unknown>): void {
   fs.writeFileSync(storePath, JSON.stringify(data, null, 2));
 }
 
-let cache: Record<string, unknown> = readStoreFromDisk();
-
 export function storeGet(key: string): unknown {
+  ensureInit();
   return cache[key];
 }
 
 export function storeSet(key: string, value: unknown): void {
+  ensureInit();
   const oldValue = cache[key];
   cache[key] = value;
   writeStoreToDisk(cache);
@@ -33,6 +43,7 @@ export function storeSet(key: string, value: unknown): void {
 }
 
 export function storeRemove(key: string): void {
+  ensureInit();
   const oldValue = cache[key];
   delete cache[key];
   writeStoreToDisk(cache);
@@ -42,6 +53,7 @@ export function storeRemove(key: string): void {
 }
 
 export function getStorePath(): string {
+  ensureInit();
   return storePath;
 }
 
@@ -79,6 +91,7 @@ function handleExternalChange(): void {
 }
 
 export function startFileWatcher(): void {
+  ensureInit();
   if (watcher) return;
 
   try {

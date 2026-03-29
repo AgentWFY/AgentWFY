@@ -130,13 +130,42 @@ window.ipc.tasks.listRunning()
 
 ## Multiple Instances
 
-Each instance needs a unique CDP port. Useful for parallel worktrees:
+When testing a feature branch in a worktree, you can run a second app instance alongside the main one. `scripts/start` automatically detects worktrees and isolates the instance — just use a different CDP port:
 
 ```bash
+# From your worktree directory:
+./scripts/build
 ./scripts/start --remote-debugging-port=9224 &
-CDP_PORT=9224 ./scripts/cdp wait
-CDP_PORT=9224 ./scripts/cdp screenshot /tmp/app.png
+./scripts/cdp wait   # waits on default port (9223), use CDP_PORT=9224 for the worktree instance
 ```
+
+**How it works:** In a git worktree, `scripts/start` auto-sets `AGENTWFY_APP_ID=AgentWFY-{worktree-name}`, which gives the instance its own `userData` directory (e.g. `~/Library/Application Support/AgentWFY-flickering-gliding-stardust/`). The main repo is unaffected. You can override this with `AGENTWFY_APP_ID=custom-name ./scripts/start ...` if needed.
+
+Interact with the worktree instance by setting `CDP_PORT`:
+
+```bash
+CDP_PORT=9224 ./scripts/cdp screenshot /tmp/app.png
+CDP_PORT=9224 ./scripts/cdp eval "document.title"
+CDP_PORT=9224 ./scripts/cdp stop
+```
+
+**What is isolated vs shared:**
+
+| Resource | Isolated? | Notes |
+|----------|-----------|-------|
+| Global config (`config.json`) | Yes | Worktree instance has its own — agent list starts empty |
+| Chromium state (GPU cache, cookies) | Yes | Separate `userData` directory |
+| HTTP API port | Yes | Falls back to OS-assigned port if 9877 is taken |
+| Agent data (`.agentwfy/`) | Yes | As long as instances use different agent directories |
+| macOS menu bar label | Yes | Shows worktree name — easy to tell instances apart |
+
+**Cleanup** — remove the worktree's userData when done:
+
+```bash
+rm -rf ~/Library/Application\ Support/AgentWFY-*/   # all worktree instances
+```
+
+This is mostly Chromium cache (~100-200 MB). Agent data lives in the agent directory and is unaffected.
 
 ## macOS Screen Control (`scripts/macos-control`)
 
