@@ -15,7 +15,7 @@ interface ScopeParams {
 export class ScopeScreen implements PaletteScreen {
   readonly id = 'scope'
   readonly breadcrumb: string
-  readonly placeholder = 'Select scope...'
+  readonly placeholder = 'Select scope\u2026'
   readonly emptyText = 'No options'
   readonly hints = [
     { key: 'Enter', label: 'select' },

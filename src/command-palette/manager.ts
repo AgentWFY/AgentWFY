@@ -6,7 +6,7 @@ import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plugins/installer.js';
-import { storeSet } from '../ipc/store.js';
+import { storeGet, storeSet } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
   showOpenAgentDialog,
@@ -66,6 +66,27 @@ export class CommandPaletteManager {
     return { x, y, width, height };
   }
 
+  resizeTo(size: { width?: number; height?: number }): void {
+    if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) return;
+
+    // width=0 or height=0 means reset to default palette bounds
+    if (!size.width || !size.height) {
+      this.syncBounds();
+      return;
+    }
+
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    const mainBounds = mainWindow.getBounds();
+    const width = Math.min(size.width, mainBounds.width - 40);
+    const height = Math.min(size.height, mainBounds.height - 80);
+    const x = mainBounds.x + Math.floor((mainBounds.width - width) / 2);
+    const y = mainBounds.y + Math.max(40, Math.floor((mainBounds.height - height) * 0.12));
+
+    this.commandPaletteWindow.setBounds({ x, y, width, height });
+  }
+
   syncBounds(): void {
     if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) {
       return;
@@ -121,7 +142,7 @@ export class CommandPaletteManager {
       acceptFirstMouse: true,
       alwaysOnTop: true,
       roundedCorners: true,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
+      backgroundColor: nativeTheme.shouldUseDarkColors ? '#2d2d2d' : '#f0f0f0',
       webPreferences: {
         preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -361,12 +382,29 @@ export class CommandPaletteManager {
       if (row.name.startsWith('system.')) group = 'System';
       else if (row.name.startsWith('plugin.')) group = 'Plugins';
       else group = 'Settings';
+
+      const agentValue = row.value;
+      const globalValue = storeGet(row.name);
+      let source: string;
+      let effectiveValue: string;
+      if (agentValue !== null && agentValue !== undefined) {
+        source = 'agent';
+        effectiveValue = agentValue;
+      } else if (globalValue !== undefined) {
+        source = 'global';
+        effectiveValue = String(globalValue);
+      } else {
+        source = 'default';
+        effectiveValue = '';
+      }
+
       return {
         id: `setting:${row.name}`,
         title: row.name,
         subtitle: row.description,
         group,
-        settingValue: row.value ?? '',
+        settingValue: effectiveValue,
+        settingSource: source,
         action: {
           type: 'edit-setting' as const,
           settingKey: row.name,

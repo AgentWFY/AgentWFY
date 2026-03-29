@@ -50,4 +50,8 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).buildSessionItems();
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RESIZE, async (event, size: { width?: number; height?: number }) => {
+    getCommandPalette(event).resizeTo(size);
+  });
+
 }

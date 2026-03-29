@@ -29,6 +29,7 @@ const COMMAND_PALETTE_CHANNEL = {
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
+  RESIZE: 'app:command-palette:resize',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -76,6 +77,9 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   listSessions(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS);
+  },
+  resize(size: { width?: number; height?: number }): Promise<void> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.RESIZE, size);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);

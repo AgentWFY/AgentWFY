@@ -1,6 +1,7 @@
 import type { PaletteScreen, ScreenResult } from '../screen.js'
 import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
+import { createActionButtons } from '../helpers.js'
 
 export interface TaskDetailParams {
   taskId: number
@@ -11,7 +12,7 @@ export interface TaskDetailParams {
 export class TaskDetailScreen implements PaletteScreen {
   readonly id = 'task-detail'
   readonly breadcrumb: string
-  readonly placeholder = 'Type input and press Enter to run...'
+  readonly placeholder = 'Type input for the task\u2026'
   readonly emptyText = 'No matches'
   readonly hints = [
     { key: 'Enter', label: 'run' },
@@ -40,6 +41,8 @@ export class TaskDetailScreen implements PaletteScreen {
       descEl.textContent = this.params.taskDescription
       container.appendChild(descEl)
     }
+
+    container.appendChild(createActionButtons('Run'))
   }
 
   async onEnter(ctx: { selectedItem: CommandPaletteItem | null; searchValue: string; selectedIndex: number }): Promise<ScreenResult> {
