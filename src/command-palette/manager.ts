@@ -6,7 +6,7 @@ import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plugins/installer.js';
-import { storeGet, storeSet } from '../ipc/store.js';
+import { storeGet, storeSet, storeRemove } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
 import {
   showOpenAgentDialog,
@@ -430,6 +430,11 @@ export class CommandPaletteManager {
     } else {
       removeAgentConfig(this.deps.getAgentRoot(), name);
     }
+  }
+
+  clearToDefault(name: string): void {
+    this.clearAgentOverride(name);
+    storeRemove(name);
   }
 
   async buildTaskItems(): Promise<CommandPaletteItem[]> {
