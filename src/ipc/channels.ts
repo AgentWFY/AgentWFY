@@ -116,5 +116,6 @@ export const Channels = {
     remove: 'agent-sidebar:remove',
     switched: 'agent-sidebar:switched',
     showContextMenu: 'agent-sidebar:showContextMenu',
+    reorder: 'agent-sidebar:reorder',
   },
 } as const;

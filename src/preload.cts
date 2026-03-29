@@ -118,6 +118,7 @@ const Channels = {
     remove: 'agent-sidebar:remove',
     switched: 'agent-sidebar:switched',
     showContextMenu: 'agent-sidebar:showContextMenu',
+    reorder: 'agent-sidebar:reorder',
   },
 } as const;
 
@@ -510,6 +511,9 @@ if (isApp) {
       },
       showContextMenu(agentRoot: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentRoot);
+      },
+      reorder(agentPaths: string[]): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.reorder, agentPaths);
       },
       onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => void): () => void {
         const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => callback(data);

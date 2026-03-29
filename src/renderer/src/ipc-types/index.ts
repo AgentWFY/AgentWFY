@@ -65,6 +65,7 @@ export interface AgentSidebarApi {
   addFromFile(): Promise<string | null>
   remove(agentRoot: string): Promise<void>
   showContextMenu(agentRoot: string): Promise<void>
+  reorder(agentPaths: string[]): Promise<void>
   onSwitched(callback: (data: { agentRoot: string; agents: InstalledAgent[] }) => void): () => void
 }
 
