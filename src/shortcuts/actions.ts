@@ -11,6 +11,7 @@ export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'reload-current-tab':    { label: 'Reload Current Tab', defaultKey: 'mod+r' },
   'reload-window':         { label: 'Reload Window',      defaultKey: 'mod+shift+r' },
   'add-agent':             { label: 'Add Agent',          defaultKey: 'mod+o' },
+  'toggle-zen-mode':       { label: 'Zen Mode',           defaultKey: 'mod+.' },
 };
 
 export const SHORTCUT_CONFIG_PREFIX = 'system.shortcuts.';
