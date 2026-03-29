@@ -235,7 +235,7 @@ export class TlApp extends HTMLElement {
         box-sizing: border-box;
         background: var(--color-bg3);
         border-bottom: 1px solid var(--color-border);
-        padding: 0 10px 0 6px;
+        padding: 1px 10px 0 6px;
         gap: 4px;
         -webkit-app-region: drag;
       }
