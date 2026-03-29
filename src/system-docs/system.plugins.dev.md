@@ -120,77 +120,115 @@ The session object returned by `createSession` / `restoreSession` must implement
 
 ```js
 class MySession {
-  send(event) {
-    // event.type is one of:
-    //   'user_message' — { text, images? } — user sent a message
-    //   'exec_js_result' — { id, content, isError } — tool execution completed
-    //   'abort' — user pressed stop
+  // Stream a user message. Returns an async iterable of events.
+  // executeTool is a callback — call it and await the result when the model requests a tool.
+  async *stream(input, executeTool) {
+    // input = { text: string, files?: FileContent[] }
+    // executeTool = async ({ id, description, code }) => { content: [...], isError: boolean }
+
+    // Add user message to internal state, then stream response:
+    yield { type: 'text_delta', delta: '...' }
+    yield { type: 'thinking_delta', delta: '...' }
+
+    // When a tool call is needed:
+    yield { type: 'exec_js', id: '...', description: '...', code: '...' }
+    const result = await executeTool({ id, description, code })
+    // Process result, continue streaming...
+
+    yield { type: 'state_changed' }
+    // Iterator completion = turn done. No 'done' event needed.
   }
 
-  on(listener) {
-    // Register a listener for output events.
-    // The listener receives objects with these types:
-    //   { type: 'start' }
-    //   { type: 'text_delta', delta: string }
-    //   { type: 'thinking_delta', delta: string }
-    //   { type: 'exec_js', id: string, description: string, code: string }
-    //   { type: 'done' }
-    //   { type: 'error', error: string }
-    //   { type: 'status_line', text: string }
-    //   { type: 'state_changed' }
+  // Retry after a failed stream. Discard partial state from failed attempt, re-call API.
+  async *retry(executeTool) {
+    this._discardPartialState()
+    yield* this._doStream(executeTool)
   }
 
-  off(listener) {
-    // Remove a previously registered listener.
-  }
+  // Cancel the current stream. Iterator should complete (not throw).
+  abort() { this.abortController?.abort() }
 
-  getDisplayMessages() {
-    // Return DisplayMessage[] — the conversation as shown in the UI.
-    // The provider controls what is displayed: it can filter thinking
-    // blocks, hide intermediate tool calls, etc. based on config.
-    // Called after each completed turn and when restoring a session.
-  }
+  // Return display messages (always sync).
+  getDisplayMessages() { return this.displayMessages.slice() }
 
-  // Optional: return a short string for the session list (max ~100 chars).
-  // If not implemented, falls back to first user message text.
-  // Providers can override to summarize or generate titles.
-  // getTitle() { return 'My custom title' }
+  // Optional: return a session title.
+  // getTitle() { return this._title }
 
-  getState() {
-    // Return an opaque JSON-serializable blob with all provider state.
-    // Must include both internal API messages and full (unfiltered)
-    // display messages. Passed back to restoreSession() on restore.
-    return { messages: this.internalMessages, displayMessages: this.displayMessages }
-  }
+  // Return serializable state for persistence.
+  getState() { return { messages: this.apiMessages, displayMessages: this.displayMessages } }
+
+  // Clean up resources (timers, connections).
+  dispose() { this.abort() }
 }
 ```
+
+### Stream events
+
+The async generator yields these event types:
+
+- `{ type: 'text_delta', delta }` — incremental text content
+- `{ type: 'thinking_delta', delta }` — incremental thinking/reasoning content
+- `{ type: 'exec_js', id, description, code }` — tool call (for UI display, before calling executeTool)
+- `{ type: 'status_line', text }` — model info display (model name, token counts, etc.)
+- `{ type: 'state_changed' }` — internal state committed (triggers session persistence)
+
+No `start`, `done`, or `error` events. Iterator completion = done. Errors are thrown.
+
+### Error handling
+
+Throw errors with a `category` property to enable smart retry behavior:
+
+```js
+const error = new Error('API rate limited')
+error.category = 'rate_limit'      // agent retries with backoff
+error.retryAfterMs = 30000         // optional: hint for retry delay
+throw error
+```
+
+Categories:
+- `network` — connection failed, DNS error, timeout (agent retries)
+- `rate_limit` — 429 Too Many Requests (agent retries, respects retryAfterMs)
+- `server` — 500+ server error (agent retries)
+- `auth` — 401/403 authentication error (agent stops, shows error)
+- `invalid_request` — 400 bad request (agent stops, shows error)
+- `content_policy` — content blocked (agent stops, shows error)
+- `context_overflow` — context too long (agent stops, shows error)
+
+Retryable errors (`network`, `rate_limit`, `server`) are automatically retried by the agent core — up to 10 attempts with exponential backoff (5s to 5min). The UI shows a retry countdown banner. Fatal errors stop immediately.
+
+Providers should keep their own fast retry for transient HTTP errors (2-3 attempts, short backoff). Throw only after internal retry is exhausted.
 
 ### Event flow
 
 ```
-User types message
-  → core sends { type: 'user_message', text, images? }
-  → provider streams response via listener:
-      { type: 'start' }
-      { type: 'text_delta', delta } (repeated)
-      { type: 'exec_js', id, description, code }
-  → core executes the tool, then sends result:
-      { type: 'exec_js_result', id, content, isError }
-  → provider continues streaming (or emits done):
-      { type: 'done' }
+agent calls session.stream({ text: '...' }, executeTool)
+  provider yields 'text_delta'        (repeated)
+  provider yields 'exec_js'           (0 or more tool calls)
+  provider awaits executeTool(call)    (agent executes, returns result)
+  provider yields 'text_delta'        (continued response)
+  provider yields 'state_changed'
+  iterator completes                  (done)
 ```
 
-The provider decides when to call the LLM again after receiving tool results — the core does not drive the loop.
+The provider drives the tool loop internally — after receiving tool results via the callback, it makes the next API call within the same generator.
+
+### Abort
+
+When `abort()` is called, the provider should cancel in-flight requests and return from the generator. Do not throw — iterator completion after abort is not a failure.
+
+### Idle timeout
+
+The agent core imposes a 90-second idle timeout. If no event is yielded for 90 seconds, the agent treats it as a dead connection and retries. To prevent false timeouts during long model thinking, yield `status_line` events periodically.
 
 ### Incremental session persistence
 
-Emit `{ type: 'state_changed' }` after committing a meaningful state change — user message added, assistant response committed, or tool result received. The core persists the session to disk on each `state_changed` event, so progress is saved incrementally. Without this, session data is only saved when the full turn completes (`done`), and closing the app mid-session loses all progress.
+Yield `{ type: 'state_changed' }` after committing a meaningful state change — user message added, assistant response committed, or tool result received. The core persists the session to disk on each `state_changed` event. Do not yield `state_changed` while a tool call is pending.
 
 ### Status line
 
-Emit `{ type: 'status_line', text }` at any point to update the model info display in the chat UI. Typical content: model name, thinking/reasoning level, context token count. Emit on `start` and after each stream completion when usage data is available.
+Yield `{ type: 'status_line', text }` to update the model info display. Also serves as a keepalive to prevent false idle timeouts. Typical content: model name, thinking/reasoning level, context token count.
 
-Also implement `getStatusLine()` on the factory to provide a status line before any session exists (shown on empty sessions in the chat UI).
+Also implement `getStatusLine()` on the factory to provide a status line before any session exists.
 
 ### DisplayMessage format
 
@@ -223,62 +261,76 @@ Set `settingsView` to the name of a view in the views table. The chat UI shows a
 ### Example: Custom Provider
 
 ```js
-const { parseSSE } = require('./sse')  // can require built-in modules
-
 class MySession {
-  constructor(config, existingMessages) {
-    this.systemPrompt = config.systemPrompt
-    this.messages = existingMessages || []
-    this.listeners = new Set()
+  constructor(config, providerConfig, restored) {
+    this.config = config
+    this.providerConfig = providerConfig
+    this.messages = restored?.messages || []
+    this.displayMessages = restored?.displayMessages || []
+    this.controller = null
   }
 
-  send(event) {
-    if (event.type === 'user_message') {
-      this.messages.push({ role: 'user', blocks: [{ type: 'text', text: event.text }], timestamp: Date.now() })
-      this.emit({ type: 'state_changed' })
-      this.stream(event.text)
-    } else if (event.type === 'exec_js_result') {
-      // append result, continue streaming
-      this.emit({ type: 'state_changed' })
-    } else if (event.type === 'abort') {
-      this.abortController?.abort()
+  async *stream(input, executeTool) {
+    this.messages.push({ role: 'user', content: input.text })
+    this.displayMessages.push({ role: 'user', blocks: [{ type: 'text', text: input.text }], timestamp: Date.now() })
+    yield { type: 'state_changed' }
+    yield* this._run(executeTool)
+  }
+
+  async *retry(executeTool) {
+    // Remove partial assistant state from failed attempt
+    while (this.messages.at(-1)?.role === 'assistant') this.messages.pop()
+    yield* this._run(executeTool)
+  }
+
+  async *_run(executeTool) {
+    this.controller = new AbortController()
+    try {
+      const res = await fetch(this.providerConfig.apiUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.providerConfig.apiKey}` },
+        body: JSON.stringify({ model: this.providerConfig.modelId, messages: this.messages, stream: true }),
+        signal: this.controller.signal,
+      })
+      if (!res.ok) {
+        const err = new Error(`API error (${res.status})`)
+        err.category = res.status === 429 ? 'rate_limit' : res.status >= 500 ? 'server' : 'invalid_request'
+        throw err
+      }
+      // ... parse SSE, yield text_delta events ...
+      // When tool calls are needed:
+      //   yield { type: 'exec_js', id, description, code }
+      //   const result = await executeTool({ id, description, code })
+      //   // process result, yield* this._run(executeTool) to continue
+      yield { type: 'state_changed' }
+    } catch (err) {
+      if (this.controller.signal.aborted) return  // abort = clean exit
+      if (err.category) throw err  // classified error — propagate
+      const e = new Error(err.message); e.category = 'network'; throw e
     }
   }
 
-  on(listener) { this.listeners.add(listener) }
-  off(listener) { this.listeners.delete(listener) }
-  getDisplayMessages() { return this.messages }
-  getState() { return { messages: this.internalMessages, displayMessages: this.messages } }
-
-  emit(event) {
-    for (const l of this.listeners) l(event)
-  }
-
-  async stream(userText) {
-    this.emit({ type: 'start' })
-    // ... fetch from your API, parse SSE, emit deltas ...
-    // commit assistant message to this.messages here
-    this.emit({ type: 'state_changed' })
-    this.emit({ type: 'done' })
-  }
+  abort() { this.controller?.abort() }
+  dispose() { this.abort() }
+  getDisplayMessages() { return this.displayMessages.slice() }
+  getState() { return { messages: this.messages, displayMessages: this.displayMessages } }
 }
 
 module.exports = {
   activate(api) {
-    function getProviderConfig() {
-      return {
-        apiKey: api.getConfig('plugin.my-llm.apiKey', ''),
-        modelId: api.getConfig('plugin.my-llm.modelId', 'my-model-v2'),
-      }
-    }
+    const getConfig = () => ({
+      apiUrl: api.getConfig('plugin.my-llm.apiUrl', ''),
+      apiKey: api.getConfig('plugin.my-llm.apiKey', ''),
+      modelId: api.getConfig('plugin.my-llm.modelId', 'my-model-v2'),
+    })
 
     api.registerProvider({
       id: 'my-llm',
       name: 'My LLM',
       settingsView: 'plugin.my-llm.settings',
-      getStatusLine() { return getProviderConfig().modelId },
-      createSession(config) { return new MySession(config, getProviderConfig()) },
-      restoreSession(config, state) { return new MySession(config, getProviderConfig(), state) },
+      getStatusLine() { return getConfig().modelId },
+      createSession(config) { return new MySession(config, getConfig()) },
+      restoreSession(config, state) { return new MySession(config, getConfig(), state) },
     })
   }
 }

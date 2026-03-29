@@ -1,5 +1,7 @@
 import type { DisplayMessage, ProviderInfo } from '../../../agent/provider_types.js'
 export type { DisplayMessage, ProviderInfo }
+export type { RetryState } from '../../../agent/types.js'
+import type { RetryState } from '../../../agent/types.js'
 
 export interface OpenSession {
   file: string
@@ -19,4 +21,6 @@ export interface AgentSnapshot {
   providerId: string
   activeSessionFile: string | null
   streamingFiles: string[]
+  retryState: RetryState | null
+  stalledSince: number | null
 }

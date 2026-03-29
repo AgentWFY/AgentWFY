@@ -104,6 +104,7 @@ export const Channels = {
     spawnSession: 'agent:spawnSession',
     sendToSession: 'agent:sendToSession',
     disposeSession: 'agent:disposeSession',
+    retryNow: 'agent:retryNow',
   },
   agents: {
     requestInstall: 'agents:requestInstall',

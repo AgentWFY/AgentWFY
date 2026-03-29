@@ -26,34 +26,68 @@ export interface ProviderSessionConfig {
   tools: ReadonlyArray<{ name: string; description: string; parameters: Record<string, unknown> }>
 }
 
-// ── Events core sends to provider ──
+// ── User input ──
 
-export type ProviderInput =
-  | { type: 'user_message'; text: string; files?: FileContent[] }
-  | { type: 'exec_js_result'; id: string; content: (TextContent | FileContent)[]; isError: boolean }
-  | { type: 'abort' }
+export type UserInput = { text: string; files?: FileContent[] }
 
-// ── Events provider sends to core ──
+// ── Tool execution ──
 
-export type ProviderOutput =
-  | { type: 'start' }
+export interface ToolCall {
+  id: string
+  description: string
+  code: string
+  timeoutMs?: number
+}
+
+export interface ToolResult {
+  content: (TextContent | FileContent)[]
+  isError: boolean
+}
+
+export type ToolExecutor = (call: ToolCall) => Promise<ToolResult>
+
+// ── Stream events (provider → core, yielded from async iterator) ──
+
+export type StreamEvent =
   | { type: 'text_delta'; delta: string }
   | { type: 'thinking_delta'; delta: string }
   | { type: 'exec_js'; id: string; description: string; code: string }
-  | { type: 'done' }
-  | { type: 'error'; error: string }
   | { type: 'status_line'; text: string }
   | { type: 'state_changed' }
+
+// ── Error classification ──
+
+export type ErrorCategory =
+  | 'network'
+  | 'rate_limit'
+  | 'server'
+  | 'auth'
+  | 'invalid_request'
+  | 'content_policy'
+  | 'context_overflow'
+
+export class ProviderError extends Error {
+  category: ErrorCategory
+  retryAfterMs?: number
+
+  constructor(message: string, category: ErrorCategory, retryAfterMs?: number) {
+    super(message)
+    this.name = 'ProviderError'
+    this.category = category
+    this.retryAfterMs = retryAfterMs
+  }
+}
 
 // ── Provider session interface ──
 
 export interface ProviderSession {
-  send(event: ProviderInput): void
-  on(listener: (event: ProviderOutput) => void): void
-  off(listener: (event: ProviderOutput) => void): void
-  getDisplayMessages(): DisplayMessage[] | Promise<DisplayMessage[]>
-  getTitle?(): string
+  stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent>
+  retry(executeTool: ToolExecutor): AsyncIterable<StreamEvent>
+  abort(): void
+  getDisplayMessages(): DisplayMessage[]
   getState(): unknown
+  getTitle?(): string
+  dispose(): void
 }
 
 // ── Provider factory (what plugins register) ──

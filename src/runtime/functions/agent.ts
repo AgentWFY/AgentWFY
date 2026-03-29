@@ -42,7 +42,7 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
       win.webContents.executeJavaScript(
         `window.dispatchEvent(new CustomEvent('agentwfy:open-session-in-chat', { detail: ${detail} }));`,
         true,
-      ).catch(() => {})
+      ).catch((err) => { console.warn('[agent-functions] executeJavaScript failed:', err) })
     }
   })
 }

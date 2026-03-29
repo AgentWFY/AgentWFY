@@ -3,6 +3,7 @@ import type {
   OpenSession,
   ProviderInfo,
   AgentSnapshot,
+  RetryState,
 } from './types.js'
 
 export interface AgentSessionState {
@@ -17,6 +18,8 @@ export interface AgentSessionState {
   providerId: string
   activeSessionFile: string | null
   streamingFiles: string[]
+  retryState: RetryState | null
+  stalledSince: number | null
 
   // Renderer-only
   openSessions: OpenSession[]
@@ -46,6 +49,8 @@ function defaultState(): AgentSessionState {
     providerId: '',
     activeSessionFile: null,
     streamingFiles: [],
+    retryState: null,
+    stalledSince: null,
     openSessions: [],
     providerList: [],
     defaultProviderId: '',
@@ -102,23 +107,29 @@ class AgentSessionStore {
     })
 
     this._streamingUnsub = ipc.agent.onStreaming((raw: unknown) => {
-      const d = raw as { message: DisplayMessage | null; statusLine?: string; isStreaming?: boolean }
+      const d = raw as { message: DisplayMessage | null; statusLine?: string; isStreaming?: boolean; retryState?: RetryState | null; stalledSince?: number | null }
       const patch: Partial<AgentSessionState> = { streamingMessage: d.message }
       if (d.statusLine) patch.statusLine = d.statusLine
       if (d.isStreaming !== undefined) patch.isStreaming = d.isStreaming
+      if (d.retryState !== undefined) patch.retryState = d.retryState
+      if (d.stalledSince !== undefined) patch.stalledSince = d.stalledSince
       this.setState(patch)
     })
 
     // Initial snapshot
     ipc.agent.getSnapshot().then((raw: unknown) => {
       if (raw) this.applySnapshot(raw as AgentSnapshot)
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      console.warn('[AgentSessionStore] initial snapshot failed:', err)
+    })
 
     this.loadProviders()
 
     window.ipc?.getAgentRoot().then(root => {
       this._currentAgentRoot = root
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      console.warn('[AgentSessionStore] getAgentRoot failed:', err)
+    })
 
     window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
@@ -206,6 +217,10 @@ class AgentSessionStore {
   async reconnect(): Promise<void> {
     this.setState({ statusLine: '' })
     await window.ipc?.agent.reconnect()
+  }
+
+  async retryNow(): Promise<void> {
+    await window.ipc?.agent.retryNow()
   }
 
   async setNotifyOnFinish(value: boolean): Promise<void> {
@@ -333,6 +348,8 @@ class AgentSessionStore {
       providerId: s.providerId,
       activeSessionFile: s.activeSessionFile ?? null,
       streamingFiles: s.streamingFiles ?? [],
+      retryState: s.retryState ?? null,
+      stalledSince: s.stalledSince ?? null,
       ready: true,
     }
 

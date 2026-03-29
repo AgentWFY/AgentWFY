@@ -39,6 +39,14 @@ export interface AgentTool<TDetails = unknown> {
 
 import type { DisplayMessage } from './provider_types.js'
 
+export interface RetryState {
+  attempt: number
+  maxAttempts: number
+  nextRetryAt: number
+  lastError: string
+  category: string
+}
+
 export interface AgentState {
   systemPrompt: string
   tools: AgentTool[]
@@ -47,6 +55,8 @@ export interface AgentState {
   streamingMessage: DisplayMessage | null
   error?: string
   statusLine?: string
+  retryState?: RetryState | null
+  stalledSince?: number | null
 }
 
 // ── Agent Events ──
@@ -58,3 +68,6 @@ export type AgentEvent =
   | { type: 'stream_update' }
   | { type: 'status_line'; text: string }
   | { type: 'state_changed' }
+  | { type: 'retry_scheduled'; attempt: number; maxAttempts: number; delayMs: number; error: string; category: string }
+  | { type: 'retry_attempt'; attempt: number; maxAttempts: number }
+  | { type: 'stalled'; elapsedMs: number }

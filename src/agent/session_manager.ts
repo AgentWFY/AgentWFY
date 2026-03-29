@@ -2,6 +2,7 @@ import { Notification, nativeImage, type BrowserWindow } from 'electron'
 import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
+import type { RetryState } from './types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
@@ -190,6 +191,11 @@ export class AgentSessionManager {
     await agent.abort()
   }
 
+  skipRetryDelay(): void {
+    const agent = this.activeAgent
+    if (agent) agent.agent.skipRetryDelay()
+  }
+
   async loadSessionFromDisk(file: string): Promise<void> {
     const sessionsDir = this.sessionsDir
     const raw = await readSessionFile(sessionsDir, file)
@@ -204,8 +210,8 @@ export class AgentSessionManager {
         { sessionId: stored.sessionId, systemPrompt: '', tools: [] },
         stored.providerState,
       )
-      const result = session.getDisplayMessages()
-      messages = result instanceof Promise ? await result : result
+      messages = session.getDisplayMessages()
+      session.dispose()
     }
 
     this._activeSessionFile = file
@@ -401,6 +407,8 @@ export class AgentSessionManager {
     providerId: string
     activeSessionFile: string | null
     streamingFiles: string[]
+    retryState: RetryState | null
+    stalledSince: number | null
   } {
     const agent = this.activeAgent
     const streamingFiles: string[] = []
@@ -420,6 +428,8 @@ export class AgentSessionManager {
       providerId: this._activeProviderId,
       activeSessionFile: this._activeSessionFile,
       streamingFiles,
+      retryState: agent?.state.retryState ?? null,
+      stalledSince: agent?.state.stalledSince ?? null,
     }
   }
 
@@ -432,7 +442,9 @@ export class AgentSessionManager {
       })
       const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ value: string }>
       if (rows[0]?.value) return rows[0].value
-    } catch {}
+    } catch (err) {
+      console.warn('[AgentSessionManager] failed to read default provider ID:', err)
+    }
     return 'openai-compatible'
   }
 
@@ -449,7 +461,9 @@ export class AgentSessionManager {
         if (storedSession.providerId && providerRegistry.get(storedSession.providerId)) {
           providerId = storedSession.providerId
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[AgentSessionManager] failed to read stored session for provider:', err)
+      }
     }
 
     const factory = providerRegistry.get(providerId)

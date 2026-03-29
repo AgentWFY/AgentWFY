@@ -1,0 +1,11 @@
+{
+  "name": "agentwfy-plugin-test-provider",
+  "version": "1.0.0",
+  "description": "Test provider for verifying session resilience — simulates network errors, timeouts, rate limits, and more",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "license": "MIT",
+  "author": "endenwer"
+}
