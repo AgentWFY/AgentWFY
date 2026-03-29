@@ -32,7 +32,6 @@ const docsDir = join(src, 'system-docs')
 const docFiles = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
 const docs = docFiles.map(f => ({ name: f.replace(/\.md$/, ''), content: readFileSync(join(docsDir, f), 'utf-8') }))
 writeFileSync(join(dist, 'system-docs.json'), JSON.stringify(docs))
-console.log(`[system-docs] Built ${docs.length} docs`)
 
 // Views
 const viewsDir = join(src, 'system-views')
@@ -45,13 +44,11 @@ const views = viewFiles.map(f => {
   return { name, title, content }
 })
 writeFileSync(join(dist, 'system-views.json'), JSON.stringify(views))
-console.log(`[system-views] Built ${views.length} views`)
 
 // Config
 const configData = readFileSync(join(src, 'system-config', 'system-config.json'), 'utf-8')
 const configItems = JSON.parse(configData)
 writeFileSync(join(dist, 'system-config.json'), JSON.stringify(configItems))
-console.log(`[system-config] Built ${configItems.length} config entries`)
 
 // ── TypeScript compilation ──
 
