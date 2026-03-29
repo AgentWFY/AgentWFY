@@ -19,7 +19,7 @@ View names must contain only **lowercase letters, digits, dots, hyphens, and und
 
 DB views follow a naming convention with prefixes:
 
-- **`system.*`** — Built-in views shipped with the app (e.g. `system.settings`, `system.plugins`, `system.docs`). Read-only — cannot be modified via SQL.
+- **`system.*`** — Built-in views shipped with the app (e.g. `system.plugins`, `system.docs`). Read-only — cannot be modified via SQL.
 - **`plugin.*`** — Views installed from plugin packages (e.g. `plugin.ffmpeg.config`). Read-only — managed by the plugin installer.
 - **No prefix** — User-created views. Fully editable.
 
