@@ -61,7 +61,7 @@ if (!app.isPackaged) {
   };
 }
 
-const APP_NAME = 'AgentWFY';
+const APP_NAME = process.env.AGENTWFY_APP_ID || 'AgentWFY';
 const APP_ICON_PATH = path.join(import.meta.dirname, '..', 'icons', 'icon.png');
 
 app.name = APP_NAME;
