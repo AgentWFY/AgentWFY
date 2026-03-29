@@ -323,6 +323,10 @@ export class TabViewManager {
           this.deps.focusMainRendererWindow();
           this.deps.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
           break;
+        case 'toggle-zen-mode':
+          this.deps.focusMainRendererWindow();
+          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
+          break;
         case 'close-current-tab':
           this.deps.focusMainRendererWindow();
           this.closeCurrentTab();

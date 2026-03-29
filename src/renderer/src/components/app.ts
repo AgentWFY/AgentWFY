@@ -19,8 +19,10 @@ export class TlApp extends HTMLElement {
   private taskPanelEl!: HTMLElement
   private tabsEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
+  private rootEl!: HTMLDivElement
   private sidebarWidth = 380
   private isResizing = false
+  private isZenMode = false
 
   private openPanel(panel: string) {
     if (this.activeSidebarPanel !== panel) {
@@ -57,6 +59,14 @@ export class TlApp extends HTMLElement {
 
   private onOpenSidebarPanel = (e: Event) => {
     this.openPanel((e as CustomEvent<{ panel: string }>).detail.panel)
+  }
+
+  private onToggleZenMode = () => {
+    if (!this.activeSidebarPanel) {
+      this.activeSidebarPanel = 'agent-chat'
+    }
+    this.isZenMode = !this.isZenMode
+    this.updateSidebar()
   }
 
   private onResizeMouseDown = (e: MouseEvent) => {
@@ -265,11 +275,24 @@ export class TlApp extends HTMLElement {
         min-height: 0;
         min-width: 0;
       }
+      /* ── Zen mode ── */
+      .awfy-app-root.zen-mode > .awfy-app-body > awfy-agent-sidebar,
+      .awfy-app-root.zen-mode > awfy-status-line,
+      .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-resize-handle,
+      .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-main-column,
+      .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
+        display: none !important;
+      }
+      .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar {
+        flex: 1;
+        border-right: none;
+      }
     `
     this.appendChild(style)
 
     // Root: column with body + status line
-    const root = document.createElement('div')
+    this.rootEl = document.createElement('div')
+    const root = this.rootEl
     root.className = 'awfy-app-root'
 
     // Body: agent-sidebar + sidebar + main column
@@ -377,6 +400,7 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     this.subscribeToAgentDbChanges()
   }
 
@@ -385,6 +409,7 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    window.removeEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
@@ -394,9 +419,20 @@ export class TlApp extends HTMLElement {
   private updateSidebar() {
     const isOpen = !!this.activeSidebarPanel
 
-    // Sidebar open/close
+    // Exit zen mode when sidebar is closed
+    if (!isOpen && this.isZenMode) {
+      this.isZenMode = false
+    }
+
+    // Zen mode + sidebar open/close
+    this.rootEl.classList.toggle('zen-mode', this.isZenMode)
     this.sidebarEl.classList.toggle('closed', !isOpen)
-    this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen)
+    if (this.isZenMode) {
+      this.sidebarEl.style.width = ''
+    } else {
+      this.sidebarEl.style.width = `${this.sidebarWidth}px`
+    }
+    this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen || this.isZenMode)
     this.inlineToggleBtnEl.classList.toggle('visible', !isOpen)
 
     // Panel visibility

@@ -270,6 +270,13 @@ export class CommandPaletteManager {
         action: { type: 'toggle-task-panel' },
       },
       {
+        id: 'action:toggle-zen-mode',
+        title: 'Zen Mode',
+        shortcut: ds('toggle-zen-mode'),
+        group: 'Actions',
+        action: { type: 'toggle-zen-mode' },
+      },
+      {
         id: 'action:close-current-tab',
         title: 'Close Current Tab',
         shortcut: ds('close-current-tab'),
@@ -666,6 +673,10 @@ export class CommandPaletteManager {
 
       case 'toggle-task-panel':
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+        break;
+
+      case 'toggle-zen-mode':
+        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
         break;
 
       case 'close-current-tab':

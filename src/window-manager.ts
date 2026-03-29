@@ -256,6 +256,9 @@ class WindowManager {
         case 'toggle-task-panel':
           this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
           break;
+        case 'toggle-zen-mode':
+          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
+          break;
         case 'close-current-tab':
           activeCtx.tabViewManager.closeCurrentTab();
           break;
