@@ -784,6 +784,52 @@ const STYLES = `
   .session-item:hover .session-item-close {
     display: flex;
   }
+  /* ── Zen mode: horizontal session tabs ── */
+  .awfy-app-root.zen-mode .open-sessions-box {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+  .awfy-app-root.zen-mode .session-list-header {
+    display: none;
+  }
+  .awfy-app-root.zen-mode .session-list,
+  .awfy-app-root.zen-mode .session-list.collapsed {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+    padding: 4px 4px 4px 72px; /* macOS traffic light buttons */
+  }
+  .awfy-app-root.zen-mode .session-item {
+    padding: 0 6px 0 10px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    flex-shrink: 0;
+    max-width: 200px;
+    transition: color var(--transition-fast), background var(--transition-fast);
+  }
+  .awfy-app-root.zen-mode .session-item.active {
+    background: var(--color-bg1);
+    box-shadow: 0 0.5px 2px rgba(0,0,0,0.08);
+  }
+  .awfy-app-root.zen-mode .session-item-dot {
+    display: none;
+  }
+  .awfy-app-root.zen-mode .session-item.streaming .session-item-dot {
+    display: block;
+  }
+  .awfy-app-root.zen-mode .session-item.active .session-item-label {
+    font-weight: 500;
+  }
+  .awfy-app-root.zen-mode .session-item-close {
+    display: flex;
+    visibility: hidden;
+  }
+  .awfy-app-root.zen-mode .session-item:hover .session-item-close {
+    visibility: visible;
+  }
 `
 
 export class TlAgentChat extends HTMLElement {
@@ -820,6 +866,7 @@ export class TlAgentChat extends HTMLElement {
   private _openBox: HTMLElement | null = null
   private _sessionListEl: HTMLElement | null = null
   private _sessionCountEl: HTMLElement | null = null
+  private _isZenMode = false
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -853,10 +900,16 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:load-session', this.onLoadSession)
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    window.removeEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
     this._renderMode = null
+  }
+
+  private onZenModeToggle = () => {
+    this._isZenMode = !this._isZenMode
+    this.updateOpenDots()
   }
 
   private onPluginChanged = () => {
@@ -936,6 +989,7 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:load-session', this.onLoadSession)
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    window.addEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'
@@ -1702,7 +1756,7 @@ export class TlAgentChat extends HTMLElement {
     const open = s.openSessions
 
     const hasMessages = s.messages.length > 0 || s.isStreaming
-    if (open.length <= 1 && hasMessages) {
+    if (!this._isZenMode && open.length <= 1 && hasMessages) {
       this._openBox.style.display = 'none'
       return
     }
