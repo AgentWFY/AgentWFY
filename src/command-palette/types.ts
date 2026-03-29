@@ -95,6 +95,7 @@ export const COMMAND_PALETTE_CHANNEL = {
   LIST_BACKUPS: 'app:command-palette:list-backups',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
+  CLEAR_TO_DEFAULT: 'app:command-palette:clear-to-default',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
   RESIZE: 'app:command-palette:resize',
