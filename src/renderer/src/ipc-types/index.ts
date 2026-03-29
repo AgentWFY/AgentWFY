@@ -49,6 +49,7 @@ export interface AgentApi {
   onSnapshot(callback: (snapshot: unknown) => void): () => void
   onStreaming(callback: (data: unknown) => void): () => void
   disposeSession(file: string): Promise<void>
+  retryNow(): Promise<void>
 }
 
 export interface InstalledAgent {

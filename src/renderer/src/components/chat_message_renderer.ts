@@ -30,23 +30,29 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         .join('')
       blocks.push({ type: 'user', text, thinking: '', error: '', tools: [], ref: msg })
     } else if (msg.role === 'assistant') {
-      const textParts: string[] = []
-      const thinkingParts: string[] = []
-      const tools: ToolPair[] = []
-      let errorText = ''
+      // Split into segments at tool call boundaries to preserve interleaved order.
+      // Each segment before a tool group gets its own render block, so text after
+      // tool calls renders below them rather than being merged above.
+      const segments: Array<{ textParts: string[]; thinkingParts: string[]; tools: ToolPair[]; errorText: string }> = []
+      let current = { textParts: [] as string[], thinkingParts: [] as string[], tools: [] as ToolPair[], errorText: '' }
 
       for (const block of msg.blocks) {
         if (block.type === 'text') {
-          textParts.push(block.text)
+          // If we had tools in the current segment, start a new segment for text after tools
+          if (current.tools.length > 0) {
+            segments.push(current)
+            current = { textParts: [], thinkingParts: [], tools: [], errorText: '' }
+          }
+          current.textParts.push(block.text)
         } else if (block.type === 'thinking') {
-          thinkingParts.push(block.text)
+          current.thinkingParts.push(block.text)
         } else if (block.type === 'error') {
-          errorText = block.text
+          current.errorText = block.text
         } else if (block.type === 'exec_js') {
           const resultBlock = msg.blocks.find(
             b => b.type === 'exec_js_result' && (b as Block & { type: 'exec_js_result' }).id === block.id
           )
-          tools.push({
+          current.tools.push({
             id: block.id,
             description: block.description || 'Executing code',
             code: block.code,
@@ -55,8 +61,20 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
           })
         }
       }
+      segments.push(current)
 
-      blocks.push({ type: 'assistant', text: textParts.join(''), thinking: thinkingParts.join(''), error: errorText, tools, ref: msg })
+      // Emit one render block per segment, sharing the same message ref
+      for (const seg of segments) {
+        if (!seg.textParts.join('').trim() && !seg.thinkingParts.join('').trim() && !seg.errorText && seg.tools.length === 0) continue
+        blocks.push({
+          type: 'assistant',
+          text: seg.textParts.join(''),
+          thinking: seg.thinkingParts.join(''),
+          error: seg.errorText,
+          tools: seg.tools,
+          ref: msg,
+        })
+      }
     }
   }
 

@@ -7,13 +7,15 @@ import type {
   ProviderFactory,
   ProviderSession,
   ProviderSessionConfig,
-  ProviderInput,
-  ProviderOutput,
   DisplayMessage,
   Block,
   TextContent,
   FileContent,
+  UserInput,
+  ToolExecutor,
+  StreamEvent,
 } from '../agent/provider_types.js'
+import { ProviderError } from '../agent/provider_types.js'
 import { parseSSE } from '../agent/streaming/sse.js'
 
 // ── Context compaction ──
@@ -84,7 +86,6 @@ function serializeMessages(messages: InternalMessage[]): string {
 }
 
 // ── Context overflow detection ──
-// OpenAI/OpenRouter return: { "error": { "code": "context_length_exceeded", ... } }
 
 function isContextOverflow(responseText: string): boolean {
   try {
@@ -163,12 +164,11 @@ interface ProviderConfigSnapshot {
 class OpenAICompatibleSession implements ProviderSession {
   private messages: InternalMessage[] = []
   private displayMessages: DisplayMessage[] = []
-  private listeners = new Set<(event: ProviderOutput) => void>()
   private abortController: AbortController | null = null
   private config: ProviderSessionConfig
   private providerConfig: ProviderConfigSnapshot
   private lastInputTokens = 0
-  private pendingToolIds = new Set<string>()
+  private _partialDisplayMessage: DisplayMessage | null = null
 
   constructor(
     config: ProviderSessionConfig,
@@ -189,28 +189,18 @@ class OpenAICompatibleSession implements ProviderSession {
     }
   }
 
-  send(event: ProviderInput): void {
-    switch (event.type) {
-      case 'user_message':
-        this.handleUserMessage(event.text, event.files)
-        break
-      case 'exec_js_result':
-        this.handleExecJsResult(event.id, event.content, event.isError)
-        break
-      case 'abort':
-        this.abortController?.abort()
-        break
-    }
+  async *stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
+    this.addUserMessage(input.text, input.files)
+    yield* this.doStream(executeTool)
   }
 
-  on(listener: (event: ProviderOutput) => void): void {
-    this.listeners.add(listener)
-    // Emit current status line immediately so the UI has it before any streaming
-    listener({ type: 'status_line', text: this.buildStatusLine() })
+  async *retry(executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
+    this.discardPartialResponse()
+    yield* this.doStream(executeTool)
   }
 
-  off(listener: (event: ProviderOutput) => void): void {
-    this.listeners.delete(listener)
+  abort(): void {
+    this.abortController?.abort()
   }
 
   getDisplayMessages(): DisplayMessage[] {
@@ -221,6 +211,12 @@ class OpenAICompatibleSession implements ProviderSession {
     // Exclude the system prompt (first message) — it's re-added on restore
     return { messages: this.messages.slice(1), displayMessages: this.displayMessages.slice() }
   }
+
+  dispose(): void {
+    this.abort()
+  }
+
+  // ── Private helpers ──
 
   private buildStatusLine(): string {
     const parts: string[] = [this.providerConfig.modelId]
@@ -233,21 +229,342 @@ class OpenAICompatibleSession implements ProviderSession {
     return parts.join(' · ')
   }
 
-  private emitStatusLine(): void {
-    this.emit({ type: 'status_line', text: this.buildStatusLine() })
-  }
-
-  private emitError(error: string, partialBlocks?: Block[]): void {
-    const blocks: Block[] = partialBlocks ? [...partialBlocks] : []
-    blocks.push({ type: 'error', text: error })
-    this.displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
-    this.emit({ type: 'error', error })
-  }
-
-  private emit(event: ProviderOutput): void {
-    for (const listener of this.listeners) {
-      listener(event)
+  private addUserMessage(text: string, files?: FileContent[]): void {
+    this.repairOrphanedToolCalls()
+    // Build user content
+    const content: unknown[] = [{ type: 'text', text }]
+    if (files) {
+      for (const f of files) {
+        if (f.mimeType.startsWith('image/')) {
+          content.push({
+            type: 'image_url',
+            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
+          })
+        }
+      }
     }
+    this.messages.push({ role: 'user', content })
+
+    // Add to display messages
+    const blocks: Block[] = [{ type: 'text', text }]
+    if (files) {
+      for (const f of files) {
+        blocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
+      }
+    }
+    this.displayMessages.push({ role: 'user', blocks, timestamp: Date.now() })
+  }
+
+  private discardPartialResponse(): void {
+    // Remove partial display message from failed attempt
+    if (this._partialDisplayMessage) {
+      const idx = this.displayMessages.indexOf(this._partialDisplayMessage)
+      if (idx !== -1) this.displayMessages.splice(idx, 1)
+      this._partialDisplayMessage = null
+    }
+    // Remove trailing assistant/tool messages that weren't committed
+    while (this.messages.length > 1) {
+      const last = this.messages[this.messages.length - 1]
+      if (last.role === 'assistant' || last.role === 'tool') {
+        this.messages.pop()
+      } else {
+        break
+      }
+    }
+  }
+
+  private addToolResult(id: string, content: (TextContent | FileContent)[], isError: boolean): void {
+    const textParts = content
+      .filter((c): c is TextContent => c.type === 'text')
+      .map(c => c.text)
+    this.messages.push({
+      role: 'tool',
+      tool_call_id: id,
+      content: textParts.join('\n'),
+    })
+
+    // Forward files as a follow-up user message (OpenAI tool role only supports text)
+    const files = content.filter((c): c is FileContent => c.type === 'file')
+    if (files.length > 0) {
+      const fileBlocks: unknown[] = []
+      for (const f of files) {
+        if (f.mimeType.startsWith('image/')) {
+          fileBlocks.push({
+            type: 'image_url',
+            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
+          })
+        } else {
+          fileBlocks.push({
+            type: 'text',
+            text: `[Attached file (${f.mimeType}) — not supported by this provider]`,
+          })
+        }
+      }
+      this.messages.push({ role: 'user', content: fileBlocks })
+    }
+
+    // Add exec_js_result block to last assistant display message
+    const lastAssistant = this.displayMessages.length > 0
+      ? this.displayMessages[this.displayMessages.length - 1]
+      : null
+    if (lastAssistant && lastAssistant.role === 'assistant') {
+      lastAssistant.blocks.push({ type: 'exec_js_result', id, content, isError })
+    }
+  }
+
+  private async *doStream(executeTool: ToolExecutor): AsyncGenerator<StreamEvent> {
+    this.abortController = new AbortController()
+    const signal = this.abortController.signal
+
+    const apiKey = this.providerConfig.apiKey ?? ''
+    const baseUrl = this.providerConfig.baseUrl.replace(/\/v1\/?$/, '')
+    const modelId = this.providerConfig.modelId
+    const url = `${baseUrl}/v1/chat/completions`
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    }
+
+    const body: Record<string, unknown> = {
+      model: modelId,
+      messages: this.messages,
+      tools: this.config.tools.map(t => ({ type: 'function', function: t })),
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+
+    if (this.providerConfig.reasoning) {
+      body.reasoning = { effort: this.providerConfig.reasoning }
+    }
+
+    yield { type: 'status_line', text: this.buildStatusLine() }
+
+    const bodyJson = JSON.stringify(body)
+    let response: Response | undefined
+    let lastError: string | undefined
+    let lastStatus: number | undefined
+
+    // Provider-level retry for transient HTTP errors
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        try {
+          await retrySleep(getRetryDelay(attempt - 1, response?.headers), signal)
+        } catch {
+          return // aborted during retry sleep
+        }
+      }
+
+      try {
+        response = await fetch(url, { method: 'POST', headers, body: bodyJson, signal })
+      } catch (err) {
+        if (signal.aborted) return
+        lastError = err instanceof Error ? err.message : String(err)
+        continue
+      }
+
+      if (response.ok) {
+        lastError = undefined
+        break
+      }
+
+      lastStatus = response.status
+      if (!isRetryableStatus(response.status)) {
+        const text = await response.text().catch(() => '')
+
+        // Context overflow — try compaction
+        if (isContextOverflow(text)) {
+          if (await this.compactMessages()) {
+            yield { type: 'state_changed' }
+            yield* this.doStream(executeTool)
+            return
+          }
+          throw new ProviderError(
+            `Context overflow: ${text || response.statusText}`,
+            'context_overflow',
+          )
+        }
+
+        // Auth errors
+        if (response.status === 401 || response.status === 403) {
+          throw new ProviderError(
+            `Authentication failed (${response.status}): ${text || response.statusText}`,
+            'auth',
+          )
+        }
+
+        // Other non-retryable
+        throw new ProviderError(
+          `OpenAI API error (${response.status}): ${text || response.statusText}`,
+          'invalid_request',
+        )
+      }
+
+      lastError = `OpenAI API error (${response.status}): ${await response.text().catch(() => response!.statusText)}`
+    }
+
+    // Provider retry exhausted
+    if (lastError || !response?.ok) {
+      const category = lastStatus === 429 ? 'rate_limit' as const
+        : lastStatus && lastStatus >= 500 ? 'server' as const
+        : 'network' as const
+      throw new ProviderError(lastError ?? 'Request failed', category)
+    }
+
+    // Parse SSE stream
+    let assistantText = ''
+    let thinkingText = ''
+    const toolCalls = new Map<number, ToolCallEntry>()
+    const pendingTools: PendingToolCall[] = []
+    let inputTokens = 0
+
+    try {
+      for await (const sseEvent of parseSSE(response)) {
+        if (sseEvent.data === '[DONE]') break
+
+        let chunk: Record<string, unknown>
+        try {
+          chunk = JSON.parse(sseEvent.data)
+        } catch {
+          continue
+        }
+
+        // Usage
+        if (chunk.usage) {
+          const u = chunk.usage as Record<string, unknown>
+          inputTokens = (u.prompt_tokens as number) ?? 0
+        }
+
+        const choices = chunk.choices as Array<{ delta: Record<string, unknown>; finish_reason?: string }> | undefined
+        const choice = choices?.[0]
+        if (!choice) continue
+
+        const delta = choice.delta
+
+        // Text content
+        if (delta.content && typeof delta.content === 'string') {
+          assistantText += delta.content
+          yield { type: 'text_delta', delta: delta.content }
+        }
+
+        // Reasoning content
+        if (delta.reasoning_content && typeof delta.reasoning_content === 'string') {
+          thinkingText += delta.reasoning_content
+          yield { type: 'thinking_delta', delta: delta.reasoning_content }
+        }
+
+        // Tool calls
+        const tcDeltas = delta.tool_calls as Array<{
+          index: number
+          id?: string
+          function?: { name?: string; arguments?: string }
+        }> | undefined
+        if (tcDeltas) {
+          for (const tc of tcDeltas) {
+            let entry = toolCalls.get(tc.index)
+            if (!entry) {
+              entry = { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' }
+              toolCalls.set(tc.index, entry)
+            } else {
+              if (tc.id) entry.id = tc.id
+              if (tc.function?.name) entry.name += tc.function.name
+            }
+            if (tc.function?.arguments) {
+              entry.arguments += tc.function.arguments
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (signal.aborted) return
+      // SSE parse error or idle timeout — classify and throw
+      const message = err instanceof Error ? err.message : String(err)
+      throw new ProviderError(message, 'network')
+    }
+
+    // Finalize tool calls
+    for (const entry of toolCalls.values()) {
+      let args: Record<string, unknown> = {}
+      try {
+        args = JSON.parse(entry.arguments)
+      } catch {
+        // empty
+      }
+
+      pendingTools.push({
+        id: entry.id,
+        name: entry.name,
+        description: typeof args.description === 'string' ? args.description : 'Executing code',
+        code: typeof args.code === 'string' ? args.code : '',
+      })
+    }
+
+    // Build and push assistant internal message
+    const assistantMsg: InternalMessage = { role: 'assistant' }
+    if (assistantText) {
+      assistantMsg.content = assistantText
+    }
+    if (toolCalls.size > 0) {
+      assistantMsg.tool_calls = Array.from(toolCalls.values()).map(tc => ({
+        id: tc.id,
+        type: 'function',
+        function: {
+          name: tc.name,
+          arguments: tc.arguments,
+        },
+      }))
+    }
+    this.messages.push(assistantMsg)
+
+    // Build assistant display message
+    const blocks: Block[] = []
+    if (thinkingText) {
+      blocks.push({ type: 'thinking', text: thinkingText })
+    }
+    if (assistantText) {
+      blocks.push({ type: 'text', text: assistantText })
+    }
+    for (const pt of pendingTools) {
+      blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
+    }
+    const displayMsg: DisplayMessage = { role: 'assistant', blocks, timestamp: Date.now() }
+    this.displayMessages.push(displayMsg)
+    this._partialDisplayMessage = pendingTools.length > 0 ? displayMsg : null
+
+    // Update status line with context size
+    if (inputTokens > 0) {
+      this.lastInputTokens = inputTokens
+      yield { type: 'status_line', text: this.buildStatusLine() }
+    }
+
+    // Execute tools if any
+    if (pendingTools.length > 0) {
+      // Yield exec_js for all tools (so UI shows them)
+      for (const pt of pendingTools) {
+        yield { type: 'exec_js', id: pt.id, description: pt.description, code: pt.code }
+      }
+
+      // Execute tools in parallel
+      const results = await Promise.all(
+        pendingTools.map(pt => executeTool(pt)),
+      )
+
+      // Process results
+      for (let i = 0; i < pendingTools.length; i++) {
+        this.addToolResult(pendingTools[i].id, results[i].content, results[i].isError)
+      }
+      this._partialDisplayMessage = null
+
+      yield { type: 'state_changed' }
+
+      // Continue streaming with tool results
+      yield* this.doStream(executeTool)
+      return
+    }
+
+    // No pending tools — done
+    this._partialDisplayMessage = null
+    yield { type: 'state_changed' }
   }
 
   private async compactMessages(): Promise<boolean> {
@@ -257,26 +574,24 @@ class OpenAICompatibleSession implements ProviderSession {
     const keepFromEnd = Math.max(6, Math.ceil((this.messages.length - 1) / 2))
     let splitIdx = this.messages.length - keepFromEnd
     if (splitIdx < 2) return false
-    // Find a user message that starts a new turn (skip tool results and assistant messages)
+    // Find a user message that starts a new turn
     while (splitIdx < this.messages.length) {
       const msg = this.messages[splitIdx]
       if (msg.role === 'user') break
       splitIdx++
     }
-    // Don't split right after an assistant with tool_calls (would orphan the tool results)
+    // Don't split right after an assistant with tool_calls
     while (splitIdx > 1 && this.messages[splitIdx - 1]?.role === 'tool') {
       splitIdx--
     }
-    // Back up to the assistant that owns those tool results
     if (splitIdx > 1 && this.messages[splitIdx - 1]?.role === 'assistant') {
       splitIdx--
     }
     if (splitIdx < 2 || splitIdx >= this.messages.length - 2) return false
 
-    const oldMessages = this.messages.slice(1, splitIdx) // exclude system prompt
+    const oldMessages = this.messages.slice(1, splitIdx)
     const keptMessages = this.messages.slice(splitIdx)
 
-    // Check for previous compaction summary to build upon
     let previousSummary: string | undefined
     if (oldMessages.length > 0 && typeof oldMessages[0].content === 'string'
       && oldMessages[0].content.startsWith('[Context compacted')) {
@@ -338,7 +653,6 @@ class OpenAICompatibleSession implements ProviderSession {
       blocks: [{ type: 'text', text: compactionText }],
       timestamp: Date.now(),
     })
-    this.emit({ type: 'state_changed' })
     return true
   }
 
@@ -367,316 +681,6 @@ class OpenAICompatibleSession implements ProviderSession {
       }
       return
     }
-  }
-
-  private handleUserMessage(text: string, files?: FileContent[]): void {
-    this.repairOrphanedToolCalls()
-    // Build user content
-    const content: unknown[] = [{ type: 'text', text }]
-    if (files) {
-      for (const f of files) {
-        if (f.mimeType.startsWith('image/')) {
-          content.push({
-            type: 'image_url',
-            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
-          })
-        }
-      }
-    }
-    this.messages.push({ role: 'user', content })
-
-    // Add to display messages
-    const blocks: Block[] = [{ type: 'text', text }]
-    if (files) {
-      for (const f of files) {
-        blocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
-      }
-    }
-    this.displayMessages.push({ role: 'user', blocks, timestamp: Date.now() })
-    this.emit({ type: 'state_changed' })
-
-    // Start streaming
-    void this.stream()
-  }
-
-  private handleExecJsResult(id: string, content: (TextContent | FileContent)[], isError: boolean): void {
-    // Add tool result to internal messages
-    const textParts = content
-      .filter((c): c is TextContent => c.type === 'text')
-      .map(c => c.text)
-    this.messages.push({
-      role: 'tool',
-      tool_call_id: id,
-      content: textParts.join('\n'),
-    })
-
-    // Forward files as a follow-up user message (OpenAI tool role only supports text)
-    const files = content.filter((c): c is FileContent => c.type === 'file')
-    if (files.length > 0) {
-      const fileBlocks: unknown[] = []
-      for (const f of files) {
-        if (f.mimeType.startsWith('image/')) {
-          fileBlocks.push({
-            type: 'image_url',
-            image_url: { url: `data:${f.mimeType};base64,${f.data}` },
-          })
-        } else {
-          fileBlocks.push({
-            type: 'text',
-            text: `[Attached file (${f.mimeType}) — not supported by this provider]`,
-          })
-        }
-      }
-      this.messages.push({
-        role: 'user',
-        content: fileBlocks,
-      })
-    }
-
-    // Add exec_js_result block to last assistant display message
-    const lastAssistant = this.displayMessages.length > 0
-      ? this.displayMessages[this.displayMessages.length - 1]
-      : null
-    if (lastAssistant && lastAssistant.role === 'assistant') {
-      lastAssistant.blocks.push({ type: 'exec_js_result', id, content, isError })
-    }
-
-    this.pendingToolIds.delete(id)
-    if (this.pendingToolIds.size === 0) {
-      // All tool results received — safe to persist now
-      this.emit({ type: 'state_changed' })
-      // Continue streaming
-      void this.stream()
-    }
-  }
-
-  private async stream(): Promise<void> {
-    this.abortController = new AbortController()
-    const signal = this.abortController.signal
-
-    const apiKey = this.providerConfig.apiKey ?? ''
-    const baseUrl = this.providerConfig.baseUrl.replace(/\/v1\/?$/, '')
-    const modelId = this.providerConfig.modelId
-    const url = `${baseUrl}/v1/chat/completions`
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    }
-
-    const body: Record<string, unknown> = {
-      model: modelId,
-      messages: this.messages,
-      tools: this.config.tools.map(t => ({ type: 'function', function: t })),
-      stream: true,
-      stream_options: { include_usage: true },
-    }
-
-    if (this.providerConfig.reasoning) {
-      body.reasoning = { effort: this.providerConfig.reasoning }
-    }
-
-    this.emit({ type: 'start' })
-    this.emitStatusLine()
-
-    const bodyJson = JSON.stringify(body)
-    let response: Response | undefined
-    let lastError: string | undefined
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        try {
-          await retrySleep(getRetryDelay(attempt - 1, response?.headers), signal)
-        } catch {
-          this.emit({ type: 'done' })
-          return
-        }
-      }
-
-      try {
-        response = await fetch(url, { method: 'POST', headers, body: bodyJson, signal })
-      } catch (err) {
-        if (signal.aborted) {
-          this.emit({ type: 'done' })
-          return
-        }
-        lastError = err instanceof Error ? err.message : String(err)
-        continue
-      }
-
-      if (response.ok) {
-        lastError = undefined
-        break
-      }
-
-      if (!isRetryableStatus(response.status)) {
-        const text = await response.text().catch(() => '')
-        if (isContextOverflow(text) && await this.compactMessages()) {
-          void this.stream()
-          return
-        }
-        this.emitError(`OpenAI API error (${response.status}): ${text || response.statusText}`)
-        return
-      }
-
-      lastError = `OpenAI API error (${response.status}): ${await response.text().catch(() => response!.statusText)}`
-    }
-
-    if (lastError || !response?.ok) {
-      this.emitError(lastError ?? 'Request failed')
-      return
-    }
-
-    // Parse SSE stream
-    let assistantText = ''
-    let thinkingText = ''
-    const toolCalls = new Map<number, ToolCallEntry>()
-    const pendingTools: PendingToolCall[] = []
-    let inputTokens = 0
-
-    try {
-      for await (const sseEvent of parseSSE(response)) {
-        if (sseEvent.data === '[DONE]') break
-
-        let chunk: Record<string, unknown>
-        try {
-          chunk = JSON.parse(sseEvent.data)
-        } catch {
-          continue
-        }
-
-        // Usage
-        if (chunk.usage) {
-          const u = chunk.usage as Record<string, unknown>
-          inputTokens = (u.prompt_tokens as number) ?? 0
-        }
-
-        const choices = chunk.choices as Array<{ delta: Record<string, unknown>; finish_reason?: string }> | undefined
-        const choice = choices?.[0]
-        if (!choice) continue
-
-        const delta = choice.delta
-
-        // Text content
-        if (delta.content && typeof delta.content === 'string') {
-          assistantText += delta.content
-          this.emit({ type: 'text_delta', delta: delta.content })
-        }
-
-        // Reasoning content
-        if (delta.reasoning_content && typeof delta.reasoning_content === 'string') {
-          thinkingText += delta.reasoning_content
-          this.emit({ type: 'thinking_delta', delta: delta.reasoning_content })
-        }
-
-        // Tool calls
-        const tcDeltas = delta.tool_calls as Array<{
-          index: number
-          id?: string
-          function?: { name?: string; arguments?: string }
-        }> | undefined
-        if (tcDeltas) {
-          for (const tc of tcDeltas) {
-            let entry = toolCalls.get(tc.index)
-            if (!entry) {
-              entry = { id: tc.id ?? '', name: tc.function?.name ?? '', arguments: '' }
-              toolCalls.set(tc.index, entry)
-            } else {
-              if (tc.id) entry.id = tc.id
-              if (tc.function?.name) entry.name += tc.function.name
-            }
-            if (tc.function?.arguments) {
-              entry.arguments += tc.function.arguments
-            }
-          }
-        }
-      }
-    } catch (err) {
-      if (signal.aborted) {
-        this.emit({ type: 'done' })
-        return
-      }
-      const partialBlocks: Block[] = []
-      if (thinkingText) partialBlocks.push({ type: 'thinking', text: thinkingText })
-      if (assistantText) partialBlocks.push({ type: 'text', text: assistantText })
-      this.emitError(err instanceof Error ? err.message : String(err), partialBlocks)
-      return
-    }
-
-    // Finalize tool calls
-    for (const entry of toolCalls.values()) {
-      let args: Record<string, unknown> = {}
-      try {
-        args = JSON.parse(entry.arguments)
-      } catch {
-        // empty
-      }
-
-      pendingTools.push({
-        id: entry.id,
-        name: entry.name,
-        description: typeof args.description === 'string' ? args.description : 'Executing code',
-        code: typeof args.code === 'string' ? args.code : '',
-      })
-    }
-
-    // Build and push assistant internal message BEFORE emitting exec_js.
-    // The core may execute tools and send exec_js_result back quickly,
-    // which calls _stream() again — the assistant message must already be
-    // in the history so the next API call includes it.
-    const assistantMsg: InternalMessage = { role: 'assistant' }
-    if (assistantText) {
-      assistantMsg.content = assistantText
-    }
-    if (toolCalls.size > 0) {
-      assistantMsg.tool_calls = Array.from(toolCalls.values()).map(tc => ({
-        id: tc.id,
-        type: 'function',
-        function: {
-          name: tc.name,
-          arguments: tc.arguments,
-        },
-      }))
-    }
-    this.messages.push(assistantMsg)
-
-    // Build assistant display message
-    const blocks: Block[] = []
-    if (thinkingText) {
-      blocks.push({ type: 'thinking', text: thinkingText })
-    }
-    if (assistantText) {
-      blocks.push({ type: 'text', text: assistantText })
-    }
-    for (const pt of pendingTools) {
-      blocks.push({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
-    }
-
-    // Create or append to display message
-    this.displayMessages.push({ role: 'assistant', blocks, timestamp: Date.now() })
-
-    // Update status line with context size
-    if (inputTokens > 0) {
-      this.lastInputTokens = inputTokens
-      this.emitStatusLine()
-    }
-
-    // Emit exec_js after assistant message is committed
-    if (pendingTools.length > 0) {
-      for (const pt of pendingTools) {
-        this.pendingToolIds.add(pt.id)
-      }
-      for (const pt of pendingTools) {
-        this.emit({ type: 'exec_js', id: pt.id, description: pt.description, code: pt.code })
-      }
-      // Don't emit state_changed while tools are pending — the session must
-      // not be persisted with tool_calls that lack matching tool results.
-      return
-    }
-
-    // No pending tools — safe to persist
-    this.emit({ type: 'state_changed' })
-    this.emit({ type: 'done' })
   }
 }
 

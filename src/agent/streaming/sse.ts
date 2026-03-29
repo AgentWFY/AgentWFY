@@ -1,6 +1,7 @@
 /**
  * Generic SSE (Server-Sent Events) line parser.
  * Parses a fetch Response body into an async iterable of SSE events.
+ * Includes an idle timeout to detect dead connections.
  */
 
 export interface SSEEvent {
@@ -8,7 +9,7 @@ export interface SSEEvent {
   data: string
 }
 
-export async function* parseSSE(response: Response): AsyncGenerator<SSEEvent> {
+export async function* parseSSE(response: Response, idleTimeoutMs = 90_000): AsyncGenerator<SSEEvent> {
   if (!response.body) {
     throw new Error('Response body is null')
   }
@@ -20,8 +21,20 @@ export async function* parseSSE(response: Response): AsyncGenerator<SSEEvent> {
   let dataLines: string[] = []
 
   try {
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+
     while (true) {
-      const { done, value } = await reader.read()
+      const { done, value } = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          idleTimer = setTimeout(
+            () => reject(new Error(`SSE idle timeout: no data received for ${Math.round(idleTimeoutMs / 1000)}s`)),
+            idleTimeoutMs,
+          )
+        }),
+      ]).finally(() => {
+        if (idleTimer !== undefined) clearTimeout(idleTimer)
+      })
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
@@ -46,7 +59,7 @@ export async function* parseSSE(response: Response): AsyncGenerator<SSEEvent> {
         }
 
         if (line.startsWith(':')) {
-          // Comment, skip
+          // Comment / keepalive, skip
           continue
         }
 

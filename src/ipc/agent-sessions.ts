@@ -71,6 +71,10 @@ export function registerAgentSessionHandlers(
     if (typeof file !== 'string' || file.trim().length === 0) return
     await getManager(event).disposeSessionByFile(file)
   })
+
+  ipcMain.handle(Channels.agent.retryNow, async (event) => {
+    getManager(event).skipRetryDelay()
+  })
 }
 
 /**
@@ -140,6 +144,8 @@ export function setupAgentStateStreaming(
             message: current.streamingMessage,
             statusLine: current.statusLine,
             isStreaming: current.isStreaming,
+            retryState: current.retryState,
+            stalledSince: current.stalledSince,
           })
         }, 16) // ~60fps
       }

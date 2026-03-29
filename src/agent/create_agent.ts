@@ -201,8 +201,7 @@ export class AgentWFYAgent {
       }, stored.providerState)
 
       // Provider is the source of truth for display messages
-      const result = providerSession.getDisplayMessages()
-      initialMessages = result instanceof Promise ? await result : result
+      initialMessages = providerSession.getDisplayMessages()
     } else {
       providerSession = await options.createProviderSession({
         sessionId,
@@ -295,6 +294,7 @@ export class AgentWFYAgent {
 
   async newSession(): Promise<boolean> {
     await this.abort()
+    this.agent.providerSession.dispose()
     this.agent.reset()
 
     const newId = createSessionId()
@@ -323,6 +323,7 @@ export class AgentWFYAgent {
     }
 
     await this.abort()
+    this.agent.providerSession.dispose()
 
     const sessionFileName = normalizeSessionFileName(sessionPath)
     const rawSession = await readSessionFile(this.sessionsDir, sessionFileName)
@@ -336,9 +337,7 @@ export class AgentWFYAgent {
     this.agent.setProviderSession(providerSession)
 
     // Provider is the source of truth for display messages
-    const result = providerSession.getDisplayMessages()
-    const displayMessages = result instanceof Promise ? await result : result
-    this.agent.replaceMessages(displayMessages)
+    this.agent.replaceMessages(providerSession.getDisplayMessages())
 
     this._sessionFile = sessionFileName
     this.updateSessionId(restoredSessionId)
@@ -368,6 +367,7 @@ export class AgentWFYAgent {
     }
 
     this.disposed = true
+    this.agent.providerSession.dispose()
     this.listeners.clear()
     this.unsubscribeFromAgent()
   }

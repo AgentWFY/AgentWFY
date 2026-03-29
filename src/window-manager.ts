@@ -430,7 +430,7 @@ class WindowManager {
 
     ctx.agentStateStreamingCleanup?.();
     ctx.agentStateStreamingCleanup = null;
-    ctx.sessionManager.disposeAll().catch(() => {});
+    ctx.sessionManager.disposeAll().catch((err) => { console.warn('[WindowManager] disposeAll failed:', err) });
     ctx.taskRunner.dispose();
 
     if (ctx.dbChangeDebounceTimer) {

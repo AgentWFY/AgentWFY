@@ -102,6 +102,7 @@ const Channels = {
     spawnSession: 'agent:spawnSession',
     sendToSession: 'agent:sendToSession',
     disposeSession: 'agent:disposeSession',
+    retryNow: 'agent:retryNow',
   },
   runtimeFunctions: {
     methods: 'runtime-functions:methods',
@@ -491,6 +492,9 @@ if (isApp) {
       },
       disposeSession(file: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.disposeSession, file);
+      },
+      retryNow(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.retryNow);
       },
     },
     zenMode: {

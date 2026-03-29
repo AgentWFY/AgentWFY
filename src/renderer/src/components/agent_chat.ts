@@ -371,6 +371,38 @@ const STYLES = `
     border-radius: var(--radius-sm);
     font-size: 13px;
   }
+  .retry-banner {
+    padding: 8px 12px;
+    background: var(--color-yellow-bg, var(--color-bg2));
+    color: var(--color-yellow-fg, var(--color-text3));
+    border-radius: var(--radius-sm);
+    margin: 6px 0;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .retry-banner .retry-text { flex: 1; }
+  .retry-banner .retry-error {
+    font-size: 11px;
+    opacity: 0.8;
+    margin-top: 2px;
+  }
+  .retry-banner .retry-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .retry-banner button {
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+  }
+  .retry-banner button:hover { background: var(--color-bg2); }
   .initializing {
     display: flex;
     align-items: center;
@@ -421,6 +453,16 @@ const STYLES = `
   }
   .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
   .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .streaming-phase-label {
+    font-size: 12px;
+    color: var(--color-text2);
+    padding: 6px 2px;
+    animation: phasePulse 2s ease-in-out infinite;
+  }
+  @keyframes phasePulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 0.9; }
+  }
   @keyframes thinking {
     0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
     40% { opacity: 1; transform: scale(1); }
@@ -850,6 +892,14 @@ export class TlAgentChat extends HTMLElement {
   private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
+  private _retryBanner: HTMLElement | null = null
+  private _retryCountdownTimer: ReturnType<typeof setInterval> | null = null
+  private _currentPhase: string | null = null
+  private _phaseStartTime: number = 0
+  private _phaseLabelTimer: ReturnType<typeof setInterval> | null = null
+  private _lastStreamingBlockCount: number = 0
+  private _lastStreamingText: string | null = null
+  private _lastStreamEventTime: number = 0
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
@@ -1083,6 +1133,141 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
+  private updateRetryBanner(retryState: { attempt: number; maxAttempts: number; nextRetryAt: number; lastError: string; category: string }) {
+    if (!this._retryBanner) return
+
+    // Render static structure once, then update only the countdown text
+    if (!this._retryBanner.querySelector('.retry-text')) {
+      this._retryBanner.innerHTML = `
+        <div class="retry-text">
+          <div class="retry-countdown"></div>
+          <div class="retry-error"></div>
+        </div>
+        <div class="retry-actions">
+          <button data-action="retry-now">Retry now</button>
+          <button data-action="stop-retry">Stop</button>
+        </div>
+      `
+      this._retryBanner.onclick = (e) => {
+        const target = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null
+        if (!target) return
+        const action = target.dataset.action
+        if (action === 'retry-now') agentSessionStore.retryNow()
+        else if (action === 'stop-retry') agentSessionStore.abort()
+      }
+    }
+
+    const countdownEl = this._retryBanner.querySelector('.retry-countdown') as HTMLElement
+    const errorEl = this._retryBanner.querySelector('.retry-error') as HTMLElement
+
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((retryState.nextRetryAt - Date.now()) / 1000))
+      countdownEl.textContent = `Retrying in ${remaining}s\u2026 (attempt ${retryState.attempt}/${retryState.maxAttempts})`
+    }
+
+    updateCountdown()
+    errorEl.textContent = retryState.lastError
+
+    if (this._retryCountdownTimer) clearInterval(this._retryCountdownTimer)
+    this._retryCountdownTimer = setInterval(updateCountdown, 1000)
+  }
+
+  private static PHASE_THRESHOLD_MS = 30_000
+  private static DOTS_HTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'
+
+  private getCurrentPhase(s: typeof agentSessionStore.state): string | null {
+    if (!s.isStreaming || s.retryState) return null
+
+    const blocks = s.streamingMessage?.blocks
+    if (!blocks || blocks.length === 0) return 'waiting'
+
+    const lastBlock = blocks[blocks.length - 1]
+    if (lastBlock.type === 'exec_js') return 'tool'
+
+    // Detect content changes via block count + last text block identity
+    const lastText = lastBlock.type === 'text' ? (lastBlock as { text: string }).text : null
+    if (blocks.length !== this._lastStreamingBlockCount || lastText !== this._lastStreamingText) {
+      this._lastStreamingBlockCount = blocks.length
+      this._lastStreamingText = lastText
+      this._lastStreamEventTime = Date.now()
+    }
+
+    if (Date.now() - this._lastStreamEventTime > TlAgentChat.PHASE_THRESHOLD_MS) {
+      return 'idle'
+    }
+
+    return 'streaming'
+  }
+
+  private getPhaseLabel(phase: string, elapsed: number): string {
+    const secs = Math.round(elapsed / 1000)
+    switch (phase) {
+      case 'waiting': return `Waiting for response ${secs}s`
+      case 'tool': return `Running code ${secs}s`
+      case 'idle': return `Waiting for response ${secs}s`
+      default: return ''
+    }
+  }
+
+  /** Manages the streaming phase indicator: dots normally, descriptive text after 30s in same state. */
+  private updatePhaseLabel(s: typeof agentSessionStore.state): void {
+    if (!this.messagesEl) return
+    const indicator = this.messagesEl.querySelector<HTMLElement>('#streaming-indicator')
+    if (!indicator) return
+
+    const phase = this.getCurrentPhase(s)
+
+    if (phase !== this._currentPhase) {
+      this._currentPhase = phase
+      this._phaseStartTime = phase === 'idle' ? this._lastStreamEventTime : Date.now()
+      this.clearPhaseLabelTimer()
+      indicator.innerHTML = phase ? TlAgentChat.DOTS_HTML : ''
+
+      // Background timer to check phase transitions and show labels after threshold.
+      // Needed because when events stop, the store stops notifying.
+      if (phase) {
+        this.startPhaseLabelTimer(indicator)
+      }
+    }
+  }
+
+  private startPhaseLabelTimer(indicator: HTMLElement): void {
+    this.clearPhaseLabelTimer()
+
+    this._phaseLabelTimer = setInterval(() => {
+      const phase = this.getCurrentPhase(agentSessionStore.state)
+
+      // Phase changed — reset and restart
+      if (phase !== this._currentPhase) {
+        this._currentPhase = phase
+        this._phaseStartTime = phase === 'idle' ? this._lastStreamEventTime : Date.now()
+        indicator.innerHTML = phase ? TlAgentChat.DOTS_HTML : ''
+        if (!phase) { this.clearPhaseLabelTimer(); return }
+        return
+      }
+
+      // Streaming normally or no phase — keep dots
+      if (!phase || phase === 'streaming') return
+
+      const elapsed = Date.now() - this._phaseStartTime
+      if (elapsed < TlAgentChat.PHASE_THRESHOLD_MS) return
+
+      // Threshold reached — show or update label
+      const label = this.getPhaseLabel(phase, elapsed)
+      if (!label) return
+      const existing = indicator.querySelector('.streaming-phase-label')
+      if (existing) {
+        existing.textContent = label
+      } else {
+        indicator.innerHTML = `<div class="streaming-phase-label">${label}</div>`
+      }
+    }, 1000)
+  }
+
+  private clearPhaseLabelTimer(): void {
+    if (this._phaseLabelTimer) { clearInterval(this._phaseLabelTimer); this._phaseLabelTimer = null }
+  }
+
   private async handleNewSession() {
     this.activePanel = null
     try {
@@ -1261,6 +1446,10 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl = null
     this._textarea = null
     this._errorBanner = null
+    this._retryBanner = null
+    if (this._retryCountdownTimer) { clearInterval(this._retryCountdownTimer); this._retryCountdownTimer = null }
+    this.clearPhaseLabelTimer()
+    this._currentPhase = null
     this._newSessionBtn = null
     this._notifyBtn = null
     this._settingsBtn = null
@@ -1431,6 +1620,12 @@ export class TlAgentChat extends HTMLElement {
     this._errorBanner.className = 'error-banner'
     this._errorBanner.style.display = 'none'
     container.appendChild(this._errorBanner)
+
+    // Retry banner (hidden by default)
+    this._retryBanner = document.createElement('div')
+    this._retryBanner.className = 'retry-banner'
+    this._retryBanner.style.display = 'none'
+    container.appendChild(this._retryBanner)
 
     // Input area
     const inputArea = document.createElement('div')
@@ -1625,6 +1820,7 @@ export class TlAgentChat extends HTMLElement {
     if (this.messagesEl && hasMessages) {
       const prevChildCount = this.messagesEl.childElementCount
       updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
+      this.updatePhaseLabel(s)
 
       // Reposition button only when DOM children changed (new messages added/removed)
       if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
@@ -1656,6 +1852,21 @@ export class TlAgentChat extends HTMLElement {
         this._errorBanner.style.display = 'none'
       }
     }
+
+    // 3b. Retry banner
+    if (this._retryBanner) {
+      if (s.retryState) {
+        this._retryBanner.style.display = ''
+        this.updateRetryBanner(s.retryState)
+      } else {
+        this._retryBanner.style.display = 'none'
+        if (this._retryCountdownTimer) {
+          clearInterval(this._retryCountdownTimer)
+          this._retryCountdownTimer = null
+        }
+      }
+    }
+
 
     // 4. Button states
     if (this._notifyBtn) {
