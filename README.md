@@ -16,7 +16,7 @@
 <br>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/c3ff490b-bbc7-41a1-9807-2823c09d0624" width="720" autoplay loop muted playsinline></video>
+  <video src="https://github.com/user-attachments/assets/62bec9d2-058e-45d1-83ec-3e2d0db24db9" width="720"></video>
 </p>
 
 <br>
