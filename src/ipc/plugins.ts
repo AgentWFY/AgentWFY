@@ -51,11 +51,13 @@ export function registerPluginHandlers(
     const agentRoot = getRoot(event)
     const result = installFromPackage(agentRoot, packagePath)
 
-    // Activate installed plugins at runtime
+    // Activate installed plugins at runtime (unload first for reinstalls)
     const pluginRegistry = getPluginRegistry(event)
     if (pluginRegistry && result.installed.length > 0) {
       const db = getOrCreateAgentDb(agentRoot)
       for (const name of result.installed) {
+        const removedProviders = pluginRegistry.unloadPlugin(name)
+        handleProviderFallback(agentRoot, removedProviders)
         const row = db.getPlugin(name)
         if (row) pluginRegistry.loadPlugin(row)
       }
