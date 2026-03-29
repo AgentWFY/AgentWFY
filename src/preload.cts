@@ -493,6 +493,11 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.agent.disposeSession, file);
       },
     },
+    zenMode: {
+      changed(isZen: boolean): void {
+        ipcRenderer.send('zenMode:changed', isZen);
+      },
+    },
     agentSidebar: {
       getInstalled(): Promise<Array<{ path: string; name: string; active: boolean; initialized: boolean }>> {
         return ipcRenderer.invoke(Channels.agentSidebar.getInstalled);

@@ -108,6 +108,9 @@ export const Channels = {
   agents: {
     requestInstall: 'agents:requestInstall',
   },
+  zenMode: {
+    changed: 'zenMode:changed',
+  },
   agentSidebar: {
     getInstalled: 'agent-sidebar:getInstalled',
     switch: 'agent-sidebar:switch',

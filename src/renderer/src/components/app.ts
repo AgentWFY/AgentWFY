@@ -66,7 +66,16 @@ export class TlApp extends HTMLElement {
       this.activeSidebarPanel = 'agent-chat'
     }
     this.isZenMode = !this.isZenMode
+    window.ipc?.zenMode?.changed(this.isZenMode)
     this.updateSidebar()
+  }
+
+  private onFocusChatInput = () => {
+    if (this.activeSidebarPanel === 'agent-chat') {
+      requestAnimationFrame(() => {
+        (this.agentChatEl as any).focusInput?.()
+      })
+    }
   }
 
   private onResizeMouseDown = (e: MouseEvent) => {
@@ -401,6 +410,7 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
+    window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
   }
 
@@ -410,6 +420,7 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.removeEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
+    window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
@@ -422,6 +433,7 @@ export class TlApp extends HTMLElement {
     // Exit zen mode when sidebar is closed
     if (!isOpen && this.isZenMode) {
       this.isZenMode = false
+      window.ipc?.zenMode?.changed(false)
     }
 
     // Zen mode + sidebar open/close

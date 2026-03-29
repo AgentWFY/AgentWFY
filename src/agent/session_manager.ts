@@ -124,28 +124,20 @@ export class AgentSessionManager {
   }
 
   async createSession(opts: { label?: string; prompt: string; providerId?: string }): Promise<string> {
-    const label = opts.label || 'New session'
-    const providerId = opts.providerId || await this.readDefaultProviderId()
+    await this.newSession(opts.providerId)
 
-    const agent = await this.createAgentInstance({ providerId })
-    const sessionId = agent.sessionId
-    this.deps.getJsRuntime().ensureWorker(sessionId)
+    if (opts.label) {
+      this._activeLabel = opts.label
+      const entry = this._activeSessionId ? this.sessions.get(this._activeSessionId) : null
+      if (entry) entry.label = opts.label
+    }
 
-    this.trackSession(sessionId, agent, label)
-    this._activeSessionFile = agent.sessionFile ?? null
-    this._activeSessionId = sessionId
-    this._activeMessages = []
-    this._activeLabel = label
-    this._activeNotifyOnFinish = false
-    this._activeProviderId = providerId
-
-    this.notify()
-
+    const agent = this.activeAgent!
     agent.prompt(opts.prompt).catch((err) => {
       console.error('[AgentSessionManager] auto-prompt failed', err)
     })
 
-    return sessionId
+    return agent.sessionId
   }
 
   resetActive(): void {
@@ -309,6 +301,33 @@ export class AgentSessionManager {
     // Otherwise load from disk
     await this.loadSessionFromDisk(sessionFile)
     return { label: this._activeLabel }
+  }
+
+  /** Create a new empty session (no prompt). Returns the session file. */
+  async newSession(providerId?: string): Promise<string | null> {
+    const pid = providerId || await this.readDefaultProviderId()
+
+    const agent = await this.createAgentInstance({ providerId: pid })
+    const sessionId = agent.sessionId
+    this.deps.getJsRuntime().ensureWorker(sessionId)
+
+    this.trackSession(sessionId, agent, 'New session')
+    this._activeSessionFile = agent.sessionFile ?? null
+    this._activeSessionId = sessionId
+    this._activeMessages = []
+    this._activeLabel = 'New session'
+    this._activeNotifyOnFinish = false
+    this._activeProviderId = pid
+
+    this.notify()
+    return agent.sessionFile ?? null
+  }
+
+  /** Returns true if the current active session has no messages (is empty/fresh). */
+  get activeIsEmpty(): boolean {
+    const agent = this.activeAgent
+    if (agent) return agent.messages.length === 0 && !agent.isStreaming
+    return this._activeMessages.length === 0
   }
 
   async disposeAll(): Promise<void> {

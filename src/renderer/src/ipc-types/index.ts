@@ -58,6 +58,10 @@ export interface InstalledAgent {
   initialized: boolean
 }
 
+export interface ZenModeApi {
+  changed(isZen: boolean): void
+}
+
 export interface AgentSidebarApi {
   getInstalled(): Promise<InstalledAgent[]>
   switch(agentRoot: string): Promise<void>
@@ -83,6 +87,7 @@ export interface AppIpc {
   providers: ProvidersApi
   commandPalette: CommandPaletteApi
   agent: AgentApi
+  zenMode: ZenModeApi
   agentSidebar: AgentSidebarApi
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>

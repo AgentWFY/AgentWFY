@@ -288,6 +288,12 @@ ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: 
   menu.popup({ window: win });
 });
 
+// --- Zen mode sync ---
+
+ipcMain.on(Channels.zenMode.changed, (_event, isZen: boolean) => {
+  windowManager.setZenMode(!!isZen);
+});
+
 // --- Menu ---
 
 function buildAndSetMenu() {
