@@ -38,6 +38,7 @@ export interface CommandPaletteManagerDeps {
   getConfirmation: () => ConfirmationManager;
   getSessionManager: () => AgentSessionManager;
   getDisplayShortcut: (actionId: string) => string | null;
+  handleShortcutAction: (action: string) => void;
 }
 
 export class CommandPaletteManager {
@@ -298,18 +299,11 @@ export class CommandPaletteManager {
         action: { type: 'toggle-zen-mode' },
       },
       {
-        id: 'action:close-current-tab',
-        title: 'Close Current Tab',
-        shortcut: ds('close-current-tab'),
+        id: 'action:new-session',
+        title: 'New Session',
+        shortcut: ds('new-session'),
         group: 'Actions',
-        action: { type: 'close-current-tab' },
-      },
-      {
-        id: 'action:reload-current-tab',
-        title: 'Reload Current Tab',
-        shortcut: ds('reload-current-tab'),
-        group: 'Actions',
-        action: { type: 'reload-current-tab' },
+        action: { type: 'new-session' },
       },
       {
         id: 'action:enter-settings',
@@ -719,15 +713,10 @@ export class CommandPaletteManager {
         break;
 
       case 'toggle-zen-mode':
-        this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
-        break;
-
       case 'close-current-tab':
-        this.deps.getTabViewManager().closeCurrentTab();
-        break;
-
       case 'reload-current-tab':
-        this.deps.getTabViewManager().reloadCurrentTab();
+      case 'new-session':
+        this.deps.handleShortcutAction(action.type);
         break;
 
       case 'run-task': {

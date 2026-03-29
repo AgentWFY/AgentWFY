@@ -107,6 +107,7 @@ class WindowManager {
   private agentHashes = new Map<string, string>(); // hash → agentRoot
 
   private forceClose = false;
+  private isZenMode = false;
 
   private pendingInits = new Map<string, Promise<AgentContext>>();
 
@@ -155,6 +156,7 @@ class WindowManager {
       getConfirmation: () => this.confirmation!,
       getSessionManager: () => this.getActiveAgentContext()!.sessionManager,
       getDisplayShortcut: (actionId) => this.getActiveAgentContext()?.shortcutManager.getDisplayShortcut(actionId) ?? null,
+      handleShortcutAction: (action) => this.handleShortcutAction(action),
     });
 
     this.confirmation = new ConfirmationManager({
@@ -236,6 +238,7 @@ class WindowManager {
     });
 
     window.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
 
@@ -246,32 +249,7 @@ class WindowManager {
       if (!action) return;
 
       event.preventDefault();
-      switch (action) {
-        case 'toggle-command-palette':
-          this.commandPalette?.toggle();
-          break;
-        case 'toggle-agent-chat':
-          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
-          break;
-        case 'toggle-task-panel':
-          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
-          break;
-        case 'toggle-zen-mode':
-          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
-          break;
-        case 'close-current-tab':
-          activeCtx.tabViewManager.closeCurrentTab();
-          break;
-        case 'reload-current-tab':
-          activeCtx.tabViewManager.reloadCurrentTab();
-          break;
-        case 'reload-window':
-          window.reload();
-          break;
-        case 'add-agent':
-          this.commandPalette?.runAction({ type: 'add-agent' }).catch(() => {});
-          break;
-      }
+      this.handleShortcutAction(action);
     });
 
     this.addPersistedAgent(initialAgentRoot);
@@ -346,14 +324,13 @@ class WindowManager {
 
     const tabViewManager = new TabViewManager({
       getMainWindow: () => this.mainWindow!,
-      toggleCommandPalette: () => this.commandPalette?.toggle(),
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
       dispatchRendererCustomEvent: (name, detail) => this.rendererBridge?.dispatchRendererCustomEvent(name, detail),
-      dispatchRendererWindowEvent: (name) => this.rendererBridge?.dispatchRendererWindowEvent(name),
       matchShortcut: (key, meta, ctrl, shift, alt) => {
         const ctx = this.agentContexts.get(agentRoot);
         return ctx?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;
       },
+      handleAction: (action) => this.handleShortcutAction(action),
       agentHash,
       registerSender,
       unregisterSender,
@@ -613,6 +590,10 @@ class WindowManager {
     return this.mainWindow;
   }
 
+  setZenMode(value: boolean): void {
+    this.isZenMode = value;
+  }
+
   getActiveHttpApiPort(): number | null {
     const ctx = this.getActiveAgentContext();
     return ctx?.httpApi?.port() ?? null;
@@ -858,6 +839,92 @@ class WindowManager {
 
   getAllContexts(): AppWindowContext[] {
     return Array.from(this.agentContexts.values()).map(ctx => this.buildAppWindowContext(ctx));
+  }
+
+  // --- Shortcut action dispatch ---
+
+  handleShortcutAction(action: string): void {
+    const activeCtx = this.getActiveAgentContext();
+    if (!activeCtx) return;
+
+    switch (action) {
+      case 'toggle-command-palette':
+        this.commandPalette?.toggle();
+        break;
+      case 'toggle-agent-chat':
+        this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
+        break;
+      case 'toggle-task-panel':
+        this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
+        break;
+      case 'toggle-zen-mode':
+        this.isZenMode = !this.isZenMode;
+        this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
+        break;
+      case 'close-current-tab':
+        if (this.isZenMode) {
+          this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:close-current-session');
+        } else {
+          activeCtx.tabViewManager.closeCurrentTab();
+        }
+        break;
+      case 'reload-current-tab':
+        activeCtx.tabViewManager.reloadCurrentTab();
+        break;
+      case 'reload-window':
+        this.mainWindow?.reload();
+        break;
+      case 'add-agent':
+        this.commandPalette?.runAction({ type: 'add-agent' }).catch(() => {});
+        break;
+      case 'new-session':
+        this.handleNewSession(activeCtx);
+        break;
+      case 'next-agent':
+        this.switchToNextAgent(1);
+        break;
+      case 'previous-agent':
+        this.switchToNextAgent(-1);
+        break;
+      default:
+        if (action.startsWith('switch-to-tab-')) {
+          const index = parseInt(action.slice(-1), 10) - 1;
+          if (this.isZenMode) {
+            this.rendererBridge?.dispatchRendererCustomEvent('agentwfy:switch-to-session', { index });
+          } else {
+            activeCtx.tabViewManager.switchToTabByIndex(index);
+          }
+        } else if (action === 'previous-tab') {
+          if (this.isZenMode) this.rendererBridge?.dispatchRendererCustomEvent('agentwfy:cycle-session', { direction: -1 });
+          else activeCtx.tabViewManager.previousTab();
+        } else if (action === 'next-tab') {
+          if (this.isZenMode) this.rendererBridge?.dispatchRendererCustomEvent('agentwfy:cycle-session', { direction: 1 });
+          else activeCtx.tabViewManager.nextTab();
+        }
+        break;
+    }
+  }
+
+  private handleNewSession(ctx: AgentContext): void {
+    this.rendererBridge?.dispatchRendererCustomEvent('agentwfy:open-sidebar-panel', { panel: 'agent-chat' });
+    if (!ctx.sessionManager.activeIsEmpty) {
+      ctx.sessionManager.newSession().catch(() => {});
+    }
+    // Explicit focus needed when chat panel is already open
+    this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:focus-chat-input');
+  }
+
+  private switchToNextAgent(direction: 1 | -1): void {
+    const paths = this.persistedAgentPaths;
+    if (paths.length <= 1) return;
+    const currentIdx = this.activeAgentRoot ? paths.indexOf(this.activeAgentRoot) : -1;
+    let nextIdx: number;
+    if (currentIdx < 0) {
+      nextIdx = 0;
+    } else {
+      nextIdx = (currentIdx + direction + paths.length) % paths.length;
+    }
+    this.switchAgent(paths[nextIdx]).catch(() => {});
   }
 
   // --- Default view ---

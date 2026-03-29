@@ -901,6 +901,9 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     window.removeEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
+    window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
+    window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
+    window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
@@ -983,6 +986,37 @@ export class TlAgentChat extends HTMLElement {
     this._currentAgentRoot = newAgentRoot
   }
 
+  private onCloseCurrentSession = () => {
+    const s = agentSessionStore.state
+    if (s.activeSessionFile) {
+      agentSessionStore.removeOpenSession(s.activeSessionFile)
+    }
+  }
+
+  private onSwitchToSession = (e: Event) => {
+    const { index } = (e as CustomEvent<{ index: number }>).detail
+    const open = agentSessionStore.state.openSessions
+    if (index >= 0 && index < open.length) {
+      const session = open[index]
+      if (session.file !== agentSessionStore.state.activeSessionFile) {
+        this.loadSession(session.file)
+      }
+    }
+  }
+
+  private onCycleSession = (e: Event) => {
+    const { direction } = (e as CustomEvent<{ direction: number }>).detail
+    const open = agentSessionStore.state.openSessions
+    if (open.length <= 1) return
+    const activeFile = agentSessionStore.state.activeSessionFile
+    const currentIdx = open.findIndex(s => s.file === activeFile)
+    const nextIdx = (currentIdx + direction + open.length) % open.length
+    const session = open[nextIdx]
+    if (session && session.file !== activeFile) {
+      this.loadSession(session.file)
+    }
+  }
+
   private init() {
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
@@ -990,6 +1024,9 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     window.addEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
+    window.addEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
+    window.addEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
+    window.addEventListener('agentwfy:cycle-session', this.onCycleSession)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'

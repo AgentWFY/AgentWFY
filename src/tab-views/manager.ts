@@ -185,11 +185,10 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 
 interface TabViewManagerDeps {
   getMainWindow: () => BrowserWindow | null;
-  toggleCommandPalette: () => void;
   focusMainRendererWindow: () => void;
   dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
-  dispatchRendererWindowEvent: (name: string) => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
+  handleAction?: (action: string) => void;
   agentHash?: string;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
@@ -304,6 +303,7 @@ export class TabViewManager {
     });
 
     viewWebContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
 
@@ -311,36 +311,8 @@ export class TabViewManager {
       if (!action) return;
 
       event.preventDefault();
-      switch (action) {
-        case 'toggle-command-palette':
-          this.deps.toggleCommandPalette();
-          break;
-        case 'toggle-agent-chat':
-          this.deps.focusMainRendererWindow();
-          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
-          break;
-        case 'toggle-task-panel':
-          this.deps.focusMainRendererWindow();
-          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
-          break;
-        case 'toggle-zen-mode':
-          this.deps.focusMainRendererWindow();
-          this.deps.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
-          break;
-        case 'close-current-tab':
-          this.deps.focusMainRendererWindow();
-          this.closeCurrentTab();
-          break;
-        case 'reload-current-tab':
-          this.reloadCurrentTab();
-          break;
-        case 'reload-window': {
-          const win = this.deps.getMainWindow();
-          if (win && !win.isDestroyed()) win.reload();
-          break;
-        }
-      }
-      // Note: 'add-agent' is handled at window-manager level only
+      this.deps.focusMainRendererWindow();
+      this.deps.handleAction?.(action);
     });
 
     viewWebContents.on('focus', () => {
@@ -900,6 +872,36 @@ export class TabViewManager {
   reloadCurrentTab(): void {
     if (!this.selectedTabId) return;
     this.reloadTabHandler({ tabId: this.selectedTabId });
+  }
+
+  /** Switch to the Nth visible tab (0-based index). */
+  switchToTabByIndex(index: number): void {
+    const visible = this.tabs.filter(t => !t.hidden);
+    if (index < 0 || index >= visible.length) return;
+    const tab = visible[index];
+    if (tab.id === this.selectedTabId) return;
+    this.selectedTabId = tab.id;
+    this.pushStateToRenderer();
+  }
+
+  /** Switch to the next visible tab, wrapping around. */
+  nextTab(): void {
+    const visible = this.tabs.filter(t => !t.hidden);
+    if (visible.length <= 1) return;
+    const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
+    const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % visible.length;
+    this.selectedTabId = visible[nextIdx].id;
+    this.pushStateToRenderer();
+  }
+
+  /** Switch to the previous visible tab, wrapping around. */
+  previousTab(): void {
+    const visible = this.tabs.filter(t => !t.hidden);
+    if (visible.length <= 1) return;
+    const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
+    const prevIdx = currentIdx <= 0 ? visible.length - 1 : currentIdx - 1;
+    this.selectedTabId = visible[prevIdx].id;
+    this.pushStateToRenderer();
   }
 
   // --- Context menu ---

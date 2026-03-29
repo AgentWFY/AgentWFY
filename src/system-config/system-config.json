@@ -74,5 +74,61 @@
   {
     "name": "system.shortcuts.add-agent",
     "description": "Shortcut for Add Agent (default: mod+o). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.new-session",
+    "description": "Shortcut for New Session (default: mod+t). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-1",
+    "description": "Shortcut for Switch to Tab 1 (default: mod+1). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-2",
+    "description": "Shortcut for Switch to Tab 2 (default: mod+2). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-3",
+    "description": "Shortcut for Switch to Tab 3 (default: mod+3). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-4",
+    "description": "Shortcut for Switch to Tab 4 (default: mod+4). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-5",
+    "description": "Shortcut for Switch to Tab 5 (default: mod+5). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-6",
+    "description": "Shortcut for Switch to Tab 6 (default: mod+6). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-7",
+    "description": "Shortcut for Switch to Tab 7 (default: mod+7). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-8",
+    "description": "Shortcut for Switch to Tab 8 (default: mod+8). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.switch-to-tab-9",
+    "description": "Shortcut for Switch to Tab 9 (default: mod+9). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.previous-tab",
+    "description": "Shortcut for Previous Tab (default: mod+shift+[). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.next-tab",
+    "description": "Shortcut for Next Tab (default: mod+shift+]). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.next-agent",
+    "description": "Shortcut for Next Agent (default: ctrl+tab). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.previous-agent",
+    "description": "Shortcut for Previous Agent (default: ctrl+shift+tab). Set to 'disabled' to unbind."
   }
 ]

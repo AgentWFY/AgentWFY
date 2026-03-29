@@ -68,6 +68,9 @@ export type CommandPaletteAction =
   | {
     type: 'toggle-zen-mode'
   }
+  | {
+    type: 'new-session'
+  }
 
 export interface CommandPaletteItem {
   id: string
