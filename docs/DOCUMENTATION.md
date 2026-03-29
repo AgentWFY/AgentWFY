@@ -453,7 +453,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 | `created_at` | INTEGER | Unix epoch seconds |
 | `updated_at` | INTEGER | Unix epoch seconds |
 
-**5 Built-in System Views:** `system.settings`, `system.docs`, `system.plugins`, `system.source-explorer`, `system.openai-compatible-provider.settings-view`
+**4 Built-in System Views:** `system.docs`, `system.plugins`, `system.source-explorer`, `system.openai-compatible-provider.settings-view`
 
 ### Tasks Table
 

@@ -148,7 +148,6 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
     </div>
 
     <div class="nav">
-      <a class="view-link" data-view="system.settings">Settings</a> &middot;
       <a class="view-link" data-view="system.docs">Docs</a> &middot;
       <a class="view-link" data-view="system.plugins">Plugins & Agents</a> &middot;
       <a class="view-link" data-view="system.source-explorer">Source Explorer</a>
