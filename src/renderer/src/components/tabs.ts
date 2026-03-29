@@ -457,7 +457,7 @@ export class TlTabs extends HTMLElement {
         color: var(--color-text4);
         background: var(--color-bg1);
         font-weight: 500;
-        box-shadow: 0 0.5px 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
+        box-shadow: 0 0 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
       }
       .tab-type-icon {
         display: flex;
