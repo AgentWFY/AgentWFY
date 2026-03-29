@@ -9,7 +9,7 @@ import { SessionsScreen } from './sessions.js'
 export class NormalScreen implements PaletteScreen {
   readonly id = 'normal'
   readonly breadcrumb: string | null = null
-  readonly placeholder = 'Search...'
+  readonly placeholder = 'Type a command\u2026'
   readonly emptyText = 'No matches'
   readonly hints = [
     { key: 'Enter', label: 'run' },

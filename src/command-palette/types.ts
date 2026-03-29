@@ -97,4 +97,5 @@ export const COMMAND_PALETTE_CHANNEL = {
   CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
+  RESIZE: 'app:command-palette:resize',
 } as const

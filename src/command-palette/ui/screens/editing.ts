@@ -1,6 +1,7 @@
 import type { PaletteScreen, ScreenResult } from '../screen.js'
 import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
+import { createActionButtons } from '../helpers.js'
 
 interface EditingParams {
   key: string
@@ -26,7 +27,7 @@ export class EditingScreen implements PaletteScreen {
   private error = ''
 
   get placeholder(): string {
-    return this.params.type === 'boolean' ? 'Select value...' : this.params.label
+    return this.params.type === 'boolean' ? 'Select value…' : this.params.label
   }
 
   get navigable(): boolean {
@@ -75,10 +76,12 @@ export class EditingScreen implements PaletteScreen {
   renderContent(container: HTMLElement): void {
     if (this.params.type === 'boolean') return
 
-    const descEl = document.createElement('div')
-    descEl.className = 'edit-description'
-    descEl.textContent = this.params.description
-    container.appendChild(descEl)
+    if (this.params.description) {
+      const descEl = document.createElement('div')
+      descEl.className = 'edit-description'
+      descEl.textContent = this.params.description
+      container.appendChild(descEl)
+    }
 
     if (this.error) {
       const errorEl = document.createElement('div')
@@ -86,6 +89,8 @@ export class EditingScreen implements PaletteScreen {
       errorEl.textContent = this.error
       container.appendChild(errorEl)
     }
+
+    container.appendChild(createActionButtons('Save'))
   }
 
   async onEnter(ctx: { selectedItem: CommandPaletteItem | null; searchValue: string; selectedIndex: number }): Promise<ScreenResult> {

@@ -92,11 +92,30 @@ export class PaletteController {
 
     // Update breadcrumb
     if (screen.breadcrumb) {
-      this.breadcrumbEl.style.display = 'block'
-      this.breadcrumbEl.textContent = screen.breadcrumb
+      this.breadcrumbEl.className = 'breadcrumb visible'
+      this.breadcrumbEl.innerHTML = ''
+      const backBtn = document.createElement('button')
+      backBtn.className = 'bc-back'
+      backBtn.type = 'button'
+      backBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+      backBtn.addEventListener('click', () => this.pop())
+      this.breadcrumbEl.appendChild(backBtn)
+      const segments = screen.breadcrumb.split('\u203A').map(s => s.trim()).filter(Boolean)
+      segments.forEach((seg, i) => {
+        const span = document.createElement('span')
+        span.className = i === segments.length - 1 ? 'bc-segment current' : 'bc-segment'
+        span.textContent = seg
+        this.breadcrumbEl.appendChild(span)
+        if (i < segments.length - 1) {
+          const sep = document.createElement('span')
+          sep.className = 'bc-sep'
+          sep.textContent = '\u203A'
+          this.breadcrumbEl.appendChild(sep)
+        }
+      })
     } else {
-      this.breadcrumbEl.style.display = 'none'
-      this.breadcrumbEl.textContent = ''
+      this.breadcrumbEl.className = 'breadcrumb'
+      this.breadcrumbEl.innerHTML = ''
     }
 
     // Update hints
@@ -157,15 +176,21 @@ export class PaletteController {
     this.selectedIndex = Math.max(0, Math.min(this.selectedIndex, this.filtered.length - 1))
   }
 
+  private static readonly TYPE_LABELS: Record<string, string> = {
+    'Views': 'view',
+    'System Views': 'system',
+    'Plugin Views': 'plugin',
+  }
+
   private render(): void {
     const screen = this.currentScreen
     if (!screen) return
 
     this.resultsEl.innerHTML = ''
 
-    // If screen provides custom content and has no items, render custom content
     if (screen.renderContent && this.filtered.length === 0) {
       screen.renderContent(this.resultsEl)
+      this.bindActionButtons()
       return
     }
 
@@ -178,24 +203,34 @@ export class PaletteController {
       return
     }
 
-    // Hide group titles when the breadcrumb already provides context
-    // (i.e., sub-screens with a single group don't need a redundant header)
+    const showTypeLabels = screen.breadcrumb === null
     const uniqueGroups = new Set(this.filtered.map(i => i.group))
-    const hideGroupTitles = screen.breadcrumb !== null && uniqueGroups.size <= 1
+    const showSectionHeaders = screen.breadcrumb !== null && uniqueGroups.size > 1
+    const isSettingsLayout = this.filtered.some(i => i.settingValue !== undefined && i.settingValue !== 'current')
 
     let lastGroup = ''
     this.filtered.forEach((item, index) => {
-      if (!hideGroupTitles && item.group !== lastGroup) {
-        lastGroup = item.group
-        const groupTitleEl = document.createElement('div')
-        groupTitleEl.className = 'group-title'
-        groupTitleEl.textContent = item.group
-        this.resultsEl.appendChild(groupTitleEl)
+      if (item.group !== lastGroup) {
+        if (showSectionHeaders) {
+          // Section header label
+          const label = document.createElement('div')
+          label.className = 'section-label'
+          label.textContent = item.group
+          this.resultsEl.appendChild(label)
+        } else if (lastGroup !== '') {
+          // Thin separator between groups
+          const sep = document.createElement('div')
+          sep.className = 'sep'
+          this.resultsEl.appendChild(sep)
+        }
       }
+      lastGroup = item.group
 
       const itemButton = document.createElement('button')
       itemButton.type = 'button'
-      itemButton.className = 'item' + (index === this.selectedIndex ? ' active' : '')
+      const hasDesc = !!item.subtitle
+      const isSettingRow = isSettingsLayout && item.settingValue !== undefined
+      itemButton.className = 'item' + (index === this.selectedIndex ? ' active' : '') + (hasDesc ? ' has-desc' : '') + (isSettingRow ? ' setting-row' : '')
       itemButton.dataset.index = String(index)
 
       const contentEl = document.createElement('div')
@@ -215,27 +250,44 @@ export class PaletteController {
 
       itemButton.appendChild(contentEl)
 
+      if (showTypeLabels) {
+        const typeLabel = PaletteController.TYPE_LABELS[item.group]
+        if (typeLabel) {
+          const typeEl = document.createElement('span')
+          typeEl.className = 'item-type'
+          typeEl.textContent = typeLabel
+          itemButton.appendChild(typeEl)
+        }
+      }
+
+      if (item.settingValue !== undefined) {
+        if (item.settingValue === 'current') {
+          const checkEl = document.createElement('span')
+          checkEl.className = 'item-check'
+          checkEl.textContent = '\u2713'
+          itemButton.appendChild(checkEl)
+        } else {
+          const valueWrap = document.createElement('span')
+          valueWrap.className = 'setting-value'
+
+          if (item.settingSource) {
+            const sourceEl = document.createElement('span')
+            sourceEl.className = 'setting-source'
+            sourceEl.textContent = item.settingSource
+            valueWrap.appendChild(sourceEl)
+            valueWrap.appendChild(document.createTextNode(' '))
+          }
+
+          valueWrap.appendChild(document.createTextNode(item.settingValue || '(empty)'))
+          itemButton.appendChild(valueWrap)
+        }
+      }
+
       if (item.shortcut) {
         const shortcutEl = document.createElement('span')
         shortcutEl.className = 'item-shortcut'
         shortcutEl.textContent = item.shortcut
         itemButton.appendChild(shortcutEl)
-      }
-
-      if (item.settingValue !== undefined) {
-        const valueWrap = document.createElement('span')
-        valueWrap.className = 'setting-value'
-
-        if (item.settingSource) {
-          const sourceEl = document.createElement('span')
-          sourceEl.className = 'setting-source'
-          sourceEl.textContent = item.settingSource
-          valueWrap.appendChild(sourceEl)
-          valueWrap.appendChild(document.createTextNode(' '))
-        }
-
-        valueWrap.appendChild(document.createTextNode(item.settingValue || '(empty)'))
-        itemButton.appendChild(valueWrap)
       }
 
       if (item.expandable) {
@@ -248,9 +300,31 @@ export class PaletteController {
       this.resultsEl.appendChild(itemButton)
     })
 
-    // Append custom content below item list if screen provides it
     if (screen.renderContent) {
       screen.renderContent(this.resultsEl)
+      this.bindActionButtons()
+    }
+  }
+
+  private bindActionButtons(): void {
+    const screen = this.currentScreen
+    const saveBtn = this.resultsEl.querySelector('[data-action="save"]')
+    if (saveBtn) {
+      saveBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        if (screen?.saveAll) {
+          void screen.saveAll().then(() => this.render())
+        } else {
+          void this.handleEnterKey()
+        }
+      })
+    }
+    const cancelBtn = this.resultsEl.querySelector('[data-action="cancel"]')
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        this.pop()
+      })
     }
   }
 
@@ -402,6 +476,13 @@ export class PaletteController {
 
     window.addEventListener('keydown', (event) => {
       if (event.target === this.searchInput) return
+      if (event.target instanceof HTMLInputElement && event.target.classList.contains('settings-card-input')) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          this.pop()
+        }
+        return
+      }
       void this.handleKeyDown(event)
     }, true)
 
@@ -435,7 +516,7 @@ export class PaletteController {
         this.selectedIndex = 0
         this.applyFilter()
       } else if (screen.renderContent) {
-        // For screens with custom content (editing), re-render to clear errors etc.
+        // Re-render for screens with custom content (settings form, editing)
         this.render()
       }
     })

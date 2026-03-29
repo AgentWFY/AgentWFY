@@ -15,6 +15,7 @@ export interface PaletteScreen {
   initialSelectedIndex?: number
 
   renderContent?(container: HTMLElement): void
+  saveAll?(): Promise<void>
 
   onEnter(ctx: { selectedItem: CommandPaletteItem | null; searchValue: string; selectedIndex: number }): Promise<ScreenResult>
   onClick?(ctx: { item: CommandPaletteItem; index: number }): Promise<ScreenResult>

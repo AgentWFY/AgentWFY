@@ -6,7 +6,7 @@ import { TaskDetailScreen } from './task-detail.js'
 export class TasksScreen implements PaletteScreen {
   readonly id = 'tasks'
   readonly breadcrumb = 'Run Task'
-  readonly placeholder = 'Search tasks...'
+  readonly placeholder = 'Filter tasks\u2026'
   readonly emptyText = 'No tasks defined'
   readonly hints = [
     { key: 'Enter', label: 'select' },
