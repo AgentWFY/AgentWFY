@@ -17,7 +17,7 @@ export type TaskOrigin =
 interface TaskRun {
   runId: string
   taskId: number
-  name: string
+  title: string
   status: 'running' | 'completed' | 'failed'
   origin: TaskOrigin
   input?: unknown
@@ -57,10 +57,10 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').length
   }
 
-  listRunning(): Array<{ runId: string; taskId: number; name: string; status: string; origin: TaskOrigin; startedAt: number }> {
+  listRunning(): Array<{ runId: string; taskId: number; title: string; status: string; origin: TaskOrigin; startedAt: number }> {
     return this._runs
       .filter(r => r.status === 'running')
-      .map(r => ({ runId: r.runId, taskId: r.taskId, name: r.name, status: r.status, origin: r.origin, startedAt: r.startedAt }))
+      .map(r => ({ runId: r.runId, taskId: r.taskId, title: r.title, status: r.status, origin: r.origin, startedAt: r.startedAt }))
   }
 
   async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
@@ -68,10 +68,10 @@ export class TaskRunner {
 
     const parsed = parseRunSqlRequest({
       target: 'agent',
-      sql: 'SELECT id, name, content, timeout_ms FROM tasks WHERE id = ? LIMIT 1',
+      sql: 'SELECT id, title, content, timeout_ms FROM tasks WHERE id = ? LIMIT 1',
       params: [taskId],
     })
-    const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ id: number; name: string; content: string; timeout_ms: number | null }>
+    const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ id: number; title: string; content: string; timeout_ms: number | null }>
 
     if (!rows || rows.length === 0) {
       throw new Error(`Task ${taskId} not found`)
@@ -86,7 +86,7 @@ export class TaskRunner {
     const run: TaskRun = {
       runId,
       taskId,
-      name: task.name,
+      title: task.title,
       status: 'running',
       origin: origin ?? { type: 'task-panel' },
       input,
@@ -159,7 +159,7 @@ export class TaskRunner {
       // Publish bus events (gated via deps.busPublish if provided)
       if (!this.deps.win.isDestroyed()) {
         const payload = {
-          runId: run.runId, taskId: run.taskId, name: run.name,
+          runId: run.runId, taskId: run.taskId, title: run.title,
           status: run.status, origin: run.origin, startedAt: run.startedAt,
           finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
         }
@@ -185,7 +185,7 @@ export class TaskRunner {
       const logFileName = createLogFileName()
       const logData = {
         taskId: run.taskId,
-        taskName: run.name,
+        taskName: run.title,
         status: run.status,
         origin: run.origin,
         input: run.input ?? null,

@@ -614,7 +614,7 @@ Tasks are reusable JavaScript scripts stored in the database.
 
 ```js
 await runSql({
-  sql: `INSERT INTO tasks (name, description, content, timeout_ms) VALUES (?, ?, ?, ?)`,
+  sql: `INSERT INTO tasks (title, description, content, timeout_ms) VALUES (?, ?, ?, ?)`,
   params: [
     'daily-report',
     'Generate daily sales report',

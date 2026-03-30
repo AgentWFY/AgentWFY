@@ -18,7 +18,7 @@ import { bus } from '../event-bus.js'
 
 interface TaskItem {
   id: number
-  name: string
+  title: string
   description: string
   timeout_ms: number | null
 }
@@ -30,7 +30,7 @@ interface TriggerItem {
   config: string
   description: string
   enabled: number
-  task_name: string
+  task_title: string
 }
 
 interface LogDetail {
@@ -429,7 +429,7 @@ export class TlTaskPanel extends HTMLElement {
   private expandedTaskId: number | null = null
   private detailView: DetailView | null = null
   private detailAutoScroll = true
-  private activeRuns: Array<{ runId: string; taskId: number; name: string; status: string; origin: TaskOrigin; startedAt: number }> = []
+  private activeRuns: Array<{ runId: string; taskId: number; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private busUnsub: (() => void) | null = null
   private runningTimer: ReturnType<typeof setInterval> | null = null
 
@@ -507,7 +507,7 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: 'SELECT id, name, description, timeout_ms FROM tasks ORDER BY name ASC',
+        sql: 'SELECT id, title, description, timeout_ms FROM tasks ORDER BY title ASC',
       }) as TaskItem[]
       this.tasks = Array.isArray(rows) ? rows : []
     } catch { this.tasks = [] }
@@ -520,9 +520,9 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: `SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, k.name as task_name
+        sql: `SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, k.title as task_title
               FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id
-              ORDER BY t.enabled DESC, k.name ASC`,
+              ORDER BY t.enabled DESC, k.title ASC`,
       }) as TriggerItem[]
       this.triggers = Array.isArray(rows) ? rows : []
     } catch { this.triggers = [] }
@@ -600,7 +600,7 @@ export class TlTaskPanel extends HTMLElement {
       html += `<div class="rr" data-detail-run="${escapeHtml(run.runId)}">
         <div class="rr-pulse"></div>
         <div class="rr-info">
-          <div class="rr-name">${escapeHtml(run.name)}</div>
+          <div class="rr-name">${escapeHtml(run.title)}</div>
           <div class="rr-sub">${oLabel ? `<span class="chip">${escapeHtml(oLabel)}</span>` : ''} ${escapeHtml(run.runId.slice(0, 12))}</div>
         </div>
         <span class="rr-time">${formatElapsed(elapsed)}</span>
@@ -650,7 +650,7 @@ export class TlTaskPanel extends HTMLElement {
       const taskTriggers = this.triggers.filter(t => t.task_id === task.id && t.enabled)
       html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-id="${task.id}">
         <div class="task-card-top">
-          <span class="tc-name">${escapeHtml(task.name)}</span>
+          <span class="tc-name">${escapeHtml(task.title)}</span>
           <button class="tc-run" data-run-task="${task.id}">Run</button>
         </div>`
       if (task.description) {
@@ -683,7 +683,7 @@ export class TlTaskPanel extends HTMLElement {
     let html = ''
     for (const trigger of this.triggers) {
       const disabled = !trigger.enabled
-      const taskName = trigger.task_name || `task #${trigger.task_id}`
+      const taskName = trigger.task_title || `task #${trigger.task_id}`
       const configKV = formatTriggerConfig(trigger.type, trigger.config)
 
       html += `<div class="trig-card${disabled ? ' disabled' : ''}">
@@ -934,7 +934,7 @@ export class TlTaskPanel extends HTMLElement {
     this.detailView = {
       type: 'running',
       runId: run.runId,
-      taskName: run.name,
+      taskName: run.title,
       detail: {
         status: 'running',
         origin: run.origin,

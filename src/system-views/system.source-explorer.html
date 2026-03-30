@@ -718,8 +718,8 @@
     const [docs, views, tasks, triggers, plugins, config] = await Promise.all([
       agy.runSql({ target: "agent", sql: "SELECT id, name, content, updated_at FROM docs ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT id, name, title, content, created_at, updated_at FROM views ORDER BY name" }),
-      agy.runSql({ target: "agent", sql: "SELECT id, name, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY name" }),
-      agy.runSql({ target: "agent", sql: "SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.name as task_name FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id ORDER BY t.id" }),
+      agy.runSql({ target: "agent", sql: "SELECT id, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
+      agy.runSql({ target: "agent", sql: "SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id ORDER BY t.id" }),
       agy.runSql({ target: "agent", sql: "SELECT id, name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT name AS key, value, description FROM config ORDER BY name" }),
     ]);
@@ -783,7 +783,7 @@
   async function deleteItem() {
     if (!selected) return;
     const label = selected.type === 'tasks' ? 'task' : selected.type === 'triggers' ? 'trigger' : 'doc';
-    const itemName = selected.name || selected.description || (selected.type + ' #' + selected.id);
+    const itemName = selected.title || selected.name || selected.description || (selected.type + ' #' + selected.id);
     if (!confirm('Delete this ' + label + ' "' + itemName + '"?')) return;
     const table = selected.type === 'tasks' ? 'tasks' : selected.type === 'triggers' ? 'triggers' : 'docs';
     try {
@@ -804,11 +804,11 @@
 
   async function duplicateTask() {
     if (!selected || selected.type !== 'tasks') return;
-    const newName = selected.name + ' (copy)';
+    const newName = selected.title + ' (copy)';
     try {
       await agy.runSql({
         target: "agent",
-        sql: "INSERT INTO tasks (name, description, content, timeout_ms) VALUES (?, ?, ?, ?)",
+        sql: "INSERT INTO tasks (title, description, content, timeout_ms) VALUES (?, ?, ?, ?)",
         params: [newName, selected.description || '', selected.content || '', selected.timeout_ms || null],
         confirmed: true
       });
@@ -946,14 +946,14 @@
       }).join('');
     } else if (mode === 'tasks') {
       const items = allTasks.filter(t => {
-        const searchStr = (t.name + ' ' + (t.description || '')).toLowerCase();
+        const searchStr = (t.title + ' ' + (t.description || '')).toLowerCase();
         return searchStr.includes(q);
       });
       list.innerHTML = items.map(t => {
         const size = fmtSize(t.content ? t.content.length : 0);
         const active = selected && selected.type === 'tasks' && selected.id === t.id;
         return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'tasks\', ' + t.id + ')">'
-          + '<div class="item-name">' + escHtml(t.name) + '</div>'
+          + '<div class="item-name">' + escHtml(t.title) + '</div>'
           + '<div class="item-meta">'
           + '<span>' + size + '</span>'
           + '<span class="badge timeout-badge">' + fmtTimeout(t.timeout_ms) + '</span>'
@@ -963,14 +963,14 @@
       }).join('');
     } else if (mode === 'triggers') {
       const items = allTriggers.filter(t => {
-        const searchStr = (t.description || '') + ' ' + (t.task_name || '') + ' ' + (t.type || '') + ' ' + (t.config || '');
+        const searchStr = (t.description || '') + ' ' + (t.task_title || '') + ' ' + (t.type || '') + ' ' + (t.config || '');
         return searchStr.toLowerCase().includes(q);
       });
       list.innerHTML = items.map(t => {
         const active = selected && selected.type === 'triggers' && selected.id === t.id;
         const typeBadgeCls = 'trigger-' + t.type;
         const enabledCls = t.enabled ? 'trigger-enabled' : 'trigger-disabled';
-        const label = t.description || (t.type + ' \u2192 ' + (t.task_name || 'task #' + t.task_id));
+        const label = t.description || (t.type + ' \u2192 ' + (t.task_title || 'task #' + t.task_id));
         let configHint = '';
         try {
           const cfg = JSON.parse(t.config || '{}');
@@ -1041,7 +1041,7 @@
     const nameMap = { docs: 'DOC', views: 'VIEW', tasks: 'TASK', triggers: 'TRIGGER', plugins: 'PLUGIN' };
     const typeLabel = '<span class="type-label ' + labelMap[s.type] + '">' + nameMap[s.type] + '</span>';
 
-    const displayName = (s.type === 'views' && s.title) ? s.title : s.name;
+    const displayName = s.title || s.name;
     let metaInfo = 'id: ' + s.id + ' \u00b7 ' + size + ' \u00b7 ' + lines + ' lines';
     if (s.type === 'views' && s.title) metaInfo = s.name + ' \u00b7 ' + metaInfo;
     if (s.type === 'tasks' && s.timeout_ms) metaInfo += ' \u00b7 timeout: ' + fmtTimeout(s.timeout_ms);
@@ -1051,8 +1051,8 @@
     if (editing && s.type === 'triggers') {
       let configPretty = s.config || '{}';
       try { configPretty = JSON.stringify(JSON.parse(configPretty), null, 2); } catch(e) {}
-      const taskOptions = allTasks.map(t => '<option value="' + t.id + '"' + (t.id === s.task_id ? ' selected' : '') + '>' + escHtml(t.name) + '</option>').join('');
-      const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_name || 'task #' + s.task_id));
+      const taskOptions = allTasks.map(t => '<option value="' + t.id + '"' + (t.id === s.task_id ? ' selected' : '') + '>' + escHtml(t.title) + '</option>').join('');
+      const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_title || 'task #' + s.task_id));
       let actionBtns = '<button class="btn btn-default" onclick="cancelEdit()">' + ICO.x + ' Cancel</button>'
         + '<button class="btn btn-primary" onclick="saveTrigger()">' + ICO.save + ' Save</button>';
       document.getElementById('contentPane').innerHTML =
@@ -1104,7 +1104,7 @@
         actionBtns = '<button class="btn btn-danger" onclick="deleteItem()">' + ICO.trash + '</button>'
           + actionBtns;
       } else if (s.type === 'triggers') {
-        const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_name || 'task #' + s.task_id));
+        const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_title || 'task #' + s.task_id));
         let configPretty = s.config || '{}';
         try { configPretty = JSON.stringify(JSON.parse(configPretty), null, 2); } catch(e) {}
         actionBtns = '<button class="btn ' + (s.enabled ? 'btn-default' : 'btn-green') + '" onclick="toggleTrigger()">'
@@ -1121,7 +1121,7 @@
           + '<div class="detail-row"><div class="detail-label">ID</div><div class="detail-value">' + s.id + '</div></div>'
           + '<div class="detail-row"><div class="detail-label">Type</div><div class="detail-value"><span class="badge trigger-' + s.trigType + '">' + escHtml(s.trigType) + '</span></div></div>'
           + '<div class="detail-row"><div class="detail-label">Status</div><div class="detail-value"><span class="badge ' + (s.enabled ? 'trigger-enabled' : 'trigger-disabled') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span></div></div>'
-          + '<div class="detail-row"><div class="detail-label">Task</div><div class="detail-value">' + escHtml(s.task_name || '(unknown)') + ' <span style="opacity:0.5">(id: ' + s.task_id + ')</span></div></div>'
+          + '<div class="detail-row"><div class="detail-label">Task</div><div class="detail-value">' + escHtml(s.task_title || '(unknown)') + ' <span style="opacity:0.5">(id: ' + s.task_id + ')</span></div></div>'
           + (s.description ? '<div class="detail-row"><div class="detail-label">Description</div><div class="detail-value">' + escHtml(s.description) + '</div></div>' : '')
           + '<div class="detail-row"><div class="detail-label">Config</div><div class="detail-value" style="flex:1"><div class="config-block">' + escHtml(configPretty) + '</div></div></div>'
           + (s.created_at ? '<div class="detail-row"><div class="detail-label">Created</div><div class="detail-value">' + fmtDate(s.created_at) + '</div></div>' : '')
@@ -1274,7 +1274,7 @@
         const timeout = parseInt(document.getElementById('createTimeout').value) || 120000;
         await agy.runSql({
           target: "agent",
-          sql: "INSERT INTO tasks (name, description, content, timeout_ms) VALUES (?, ?, ?, ?)",
+          sql: "INSERT INTO tasks (title, description, content, timeout_ms) VALUES (?, ?, ?, ?)",
           params: [name, desc, '', timeout],
           confirmed: true
         });
@@ -1290,7 +1290,7 @@
       showToast((isTask ? 'Task' : 'Doc') + ' created');
       await loadAll();
       const source = isTask ? allTasks : allDocs;
-      const created = source.find(i => i.name === name);
+      const created = source.find(i => (isTask ? i.title : i.name) === name);
       if (created) {
         selected = { type: isTask ? 'tasks' : 'docs', ...created };
         editing = true; dirty = false;
@@ -1302,7 +1302,7 @@
   }
 
   function showCreateTriggerModal() {
-    const taskOptions = allTasks.map(t => '<option value="' + t.id + '">' + escHtml(t.name) + '</option>').join('');
+    const taskOptions = allTasks.map(t => '<option value="' + t.id + '">' + escHtml(t.title) + '</option>').join('');
     document.getElementById('modalRoot').innerHTML =
       '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'
       + '<div class="modal">'

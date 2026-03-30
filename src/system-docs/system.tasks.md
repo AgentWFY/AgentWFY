@@ -26,7 +26,7 @@ Task completion is published to the event bus:
 ```js
 const { runId } = await startTask({ taskId, input: 'some input' })
 const result = await waitFor({ topic: 'task:run:' + runId })
-// result: { runId, taskId, name, status, result, error, logs }
+// result: { runId, taskId, title, status, result, error, logs }
 ```
 
 For inter-task data passing, use the bus with runId as correlation ID:

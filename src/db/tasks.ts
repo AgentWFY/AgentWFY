@@ -2,7 +2,7 @@ import { runAgentDbSql } from './sqlite.js';
 
 interface TaskCatalogRecord {
   id: number;
-  name: string;
+  title: string;
   description: string;
   timeout_ms: number | null;
   updated_at: number;
@@ -54,7 +54,7 @@ function toCatalogRecord(row: unknown): TaskCatalogRecord {
   const record = asObject(row);
   return {
     id: asNumber(record.id, 'id'),
-    name: asString(record.name, 'name'),
+    title: asString(record.title, 'title'),
     description: typeof record.description === 'string' ? record.description : '',
     timeout_ms: asNullableNumber(record.timeout_ms),
     updated_at: asNumber(record.updated_at, 'updated_at'),
@@ -63,7 +63,7 @@ function toCatalogRecord(row: unknown): TaskCatalogRecord {
 
 export async function listTasks(dataDir: string): Promise<TaskCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, description, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
+    sql: 'SELECT id, title, description, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
   });
 
   return rows.map((row) => toCatalogRecord(row));

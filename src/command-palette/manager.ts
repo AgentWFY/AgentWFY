@@ -433,13 +433,13 @@ export class CommandPaletteManager {
       const tasks = await listTasks(this.deps.getAgentRoot());
       return tasks.map((task) => ({
         id: `task:${task.id}`,
-        title: task.name,
+        title: task.title,
         subtitle: task.description || undefined,
         group: 'Tasks' as const,
         action: {
           type: 'run-task' as const,
           taskId: task.id,
-          taskName: task.name,
+          taskName: task.title,
           taskDescription: task.description || undefined,
         },
       }));
