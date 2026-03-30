@@ -2,164 +2,348 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>OpenAI Provider Settings</title>
-  <style>
-    body {
-      padding: 24px;
-      max-width: 480px;
-      margin: 0 auto;
-    }
-    h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--color-text4);
-      margin: 0 0 20px;
-    }
-    .fields {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .field-label {
-      font-size: 11px;
-      color: var(--color-text2);
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-    .field-row {
-      display: flex;
-      gap: 6px;
-      align-items: stretch;
-    }
-    .field-row input, .field-row select {
-      flex: 1;
-      min-width: 0;
-    }
-    input, select {
-      padding: 6px 8px;
-      border: 1px solid var(--color-input-border);
-      border-radius: var(--radius-sm);
-      background: var(--color-input-bg);
-      color: var(--color-text3);
-      font-size: 13px;
-      font-family: var(--font-family);
-      outline: none;
-    }
-    input:focus, select:focus {
-      border-color: var(--color-focus-border);
-    }
-    .btn {
-      padding: 5px 14px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-sm);
-      background: var(--color-bg3);
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--color-text3);
-      white-space: nowrap;
-      font-family: var(--font-family);
-    }
-    .btn:hover { background: var(--color-item-hover); }
-    .btn-accent {
-      background: var(--color-accent);
-      color: var(--color-bg1);
-      border-color: var(--color-accent);
-    }
-    .btn-accent:hover { opacity: 0.9; }
-    .status {
-      font-size: 12px;
-      padding: 6px 10px;
-      border-radius: var(--radius-sm);
-      margin-top: 8px;
-      display: none;
-    }
-    .status.success {
-      display: block;
-      background: var(--color-green-bg);
-      color: var(--color-green-fg);
-    }
-    .status.error {
-      display: block;
-      background: var(--color-red-bg);
-      color: var(--color-red-fg);
-    }
-  </style>
+  <title>Provider Settings</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    font-family: var(--font-family);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 24px 32px 0;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--color-text4);
+    margin: 0 0 2px;
+  }
+  .header .subtitle {
+    font-size: 12px;
+    color: var(--color-text2);
+    margin: 0 0 20px;
+  }
+
+  /* ── Scrollable content ── */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 32px 40px;
+  }
+  .content::-webkit-scrollbar { width: 8px; }
+  .content::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+
+  /* ── Sections ── */
+  .section {
+    padding: 20px 0;
+  }
+  .section + .section {
+    border-top: 1px solid var(--color-divider);
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 12px;
+  }
+
+  /* ── Setting rows ── */
+  .setting {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .setting + .setting {
+    margin-top: 12px;
+  }
+  .setting-label {
+    font-size: 13px;
+    color: var(--color-text4);
+  }
+  .setting-hint {
+    font-size: 11px;
+    color: var(--color-text2);
+  }
+  .setting-control {
+    max-width: 360px;
+  }
+
+  /* ── Inputs ── */
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: var(--font-family);
+    background: var(--color-input-bg);
+    border: 1px solid var(--color-input-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text3);
+    outline: none;
+    transition: border-color 120ms ease;
+  }
+  input:focus {
+    border-color: var(--color-focus-border);
+  }
+  input::placeholder {
+    color: var(--color-placeholder);
+  }
+  input.has-key {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+
+  /* ── Password field with toggle ── */
+  .password-wrap {
+    position: relative;
+  }
+  .password-wrap input {
+    padding-right: 36px;
+  }
+  .toggle-vis {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    bottom: 1px;
+    width: 32px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text2);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .toggle-vis:hover { color: var(--color-text3); }
+  .toggle-vis svg { width: 16px; height: 16px; }
+
+  /* ── Select ── */
+  .select-wrap {
+    position: relative;
+    display: inline-block;
+  }
+  .select-wrap select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding: 6px 32px 6px 10px;
+    font-size: 13px;
+    font-family: var(--font-family);
+    background: var(--color-input-bg);
+    border: 1px solid var(--color-input-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text3);
+    outline: none;
+    cursor: pointer;
+    transition: border-color 120ms ease;
+  }
+  .select-wrap select:focus {
+    border-color: var(--color-focus-border);
+  }
+  .select-wrap::after {
+    content: '';
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 4px solid transparent;
+    border-top-color: var(--color-text2);
+    pointer-events: none;
+  }
+
+  /* ── Saved indicator ── */
+  .saved-indicator {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    font-size: 12px;
+    color: var(--color-green-fg);
+    background: var(--color-green-bg);
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 200ms ease, transform 200ms ease;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .saved-indicator.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Error toast ── */
+  .error-toast {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    font-size: 12px;
+    color: var(--color-red-fg);
+    background: var(--color-red-bg);
+    padding: 4px 12px;
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 200ms ease, transform 200ms ease;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .error-toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Connection test ── */
+  .test-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: var(--font-family);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text3);
+    cursor: pointer;
+    transition: all 120ms ease;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--color-item-hover); color: var(--color-text4); }
+  .btn:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+  .test-status {
+    font-size: 12px;
+    color: var(--color-text2);
+  }
+  .test-status.ok { color: var(--color-green-fg); }
+  .test-status.fail { color: var(--color-red-fg); }
+</style>
 </head>
 <body>
-  <h1>OpenAI Compatible Provider</h1>
-  <div class="fields">
-    <div class="field">
-      <span class="field-label">API Key</span>
-      <div class="field-row">
-        <input type="password" id="apiKey" placeholder="sk-...">
-        <button class="btn btn-accent" id="saveApiKey">Save</button>
+  <div class="header">
+    <h1>Provider Settings</h1>
+    <p class="subtitle">OpenAI-compatible API configuration</p>
+  </div>
+
+  <div class="content">
+    <div class="section">
+      <div class="section-title">Authentication</div>
+      <div class="setting">
+        <div class="setting-label">API Key</div>
+        <div class="setting-control">
+          <div class="password-wrap">
+            <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off" spellcheck="false">
+            <button class="toggle-vis" id="toggleVis" tabindex="-1" title="Show / Hide">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/>
+                <circle cx="8" cy="8" r="2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="field">
-      <span class="field-label">Model ID</span>
-      <div class="field-row">
-        <input type="text" id="modelId" placeholder="deepseek/deepseek-v3.2">
-        <button class="btn" id="saveModelId">Save</button>
+
+    <div class="section">
+      <div class="section-title">Model</div>
+      <div class="setting">
+        <div class="setting-label">Model ID</div>
+        <div class="setting-hint">e.g. deepseek/deepseek-v3.2</div>
+        <div class="setting-control">
+          <input type="text" id="modelId" placeholder="deepseek/deepseek-v3.2" spellcheck="false">
+        </div>
+      </div>
+      <div class="setting">
+        <div class="setting-label">Reasoning</div>
+        <div class="setting-hint">Extended thinking effort</div>
+        <div class="setting-control">
+          <div class="select-wrap">
+            <select id="reasoning">
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="field">
-      <span class="field-label">Base URL</span>
-      <div class="field-row">
-        <input type="text" id="baseUrl" placeholder="https://openrouter.ai/api">
-        <button class="btn" id="saveBaseUrl">Save</button>
+
+    <div class="section">
+      <div class="section-title">Connection</div>
+      <div class="setting">
+        <div class="setting-label">Base URL</div>
+        <div class="setting-hint">OpenAI-compatible endpoint</div>
+        <div class="setting-control">
+          <input type="text" id="baseUrl" placeholder="https://openrouter.ai/api" spellcheck="false">
+        </div>
       </div>
-    </div>
-    <div class="field">
-      <span class="field-label">Reasoning Effort</span>
-      <div class="field-row">
-        <select id="reasoning">
-          <option value="off">Off</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
-        <button class="btn" id="saveReasoning">Save</button>
+      <div class="test-row">
+        <button class="btn" id="testBtn">Test Connection</button>
+        <span class="test-status" id="testStatus"></span>
       </div>
     </div>
   </div>
-  <div class="status" id="status"></div>
+
+  <div class="saved-indicator" id="savedIndicator">Saved</div>
+  <div class="error-toast" id="errorToast"></div>
 
   <script>
     const $ = (sel) => document.querySelector(sel);
-
+    const PREFIX = 'system.openai-compatible-provider';
     const KEYS = {
-      apiKey: 'system.openai-compatible-provider.apiKey',
-      modelId: 'system.openai-compatible-provider.modelId',
-      baseUrl: 'system.openai-compatible-provider.baseUrl',
-      reasoning: 'system.openai-compatible-provider.reasoning',
+      apiKey: `${PREFIX}.apiKey`,
+      modelId: `${PREFIX}.modelId`,
+      baseUrl: `${PREFIX}.baseUrl`,
+      reasoning: `${PREFIX}.reasoning`,
+    };
+    const DEFAULTS = {
+      modelId: 'deepseek/deepseek-v3.2',
+      baseUrl: 'https://openrouter.ai/api',
     };
 
-    function showStatus(msg, type) {
-      const el = $('#status');
+    // ── Feedback toasts ──
+
+    let toastTimer;
+    function showToast(id, msg, duration) {
+      clearTimeout(toastTimer);
+      const el = $('#' + id);
       el.textContent = msg;
-      el.className = 'status ' + type;
-      if (type === 'success') {
-        setTimeout(() => { el.className = 'status'; }, 2000);
-      }
+      el.classList.add('show');
+      toastTimer = setTimeout(() => el.classList.remove('show'), duration);
     }
+
+    // ── DB helpers ──
 
     async function loadConfig() {
       try {
         const rows = await window.agentwfy.runSql({
           target: 'agent',
-          sql: "SELECT name, value FROM config WHERE name LIKE 'system.openai-compatible-provider.%'",
+          sql: `SELECT name, value FROM config WHERE name LIKE '${PREFIX}.%'`,
         });
         for (const row of rows) {
           const val = row.value ?? '';
-          if (row.name === KEYS.apiKey) $('#apiKey').value = val;
-          else if (row.name === KEYS.modelId) $('#modelId').value = val;
-          else if (row.name === KEYS.baseUrl) $('#baseUrl').value = val;
-          else if (row.name === KEYS.reasoning) $('#reasoning').value = val || 'off';
+          if (row.name === KEYS.apiKey) {
+            $('#apiKey').value = val;
+            if (val) $('#apiKey').classList.add('has-key');
+            lastSaved[KEYS.apiKey] = val;
+          }
+          else if (row.name === KEYS.modelId) { $('#modelId').value = val; lastSaved[KEYS.modelId] = val; }
+          else if (row.name === KEYS.baseUrl) { $('#baseUrl').value = val; lastSaved[KEYS.baseUrl] = val; }
+          else if (row.name === KEYS.reasoning) { $('#reasoning').value = val || 'off'; lastSaved[KEYS.reasoning] = val || 'off'; }
         }
       } catch (e) {
         console.error('Failed to load config', e);
@@ -173,25 +357,109 @@
           sql: 'UPDATE config SET value = ? WHERE name = ?',
           params: [value, name],
         });
-        showStatus('Saved', 'success');
+        showToast('savedIndicator', 'Saved', 1500);
       } catch (e) {
-        showStatus('Error: ' + e.message, 'error');
+        showToast('errorToast', 'Save failed: ' + e.message, 3000);
       }
     }
 
-    $('#saveApiKey').addEventListener('click', () => {
-      saveValue(KEYS.apiKey, $('#apiKey').value.trim());
+    // ── Auto-save on blur / change with debounce ──
+
+    const lastSaved = {};
+    let saveTimers = {};
+
+    function debounceSave(key, value, delay = 600) {
+      clearTimeout(saveTimers[key]);
+      saveTimers[key] = setTimeout(() => {
+        if (lastSaved[key] === value) return;
+        lastSaved[key] = value;
+        saveValue(key, value);
+      }, delay);
+    }
+
+    function setupInput(id, key, defaultValue) {
+      const el = $('#' + id);
+      el.addEventListener('input', () => {
+        debounceSave(key, el.value.trim() || defaultValue || '');
+      });
+      el.addEventListener('blur', () => {
+        clearTimeout(saveTimers[key]);
+        const val = el.value.trim() || defaultValue || '';
+        if (lastSaved[key] === val) return;
+        lastSaved[key] = val;
+        saveValue(key, val);
+      });
+    }
+
+    setupInput('apiKey', KEYS.apiKey);
+    $('#apiKey').addEventListener('input', () => {
+      $('#apiKey').classList.toggle('has-key', !!$('#apiKey').value.trim());
     });
-    $('#saveModelId').addEventListener('click', () => {
-      saveValue(KEYS.modelId, $('#modelId').value.trim() || 'deepseek/deepseek-v3.2');
-    });
-    $('#saveBaseUrl').addEventListener('click', () => {
-      saveValue(KEYS.baseUrl, $('#baseUrl').value.trim() || 'https://openrouter.ai/api');
-    });
-    $('#saveReasoning').addEventListener('click', () => {
-      saveValue(KEYS.reasoning, $('#reasoning').value);
+    setupInput('modelId', KEYS.modelId, DEFAULTS.modelId);
+    setupInput('baseUrl', KEYS.baseUrl, DEFAULTS.baseUrl);
+
+    $('#reasoning').addEventListener('change', () => {
+      const val = $('#reasoning').value;
+      if (lastSaved[KEYS.reasoning] === val) return;
+      lastSaved[KEYS.reasoning] = val;
+      saveValue(KEYS.reasoning, val);
     });
 
+    // ── Toggle password visibility ──
+
+    $('#toggleVis').addEventListener('click', () => {
+      const input = $('#apiKey');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    // ── Test connection ──
+
+    $('#testBtn').addEventListener('click', async () => {
+      const btn = $('#testBtn');
+      const status = $('#testStatus');
+      btn.disabled = true;
+      status.textContent = 'Testing...';
+      status.className = 'test-status';
+
+      const apiKey = $('#apiKey').value.trim();
+      const baseUrl = ($('#baseUrl').value.trim() || DEFAULTS.baseUrl).replace(/\/v1\/?$/, '');
+      const model = $('#modelId').value.trim() || DEFAULTS.modelId;
+
+      try {
+        const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [{ role: 'user', content: 'Hi' }],
+            max_tokens: 1,
+          }),
+        });
+
+        if (resp.ok) {
+          status.textContent = 'Connected';
+          status.className = 'test-status ok';
+        } else if (resp.status === 401 || resp.status === 403) {
+          status.textContent = 'Invalid API key';
+          status.className = 'test-status fail';
+        } else {
+          const text = await resp.text().catch(() => '');
+          let msg = `Error ${resp.status}`;
+          try { const j = JSON.parse(text); if (j.error?.message) msg = j.error.message; } catch {}
+          status.textContent = msg;
+          status.className = 'test-status fail';
+        }
+      } catch (e) {
+        status.textContent = 'Connection failed';
+        status.className = 'test-status fail';
+      }
+      btn.disabled = false;
+    });
+
+    // ── Init ──
     loadConfig();
   </script>
 </body>
