@@ -388,7 +388,7 @@ class OpenAICompatibleSession implements ProviderSession {
         // Auth errors
         if (response.status === 401 || response.status === 403) {
           throw new ProviderError(
-            `Authentication failed (${response.status}): ${text || response.statusText}`,
+            `API key is missing or invalid. [Open Settings](agentview://view/${CONFIG_PREFIX}.settings-view) to add a valid API key.`,
             'auth',
           )
         }

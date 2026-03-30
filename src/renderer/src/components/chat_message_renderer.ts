@@ -187,7 +187,7 @@ function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
       html += '</div>'
     }
     if (block.error) {
-      html += `<div class="error-banner">${escapeHtml(block.error)}</div>`
+      html += `<div class="error-banner">${renderMarkdown(block.error)}</div>`
     }
     html += '</div>'
     return html
