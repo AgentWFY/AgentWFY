@@ -143,7 +143,6 @@ registerPluginHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
   (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
-  (e) => windowManager.getContextForSender(e.sender.id).commandPalette,
 );
 registerRuntimeFunctionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,

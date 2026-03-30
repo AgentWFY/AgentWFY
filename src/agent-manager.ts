@@ -1,4 +1,4 @@
-import { app, dialog, type BrowserWindow } from 'electron';
+import { dialog, type BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { mkdir } from 'fs/promises';

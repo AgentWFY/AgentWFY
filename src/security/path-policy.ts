@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-export interface AssertPathAllowedOptions {
+interface AssertPathAllowedOptions {
   allowMissing?: boolean;
   allowAgentPrivate?: boolean;
 }

@@ -1,13 +1,13 @@
 import { runAgentDbSql } from './sqlite.js';
 
-export interface ViewCatalogRecord {
+interface ViewCatalogRecord {
   id: number;
   name: string;
   title: string;
   updated_at: number;
 }
 
-export interface ViewRecord extends ViewCatalogRecord {
+interface ViewRecord extends ViewCatalogRecord {
   content: string;
   created_at: number;
 }

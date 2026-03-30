@@ -1,6 +1,6 @@
 import { runAgentDbSql } from './sqlite.js';
 
-export interface TaskCatalogRecord {
+interface TaskCatalogRecord {
   id: number;
   name: string;
   description: string;
