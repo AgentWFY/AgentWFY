@@ -245,12 +245,16 @@ export class CommandPaletteManager {
     const rows = await listViews(agentRoot);
 
     const viewItems: CommandPaletteItem[] = rows.map((row) => {
-      const displayTitle = row.title || row.name;
+      let displayTitle = row.title || row.name;
       let group: CommandPaletteItem['group'];
       if (row.name.startsWith('system.')) {
         group = 'System Views';
       } else if (row.name.startsWith('plugin.')) {
         group = 'Plugin Views';
+        const pluginName = row.name.split('.')[1];
+        if (pluginName) {
+          displayTitle = `${pluginName}: ${displayTitle}`;
+        }
       } else {
         group = 'Views';
       }
