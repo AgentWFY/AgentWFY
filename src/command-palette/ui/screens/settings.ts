@@ -48,6 +48,7 @@ export class SettingsScreen implements PaletteScreen {
   private saving = false
   private searchValue = ''
   private loaded = false
+  private container: HTMLElement | null = null
 
   constructor(bridge: CommandPaletteBridge) {
     this.bridge = bridge
@@ -168,6 +169,7 @@ export class SettingsScreen implements PaletteScreen {
   }
 
   renderContent(container: HTMLElement): void {
+    this.container = container
     container.innerHTML = ''
 
     const searchInput = document.getElementById('searchInput') as HTMLInputElement | null
@@ -424,7 +426,10 @@ export class SettingsScreen implements PaletteScreen {
           const inp = card.querySelector('.settings-card-input') as HTMLInputElement
           if (inp) {
             inp.disabled = newTarget === 'default'
-            if (newTarget !== 'default' && !inp.value && row.originalValue) {
+            if (newTarget === 'default') {
+              inp.value = ''
+              row.value = ''
+            } else if (!inp.value && row.originalValue) {
               inp.value = row.originalValue
               row.value = row.originalValue
             }
@@ -475,7 +480,6 @@ export class SettingsScreen implements PaletteScreen {
           const result = await this.bridge.updateSetting(row.key, row.value, row.target)
           if (!result.success) {
             this.error = `Failed to save ${row.label}: ${result.error || 'Unknown error'}`
-            this.saving = false
             return
           }
           row.originalValue = row.value
@@ -483,10 +487,11 @@ export class SettingsScreen implements PaletteScreen {
         }
         row.dirty = false
       }
-      this.saving = false
     } catch {
       this.error = 'Failed to save settings'
+    } finally {
       this.saving = false
+      if (this.container) this.renderContent(this.container)
     }
   }
 
