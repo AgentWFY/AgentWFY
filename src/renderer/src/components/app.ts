@@ -8,7 +8,7 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 const AGENT_SIDEBAR_WIDTH = 78
 
 export class TlApp extends HTMLElement {
-  private activeSidebarPanel: string | null = null
+  private activeSidebarPanel: string | null = 'agent-chat'
   private sidebarEl!: HTMLDivElement
   private sidebarTopEl!: HTMLDivElement
   private sidebarSwitcherEl!: HTMLDivElement
@@ -318,7 +318,7 @@ export class TlApp extends HTMLElement {
 
     // ── Sidebar (full-height: own top bar + chat/tasks) ──
     this.sidebarEl = document.createElement('div')
-    this.sidebarEl.className = 'awfy-app-sidebar closed'
+    this.sidebarEl.className = 'awfy-app-sidebar'
     this.sidebarEl.style.width = `${this.sidebarWidth}px`
 
     // Sidebar top bar
@@ -353,7 +353,6 @@ export class TlApp extends HTMLElement {
 
     // Chat and tasks panels
     this.agentChatEl = document.createElement('awfy-agent-chat')
-    this.agentChatEl.classList.add('panel-hidden')
     this.sidebarEl.appendChild(this.agentChatEl)
 
     this.taskPanelEl = document.createElement('awfy-task-panel')
@@ -379,7 +378,7 @@ export class TlApp extends HTMLElement {
     headerEl.className = 'awfy-app-header'
 
     this.inlineToggleBtnEl = document.createElement('button')
-    this.inlineToggleBtnEl.className = 'awfy-app-inline-toggle visible'
+    this.inlineToggleBtnEl.className = 'awfy-app-inline-toggle'
     this.inlineToggleBtnEl.title = 'Open sidebar'
     this.inlineToggleBtnEl.innerHTML = SIDEBAR_ICON
     this.inlineToggleBtnEl.addEventListener('click', this.toggleSidebar)
