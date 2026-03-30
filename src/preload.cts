@@ -424,7 +424,7 @@ if (isApp) {
       stop(runId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.stop, runId);
       },
-      listRunning(): Promise<Array<{ runId: string; taskId: number; name: string; status: string; origin: unknown; startedAt: number }>> {
+      listRunning(): Promise<Array<{ runId: string; taskId: number; title: string; status: string; origin: unknown; startedAt: number }>> {
         return ipcRenderer.invoke(Channels.tasks.listRunning);
       },
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {

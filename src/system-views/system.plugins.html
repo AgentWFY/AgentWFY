@@ -347,7 +347,7 @@
       const [views, docs, tasks, agentPlugins] = await Promise.all([
         window.agentwfy.runSql({ ...sqlOpts, sql: "SELECT name, title FROM views WHERE name NOT LIKE 'system.%' ORDER BY name" }).catch(() => []),
         window.agentwfy.runSql({ ...sqlOpts, sql: "SELECT name FROM docs WHERE name NOT LIKE 'system.%' ORDER BY name" }).catch(() => []),
-        window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description FROM tasks ORDER BY name' }).catch(() => []),
+        window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT title, description FROM tasks ORDER BY title' }).catch(() => []),
         window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version FROM plugins ORDER BY name' }).catch(() => []),
       ]);
       previewAgent = { agent, data: { views, docs, tasks, plugins: agentPlugins } };
@@ -480,7 +480,7 @@
       const d = previewAgent.data;
       if (d.views.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Views (' + d.views.length + ')</div><div class="detail-items-list">'; for (const v of d.views) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(v.name) + '</div><div class="detail-item-desc">' + esc(v.title || '') + '</div></div>'; h += '</div></div>'; }
       if (d.docs.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Docs (' + d.docs.length + ')</div><div class="detail-items-list">'; for (const doc of d.docs) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(doc.name) + '</div></div>'; h += '</div></div>'; }
-      if (d.tasks.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Tasks (' + d.tasks.length + ')</div><div class="detail-items-list">'; for (const t of d.tasks) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(t.name) + '</div><div class="detail-item-desc">' + esc(t.description || '') + '</div></div>'; h += '</div></div>'; }
+      if (d.tasks.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Tasks (' + d.tasks.length + ')</div><div class="detail-items-list">'; for (const t of d.tasks) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(t.title) + '</div><div class="detail-item-desc">' + esc(t.description || '') + '</div></div>'; h += '</div></div>'; }
       if (d.plugins.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Plugins (' + d.plugins.length + ')</div><div class="detail-items-list">'; for (const p of d.plugins) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(p.name) + '</div><div class="detail-item-desc">' + esc(p.description || '') + (p.version ? ' (v' + esc(p.version) + ')' : '') + '</div></div>'; h += '</div></div>'; }
       if (d.views.length === 0 && d.docs.length === 0 && d.tasks.length === 0 && d.plugins.length === 0) h += '<div class="no-items">This agent has no custom views, docs, tasks, or plugins.</div>';
     }

@@ -27,7 +27,7 @@ Agent DB schema:
 ```
 views (id, name UNIQUE, title, content, created_at, updated_at)
 docs (id, name UNIQUE, content, updated_at)
-tasks (id, name, description, content, timeout_ms, created_at, updated_at)
+tasks (id, title, description, content, timeout_ms, created_at, updated_at)
 triggers (id, task_id FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
 config (name PK, value, description)
 plugins (id, name UNIQUE, description, version, code, author, repository, license, enabled, created_at, updated_at)
