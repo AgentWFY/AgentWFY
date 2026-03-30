@@ -304,7 +304,7 @@ export class CommandPaletteManager {
       {
         id: 'action:enter-settings',
         title: 'Settings',
-        expandable: true,
+        shortcut: ds('open-settings'),
         group: 'Actions',
         action: { type: 'enter-settings' },
       },

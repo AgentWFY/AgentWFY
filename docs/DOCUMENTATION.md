@@ -956,17 +956,7 @@ The global config file is a plain JSON file that can be edited by hand. If `~/.a
 
 ## Keyboard Shortcuts
 
-| Action | Default | Config Key |
-|--------|---------|-----------|
-| Command Palette | `Cmd+K` / `Ctrl+K` | `system.shortcuts.toggle-command-palette` |
-| Toggle AI Chat | `Cmd+I` / `Ctrl+I` | `system.shortcuts.toggle-agent-chat` |
-| Toggle Task Panel | `Cmd+J` / `Ctrl+J` | `system.shortcuts.toggle-task-panel` |
-| Close Tab | `Cmd+W` / `Ctrl+W` | `system.shortcuts.close-current-tab` |
-| Reload Tab | `Cmd+R` / `Ctrl+R` | `system.shortcuts.reload-current-tab` |
-| Reload Window | `Cmd+Shift+R` / `Ctrl+Shift+R` | `system.shortcuts.reload-window` |
-| Open Agent | `Cmd+O` / `Ctrl+O` | `system.shortcuts.open-agent` |
-
-Set to `'disabled'` to unbind. `Enter` sends in chat, `Shift+Enter` for newlines.
+Keyboard shortcuts are configurable via `system.shortcuts.*` config keys. Set a shortcut to `'disabled'` to unbind it. Defaults can be viewed in the Settings screen (`Cmd+,` / `Ctrl+,`).
 
 ---
 

@@ -134,5 +134,9 @@
   {
     "name": "system.shortcuts.search-views",
     "description": "Shortcut for Search Views (default: mod+p). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.open-settings",
+    "description": "Shortcut for Open Settings (default: mod+,). Set to 'disabled' to unbind."
   }
 ]

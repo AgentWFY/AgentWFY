@@ -889,6 +889,9 @@ class WindowManager {
       case 'search-views':
         this.commandPalette?.showFiltered('views ');
         break;
+      case 'open-settings':
+        this.commandPalette?.show({ screen: 'settings' });
+        break;
       default:
         if (action.startsWith('switch-to-tab-')) {
           const index = parseInt(action.slice(-1), 10) - 1;
