@@ -1,5 +1,6 @@
 import { storeGet } from '../ipc/store.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
+import { globalConfigExists, globalConfigGet } from './global-config.js';
 
 function readAgentConfigValue(agentRoot: string, name: string): string | undefined {
   try {
@@ -16,11 +17,16 @@ function readAgentConfigValue(agentRoot: string, name: string): string | undefin
   }
 }
 
+export function getGlobalValue(key: string): unknown {
+  if (globalConfigExists()) return globalConfigGet(key);
+  return storeGet(key);
+}
+
 export function getConfigValue(agentRoot: string, name: string, fallback?: unknown): unknown {
   const agentValue = readAgentConfigValue(agentRoot, name);
   if (agentValue !== undefined) return agentValue;
 
-  const globalValue = storeGet(name);
+  const globalValue = getGlobalValue(name);
   if (globalValue !== undefined) return globalValue;
 
   return fallback;

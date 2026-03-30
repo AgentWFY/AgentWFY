@@ -6,7 +6,7 @@ import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { startHttpApi } from './http-api/server.js';
 import type { HttpApiServer } from './http-api/server.js';
-import { getConfigValue, setAgentConfig } from './settings/config.js';
+import { getConfigValue, getGlobalValue, setAgentConfig } from './settings/config.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
@@ -961,7 +961,9 @@ class WindowManager {
 
   applyTheme(): void {
     const agentRoot = this.activeAgentRoot;
-    const value = agentRoot ? getConfigValue(agentRoot, 'system.theme', 'system') : storeGet('system.theme');
+    const value = agentRoot
+      ? getConfigValue(agentRoot, 'system.theme', 'system')
+      : getGlobalValue('system.theme') ?? 'system';
     const source = (value === 'light' || value === 'dark') ? value : 'system';
     if (nativeTheme.themeSource !== source) {
       nativeTheme.themeSource = source;
