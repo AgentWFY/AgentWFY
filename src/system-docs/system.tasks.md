@@ -2,16 +2,7 @@
 
 Tasks are JavaScript code stored in the `tasks` table. They run in dedicated Node.js processes (same runtime as execJs) and can be started programmatically or by the user from the command palette.
 
-## Schema
-
-```sql
-tasks (id INTEGER PRIMARY KEY, name TEXT, description TEXT DEFAULT '', content TEXT, timeout_ms INTEGER, created_at INTEGER, updated_at INTEGER)
-```
-
-- `name` — task name, shown to the user
-- `description` — shown to the user when selecting the task
-- `content` — JavaScript code to execute
-- `timeout_ms` — optional execution timeout (null = no limit)
+The `content` column contains JavaScript code to execute. `timeout_ms` is an optional execution timeout (null = no limit).
 
 ## APIs
 

@@ -2,18 +2,7 @@
 
 Triggers automate task execution. Stored in the `triggers` table.
 
-## Schema
-
-```sql
-triggers (id INTEGER PRIMARY KEY, task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE, type TEXT CHECK(type IN ('schedule','http','event')), config TEXT, description TEXT DEFAULT '', enabled INTEGER DEFAULT 1, created_at INTEGER, updated_at INTEGER)
-```
-
-- `task_id` — references the task to run. Cascades on delete.
-- `type` — one of: `schedule`, `http`, `event`
-- `config` — JSON string, format depends on type
-- `enabled` — 1 (active) or 0 (disabled)
-
-Triggers reload automatically when the table changes.
+The `config` column is a JSON string, format depends on `type`. Triggers reload automatically when the table changes.
 
 ## input
 

@@ -375,14 +375,5 @@ Plugin docs are read-only from the agent's perspective. The `system.plugins` doc
 - If `registerProvider` is called with an ID that's already registered, it is skipped with a warning.
 - Package validation rejects invalid packages entirely — no partial installs.
 
-## Database
-
-The `plugins` table:
-
-```sql
-plugins (id, name UNIQUE, description, version, code TEXT, author, repository, license, enabled, created_at, updated_at)
-```
-
-The `author`, `repository`, and `license` columns are nullable — they are populated when a plugin is installed from a package that includes them.
 
 This table is read-only from SQL — the agent can query it but cannot modify it.

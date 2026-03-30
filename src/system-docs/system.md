@@ -5,11 +5,13 @@ You have one tool: execJs.
 
 ## execJs Runtime
 
-execJs runs JavaScript in a dedicated Node.js process (Electron utilityProcess). Inside execJs you can call these async host APIs. Views have the same APIs available via `window.agentwfy.<method>(...)`.
+execJs runs JavaScript in a standard Node.js environment. All Node.js globals are available except module-system ones (`require`, `module`, `__filename`, `__dirname`). Browser APIs do not exist.
 
-The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — do not rely on `globalThis` or in-memory variables between calls. Use the database or files to persist state. Browser APIs (`document`, `window`) and Node.js globals (`require`, `Buffer`, `module`, `__filename`, `__dirname`) are unavailable.
+Inside execJs you can call these async host APIs. Views have the same APIs available via `window.agentwfy.<method>(...)`.
 
-Default timeout is 5000ms, maximum 120000ms.
+The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — no state persists between calls.
+
+Default timeout is 5000ms, maximum 120000ms. Tool results are truncated at 50,000 characters.
 
 ### SQL
 
@@ -18,18 +20,42 @@ await runSql({ target, sql, params?, path?, description? })
 ```
 
 Targets:
-- `'agent'` — built-in agent.db (views, docs, tasks, triggers, config tables). Auto-creates schema on first use.
+- `'agent'` — built-in agent.db. Auto-creates schema on first use.
 - `'sqlite-file'` — any SQLite file in the working directory (requires `path`).
+
+Agent DB schema:
+```
+views (id, name UNIQUE, title, content, created_at, updated_at)
+docs (id, name UNIQUE, content, updated_at)
+tasks (id, name, description, content, timeout_ms, created_at, updated_at)
+triggers (id, task_id FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
+config (name PK, value, description)
+plugins (id, name UNIQUE, description, version, code, author, repository, license, enabled, created_at, updated_at)
+```
 
 Returns an array of row objects. Use parameterized queries with `params` array.
 
+Restrictions:
+- **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
+- **`system.*` and `plugin.*` namespaces are read-only** in `docs` and `views` tables (inserts, updates, and deletes are rejected).
+- **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
+- **`plugins` table is entirely read-only.**
+
+Everything outside these protected namespaces is freely writable.
+
+Docs are stored in the `docs` table. Only use it for storing instructions for the agent — use files or separate SQLite tables for general data. Docs without dots in the name are preloaded into this prompt. Read others on demand:
+
+```js
+await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['section-name'] })
+```
+
 ### Files
 
-File operations for reading, writing, editing, and searching files in the data directory. See `system.files`.
+File operations for working with files in the agent data directory. See `system.files`.
 
 ### Tabs
 
-Tab-based UI with view, file, and URL tab types. Use `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `getTabConsoleLogs`, `getTabs`. See `system.tabs`.
+For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `getTabConsoleLogs`, `getTabs`. See `system.tabs`.
 
 ### Other APIs
 
@@ -39,28 +65,8 @@ Tab-based UI with view, file, and URL tab types. Use `openTab`, `closeTab`, `sel
 - `openExternal({ url })` — open a URL in the user's default browser.
 - `getAvailableFunctions()` → list all available runtime functions.
 
-## Database Restrictions
+## Other docs
 
-The agent database (`agent.db`) enforces the following restrictions:
-
-- **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
-- **`system.*` and `plugin.*` namespaces are read-only** in `docs` and `views` tables (inserts, updates, and deletes are rejected).
-- **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
-- **`plugins` table is entirely read-only.**
-
-Everything outside these protected namespaces is freely writable.
-
-## Docs
-
-Docs are stored in the `docs` table (target="agent"). The docs table must only be used for storing instructions for the agent — do not use it for storing any other data. Use files or separate SQLite tables for general data storage.
-
-Docs without dots in the name are preloaded into this prompt. Read others on demand:
-
-```js
-const rows = await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['section-name'] })
-```
-
-Other docs:
 - `system.views` — how to create views, CSS variables, view runtime
 - `system.config` — config keys, resolution order, how to read/write settings
 - `system.plugins` — plugin system overview
