@@ -415,6 +415,9 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
+
+    // Sync initial sidebar state (open chat panel by default)
+    this.updateSidebar()
   }
 
   disconnectedCallback() {
