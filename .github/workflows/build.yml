@@ -31,18 +31,6 @@ jobs:
 
       - run: node scripts/setup
 
-      - name: Debug types directory
-        run: |
-          echo "=== types/ directory ==="
-          ls -la types/ || echo "types/ not found"
-          ls -la types/node/ | head -5 || echo "types/node/ not found"
-          ls -la types/electron/ || echo "types/electron/ not found"
-          echo "=== tsconfig.json ==="
-          cat tsconfig.json
-          echo "=== vendor/tsgo version ==="
-          ./vendor/tsgo/lib/tsgo --version 2>&1 || vendor\\tsgo\\lib\\tsgo.exe --version 2>&1 || echo "tsgo version check failed"
-        shell: bash
-
       - run: node scripts/build
 
       - run: node scripts/package

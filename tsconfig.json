@@ -13,6 +13,7 @@
     "typeRoots": ["types"]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "types/**/*"
   ]
 }
