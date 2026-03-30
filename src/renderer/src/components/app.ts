@@ -8,7 +8,7 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 const AGENT_SIDEBAR_WIDTH = 78
 
 export class TlApp extends HTMLElement {
-  private activeSidebarPanel: string | null = null
+  private activeSidebarPanel: string | null = 'agent-chat'
   private sidebarEl!: HTMLDivElement
   private sidebarTopEl!: HTMLDivElement
   private sidebarSwitcherEl!: HTMLDivElement
@@ -416,6 +416,9 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
+
+    // Sync initial sidebar state (open chat panel by default)
+    this.updateSidebar()
   }
 
   disconnectedCallback() {
