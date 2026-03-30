@@ -1,9 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
-import { handleProviderFallback } from '../plugins/registry.js'
 import type { PluginRegistry } from '../plugins/registry.js'
-import { installFromPackage, uninstallPlugin } from '../plugins/installer.js'
-import { getOrCreateAgentDb } from '../db/agent-db.js'
+import { uninstallPlugin } from '../plugins/installer.js'
 import type { CommandPaletteManager } from '../command-palette/manager.js'
 import { Channels } from './channels.js'
 
@@ -44,39 +42,15 @@ export function registerPluginHandlers(
     }
   })
 
-  ipcMain.handle(Channels.plugins.install, (event, packagePath: string) => {
-    if (typeof packagePath !== 'string' || packagePath.trim().length === 0) {
-      throw new Error('plugin:install requires a non-empty package path')
-    }
-    const agentRoot = getRoot(event)
-    const result = installFromPackage(agentRoot, packagePath)
-
-    // Activate installed plugins at runtime (unload first for reinstalls)
-    const pluginRegistry = getPluginRegistry(event)
-    if (pluginRegistry && result.installed.length > 0) {
-      const db = getOrCreateAgentDb(agentRoot)
-      for (const name of result.installed) {
-        const removedProviders = pluginRegistry.unloadPlugin(name)
-        handleProviderFallback(agentRoot, removedProviders)
-        const row = db.getPlugin(name)
-        if (row) pluginRegistry.loadPlugin(row)
-      }
-    }
-
-    return result
-  })
-
   ipcMain.handle(Channels.plugins.uninstall, (event, pluginName: string) => {
     if (typeof pluginName !== 'string' || pluginName.trim().length === 0) {
       throw new Error('plugin:uninstall requires a non-empty plugin name')
     }
     const agentRoot = getRoot(event)
 
-    // Deactivate plugin before removing from DB
     const pluginRegistry = getPluginRegistry(event)
     if (pluginRegistry) {
-      const removedProviders = pluginRegistry.unloadPlugin(pluginName)
-      handleProviderFallback(agentRoot, removedProviders)
+      pluginRegistry.unloadPlugin(pluginName)
     }
 
     uninstallPlugin(agentRoot, pluginName)

@@ -76,7 +76,6 @@ const Channels = {
   plugins: {
     call: 'plugin:call',
     methods: 'plugin:methods',
-    install: 'plugin:install',
     uninstall: 'plugin:uninstall',
     requestInstall: 'plugin:requestInstall',
     requestToggle: 'plugin:requestToggle',
@@ -413,9 +412,6 @@ if (isApp) {
       },
       methods(): Promise<string[]> {
         return ipcRenderer.invoke(Channels.plugins.methods);
-      },
-      install(packagePath: string): Promise<{ installed: string[] }> {
-        return ipcRenderer.invoke(Channels.plugins.install, packagePath);
       },
       uninstall(pluginName: string): Promise<void> {
         return ipcRenderer.invoke(Channels.plugins.uninstall, pluginName);

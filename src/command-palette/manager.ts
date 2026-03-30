@@ -17,7 +17,6 @@ import {
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
-import { handleProviderFallback } from '../plugins/registry.js';
 import type { PluginRegistry } from '../plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
 import type { AgentSessionManager } from '../agent/session_manager.js';
@@ -499,13 +498,12 @@ export class CommandPaletteManager {
     const agentRoot = this.deps.getAgentRoot();
     const installResult = installFromPackage(agentRoot, packagePath);
 
-    // Activate installed plugins at runtime
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry && installResult.installed.length > 0) {
       const db = getOrCreateAgentDb(agentRoot);
       for (const name of installResult.installed) {
         const row = db.getPlugin(name);
-        if (row) pluginRegistry.loadPlugin(row);
+        if (row) pluginRegistry.reloadPlugin(row);
       }
     }
 
@@ -555,11 +553,9 @@ export class CommandPaletteManager {
   uninstallPluginByName(pluginName: string): void {
     const agentRoot = this.deps.getAgentRoot();
 
-    // Deactivate plugin before removing from DB
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry) {
-      const removedProviders = pluginRegistry.unloadPlugin(pluginName);
-      handleProviderFallback(agentRoot, removedProviders);
+      pluginRegistry.unloadPlugin(pluginName);
     }
 
     uninstallPlugin(agentRoot, pluginName);
@@ -576,8 +572,7 @@ export class CommandPaletteManager {
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry) {
       if (!enabled) {
-        const removedProviders = pluginRegistry.unloadPlugin(pluginName);
-        handleProviderFallback(agentRoot, removedProviders);
+        pluginRegistry.unloadPlugin(pluginName);
       } else {
         const row = db.getPlugin(pluginName);
         if (row) pluginRegistry.loadPlugin(row);

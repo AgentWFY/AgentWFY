@@ -26,7 +26,6 @@ export interface CommandPaletteApi {
 export interface PluginsApi {
   call(method: string, params: unknown): Promise<unknown>
   methods(): Promise<string[]>
-  install(packagePath: string): Promise<{ installed: string[] }>
   uninstall(pluginName: string): Promise<void>
 }
 

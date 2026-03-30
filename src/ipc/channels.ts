@@ -74,7 +74,6 @@ export const Channels = {
   plugins: {
     call: 'plugin:call',
     methods: 'plugin:methods',
-    install: 'plugin:install',
     uninstall: 'plugin:uninstall',
     requestInstall: 'plugin:requestInstall',
     requestToggle: 'plugin:requestToggle',

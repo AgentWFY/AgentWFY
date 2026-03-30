@@ -108,7 +108,13 @@ export class PluginRegistry {
     }
   }
 
-  unloadPlugin(name: string): string[] {
+  /** Unload then reload a plugin. */
+  reloadPlugin(row: { name: string; description: string; version: string; code: string }): void {
+    this.unloadPlugin(row.name)
+    this.loadPlugin(row)
+  }
+
+  unloadPlugin(name: string): void {
     const deactivator = this.deactivators.get(name)
     if (deactivator) {
       try {
@@ -121,9 +127,9 @@ export class PluginRegistry {
 
     this.functionRegistry?.unregisterBySource(name)
     const removedProviders = this.providerRegistry?.unregisterBySource(name) ?? []
+    handleProviderFallback(this.agentRoot, removedProviders)
 
     this.plugins.delete(name)
-    return removedProviders
   }
 
   deactivateAll(): void {
@@ -139,7 +145,7 @@ export class PluginRegistry {
   }
 }
 
-export function handleProviderFallback(agentRoot: string, removedProviders: string[]): void {
+function handleProviderFallback(agentRoot: string, removedProviders: string[]): void {
   if (removedProviders.length === 0) return
   const currentProvider = getConfigValue(agentRoot, 'system.provider') as string | undefined
   if (currentProvider && removedProviders.includes(currentProvider)) {
