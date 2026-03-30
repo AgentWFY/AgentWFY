@@ -359,6 +359,10 @@ A package can contain one or multiple plugins (plugin pack).
 - **config**: must start with `plugin.<name>`. Example: `plugin.my-llm.apiKey`. Config rows are synced to the agent's `config` table on install. Use `value` for default values or `NULL` for unset.
 - **assets**: must use `<name>/<filename>` format. Example: `ffmpeg/ffmpeg-darwin-arm64`. Extracted to `.agentwfy/plugin-assets/<name>/<filename>` on install.
 
+### Welcome view
+
+If a plugin package includes a view named `plugin.<name>.welcome`, it is automatically opened as a tab after installation. Use this for onboarding — API key setup, getting started instructions, or first-run configuration.
+
 ## Plugin Docs
 
 Include docs in the package's `docs` table. They are synced to agent.db on install:

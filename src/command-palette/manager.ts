@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { listViews } from '../db/views.js';
+import { listViews, getViewByName } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
@@ -513,6 +513,25 @@ export class CommandPaletteManager {
         message: `Installed ${names}`,
       });
     }
+
+    // Open welcome views (convention: plugin.<name>.welcome)
+    const tabViewManager = this.deps.getTabViewManager();
+    for (const name of installResult.installed) {
+      const viewName = `plugin.${name}.welcome`;
+      void getViewByName(agentRoot, viewName).then((view) => {
+        if (view) {
+          void tabViewManager.openTabHandler({
+            viewId: view.id,
+            title: view.title || view.name,
+          }).catch((err) => {
+            console.error(`[command-palette] failed to open welcome view ${viewName}:`, err);
+          });
+        }
+      }).catch((err) => {
+        console.error(`[command-palette] failed to resolve welcome view ${viewName}:`, err);
+      });
+    }
+
     return installResult;
   }
 
