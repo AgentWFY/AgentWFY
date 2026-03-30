@@ -6,8 +6,9 @@ import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plugins/installer.js';
-import { storeGet, storeSet, storeRemove } from '../ipc/store.js';
-import { setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js';
+import { storeRemove } from '../ipc/store.js';
+import { setAgentConfig, clearAgentConfig, removeAgentConfig, getGlobalValue } from '../settings/config.js';
+import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -378,7 +379,7 @@ export class CommandPaletteManager {
       else group = 'Settings';
 
       const agentValue = row.value;
-      const globalValue = storeGet(row.name);
+      const globalValue = getGlobalValue(row.name);
       let source: string;
       let effectiveValue: string;
       if (agentValue !== null && agentValue !== undefined) {
@@ -412,7 +413,7 @@ export class CommandPaletteManager {
     if (scope === 'agent') {
       setAgentConfig(this.deps.getAgentRoot(), name, rawValue);
     } else {
-      storeSet(name, rawValue);
+      globalConfigSet(name, rawValue);
     }
     return { success: true };
   }
@@ -428,6 +429,7 @@ export class CommandPaletteManager {
 
   clearToDefault(name: string): void {
     this.clearAgentOverride(name);
+    globalConfigRemove(name);
     storeRemove(name);
   }
 
@@ -678,7 +680,8 @@ export class CommandPaletteManager {
   }
 
   openSettingsFile(): void {
-    shell.openPath(this.deps.getStorePath());
+    ensureGlobalConfig();
+    shell.openPath(getGlobalConfigPath());
   }
 
   async runAction(payload: unknown): Promise<void> {

@@ -39,6 +39,8 @@ tsgo (native TypeScript compiler) compiles all source files to `dist/`, preservi
 
 **Database (`src/db/`)**: Each agent has its own SQLite database (`.agentwfy/agent.db`). Tables: `docs`, `views`, `tasks`, `triggers`, `config`, `plugins`. Guard triggers on the DB prevent agents from writing to `system.*` and `plugin.*` namespaces. Change tracking via `_changes` temp table enables IPC notifications.
 
+**Global Config (`src/settings/global-config.ts`)**: User-wide settings stored in `~/.agentwfy.json`. Resolution order: Agent DB → `~/.agentwfy.json` → hardcoded defaults. Falls back to the internal Electron store (`userData/config.json`) when the global config file doesn't exist. The internal store (`src/ipc/store.ts`) remains for app-internal state like `installedAgents`.
+
 **Plugins (`src/plugins/`)**: Stored as code strings in the `plugins` table, executed via `new Function()` with full Node.js `require()` access. Each plugin gets a `PluginApi` for registering functions, providers, and pub/sub handlers. Plugin data is namespaced as `plugin.{name}.*` in docs/views/config and auto-cleaned on uninstall.
 
 **Runtime Functions (`src/runtime/`)**: `FunctionRegistry` maps function names to handlers. Built-in functions: `runSql`, file ops (`read`, `write`, `ls`, `find`, `grep`, `mkdir`), tab management, tasks, events, sub-agents, fetch. Plugins can register additional functions.

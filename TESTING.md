@@ -153,7 +153,8 @@ CDP_PORT=9224 ./scripts/cdp stop
 
 | Resource | Isolated? | Notes |
 |----------|-----------|-------|
-| Global config (`config.json`) | Yes | Worktree instance has its own — agent list starts empty |
+| Internal store (`config.json`) | Yes | Worktree instance has its own — agent list starts empty |
+| Global config (`~/.agentwfy.json`) | No | Shared across all instances |
 | Chromium state (GPU cache, cookies) | Yes | Separate `userData` directory |
 | HTTP API port | Yes | Falls back to OS-assigned port if 9877 is taken |
 | Agent data (`.agentwfy/`) | Yes | As long as instances use different agent directories |

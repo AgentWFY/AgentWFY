@@ -488,7 +488,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 | `value` | TEXT | String value, or NULL for default |
 | `description` | TEXT | Human-readable description |
 
-**Resolution order:** Agent DB value (non-NULL) → Global Electron store → Hardcoded default
+**Resolution order:** Agent DB value (non-NULL) → Global config (`~/.agentwfy.json`) → Hardcoded default
 
 ### Plugins Table
 
@@ -932,9 +932,11 @@ All settings stored in the `config` table.
 
 ### Global vs Agent Settings
 
-- **Global**: Apply to all agents (Electron app data)
+- **Global**: Apply to all agents, stored in `~/.agentwfy.json`
 - **Agent**: Override globals (stored in `agent.db`)
 - Setting to `NULL` falls back to global
+
+The global config file is a plain JSON file that can be edited by hand. If `~/.agentwfy.json` does not exist, the app falls back to the internal Electron store.
 
 ---
 

@@ -26,6 +26,7 @@ import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
+import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from './settings/global-config.js';
 import { Channels } from './ipc/channels.js';
 import path from 'path';
 import fs from 'fs';
@@ -110,10 +111,12 @@ registerDialogSubscribers();
 // Apply theme before window creation so titleBarOverlay picks up the right colors
 windowManager.applyTheme();
 
-onAnyChange((key, newValue) => {
+const handleConfigChange = (key: string, newValue: unknown) => {
   if (key === 'system.theme') windowManager.applyTheme();
   windowManager.broadcastSettingChanged(key, newValue);
-});
+};
+onAnyChange(handleConfigChange);
+onGlobalConfigChange(handleConfigChange);
 
 registerFilesHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerSqlHandlers(
@@ -488,6 +491,7 @@ app.on('ready', async () => {
   }
 
   startFileWatcher();
+  startGlobalConfigWatcher();
 
   buildAndSetMenu();
 
@@ -555,6 +559,7 @@ let quitDialogOpen = false;
 
 function doQuitCleanup() {
   stopFileWatcher();
+  stopGlobalConfigWatcher();
   stopBackupScheduler();
   stopAutoUpdater();
   windowManager.destroyAll();
