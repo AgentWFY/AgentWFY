@@ -272,7 +272,7 @@ export class TlStatusLine extends HTMLElement {
     if (!indicator || !label) return
 
     if (this._agentCount > 0) {
-      const suffix = this._agentCount === 1 ? 'agent running' : 'agents running'
+      const suffix = this._agentCount === 1 ? 'session running' : 'sessions running'
       label.textContent = `${this._agentCount} ${suffix}`
       indicator.classList.add('visible')
     } else {
