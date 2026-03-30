@@ -292,6 +292,10 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
         display: none !important;
       }
+      /* Agent sidebar border when chat panel is closed */
+      awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {
+        border-right: 1px solid var(--color-border);
+      }
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar {
         flex: 1;
         border-right: none;
