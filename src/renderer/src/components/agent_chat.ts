@@ -687,6 +687,25 @@ const STYLES = `
     color: var(--color-accent);
     border-color: var(--color-accent);
   }
+  .browse-providers-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    background: none;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--color-text2);
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+  }
+  .browse-providers-link:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
   .provider-info {
     font-size: 11px;
     color: var(--color-text2);
@@ -1538,6 +1557,14 @@ export class TlAgentChat extends HTMLElement {
     this._providerGrid.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
 
+      // Handle browse providers link
+      const browseBtn = target.closest('[data-action="browse-providers"]') as HTMLElement | null
+      if (browseBtn) {
+        e.preventDefault()
+        window.ipc?.tabs.openTab({ viewName: 'system.plugins', params: { tag: 'providers', tab: 'browse-plugins' } })
+        return
+      }
+
       // Handle settings button on card
       const settingsBtn = target.closest('.provider-card-settings-btn[data-settings-view]') as HTMLElement | null
       if (settingsBtn) {
@@ -1948,6 +1975,7 @@ export class TlAgentChat extends HTMLElement {
         <div class="provider-card-footer">${settingsBtn}${defaultAction}</div>
       </div>`
     }).join('')
+      + '<button class="browse-providers-link" data-action="browse-providers"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>Add provider</button>'
   }
 
   private async handleSetDefault(providerId: string) {
