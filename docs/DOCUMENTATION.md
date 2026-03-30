@@ -791,7 +791,10 @@ A `.plugins.awfy` file is a SQLite database:
 module.exports = {
   activate(api) {
     // Register functions, providers, etc.
-    return () => { /* cleanup */ }
+
+    return {
+      deactivate() { /* cleanup long-running resources */ }
+    }
   }
 }
 ```
@@ -827,40 +830,52 @@ Functions run in the **main Electron process** with full `require()` access.
 api.registerProvider({
   id: 'my-llm',
   name: 'My Custom LLM',
-  settingsView: 'plugin.my-llm.settings',
-
-  getStatusLine() {
-    return api.getConfig('plugin.my-llm.modelId', 'default-model')
-  },
-
-  createSession(config) {
-    return new MySession(config, api)
-  },
-
-  restoreSession(config, state) {
-    return new MySession(config, api, state)
-  }
+  settingsView: 'plugin.my-llm.settings',     // optional: view for settings UI
+  getStatusLine() { return 'model-name' },     // optional: status shown in chat UI
+  createSession(config) { return new MySession(config) },
+  restoreSession(config, state) { return new MySession(config, state) },
 })
 ```
 
+`config` includes `sessionId`, `systemPrompt`, and `tools`.
+
 #### Provider Session Interface
 
-Sessions must implement:
-- `send(event)` — handle `user_message`, `exec_js_result`, `abort`
-- `on(listener)` / `off(listener)` — event subscription
-- `getDisplayMessages()` — return display messages
-- `getState()` — return serializable state
-- `getTitle()` — return session title
+Sessions are async iterators that drive the full streaming lifecycle. They must implement:
 
-**Output events to emit:**
-- `{ type: 'start' }` — Response beginning
-- `{ type: 'text_delta', delta: '...' }` — Text chunk
-- `{ type: 'thinking_delta', delta: '...' }` — Reasoning chunk
-- `{ type: 'exec_js', id, description, code }` — Request tool execution
-- `{ type: 'done' }` — Response complete
-- `{ type: 'error', error: '...' }` — Error
-- `{ type: 'status_line', text: '...' }` — Status update
-- `{ type: 'state_changed' }` — Commit state for persistence
+- `async *stream(input, executeTool)` — Stream a user turn. `input` is `{ text, files? }`. `executeTool` is a callback for tool calls. Returns an async iterable of events.
+- `async *retry(executeTool)` — Retry the last failed turn. Discards partial state from the failed attempt and re-calls the API.
+- `abort()` — Cancel the current stream. The iterator should complete normally (not throw).
+- `getDisplayMessages()` — Return display messages for UI (always sync).
+- `getState()` — Return serializable state for session persistence.
+- `dispose()` — Clean up resources (timers, connections, abort controllers).
+- `getTitle()` — Optional. Return a session title.
+
+**Stream events:**
+
+| Event | Description |
+|-------|-------------|
+| `{ type: 'text_delta', delta }` | Incremental text content |
+| `{ type: 'thinking_delta', delta }` | Incremental reasoning content |
+| `{ type: 'exec_js', id, description, code }` | Tool call (yield before calling `executeTool`) |
+| `{ type: 'status_line', text }` | Status update / keepalive |
+| `{ type: 'state_changed' }` | Triggers session persistence to disk |
+
+No `start`, `done`, or `error` events. Iterator completion = done. Errors are thrown with a `category` property.
+
+**Tool execution:** When the model requests a tool call, yield an `exec_js` event for UI display, then call `const result = await executeTool({ id, description, code })`. The result has `{ content, isError }`.
+
+**Error categories:**
+
+| Category | Agent Action |
+|---|---|
+| `network`, `rate_limit`, `server` | Retry with exponential backoff (up to 10 attempts) |
+| `auth`, `invalid_request`, `content_policy` | Stop, show error to user |
+| `context_overflow` | Compact old messages, then retry |
+
+Providers should do their own fast retry (2-3 attempts) for transient HTTP errors before throwing. The agent's retry is a second tier for sustained outages.
+
+**Idle timeout:** The agent runs a 90-second watchdog during streaming. If no event is yielded for 90s (and no tool execution is active), it treats it as a dead connection and retries. Yield `status_line` events periodically to prevent false timeouts during long server-side processing.
 
 ### Publishing Plugins & Agents
 
