@@ -26,6 +26,7 @@ export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'next-tab':              { label: 'Next Tab',           defaultKey: 'mod+shift+]' },
   'next-agent':            { label: 'Next Agent',         defaultKey: 'ctrl+tab' },
   'previous-agent':        { label: 'Previous Agent',     defaultKey: 'ctrl+shift+tab' },
+  'search-views':          { label: 'Search Views',       defaultKey: 'mod+p' },
 };
 
 export const SHORTCUT_CONFIG_PREFIX = 'system.shortcuts.';

@@ -36,16 +36,8 @@ function init(): void {
     hintBar,
   })
 
-  const focusSearchInput = () => {
-    requestAnimationFrame(() => {
-      searchInput.focus()
-      searchInput.select()
-    })
-  }
-
   const openAtNormal = (filter?: string) => {
     controller.reset(new NormalScreen(bridge, filter))
-    focusSearchInput()
   }
 
   const openAtScreen = (options: { screen?: string; params?: Record<string, unknown> }) => {
@@ -65,8 +57,6 @@ function init(): void {
     } else {
       controller.reset(factory(bridge, options.params))
     }
-
-    focusSearchInput()
   }
 
   // Bridge event listeners
@@ -92,7 +82,6 @@ function init(): void {
 
   // Initial load
   openAtNormal()
-  focusSearchInput()
 }
 
 init()

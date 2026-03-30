@@ -886,6 +886,9 @@ class WindowManager {
       case 'previous-agent':
         this.switchToNextAgent(-1);
         break;
+      case 'search-views':
+        this.commandPalette?.showFiltered('views ');
+        break;
       default:
         if (action.startsWith('switch-to-tab-')) {
           const index = parseInt(action.slice(-1), 10) - 1;

@@ -79,7 +79,7 @@ export class PaletteController {
     }
 
     const current = this.currentScreen
-    if (current && (current.id === 'settings' || current.id === 'editing')) {
+    if (current && current.id === 'settings') {
       void this.loadAndRenderItems()
     }
   }
@@ -125,10 +125,9 @@ export class PaletteController {
 
     // Update search
     this.searchInput.placeholder = screen.placeholder
+    this.searchInput.value = ''
     if (screen.initialSearchValue !== undefined) {
       this.searchInput.value = screen.initialSearchValue
-    } else {
-      this.searchInput.value = ''
     }
 
     this.selectedIndex = screen.initialSelectedIndex ?? 0
@@ -136,9 +135,6 @@ export class PaletteController {
     await this.loadAndRenderItems()
 
     this.searchInput.focus()
-    if (screen.initialSearchValue !== undefined) {
-      this.searchInput.select()
-    }
   }
 
   private async loadAndRenderItems(): Promise<void> {
@@ -516,7 +512,7 @@ export class PaletteController {
         this.selectedIndex = 0
         this.applyFilter()
       } else if (screen.renderContent) {
-        // Re-render for screens with custom content (settings form, editing)
+        // Re-render for screens with custom content (settings form)
         this.render()
       }
     })

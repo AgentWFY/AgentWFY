@@ -130,5 +130,9 @@
   {
     "name": "system.shortcuts.previous-agent",
     "description": "Shortcut for Previous Agent (default: ctrl+shift+tab). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.search-views",
+    "description": "Shortcut for Search Views (default: mod+p). Set to 'disabled' to unbind."
   }
 ]

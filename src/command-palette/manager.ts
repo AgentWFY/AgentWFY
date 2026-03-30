@@ -197,15 +197,7 @@ export class CommandPaletteManager {
     const focusSearchInput = () => {
       if (paletteWindow.isDestroyed()) return;
       void paletteWindow.webContents.executeJavaScript(`
-        (() => {
-          const input = document.getElementById('searchInput');
-          if (input instanceof HTMLInputElement) {
-            input.focus();
-            input.select();
-            return true;
-          }
-          return false;
-        })();
+        document.getElementById('searchInput')?.focus();
       `, true).catch(() => {});
     };
 
