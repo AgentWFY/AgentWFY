@@ -1,6 +1,6 @@
 import { runAgentDbSql } from './sqlite.js';
 
-export interface ConfigRecord {
+interface ConfigRecord {
   name: string;
   value: string | null;
   description: string;

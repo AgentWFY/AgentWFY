@@ -75,9 +75,6 @@ export const Channels = {
     call: 'plugin:call',
     methods: 'plugin:methods',
     uninstall: 'plugin:uninstall',
-    requestInstall: 'plugin:requestInstall',
-    requestToggle: 'plugin:requestToggle',
-    requestUninstall: 'plugin:requestUninstall',
   },
   providers: {
     list: 'provider:list',
