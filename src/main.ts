@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents, type MenuItemConstructorOptions } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
+import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
@@ -106,6 +107,7 @@ const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 // --- IPC registration (global, routes via windowManager) ---
 
 registerStoreHandlers();
+registerViewHandlers();
 registerDialogSubscribers();
 
 // Apply theme before window creation so titleBarOverlay picks up the right colors

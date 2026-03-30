@@ -111,6 +111,9 @@ const Channels = {
   agents: {
     requestInstall: 'agents:requestInstall',
   },
+  views: {
+    fetch: 'views:fetch',
+  },
   agentSidebar: {
     getInstalled: 'agent-sidebar:getInstalled',
     switch: 'agent-sidebar:switch',
@@ -554,6 +557,9 @@ if (isAgentView) {
     ...runtimeFunctions,
     requestInstallAgent(filePath: string): Promise<{ installed: boolean; agentRoot?: string }> {
       return ipcRenderer.invoke(Channels.agents.requestInstall, filePath);
+    },
+    fetch(params: { url: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<{ status: number; body: string }> {
+      return ipcRenderer.invoke(Channels.views.fetch, params);
     },
   });
 }

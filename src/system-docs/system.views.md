@@ -31,7 +31,7 @@ Each view (DB or file) gets a bootstrap injected by the app:
 - CSS design tokens with automatic light/dark switching via `color-scheme: light dark`
 - Base reset (box-sizing, font-family, margin:0, color: var(--color-text3), background: var(--color-bg1))
 - Initial guard that hides content until the view is ready (revealed on first animation frame or 5s timeout)
-- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs
+- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs, plus `fetch` (see below)
 
 ## CSS Variables
 
@@ -53,6 +53,20 @@ Injected automatically — no need to define them.
 
 Light: bg1=#ffffff, bg2=#f8f8f8, bg3=#f0f0f0, surface=#ffffff, border=#e0e0e0, text1=#6b6b6b, text2=#999999, text3=#444444, text4=#1a1a1a, accent=#1a6fb5
 Dark: bg1=#1e1e1e, bg2=#252526, bg3=#1a1a1a, surface=#2d2d2d, border=#3d3d3d, text1=#b0b0b0, text2=#808080, text3=#cccccc, text4=#e0e0e0, accent=#2b7ab5
+
+## Fetch
+
+Views have access to `window.agentwfy.fetch()` which makes HTTP requests from the main process (Node.js). Unlike the browser's `fetch`, this can set any headers including `User-Agent`.
+
+```js
+const result = await window.agentwfy.fetch({
+  url: 'https://api.example.com/data',
+  method: 'POST',                          // optional, default 'GET'
+  headers: { 'Content-Type': 'application/json', 'User-Agent': 'my-app' },  // optional
+  body: JSON.stringify({ key: 'value' }),   // optional
+})
+// result: { status: 200, body: '...' }
+```
 
 ## Working with Large Views
 

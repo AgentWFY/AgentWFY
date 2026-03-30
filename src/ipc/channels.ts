@@ -109,6 +109,9 @@ export const Channels = {
   agents: {
     requestInstall: 'agents:requestInstall',
   },
+  views: {
+    fetch: 'views:fetch',
+  },
   zenMode: {
     changed: 'zenMode:changed',
   },
