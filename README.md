@@ -10,7 +10,7 @@
   <a href="https://github.com/AgentWFY/AgentWFY/releases/latest"><img src="https://img.shields.io/github/v/release/AgentWFY/AgentWFY" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20|%20Windows%20|%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
-  <a href="https://discord.gg/RYZ2GGfArk"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/RYZ2GGfArk"><img src="https://img.shields.io/discord/1488242783142547666?logo=discord&label=Discord" alt="Discord"></a>
   <a href="https://github.com/AgentWFY/AgentWFY/stargazers"><img src="https://img.shields.io/github/stars/AgentWFY/AgentWFY" alt="Stars"></a>
 </p>
 
