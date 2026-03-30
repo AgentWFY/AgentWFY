@@ -11,6 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20|%20Windows%20|%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <a href="https://github.com/AgentWFY/AgentWFY/stargazers"><img src="https://img.shields.io/github/stars/AgentWFY/AgentWFY" alt="Stars"></a>
+  <a href="https://discord.gg/7rhwkUzfsn"><img src="https://img.shields.io/discord/1354773763498680380?logo=discord&label=Discord" alt="Discord"></a>
 </p>
 
 <br>
