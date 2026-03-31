@@ -62,8 +62,50 @@ async function cdpFetch(path) {
   return res.json();
 }
 
+async function getBrowserWsUrl() {
+  const version = await cdpFetch('/json/version');
+  return version.webSocketDebuggerUrl;
+}
+
 async function getTargets() {
-  return cdpFetch('/json/list');
+  // Standard HTTP list — may not include WebContentsView targets attached to a
+  // BaseWindow (Electron only registers the primary renderer view here).
+  let httpTargets;
+  try {
+    httpTargets = await cdpFetch('/json/list');
+  } catch {
+    httpTargets = [];
+  }
+
+  // Augment with browser-level Target domain discovery, which sees ALL targets
+  // including additional WebContentsView instances (tab views, system views).
+  try {
+    const browserWsUrl = await getBrowserWsUrl();
+    const browser = await connectWebSocket(browserWsUrl);
+    const { targetInfos } = await browser.send('Target.getTargets');
+    browser.close();
+
+    const httpIds = new Set(httpTargets.map(t => t.id));
+    const port = getCdpPort();
+
+    for (const info of targetInfos) {
+      if (httpIds.has(info.targetId)) continue;
+      if (info.type !== 'page') continue;
+
+      httpTargets.push({
+        id: info.targetId,
+        type: info.type,
+        title: info.title,
+        url: info.url,
+        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/page/${info.targetId}`,
+        _needsSession: true,
+      });
+    }
+  } catch {
+    // Fall back to HTTP list only
+  }
+
+  return httpTargets;
 }
 
 async function getMainTarget() {
@@ -109,27 +151,22 @@ function connectWebSocket(wsUrl) {
 async function cmdTargets() {
   const targets = await getTargets();
   for (const t of targets) {
-    console.log(`[${t.type}] "${t.title}" @ ${t.url}`);
+    const prefix = t.id ? `${t.id.slice(0, 8)} ` : '';
+    console.log(`${prefix}[${t.type}] "${t.title}" @ ${t.url}`);
   }
   return targets;
 }
 
 async function cmdScreenshot(targetOrPath, path) {
-  let target;
+  let targetId;
   if (targetOrPath && !targetOrPath.includes('/') && !targetOrPath.includes('.')) {
-    // It's a target ID
-    const targets = await getTargets();
-    target = targets.find(t => t.id.startsWith(targetOrPath));
-    if (!target) { console.error(`Target not found: ${targetOrPath}`); process.exit(1); }
+    targetId = targetOrPath;
   } else {
-    target = await getMainTarget();
     path = targetOrPath; // first arg was actually the path
   }
 
-  if (!target) { console.error('No target found'); process.exit(1); }
-
   const outPath = path || '/tmp/agentwfy-screenshot.png';
-  const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
+  const cdp = await connectTo(targetId);
 
   const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(outPath, Buffer.from(data, 'base64'));
@@ -139,18 +176,12 @@ async function cmdScreenshot(targetOrPath, path) {
 }
 
 async function cmdEval(targetId, js) {
-  let target;
-  if (js) {
-    const targets = await getTargets();
-    target = targets.find(t => t.id.startsWith(targetId));
-  } else {
+  if (!js) {
     js = targetId;
-    target = await getMainTarget();
+    targetId = undefined;
   }
 
-  if (!target) { console.error('No target found'); process.exit(1); }
-
-  const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
+  const cdp = await connectTo(targetId);
   await cdp.send('Runtime.enable');
 
   const result = await cdp.send('Runtime.evaluate', {
@@ -503,6 +534,76 @@ async function dispatchKey(cdp, keyName, modifiers = 0) {
 
 // ── Shared Helpers ─────────────────────────────────────────────────────────
 
+// Connect to a target via the browser WebSocket using a flat CDP session.
+// This works for WebContentsView targets that aren't in /json/list.
+function connectViaSession(targetId) {
+  return new Promise(async (resolve, reject) => {
+    let browserWsUrl;
+    try {
+      browserWsUrl = await getBrowserWsUrl();
+    } catch (e) {
+      return reject(e);
+    }
+
+    const ws = new globalThis.WebSocket(browserWsUrl);
+    let id = 0;
+    const pending = new Map();
+    let sessionId = null;
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (!msg.id || !pending.has(msg.id)) return;
+      // Match: pre-session messages (no sessionId) or our session's messages
+      if (sessionId && msg.sessionId && msg.sessionId !== sessionId) return;
+      const { resolve: res, reject: rej } = pending.get(msg.id);
+      pending.delete(msg.id);
+      if (msg.error) rej(new Error(msg.error.message));
+      else res(msg.result);
+    };
+
+    ws.onerror = (err) => reject(new Error(`Session WebSocket error: ${err.message || 'connection failed'}`));
+    const timer = setTimeout(() => reject(new Error('Session connection timeout')), 5000);
+
+    ws.onopen = async () => {
+      clearTimeout(timer);
+      const sendMsg = (method, params = {}) => {
+        return new Promise((res, rej) => {
+          const msgId = ++id;
+          pending.set(msgId, { resolve: res, reject: rej });
+          const msg = { id: msgId, method, params };
+          if (sessionId) msg.sessionId = sessionId;
+          ws.send(JSON.stringify(msg));
+        });
+      };
+
+      try {
+        // Attach to target — flatten mode lets us send commands on this connection
+        const result = await sendMsg('Target.attachToTarget', { targetId, flatten: true });
+        sessionId = result.sessionId;
+
+        resolve({
+          send(method, params = {}) {
+            return new Promise((res, rej) => {
+              const msgId = ++id;
+              pending.set(msgId, { resolve: res, reject: rej });
+              ws.send(JSON.stringify({ id: msgId, method, params, sessionId }));
+            });
+          },
+          close() {
+            ws.close();
+            ws.onmessage = null;
+            ws.onerror = null;
+          },
+          ws,
+        });
+      } catch (err) {
+        ws.close();
+        reject(err);
+      }
+    };
+  });
+}
+
 async function connectTo(targetId) {
   let target;
   if (targetId) {
@@ -513,7 +614,19 @@ async function connectTo(targetId) {
     target = await getMainTarget();
     if (!target) { console.error('No target found'); process.exit(1); }
   }
-  return connectWebSocket(target.webSocketDebuggerUrl);
+
+  // Targets from /json/list have working direct WebSocket URLs.
+  // Targets discovered via browser Target domain (WebContentsView) may not —
+  // try direct first, fall back to session-based connection.
+  if (target.webSocketDebuggerUrl) {
+    try {
+      return await connectWebSocket(target.webSocketDebuggerUrl);
+    } catch {
+      // Direct WebSocket failed — fall through to session
+    }
+  }
+
+  return connectViaSession(target.id);
 }
 
 async function typeText(cdp, text) {

@@ -116,18 +116,18 @@ Example — open command palette, navigate to sessions, load the first one:
 
 ### Inspecting other targets
 
-The app uses a single main window. Agent view tabs (rendered as WebContentsViews) and floating child windows (command palette, confirmation dialog) appear as separate CDP targets. Use `targets` to list them, then `screenshot-target` or `eval-target` to interact:
+The app uses a single main window. Agent view tabs (rendered as WebContentsViews) and floating child windows (command palette, confirmation dialog) appear as separate CDP targets. Use `targets` to list them (output includes an 8-char target ID prefix), then `screenshot-target` or `eval-target` to interact:
 
 ```bash
 ./scripts/cdp targets
 
 # Example output:
-#   [page] "AgentWFY" @ app://index.html/
-#   [page] "" @ agentview://...view/16?...
-#   [page] "Command Palette" @ file:///.../command_palette.html
+#   A1B2C3D4 [page] "AgentWFY" @ app://index.html/
+#   E5F6A7B8 [page] "" @ agentview://...view/16?...
+#   C9D0E1F2 [page] "Command Palette" @ file:///.../command_palette.html
 
-./scripts/cdp screenshot-target <id> /tmp/palette.png
-./scripts/cdp eval-target <id> "document.querySelector('input').value"
+./scripts/cdp screenshot-target A1B2C3D4 /tmp/main.png
+./scripts/cdp eval-target E5F6A7B8 "document.querySelector('input').value"
 ```
 
 Agent view tabs and URL tabs are always present while open. The command palette only appears as a target while it's open — open it first with `cdp press Meta+k`.
