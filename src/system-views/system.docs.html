@@ -621,6 +621,9 @@ const MD = {
 
   // --- Navigation ---
   function navigateTo(name, pushHistory = true) {
+    clearTimeout(previewTimer);
+    clearTimeout(hideTimer);
+    hidePreview();
     if (isEditing) exitEditMode();
     if (pushHistory && currentDoc) {
       history.push(currentDoc);
