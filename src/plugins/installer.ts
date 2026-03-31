@@ -8,6 +8,7 @@ const NAME_FORMAT_RE = /^[a-z0-9][a-z0-9._-]*$/
 
 interface PackagePlugin {
   name: string
+  title: string
   description: string
   version: string
   code: string
@@ -49,11 +50,16 @@ function readPackage(packagePath: string): {
   try {
     let plugins: PackagePlugin[]
     try {
-      plugins = db.prepare('SELECT name, description, version, code, author, repository, license FROM plugins').all() as unknown as PackagePlugin[]
+      plugins = db.prepare('SELECT name, title, description, version, code, author, repository, license FROM plugins').all() as unknown as PackagePlugin[]
     } catch {
-      // Fallback for packages without the new columns
-      const basic = db.prepare('SELECT name, description, version, code FROM plugins').all() as unknown as Array<{ name: string; description: string; version: string; code: string }>
-      plugins = basic.map(p => ({ ...p, author: null, repository: null, license: null }))
+      // Fallback for packages without the newer columns
+      try {
+        const rows = db.prepare('SELECT name, description, version, code, author, repository, license FROM plugins').all() as unknown as Array<Omit<PackagePlugin, 'title'>>
+        plugins = rows.map(p => ({ ...p, title: '' }))
+      } catch {
+        const basic = db.prepare('SELECT name, description, version, code FROM plugins').all() as unknown as Array<{ name: string; description: string; version: string; code: string }>
+        plugins = basic.map(p => ({ ...p, title: '', author: null, repository: null, license: null }))
+      }
     }
 
     let docs: PackageDoc[] = []
@@ -161,7 +167,7 @@ function validatePackage(
   return errors
 }
 
-export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null }> } {
+export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null }> } {
   const { plugins, docs, views, config, assets } = readPackage(packagePath)
 
   const errors = validatePackage(plugins, docs, views, config, assets)
@@ -170,7 +176,7 @@ export function readPackageMetadata(packagePath: string): { plugins: Array<{ nam
   }
 
   return {
-    plugins: plugins.map(p => ({ name: p.name, description: p.description, version: p.version, author: p.author, repository: p.repository, license: p.license })),
+    plugins: plugins.map(p => ({ name: p.name, title: p.title, description: p.description, version: p.version, author: p.author, repository: p.repository, license: p.license })),
   }
 }
 

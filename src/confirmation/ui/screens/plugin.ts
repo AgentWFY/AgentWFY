@@ -2,6 +2,7 @@ import type { ConfirmationScreen } from '../screen.js'
 
 function pluginCard(opts: {
   name: string
+  title?: string | null
   version?: string | null
   description?: string | null
   author?: string | null
@@ -12,7 +13,7 @@ function pluginCard(opts: {
 
   const header = document.createElement('div')
   header.className = 'plugin-name'
-  header.textContent = opts.name
+  header.textContent = opts.title || opts.name
   if (opts.version) {
     const ver = document.createElement('span')
     ver.className = 'plugin-version'
@@ -42,7 +43,7 @@ function pluginCard(opts: {
 }
 
 export function pluginInstallScreen(params: Record<string, unknown>): ConfirmationScreen {
-  const plugins = params.plugins as Array<{ name: string; description: string; version: string; author?: string | null; repository?: string | null; license?: string | null }>
+  const plugins = params.plugins as Array<{ name: string; title?: string; description: string; version: string; author?: string | null; repository?: string | null; license?: string | null }>
   return {
     title: plugins.length === 1 ? 'Install Plugin' : `Install ${plugins.length} Plugins`,
     confirmLabel: 'Install',
@@ -50,6 +51,7 @@ export function pluginInstallScreen(params: Record<string, unknown>): Confirmati
       for (const p of plugins) {
         container.appendChild(pluginCard({
           name: p.name,
+          title: p.title,
           version: p.version,
           description: p.description,
           author: p.author,
@@ -63,6 +65,7 @@ export function pluginInstallScreen(params: Record<string, unknown>): Confirmati
 function singlePluginCard(params: Record<string, unknown>): HTMLElement {
   return pluginCard({
     name: params.pluginName as string,
+    title: params.title as string | undefined,
     version: params.version as string | undefined,
     description: params.description as string | undefined,
     author: params.author as string | undefined,

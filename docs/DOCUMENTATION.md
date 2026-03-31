@@ -500,6 +500,7 @@ Read-only for agents.
 |--------|------|-------------|
 | `id` | INTEGER | Auto-incrementing primary key |
 | `name` | TEXT (UNIQUE) | Plugin name (lowercase letters, digits, hyphens only — no dots) |
+| `title` | TEXT | Optional display title (shown instead of name when set) |
 | `description` | TEXT | Plugin description |
 | `version` | TEXT | Version string |
 | `code` | TEXT | Plugin JavaScript source |

@@ -240,8 +240,8 @@
   }
 
   async function loadPlugins() {
-    const rows = await window.agentwfy.runSql({ target: 'agent', sql: 'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name' });
-    plugins = rows.map(r => ({ name: r.name, description: r.description || '', version: r.version || '', author: r.author || '', repository: r.repository || '', license: r.license || '', enabled: !!r.enabled }));
+    const rows = await window.agentwfy.runSql({ target: 'agent', sql: 'SELECT name, title, description, version, author, repository, license, enabled FROM plugins ORDER BY name' });
+    plugins = rows.map(r => ({ name: r.name, title: r.title || '', description: r.description || '', version: r.version || '', author: r.author || '', repository: r.repository || '', license: r.license || '', enabled: !!r.enabled }));
   }
 
   async function loadPluginRegistry() {
@@ -281,11 +281,11 @@
   }
 
   async function loadInstalledPluginDetail(pluginName) {
-    const [pluginRow] = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'" });
+    const [pluginRow] = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'" });
     if (!pluginRow) throw new Error('Plugin not found');
     const docs = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, content FROM docs WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + "%'" });
     const views = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'" });
-    return { source: 'installed', name: pluginRow.name, plugin: { name: pluginRow.name, description: pluginRow.description || '', version: pluginRow.version || '', author: pluginRow.author || '', repository: pluginRow.repository || '', license: pluginRow.license || '', enabled: !!pluginRow.enabled }, code: pluginRow.code || '', docs: docs || [], views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
+    return { source: 'installed', name: pluginRow.name, plugin: { name: pluginRow.name, title: pluginRow.title || '', description: pluginRow.description || '', version: pluginRow.version || '', author: pluginRow.author || '', repository: pluginRow.repository || '', license: pluginRow.license || '', enabled: !!pluginRow.enabled }, code: pluginRow.code || '', docs: docs || [], views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
   }
 
   async function loadRegistryPluginDetail(registryPlugin) {
@@ -294,13 +294,14 @@
     await downloadPackage(registryPlugin.download_url, TMP_PACKAGE_PATH);
     const sqlOpts = { target: 'sqlite-file', path: TMP_PACKAGE_PATH };
     let pkgPlugins = [];
-    try { pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' }); }
-    catch { try { const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' }); pkgPlugins = basic.map(p => ({ ...p, author: null, repository: null, license: null })); } catch {} }
+    try { pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title, description, version, code, author, repository, license FROM plugins' }); }
+    catch { try { pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' }); pkgPlugins = pkgPlugins.map(p => ({ ...p, title: '' })); }
+    catch { try { const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' }); pkgPlugins = basic.map(p => ({ ...p, title: '', author: null, repository: null, license: null })); } catch {} } }
     let pkgDocs = []; try { pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' }); } catch {}
     let pkgViews = []; try { pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' }); } catch {}
     const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.id) || pkgPlugins[0];
     if (!mainPlugin) throw new Error('No plugins found in package');
-    const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
+    const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, title: mainPlugin.title || '', description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
     registryDetailCache.set(registryPlugin.id, detail);
     return detail;
   }
@@ -370,7 +371,7 @@
   function renderInstalled() {
     const query = document.getElementById('searchInput').value.toLowerCase().trim();
     let filtered = plugins;
-    if (query) filtered = plugins.filter(p => p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query) || p.author.toLowerCase().includes(query));
+    if (query) filtered = plugins.filter(p => p.name.toLowerCase().includes(query) || (p.title && p.title.toLowerCase().includes(query)) || p.description.toLowerCase().includes(query) || p.author.toLowerCase().includes(query));
     const container = document.getElementById('mainContainer');
     if (plugins.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><div style="margin-top: 12px">No plugins installed</div><div style="font-size: 12px; margin-top: 4px; color: var(--color-text1)">Browse the registry to discover plugins, or install via the command palette.</div></div>'; return; }
     if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No plugins match your search</div></div>'; return; }
@@ -380,7 +381,7 @@
     h += '</div><div class="plugin-list">';
     for (const p of filtered) {
       h += '<div class="plugin-row"><div class="plugin-info"><div class="plugin-name-row">';
-      h += '<span class="plugin-name" data-action="open-detail" data-source="installed" data-name="' + esc(p.name) + '">' + esc(p.name) + '</span>';
+      h += '<span class="plugin-name" data-action="open-detail" data-source="installed" data-name="' + esc(p.name) + '">' + esc(p.title || p.name) + '</span>';
       if (p.version) h += '<span class="plugin-version">v' + esc(p.version) + '</span>';
       if (!p.enabled) h += '<span class="badge-disabled">disabled</span>';
       h += '</div>';
@@ -417,7 +418,7 @@
     for (const p of filtered) {
       const installed = isPluginInstalled(p.id); const installing = installingPlugins.has(p.id);
       h += '<div class="plugin-row"><div class="plugin-info"><div class="plugin-name-row">';
-      h += '<span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.name) + '</span>';
+      h += '<span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.title || p.name) + '</span>';
       h += '<span class="plugin-version">v' + esc(p.version) + '</span>';
       if (installed) h += '<span class="badge-installed">installed</span>';
       if (typeof p.downloads === 'number' && p.downloads > 0) h += '<span class="badge-downloads">' + p.downloads + ' downloads</span>';
@@ -494,7 +495,7 @@
     const d = detailView;
     const container = document.getElementById('mainContainer');
     let h = '<div class="detail-header"><button class="back-btn" data-action="back" title="Back to list"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>';
-    h += '<span class="detail-title">' + esc(d.plugin.name) + '</span>';
+    h += '<span class="detail-title">' + esc(d.plugin.title || d.plugin.name) + '</span>';
     if (d.plugin.version) h += '<span class="detail-version">v' + esc(d.plugin.version) + '</span>';
     if (d.source === 'installed' && d.plugin.enabled === false) h += '<span class="badge-disabled">disabled</span>';
     if (d.source === 'registry' && isPluginInstalled(d.name)) h += '<span class="badge-installed">installed</span>';

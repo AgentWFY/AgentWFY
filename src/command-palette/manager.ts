@@ -612,6 +612,7 @@ export class CommandPaletteManager {
     const confirmation = this.deps.getConfirmation();
     const result = await confirmation.requestConfirmation('confirm-plugin-toggle', {
       pluginName,
+      title: plugin.title,
       currentEnabled,
       description: plugin.description,
       version: plugin.version,
@@ -634,6 +635,7 @@ export class CommandPaletteManager {
     const confirmation = this.deps.getConfirmation();
     const result = await confirmation.requestConfirmation('confirm-plugin-uninstall', {
       pluginName,
+      title: plugin.title,
       description: plugin.description,
       version: plugin.version,
       author: plugin.author,

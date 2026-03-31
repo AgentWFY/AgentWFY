@@ -341,7 +341,7 @@ module.exports = {
 Plugins are distributed as `.plugins.awfy` files (SQLite databases) with these tables:
 
 ```sql
-plugins (name TEXT, description TEXT, version TEXT, code TEXT, author TEXT, repository TEXT, license TEXT) — 1..N rows (required)
+plugins (name TEXT, title TEXT, description TEXT, version TEXT, code TEXT, author TEXT, repository TEXT, license TEXT) — 1..N rows (required)
 docs    (name TEXT, content TEXT)                                      — 0..N rows (optional)
 views   (name TEXT, title TEXT, content TEXT)                          — 0..N rows (optional)
 config  (name TEXT, value TEXT, description TEXT)                      — 0..N rows (optional)

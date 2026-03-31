@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS config (
 CREATE TABLE IF NOT EXISTS plugins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '1.0.0',
   code TEXT NOT NULL,
@@ -336,30 +337,30 @@ class AgentDb {
     for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
   }
 
-  getEnabledPlugins(): Array<{ name: string; description: string; version: string; code: string }> {
+  getEnabledPlugins(): Array<{ name: string; title: string; description: string; version: string; code: string }> {
     return this.db.prepare(
-      'SELECT name, description, version, code FROM plugins WHERE enabled = 1'
-    ).all() as Array<{ name: string; description: string; version: string; code: string }>;
+      'SELECT name, title, description, version, code FROM plugins WHERE enabled = 1'
+    ).all() as Array<{ name: string; title: string; description: string; version: string; code: string }>;
   }
 
-  getPlugin(name: string): { name: string; description: string; version: string; code: string } | undefined {
+  getPlugin(name: string): { name: string; title: string; description: string; version: string; code: string } | undefined {
     const rows = this.db.prepare(
-      'SELECT name, description, version, code FROM plugins WHERE name = ?'
-    ).all(name) as Array<{ name: string; description: string; version: string; code: string }>;
+      'SELECT name, title, description, version, code FROM plugins WHERE name = ?'
+    ).all(name) as Array<{ name: string; title: string; description: string; version: string; code: string }>;
     return rows[0];
   }
 
-  getPluginInfo(name: string): { name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number } | undefined {
+  getPluginInfo(name: string): { name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number } | undefined {
     const rows = this.db.prepare(
-      'SELECT name, description, version, author, repository, license, enabled FROM plugins WHERE name = ?'
-    ).all(name) as Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
+      'SELECT name, title, description, version, author, repository, license, enabled FROM plugins WHERE name = ?'
+    ).all(name) as Array<{ name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
     return rows[0];
   }
 
-  listPlugins(): Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }> {
+  listPlugins(): Array<{ name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }> {
     return this.db.prepare(
-      'SELECT name, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
-    ).all() as Array<{ name: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
+      'SELECT name, title, description, version, author, repository, license, enabled FROM plugins ORDER BY name'
+    ).all() as Array<{ name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null; enabled: number }>;
   }
 
   togglePlugin(name: string, enabled: boolean): void {
@@ -370,16 +371,17 @@ class AgentDb {
   }
 
   installPlugins(
-    plugins: Array<{ name: string; description: string; version: string; code: string; author?: string | null; repository?: string | null; license?: string | null }>,
+    plugins: Array<{ name: string; title?: string; description: string; version: string; code: string; author?: string | null; repository?: string | null; license?: string | null }>,
     docs: Array<{ name: string; content: string }>,
     views: Array<{ name: string; title: string; content: string }>,
     config: Array<{ name: string; value: string | null; description: string }>,
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
-        INSERT INTO plugins (name, description, version, code, author, repository, license, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+        INSERT INTO plugins (name, title, description, version, code, author, repository, license, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
           ON CONFLICT(name) DO UPDATE SET
+            title = excluded.title,
             description = excluded.description,
             version = excluded.version,
             code = excluded.code,
@@ -412,7 +414,7 @@ class AgentDb {
 
       this.db.exec('BEGIN');
       for (const p of plugins) {
-        upsertPlugin.run(p.name, p.description, p.version, p.code, p.author ?? null, p.repository ?? null, p.license ?? null);
+        upsertPlugin.run(p.name, p.title ?? '', p.description, p.version, p.code, p.author ?? null, p.repository ?? null, p.license ?? null);
       }
       for (const d of docs) {
         upsertDoc.run(d.name, d.content);

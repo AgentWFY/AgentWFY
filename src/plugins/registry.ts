@@ -12,6 +12,7 @@ const nodeRequire = createRequire(import.meta.url)
 
 export interface PluginManifest {
   name: string
+  title: string
   description: string
   version: string
 }
@@ -46,7 +47,7 @@ export class PluginRegistry {
     this.functionRegistry = opts.functionRegistry
   }
 
-  loadPlugin(row: { name: string; description: string; version: string; code: string }): void {
+  loadPlugin(row: { name: string; title: string; description: string; version: string; code: string }): void {
     const assetsDir = path.join(this.agentRoot, '.agentwfy', 'plugin-assets', row.name)
     fs.mkdirSync(assetsDir, { recursive: true })
 
@@ -102,14 +103,14 @@ export class PluginRegistry {
       if (result && typeof result.deactivate === 'function') {
         this.deactivators.set(row.name, result.deactivate)
       }
-      this.plugins.set(row.name, { name: row.name, description: row.description, version: row.version })
+      this.plugins.set(row.name, { name: row.name, title: row.title, description: row.description, version: row.version })
     } catch (err) {
       console.warn(`[plugins] Skipping ${row.name}: failed to load — ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
   /** Unload then reload a plugin. */
-  reloadPlugin(row: { name: string; description: string; version: string; code: string }): void {
+  reloadPlugin(row: { name: string; title: string; description: string; version: string; code: string }): void {
     this.unloadPlugin(row.name)
     this.loadPlugin(row)
   }
