@@ -26,7 +26,6 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
-  CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   CLEAR_TO_DEFAULT: 'app:command-palette:clear-to-default',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
@@ -63,9 +62,6 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, key, value, scope);
-  },
-  clearAgentOverride(key: string): Promise<void> {
-    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.CLEAR_AGENT_OVERRIDE, key);
   },
   clearToDefault(key: string): Promise<void> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.CLEAR_TO_DEFAULT, key);

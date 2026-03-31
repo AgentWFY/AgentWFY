@@ -130,7 +130,7 @@ export class PaletteController {
       this.searchInput.value = screen.initialSearchValue
     }
 
-    this.selectedIndex = screen.initialSelectedIndex ?? 0
+    this.selectedIndex = 0
 
     await this.loadAndRenderItems()
 
