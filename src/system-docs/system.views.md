@@ -31,7 +31,7 @@ Each view (DB or file) gets a bootstrap injected by the app:
 - CSS design tokens with automatic light/dark switching via `color-scheme: light dark`
 - Base reset (box-sizing, font-family, margin:0, color: var(--color-text3), background: var(--color-bg1))
 - Initial guard that hides content until the view is ready (revealed on first animation frame or 5s timeout)
-- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs, plus `fetch` (see below)
+- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs, plus `agentwfy.fetch` for HTTP requests that need restricted headers (see below)
 
 ## CSS Variables
 

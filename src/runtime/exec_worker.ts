@@ -235,7 +235,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     // Shadow browser/Node globals
     const shadowParamNames = [
       'window', 'self', 'globalThis', 'document',
-      'require', 'global', 'Buffer', 'module', '__filename', '__dirname',
+      'require', 'global', 'module', '__filename', '__dirname', 'process',
     ]
     const shadowArgValues: unknown[] = Array(shadowParamNames.length).fill(undefined)
 

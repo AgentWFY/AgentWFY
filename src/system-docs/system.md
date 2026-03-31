@@ -5,9 +5,9 @@ You have one tool: execJs.
 
 ## execJs Runtime
 
-execJs runs JavaScript in a standard Node.js environment. All Node.js globals are available except module-system ones (`require`, `module`, `__filename`, `__dirname`). Browser APIs do not exist.
+execJs runs JavaScript in a Node.js utility process. All Node.js globals are available (`fetch`, `URL`, `crypto`, `setTimeout`, `Buffer`, `atob`/`btoa`, `TextEncoder`, `AbortController`, `WebSocket`, etc.) except: `require`, `module`, `__filename`, `__dirname`, `process`, `global`, `globalThis`, `window`, `self`, `document` (all set to `undefined`).
 
-Inside execJs you can call these async host APIs. Views have the same APIs available via `window.agentwfy.<method>(...)`.
+In addition to Node.js globals, execJs provides runtime functions as globals. In views, the same functions are available via `window.agentwfy.<method>(...)`. If you can't find a needed function in these docs, call `getAvailableFunctions()` to list all runtime functions including plugin-provided ones.
 
 The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — no state persists between calls.
 
@@ -63,7 +63,6 @@ For displaying views and interacting with web pages in a browser context. Prefer
 - EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `system.eventbus`.
 - Sessions: `spawnSession({ prompt })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
-- `getAvailableFunctions()` → list all available runtime functions.
 
 ## Other docs
 
