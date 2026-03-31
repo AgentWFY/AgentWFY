@@ -26,12 +26,14 @@ Targets:
 Agent DB schema:
 ```
 views (id, name UNIQUE, title, content, created_at, updated_at)
-docs (name PK, content, updated_at)
+docs (name PK, content, created_at, updated_at)
 tasks (id, title, description, content, timeout_ms, created_at, updated_at)
 triggers (id, task_id FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
-config (name PK, value, description)
+config (name PK, value, description, created_at, updated_at)
 plugins (id, name UNIQUE, title, description, version, code, author, repository, license, enabled, created_at, updated_at)
 ```
+
+`created_at` and `updated_at` are Unix epoch seconds, managed automatically. `created_at` is set on INSERT, `updated_at` is set on INSERT and auto-bumped on every UPDATE by a trigger. Do not set them manually.
 
 Name format (enforced by the database): `views.name`, `docs.name`, `config.name` must match `[a-z0-9._-]+`.
 

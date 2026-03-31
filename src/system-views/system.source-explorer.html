@@ -765,8 +765,8 @@
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE " + table + " SET content = ?, updated_at = ? " + whereClause,
-        params: [newContent, now, whereParam],
+        sql: "UPDATE " + table + " SET content = ? " + whereClause,
+        params: [newContent, whereParam],
         confirmed: true
       });
       selected.content = newContent;
@@ -848,7 +848,7 @@
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE triggers SET enabled = ?, updated_at = unixepoch() WHERE id = ?",
+        sql: "UPDATE triggers SET enabled = ? WHERE id = ?",
         params: [newEnabled, selected.id],
         confirmed: true
       });
@@ -871,7 +871,7 @@
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE triggers SET task_id = ?, type = ?, description = ?, config = ?, updated_at = unixepoch() WHERE id = ?",
+        sql: "UPDATE triggers SET task_id = ?, type = ?, description = ?, config = ? WHERE id = ?",
         params: [taskId, type, desc, configStr, selected.id],
         confirmed: true
       });
@@ -891,7 +891,7 @@
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE plugins SET enabled = ?, updated_at = unixepoch() WHERE id = ?",
+        sql: "UPDATE plugins SET enabled = ? WHERE id = ?",
         params: [newEnabled, selected.id],
         confirmed: true
       });

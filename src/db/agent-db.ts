@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS views (
 CREATE TABLE IF NOT EXISTS docs (
   name TEXT NOT NULL PRIMARY KEY,
   content TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
@@ -46,7 +47,9 @@ CREATE TABLE IF NOT EXISTS triggers (
 CREATE TABLE IF NOT EXISTS config (
   name TEXT PRIMARY KEY,
   value TEXT,
-  description TEXT NOT NULL DEFAULT ''
+  description TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
 
 CREATE TABLE IF NOT EXISTS plugins (
@@ -63,6 +66,12 @@ CREATE TABLE IF NOT EXISTS plugins (
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins'].map(t => `
+CREATE TRIGGER IF NOT EXISTS ${t}_auto_updated_at AFTER UPDATE ON ${t}
+BEGIN
+  UPDATE ${t} SET updated_at = unixepoch() WHERE rowid = NEW.rowid;
+END;`).join('\n')}
 `;
 
 const CHANGE_TRACKING_SQL = `
@@ -308,8 +317,8 @@ class AgentDb {
     this.syncSystemData<{ name: string; content: string }>({
       jsonPath: opts.systemDocsPath,
       selectSql: "SELECT name, content FROM docs WHERE name = 'system' OR name LIKE 'system.%'",
-      upsertSql: `INSERT INTO docs (name, content, updated_at) VALUES (?, ?, unixepoch())
-        ON CONFLICT(name) DO UPDATE SET content = excluded.content, updated_at = unixepoch()`,
+      upsertSql: `INSERT INTO docs (name, content) VALUES (?, ?)
+        ON CONFLICT(name) DO UPDATE SET content = excluded.content`,
       hasChanged: (doc, ex) => ex.content !== doc.content,
       bindUpsert: (doc) => [doc.name, doc.content],
     });
@@ -317,8 +326,8 @@ class AgentDb {
     this.syncSystemData<{ name: string; title: string; content: string }>({
       jsonPath: opts.systemViewsPath,
       selectSql: "SELECT name, title, content FROM views WHERE name LIKE 'system.%'",
-      upsertSql: `INSERT INTO views (name, title, content, updated_at) VALUES (?, ?, ?, unixepoch())
-        ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = unixepoch()`,
+      upsertSql: `INSERT INTO views (name, title, content) VALUES (?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content`,
       hasChanged: (v, ex) => ex.title !== v.title || ex.content !== v.content,
       bindUpsert: (v) => [v.name, v.title, v.content],
     });
@@ -365,7 +374,7 @@ class AgentDb {
   togglePlugin(name: string, enabled: boolean): void {
     this.adminWrite(() => {
       this.db.prepare(
-        'UPDATE plugins SET enabled = ?, updated_at = unixepoch() WHERE name = ?'
+        'UPDATE plugins SET enabled = ? WHERE name = ?'
       ).run(enabled ? 1 : 0, name);    });
   }
 
@@ -377,8 +386,8 @@ class AgentDb {
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
-        INSERT INTO plugins (name, title, description, version, code, author, repository, license, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+        INSERT INTO plugins (name, title, description, version, code, author, repository, license)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(name) DO UPDATE SET
             title = excluded.title,
             description = excluded.description,
@@ -386,23 +395,20 @@ class AgentDb {
             code = excluded.code,
             author = excluded.author,
             repository = excluded.repository,
-            license = excluded.license,
-            updated_at = unixepoch()
+            license = excluded.license
       `);
       const upsertDoc = this.db.prepare(`
-        INSERT INTO docs (name, content, updated_at)
-          VALUES (?, ?, unixepoch())
+        INSERT INTO docs (name, content)
+          VALUES (?, ?)
           ON CONFLICT(name) DO UPDATE SET
-            content = excluded.content,
-            updated_at = unixepoch()
+            content = excluded.content
       `);
       const upsertView = this.db.prepare(`
-        INSERT INTO views (name, title, content, updated_at)
-          VALUES (?, ?, ?, unixepoch())
+        INSERT INTO views (name, title, content)
+          VALUES (?, ?, ?)
           ON CONFLICT(name) DO UPDATE SET
             title = excluded.title,
-            content = excluded.content,
-            updated_at = unixepoch()
+            content = excluded.content
       `);
       const upsertConfig = this.db.prepare(`
         INSERT INTO config (name, value, description)

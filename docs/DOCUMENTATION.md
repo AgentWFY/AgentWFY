@@ -423,7 +423,7 @@ Open a URL in the user's default browser. Only `http://` and `https://`.
 
 ## Database System
 
-Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
+Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables. All tables have `created_at` and `updated_at` columns (Unix epoch seconds). Both are auto-set on INSERT via `DEFAULT (unixepoch())`. The `updated_at` column is automatically bumped on every UPDATE by a SQLite trigger — no need to set it manually.
 
 ### Docs Table
 
@@ -431,7 +431,8 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 |--------|------|-------------|
 | `name` | TEXT (PK) | Document identifier |
 | `content` | TEXT | Document content |
-| `updated_at` | INTEGER | Unix epoch seconds |
+| `created_at` | INTEGER | Unix epoch seconds |
+| `updated_at` | INTEGER | Unix epoch seconds (auto-updated) |
 
 **Name format:** lowercase letters, digits, dots, hyphens, and underscores only (`[a-z0-9._-]`).
 
@@ -488,6 +489,8 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 | `name` | TEXT (PK) | Setting key |
 | `value` | TEXT | String value, or NULL for default |
 | `description` | TEXT | Human-readable description |
+| `created_at` | INTEGER | Unix epoch seconds |
+| `updated_at` | INTEGER | Unix epoch seconds (auto-updated) |
 
 **Resolution order:** Agent DB value (non-NULL) → Global config (`~/.agentwfy.json`) → Hardcoded default
 

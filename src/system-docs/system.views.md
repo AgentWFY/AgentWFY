@@ -2,7 +2,7 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"). Opened via `openTab({ viewId })` or `openTab({ viewName })`. Always bump `updated_at` when updating content.
+- **DB views** — stored in `views` table (target="agent"). Opened via `openTab({ viewId })` or `openTab({ viewName })`.
 - **File views** — HTML files in the working directory. Opened via `openTab({ filePath })`.
 
 Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL tabs (`openTab({ url })`) do NOT get the runtime.
@@ -97,7 +97,7 @@ await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) as s FROM vie
 ```js
 await runSql({
   target: 'agent',
-  sql: 'UPDATE views SET content = REPLACE(content, ?, ?), updated_at = unixepoch() WHERE id = ?',
+  sql: 'UPDATE views SET content = REPLACE(content, ?, ?) WHERE id = ?',
   params: [oldText, newText, viewId]
 })
 ```

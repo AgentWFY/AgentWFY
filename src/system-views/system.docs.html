@@ -839,7 +839,7 @@ const MD = {
     try {
       await agentwfy.runSql({
         target: 'agent',
-        sql: 'UPDATE docs SET content = ?, updated_at = unixepoch() WHERE name = ?',
+        sql: 'UPDATE docs SET content = ? WHERE name = ?',
         params: [newContent, currentDoc]
       });
       docCache[currentDoc] = newContent;
