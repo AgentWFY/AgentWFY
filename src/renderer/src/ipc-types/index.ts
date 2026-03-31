@@ -19,12 +19,6 @@ export interface CommandPaletteApi {
   showFiltered(query: string): Promise<void>
 }
 
-export interface PluginsApi {
-  call(method: string, params: unknown): Promise<unknown>
-  methods(): Promise<string[]>
-  uninstall(pluginName: string): Promise<void>
-}
-
 export interface ProvidersApi {
   list(): Promise<Array<{ id: string; name: string; settingsView?: string }>>
   getStatusLine(providerId: string): Promise<string>
@@ -77,7 +71,6 @@ export interface AppIpc {
   dialog: DialogApi
   db: DbApi
   tasks: TasksApi
-  plugins: PluginsApi
   providers: ProvidersApi
   commandPalette: CommandPaletteApi
   agent: AgentApi

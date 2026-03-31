@@ -193,11 +193,6 @@ window.ipc.tasks.readLog(logFileName)
 window.ipc.tasks.writeLog(logFileName, content)
 window.ipc.tasks.onRunFinished(callback)           // → unsubscribe fn
 
-// Plugins
-window.ipc.plugins.call(method, params)
-window.ipc.plugins.methods()
-window.ipc.plugins.uninstall(pluginName)
-
 // Providers
 window.ipc.providers.list()
 window.ipc.providers.getStatusLine(providerId)

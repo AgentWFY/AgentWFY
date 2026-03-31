@@ -47,11 +47,6 @@ const Channels = {
     writeLog: 'tasks:writeLog',
     runFinished: 'tasks:runFinished',
   },
-  plugins: {
-    call: 'plugin:call',
-    methods: 'plugin:methods',
-    uninstall: 'plugin:uninstall',
-  },
   providers: {
     list: 'provider:list',
     getStatusLine: 'provider:get-status-line',
@@ -276,17 +271,6 @@ if (isApp) {
     },
     getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null> {
       return ipcRenderer.invoke('app:getDefaultView');
-    },
-    plugins: {
-      call(method: string, params: unknown): Promise<unknown> {
-        return ipcRenderer.invoke(Channels.plugins.call, method, params);
-      },
-      methods(): Promise<string[]> {
-        return ipcRenderer.invoke(Channels.plugins.methods);
-      },
-      uninstall(pluginName: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.plugins.uninstall, pluginName);
-      },
     },
     tasks: {
       start(taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
