@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'child_process'
 import { randomBytes } from 'crypto'
-import { statSync } from 'fs'
-import { basename, dirname, join } from 'path'
+import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { ensureVendor } from './lib/ensure-vendor.mjs'
 
@@ -11,18 +10,9 @@ const root = join(__dirname, '..')
 
 ensureVendor(root)
 
-if (!process.env.AGENTWFY_APP_ID) {
-  if (process.env.AGENTWFY_HEADLESS) {
-    // Headless: always isolate with a unique app ID so parallel test runs don't collide.
-    process.env.AGENTWFY_APP_ID = `AgentWFY-test-${randomBytes(4).toString('hex')}`
-  } else {
-    // Auto-isolate worktree instances: .git is a file in worktrees, a directory in the main repo.
-    try {
-      if (statSync(join(root, '.git')).isFile()) {
-        process.env.AGENTWFY_APP_ID = `AgentWFY-${basename(root)}`
-      }
-    } catch {}
-  }
+if (!process.env.AGENTWFY_APP_ID && process.env.AGENTWFY_HEADLESS) {
+  // Headless: always isolate with a unique app ID so parallel test runs don't collide.
+  process.env.AGENTWFY_APP_ID = `AgentWFY-test-${randomBytes(4).toString('hex')}`
 }
 
 const electronDir = join(root, 'vendor', 'electron')
