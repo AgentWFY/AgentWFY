@@ -1,10 +1,10 @@
-import type { BrowserWindow } from 'electron'
+import type { WebContents } from 'electron'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 
-export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager; win: BrowserWindow }): void {
-  const { getSessionManager, win } = deps
+export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager; rendererWebContents: WebContents }): void {
+  const { getSessionManager, rendererWebContents: rwc } = deps
 
   registry.register('spawnSession', async (params) => {
     const request = params as WorkerHostMethodMap['spawnSession']['params']
@@ -37,9 +37,9 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
     const { label } = await sessionManager.openSessionInChat(request.sessionId)
 
     // Notify the renderer to add this session to the open sessions list and show the chat panel
-    if (!win.isDestroyed()) {
+    if (!rwc.isDestroyed()) {
       const detail = JSON.stringify({ file: request.sessionId, label }).replace(/</g, '\\u003c')
-      win.webContents.executeJavaScript(
+      rwc.executeJavaScript(
         `window.dispatchEvent(new CustomEvent('agentwfy:open-session-in-chat', { detail: ${detail} }));`,
         true,
       ).catch((err) => { console.warn('[agent-functions] executeJavaScript failed:', err) })

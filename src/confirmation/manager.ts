@@ -1,10 +1,10 @@
-import { BrowserWindow, nativeTheme } from 'electron'
+import { BaseWindow, BrowserWindow, nativeTheme } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { CONFIRMATION_CHANNEL, type ConfirmationResult } from './types.js'
 
 export interface ConfirmationManagerDeps {
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BaseWindow | null
   registerSender?: (webContentsId: number) => void
   unregisterSender?: (webContentsId: number) => void
 }

@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '../agent/session_manager.js'
 import { Channels } from './channels.js'
 
@@ -91,7 +91,7 @@ export function registerAgentSessionHandlers(
  */
 export function setupAgentStateStreaming(
   manager: AgentSessionManager,
-  win: BrowserWindow,
+  wc: WebContents,
   isActive?: () => boolean,
 ): () => void {
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
@@ -102,19 +102,19 @@ export function setupAgentStateStreaming(
   let prevNotifyOnFinish = false
 
   const sendFullSnapshot = () => {
-    if (win.isDestroyed()) return
+    if (wc.isDestroyed()) return
     if (!heartbeatDirty) return
     if (isActive && !isActive()) return
     heartbeatDirty = false
     const snapshot = manager.getSnapshot()
-    win.webContents.send(Channels.agent.snapshot, snapshot)
+    wc.send(Channels.agent.snapshot, snapshot)
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
   }
 
   const unsubscribe = manager.subscribe(() => {
-    if (win.isDestroyed()) return
+    if (wc.isDestroyed()) return
     heartbeatDirty = true
 
     const snapshot = manager.getSnapshot()
@@ -137,10 +137,10 @@ export function setupAgentStateStreaming(
       if (!streamingDebounce) {
         streamingDebounce = setTimeout(() => {
           streamingDebounce = null
-          if (win.isDestroyed()) return
+          if (wc.isDestroyed()) return
           if (isActive && !isActive()) return
           const current = manager.getSnapshot()
-          win.webContents.send(Channels.agent.streaming, {
+          wc.send(Channels.agent.streaming, {
             message: current.streamingMessage,
             statusLine: current.statusLine,
             isStreaming: current.isStreaming,
@@ -151,10 +151,10 @@ export function setupAgentStateStreaming(
       }
 
       if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
-        win.webContents.send(Channels.agent.snapshot, snapshot)
+        wc.send(Channels.agent.snapshot, snapshot)
       }
     } else {
-      win.webContents.send(Channels.agent.snapshot, snapshot)
+      wc.send(Channels.agent.snapshot, snapshot)
     }
 
     prevIsStreaming = snapshot.isStreaming

@@ -1,9 +1,9 @@
-import { BrowserWindow, dialog, ipcMain, OpenDialogOptions, shell } from 'electron';
+import { BaseWindow, BrowserWindow, dialog, ipcMain, OpenDialogOptions, shell } from 'electron';
 import { Channels } from './channels.js';
 
 export const registerDialogSubscribers = () => {
   ipcMain.handle(Channels.dialog.open, async (event, options: OpenDialogOptions) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
+    const window = BrowserWindow.fromWebContents(event.sender) ?? BaseWindow.getFocusedWindow();
     const { canceled, filePaths } = await dialog.showOpenDialog(window!, options);
 
     if (!canceled) {

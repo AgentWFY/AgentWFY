@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents, type MenuItemConstructorOptions } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents, type MenuItemConstructorOptions } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
@@ -173,9 +173,12 @@ registerAgentSessionHandlers(
       busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
     });
     ctx.sessionManager = newMgr;
-    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
-      newMgr, ctx.window, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
-    );
+    const rwc = windowManager.getRendererWebContents();
+    if (rwc) {
+      ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
+        newMgr, rwc, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
+      );
+    }
     newMgr.resetActive();
     return newMgr;
   },
@@ -245,7 +248,7 @@ ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentRoot: string) =
 });
 
 ipcMain.handle(Channels.agentSidebar.add, async () => {
-  const win = windowManager.getMainBrowserWindow();
+  const win = windowManager.getMainWindow();
   const picked = await showOpenAgentDialog(win);
   if (!picked) return null;
   await windowManager.addAgent(picked);
@@ -253,7 +256,7 @@ ipcMain.handle(Channels.agentSidebar.add, async () => {
 });
 
 ipcMain.handle(Channels.agentSidebar.addFromFile, async () => {
-  const win = windowManager.getMainBrowserWindow();
+  const win = windowManager.getMainWindow();
   const picked = await showInstallAgentFromFileDialog(win);
   if (!picked) return null;
   await windowManager.addAgent(picked);
@@ -269,7 +272,7 @@ ipcMain.handle(Channels.agentSidebar.reorder, async (_event, agentPaths: string[
 });
 
 ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: string) => {
-  const win = windowManager.getMainBrowserWindow();
+  const win = windowManager.getMainWindow();
   if (!win || win.isDestroyed()) return;
 
   const agents = windowManager.getInstalledAgentsList();
@@ -304,7 +307,7 @@ function buildAndSetMenu() {
         {
           label: 'Add Agent...',
           click: async () => {
-            const win = windowManager.getMainBrowserWindow();
+            const win = windowManager.getMainWindow();
             const picked = await showOpenAgentDialog(win);
             if (picked) await windowManager.addAgent(picked);
           },
@@ -312,7 +315,7 @@ function buildAndSetMenu() {
         {
           label: 'Import Agent from File...',
           click: async () => {
-            const win = windowManager.getMainBrowserWindow();
+            const win = windowManager.getMainWindow();
             const picked = await showInstallAgentFromFileDialog(win);
             if (picked) await windowManager.addAgent(picked);
           },
@@ -390,7 +393,7 @@ function buildAndSetMenu() {
         {
           label: `About ${APP_NAME}`,
           click: () => {
-            const win = BrowserWindow.getFocusedWindow() ?? undefined;
+            const win = BaseWindow.getFocusedWindow() ?? undefined;
             dialog.showMessageBox({
               ...(win ? { window: win } : {}),
               type: 'info',
@@ -591,7 +594,7 @@ app.on('before-quit', (event) => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (BaseWindow.getAllWindows().length === 0) {
     createInitialWindow();
   }
 });

@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, nativeTheme, shell } from 'electron';
+import { BaseWindow, BrowserWindow, dialog, nativeTheme, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews, getViewByName } from '../db/views.js';
@@ -26,7 +26,7 @@ import type { CommandPaletteAction, CommandPaletteItem } from './types.js';
 export { COMMAND_PALETTE_CHANNEL };
 
 export interface CommandPaletteManagerDeps {
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => BaseWindow | null;
   getAgentRoot: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
@@ -39,6 +39,7 @@ export interface CommandPaletteManagerDeps {
   getSessionManager: () => AgentSessionManager;
   getDisplayShortcut: (actionId: string) => string | null;
   handleShortcutAction: (action: string) => void;
+  reloadRenderer: () => void;
 }
 
 export class CommandPaletteManager {
@@ -814,12 +815,9 @@ export class CommandPaletteManager {
         }
         this.hide({ focusMain: true });
         // Reload the app to pick up restored DB — full reset like agent switch
-        const mainWindow = this.deps.getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          this.deps.getTabViewManager().destroyAllTabViews();
-          this.deps.getTabViewManager().clearTrackedViewWebContents();
-          mainWindow.reload();
-        }
+        this.deps.getTabViewManager().destroyAllTabViews();
+        this.deps.getTabViewManager().clearTrackedViewWebContents();
+        this.deps.reloadRenderer();
         return;
       }
 

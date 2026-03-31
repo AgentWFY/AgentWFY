@@ -59,5 +59,5 @@ tsgo (native TypeScript compiler) compiles all source files to `dist/`, preservi
 
 - ESM throughout (`"type": "module"` in package.json), `.js` extensions in imports
 - Preload scripts use `.cts` extension (CommonJS required by Electron)
-- Electron nightly (`v41`) is downloaded as a binary to `vendor/electron/` by `scripts/setup`
+- Electron nightly (`v42`) is downloaded as a binary to `vendor/electron/` by `scripts/setup`
 - TypeScript strict-ish config: `noImplicitAny` enabled, compiled by tsgo (native TypeScript compiler) in `vendor/tsgo/`

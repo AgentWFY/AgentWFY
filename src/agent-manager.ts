@@ -1,4 +1,4 @@
-import { dialog, type BrowserWindow } from 'electron';
+import { dialog, type BaseWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { mkdir } from 'fs/promises';
@@ -46,13 +46,13 @@ export async function initAgent(dirPath: string, sourceDbPath?: string): Promise
 
 // --- Dialog helpers ---
 
-async function showOpenDialog(parentWindow: BrowserWindow | null, options: Electron.OpenDialogOptions) {
+async function showOpenDialog(parentWindow: BaseWindow | null, options: Electron.OpenDialogOptions) {
   return parentWindow
     ? dialog.showOpenDialog(parentWindow, options)
     : dialog.showOpenDialog(options);
 }
 
-async function showMessageBox(parentWindow: BrowserWindow | null, options: Electron.MessageBoxOptions) {
+async function showMessageBox(parentWindow: BaseWindow | null, options: Electron.MessageBoxOptions) {
   return parentWindow
     ? dialog.showMessageBox(parentWindow, options)
     : dialog.showMessageBox(options);
@@ -63,7 +63,7 @@ async function showMessageBox(parentWindow: BrowserWindow | null, options: Elect
 /**
  * Add Agent flow: pick a directory, check for .agentwfy, offer to install default if missing.
  */
-export async function showOpenAgentDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
+export async function showOpenAgentDialog(parentWindow: BaseWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
     properties: ['openDirectory'],
     title: 'Add Agent',
@@ -90,7 +90,7 @@ export async function showOpenAgentDialog(parentWindow: BrowserWindow | null = n
   return dirPath;
 }
 
-async function promptOpenExistingAgent(dirPath: string, parentWindow: BrowserWindow | null): Promise<string | null> {
+async function promptOpenExistingAgent(dirPath: string, parentWindow: BaseWindow | null): Promise<string | null> {
   const msgResult = await showMessageBox(parentWindow, {
     type: 'question',
     title: 'Agent Already Exists',
@@ -107,7 +107,7 @@ async function promptOpenExistingAgent(dirPath: string, parentWindow: BrowserWin
 /**
  * Install Agent flow: pick a directory, install default agent directly.
  */
-export async function showInstallAgentDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
+export async function showInstallAgentDialog(parentWindow: BaseWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
     properties: ['openDirectory', 'createDirectory'],
     title: 'Choose Directory for Agent',
@@ -125,7 +125,7 @@ export async function showInstallAgentDialog(parentWindow: BrowserWindow | null 
 /**
  * Install Agent from File flow: pick a directory, then pick a .agent.awfy file.
  */
-export async function showInstallAgentFromFileDialog(parentWindow: BrowserWindow | null = null): Promise<string | null> {
+export async function showInstallAgentFromFileDialog(parentWindow: BaseWindow | null = null): Promise<string | null> {
   const dirResult = await showOpenDialog(parentWindow, {
     properties: ['openDirectory', 'createDirectory'],
     title: 'Choose Directory for Agent',

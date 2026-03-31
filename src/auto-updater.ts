@@ -1,4 +1,4 @@
-import { app, dialog, BrowserWindow, net, shell } from 'electron';
+import { app, dialog, BaseWindow, net, shell } from 'electron';
 import { createWriteStream, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { spawn } from 'child_process';
@@ -123,7 +123,7 @@ function findAssetForPlatform(assets: ReleaseAsset[]): ReleaseAsset | null {
 }
 
 async function promptAndInstall(version: string, releaseNotes: string, asset: ReleaseAsset) {
-  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const win = BaseWindow.getFocusedWindow() ?? BaseWindow.getAllWindows()[0];
 
   const { response } = await dialog.showMessageBox({
     ...(win ? { window: win } : {}),
@@ -141,7 +141,7 @@ async function promptAndInstall(version: string, releaseNotes: string, asset: Re
   await downloadAndInstall(asset, win);
 }
 
-async function downloadAndInstall(asset: ReleaseAsset, win: BrowserWindow | null) {
+async function downloadAndInstall(asset: ReleaseAsset, win: BaseWindow | null) {
   const tempDir = join(app.getPath('temp'), 'agentwfy-update');
   mkdirSync(tempDir, { recursive: true });
   const filePath = join(tempDir, asset.name);
@@ -233,7 +233,7 @@ async function applyUpdate(filePath: string) {
 }
 
 function showNoUpdateDialog() {
-  const win = BrowserWindow.getFocusedWindow() ?? undefined;
+  const win = BaseWindow.getFocusedWindow() ?? undefined;
   dialog.showMessageBox({
     ...(win ? { window: win } : {}),
     type: 'info',
@@ -244,7 +244,7 @@ function showNoUpdateDialog() {
 }
 
 function showErrorDialog(message: string) {
-  const win = BrowserWindow.getFocusedWindow() ?? undefined;
+  const win = BaseWindow.getFocusedWindow() ?? undefined;
   dialog.showMessageBox({
     ...(win ? { window: win } : {}),
     type: 'error',

@@ -1,4 +1,4 @@
-import { type BrowserWindow, shell } from 'electron'
+import { type WebContents, shell } from 'electron'
 import type { OnDbChange } from '../../db/sqlite.js'
 import type { AgentTabTools } from '../../ipc/tabs.js'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
@@ -16,7 +16,7 @@ import { registerPlugins } from './plugins.js'
 
 interface BuiltInFunctionDeps {
   agentRoot: string
-  win: BrowserWindow
+  rendererWebContents: WebContents
   tabTools: AgentTabTools
   onDbChange?: OnDbChange
   getSessionManager: () => AgentSessionManager
@@ -30,7 +30,7 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
   registerTabs(registry, { tabTools: deps.tabTools, agentRoot: deps.agentRoot })
   registerEvents(registry, { eventBus: deps.eventBus })
-  registerAgent(registry, { getSessionManager: deps.getSessionManager, win: deps.win })
+  registerAgent(registry, { getSessionManager: deps.getSessionManager, rendererWebContents: deps.rendererWebContents })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
   registerPlugins(registry, {
     getCommandPalette: deps.getCommandPalette,

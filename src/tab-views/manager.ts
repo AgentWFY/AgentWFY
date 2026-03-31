@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
+import { BaseWindow, BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewId } from '../protocol/view-document.js';
@@ -184,7 +184,8 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 // --- TabViewManager ---
 
 interface TabViewManagerDeps {
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => BaseWindow | null;
+  sendToRenderer: (channel: string, ...args: unknown[]) => void;
   focusMainRendererWindow: () => void;
   dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
@@ -210,9 +211,7 @@ export class TabViewManager {
   }
 
   private pushStateToRenderer(): void {
-    const win = this.deps.getMainWindow();
-    if (!win || win.isDestroyed()) return;
-    win.webContents.send(Channels.tabs.stateChanged, {
+    this.deps.sendToRenderer(Channels.tabs.stateChanged, {
       tabs: this.tabs,
       selectedTabId: this.selectedTabId,
     });
@@ -273,17 +272,11 @@ export class TabViewManager {
 
     viewWebContents.on('did-start-loading', () => {
       this.deps.dispatchRendererCustomEvent('__tab-view-event', undefined);
-      const win = this.deps.getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('tabs:viewEvent', { tabId, type: 'did-start-loading' });
-      }
+      this.deps.sendToRenderer('tabs:viewEvent', { tabId, type: 'did-start-loading' });
     });
 
     viewWebContents.on('did-stop-loading', () => {
-      const win = this.deps.getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('tabs:viewEvent', { tabId, type: 'did-stop-loading' });
-      }
+      this.deps.sendToRenderer('tabs:viewEvent', { tabId, type: 'did-stop-loading' });
     });
 
     viewWebContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
@@ -291,15 +284,12 @@ export class TabViewManager {
         return;
       }
 
-      const win = this.deps.getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('tabs:viewEvent', {
-          tabId,
-          type: 'did-fail-load',
-          errorCode,
-          errorDescription,
-        });
-      }
+      this.deps.sendToRenderer('tabs:viewEvent', {
+        tabId,
+        type: 'did-fail-load',
+        errorCode,
+        errorDescription,
+      });
     });
 
     viewWebContents.on('before-input-event', (event, input) => {
@@ -910,7 +900,7 @@ export class TabViewManager {
     event: IpcMainInvokeEvent,
     payload: unknown,
   ): Promise<TabContextMenuAction> {
-    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? this.deps.getMainWindow();
     if (!ownerWindow || ownerWindow.isDestroyed()) {
       return Promise.resolve(null);
     }

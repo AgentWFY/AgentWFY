@@ -1,14 +1,17 @@
-import type { BrowserWindow } from 'electron';
+import type { BaseWindow, WebContents } from 'electron';
 
 interface RendererBridgeDeps {
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => BaseWindow | null;
+  getRendererWebContents: () => WebContents | null;
 }
 
 export class RendererBridge {
-  private readonly getMainWindow: () => BrowserWindow | null;
+  private readonly getMainWindow: () => BaseWindow | null;
+  private readonly getRendererWebContents: () => WebContents | null;
 
   constructor(deps: RendererBridgeDeps) {
     this.getMainWindow = deps.getMainWindow;
+    this.getRendererWebContents = deps.getRendererWebContents;
   }
 
   emitTabViewEvent(
@@ -16,12 +19,12 @@ export class RendererBridge {
     type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load',
     detail?: { errorCode?: number; errorDescription?: string }
   ): void {
-    const win = this.getMainWindow();
-    if (!win || win.isDestroyed()) {
+    const wc = this.getRendererWebContents();
+    if (!wc || wc.isDestroyed()) {
       return;
     }
 
-    win.webContents.send('tabs:viewEvent', {
+    wc.send('tabs:viewEvent', {
       tabId,
       type,
       ...(detail || {}),
@@ -30,6 +33,7 @@ export class RendererBridge {
 
   focusMainRendererWindow(): void {
     const win = this.getMainWindow();
+    const wc = this.getRendererWebContents();
     if (!win || win.isDestroyed()) {
       return;
     }
@@ -38,7 +42,7 @@ export class RendererBridge {
       if (!win.isFocused()) {
         win.focus();
       }
-      win.webContents.focus();
+      wc?.focus();
     } catch (error) {
       console.warn('[agent-runtime] failed to focus renderer window', error);
     }
@@ -49,8 +53,8 @@ export class RendererBridge {
   }
 
   dispatchRendererCustomEvent(eventName: string, detail?: unknown): void {
-    const win = this.getMainWindow();
-    if (!win || win.isDestroyed()) {
+    const wc = this.getRendererWebContents();
+    if (!wc || wc.isDestroyed()) {
       return;
     }
 
@@ -59,7 +63,7 @@ export class RendererBridge {
       ? ''
       : `, { detail: ${RendererBridge.toSafeJsonLiteral(detail)} }`;
 
-    void win.webContents.executeJavaScript(`
+    void wc.executeJavaScript(`
       window.dispatchEvent(new CustomEvent(${serializedName}${eventInit}));
     `, true).catch((error) => {
       console.warn(`[agent-runtime] failed to dispatch renderer event ${eventName}`, error);

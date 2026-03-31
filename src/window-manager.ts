@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
+import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
@@ -37,7 +37,7 @@ import { Channels } from './ipc/channels.js';
 
 // --- Kept for backward-compat: every IPC handler sees this shape ---
 export interface AppWindowContext {
-  window: BrowserWindow;
+  window: BaseWindow;
   agentRoot: string;
   eventBus: EventBus;
   rendererBridge: RendererBridge;
@@ -89,7 +89,8 @@ function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, a
 
 class WindowManager {
   // Shared single window + components
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: BaseWindow | null = null;
+  private rendererView: WebContentsView | null = null;
   private rendererBridge: RendererBridge | null = null;
   private commandPalette: CommandPaletteManager | null = null;
   private confirmation: ConfirmationManager | null = null;
@@ -120,7 +121,7 @@ class WindowManager {
       return;
     }
 
-    const window = new BrowserWindow({
+    const window = new BaseWindow({
       show: false,
       icon: path.join(import.meta.dirname, '..', 'icons', 'icon.png'),
       title: 'AgentWFY',
@@ -134,16 +135,31 @@ class WindowManager {
               height: 36,
             },
           }),
+    });
+
+    this.mainWindow = window;
+
+    // Renderer content lives in a dedicated WebContentsView attached to the
+    // BaseWindow.  BaseWindow has no built-in webContents — all web content
+    // is rendered through explicit WebContentsView children.
+    const rendererView = new WebContentsView({
       webPreferences: {
         preload: path.join(import.meta.dirname, 'preload.cjs'),
         webSecurity: true,
       },
     });
-
-    this.mainWindow = window;
+    window.contentView.addChildView(rendererView, 0);
+    const syncRendererBounds = () => {
+      if (window.isDestroyed()) return;
+      const [w, h] = window.getContentSize();
+      rendererView.setBounds({ x: 0, y: 0, width: w, height: h });
+    };
+    syncRendererBounds();
+    this.rendererView = rendererView;
 
     this.rendererBridge = new RendererBridge({
       getMainWindow: () => this.mainWindow!,
+      getRendererWebContents: () => this.rendererView?.webContents ?? null,
     });
 
     this.commandPalette = new CommandPaletteManager({
@@ -158,6 +174,10 @@ class WindowManager {
       getSessionManager: () => this.getActiveAgentContext()!.sessionManager,
       getDisplayShortcut: (actionId) => this.getActiveAgentContext()?.shortcutManager.getDisplayShortcut(actionId) ?? null,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
+      reloadRenderer: () => {
+        const wc = this.rendererView?.webContents;
+        if (wc && !wc.isDestroyed()) wc.reload();
+      },
     });
 
     this.confirmation = new ConfirmationManager({
@@ -165,7 +185,7 @@ class WindowManager {
     });
 
     // Wire up window events
-    window.on('page-title-updated', (evt) => {
+    rendererView.webContents.on('page-title-updated', (evt) => {
       evt.preventDefault();
     });
 
@@ -198,6 +218,7 @@ class WindowManager {
     window.on('closed', () => {
       this.destroyAll();
       this.mainWindow = null;
+      this.rendererView = null;
       this.rendererBridge = null;
       this.commandPalette = null;
       this.confirmation = null;
@@ -209,6 +230,7 @@ class WindowManager {
     });
 
     window.on('resize', () => {
+      syncRendererBounds();
       this.commandPalette?.syncBounds();
       this.confirmation?.syncBounds();
     });
@@ -219,21 +241,23 @@ class WindowManager {
       window.maximize();
     }
 
-    window.webContents.on('will-navigate', (event, url) => {
+    const rwc = rendererView.webContents;
+
+    rwc.on('will-navigate', (event, url) => {
       if (!url.startsWith('app://')) {
         event.preventDefault();
         shell.openExternal(url);
       }
     });
 
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    rwc.setWindowOpenHandler(({ url }) => {
       if (url && url !== 'about:blank') {
         shell.openExternal(url);
       }
       return { action: 'deny' };
     });
 
-    window.webContents.on('did-start-loading', () => {
+    rwc.on('did-start-loading', () => {
       this.commandPalette?.destroy();
       this.confirmation?.destroy();
       for (const ctx of this.agentContexts.values()) {
@@ -242,7 +266,7 @@ class WindowManager {
       }
     });
 
-    window.webContents.on('before-input-event', (event, input) => {
+    rwc.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
@@ -262,11 +286,11 @@ class WindowManager {
     this.activeAgentRoot = initialAgentRoot;
     this.persistInstalledAgents();
 
-    window.loadURL('app://index.html');
+    rwc.loadURL('app://index.html');
     if (!process.env.AGENTWFY_HEADLESS) window.show();
 
     // After renderer loads: start triggers and open default view for active agent
-    window.webContents.once('did-finish-load', () => {
+    rwc.once('did-finish-load', () => {
       const ctx = this.getActiveAgentContext();
       if (ctx) {
         ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
@@ -326,6 +350,7 @@ class WindowManager {
 
     const tabViewManager = new TabViewManager({
       getMainWindow: () => this.mainWindow!,
+      sendToRenderer: (channel, ...args) => this.sendToRenderer(channel, ...args),
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
       dispatchRendererCustomEvent: (name, detail) => this.rendererBridge?.dispatchRendererCustomEvent(name, detail),
       matchShortcut: (key, meta, ctrl, shift, alt) => {
@@ -351,12 +376,12 @@ class WindowManager {
 
     registerAllBuiltInFunctions(functionRegistry, {
       agentRoot,
-      win,
+      rendererWebContents: this.rendererView!.webContents,
       tabTools,
       onDbChange: (change) => {
         if (win.isDestroyed()) return;
         if (this.activeAgentRoot === agentRoot) {
-          win.webContents.send('db:changed', change);
+          this.sendToRenderer('db:changed', change);
         }
       },
       getSessionManager: () => agentCtx.sessionManager,
@@ -382,7 +407,7 @@ class WindowManager {
       busPublish,
       onRunFinished: (payload) => {
         if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
-          win.webContents.send(Channels.tasks.runFinished, payload);
+          this.sendToRenderer(Channels.tasks.runFinished, payload);
         }
       },
     });
@@ -412,7 +437,7 @@ class WindowManager {
 
     // Gate streaming IPC to active agent (background agents keep processing internally)
     agentCtx.agentStateStreamingCleanup = setupAgentStateStreaming(
-      sessionManager, win, () => this.activeAgentRoot === agentRoot
+      sessionManager, this.rendererView!.webContents, () => this.activeAgentRoot === agentRoot
     );
     sessionManager.resetActive();
 
@@ -529,7 +554,7 @@ class WindowManager {
 
     // Push fresh snapshot so renderer shows current agent state
     const snapshot = ctx.sessionManager.getSnapshot();
-    win.webContents.send(Channels.agent.snapshot, snapshot);
+    this.sendToRenderer(Channels.agent.snapshot, snapshot);
   }
 
   async removeAgent(agentRoot: string): Promise<void> {
@@ -567,13 +592,10 @@ class WindowManager {
   }
 
   private broadcastSidebarState(): void {
-    const win = this.mainWindow;
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(Channels.agentSidebar.switched, {
-        agentRoot: this.activeAgentRoot,
-        agents: this.getInstalledAgentsList(),
-      });
-    }
+    this.sendToRenderer(Channels.agentSidebar.switched, {
+      agentRoot: this.activeAgentRoot,
+      agents: this.getInstalledAgentsList(),
+    });
   }
 
   private persistInstalledAgents(): void {
@@ -593,8 +615,19 @@ class WindowManager {
     return this.activeAgentRoot;
   }
 
-  getMainBrowserWindow(): BrowserWindow | null {
+  getMainWindow(): BaseWindow | null {
     return this.mainWindow;
+  }
+
+  getRendererWebContents(): Electron.WebContents | null {
+    return this.rendererView?.webContents ?? null;
+  }
+
+  private sendToRenderer(channel: string, ...args: unknown[]): void {
+    const wc = this.rendererView?.webContents;
+    if (wc && !wc.isDestroyed()) {
+      wc.send(channel, ...args);
+    }
   }
 
   setZenMode(value: boolean): void {
@@ -705,11 +738,10 @@ class WindowManager {
     const agentCtx = this.agentContexts.get(agentRoot);
     if (!agentCtx) return;
 
-    const win = this.mainWindow;
-    if (!win || win.isDestroyed()) return;
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
 
     if (this.activeAgentRoot === agentRoot) {
-      win.webContents.send('db:changed', change);
+      this.sendToRenderer('db:changed', change);
     }
 
     if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {
@@ -733,7 +765,7 @@ class WindowManager {
 
     if (agentCtx.dbChangeDebounceTimer) clearTimeout(agentCtx.dbChangeDebounceTimer);
     agentCtx.dbChangeDebounceTimer = setTimeout(() => {
-      if (!win || win.isDestroyed()) return;
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
       this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:backup-changed');
     }, 5000);
   }
@@ -861,7 +893,7 @@ class WindowManager {
         activeCtx.tabViewManager.reloadCurrentTab();
         break;
       case 'reload-window':
-        this.mainWindow?.reload();
+        this.rendererView?.webContents.reload();
         break;
       case 'add-agent':
         this.commandPalette?.runAction({ type: 'add-agent' }).catch(() => {});
