@@ -16,7 +16,7 @@ declare global {
 
 const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Record<string, unknown>) => PaletteScreen> = {
   'normal': (bridge, params) => new NormalScreen(bridge, params?.filter as string | undefined),
-  'settings': (bridge) => new SettingsScreen(bridge),
+  'settings': (bridge, params) => new SettingsScreen(bridge, params),
   'restore': (bridge) => new RestoreScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
   'sessions': (bridge) => new SessionsScreen(bridge),

@@ -131,16 +131,7 @@ const STYLES = `
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    cursor: pointer;
-    background: transparent;
-    border: none;
     padding: 0 4px;
-    border-radius: 2px;
-    line-height: inherit;
-  }
-  .data-dir:hover {
-    background: var(--color-item-hover);
-    color: var(--color-text3);
   }
   .backup-info {
     font-size: 11px;
@@ -252,7 +243,7 @@ export class TlStatusLine extends HTMLElement {
         <span class="separator" id="port-sep"></span>
         <button class="backup-info" id="backup-info" type="button"></button>
         <span class="separator" id="backup-sep"></span>
-        <button class="data-dir" id="data-dir" type="button"></button>
+        <span class="data-dir" id="data-dir"></span>
       </div>
     `
   }
@@ -289,7 +280,7 @@ export class TlStatusLine extends HTMLElement {
     if (!portEl || !sepEl) return
     if (!this._clicksBound) {
       portEl.addEventListener('click', () => {
-        window.ipc?.commandPalette?.show({ screen: 'settings' })
+        window.ipc?.commandPalette?.show({ screen: 'settings', params: { filter: 'httpapi' } })
       })
     }
     try {
@@ -309,13 +300,8 @@ export class TlStatusLine extends HTMLElement {
   }
 
   private async loadDataDir() {
-    const dirEl = this.shadow.querySelector('#data-dir') as HTMLButtonElement | null
+    const dirEl = this.shadow.querySelector('#data-dir') as HTMLSpanElement | null
     if (!dirEl) return
-    if (!this._clicksBound) {
-      dirEl.addEventListener('click', () => {
-        window.ipc?.commandPalette?.showFiltered('Agent')
-      })
-    }
     try {
       const agentRoot = await window.ipc?.getAgentRoot()
       if (agentRoot) {
@@ -342,7 +328,7 @@ export class TlStatusLine extends HTMLElement {
     const infoEl = this.shadow.querySelector('#backup-info') as HTMLButtonElement | null
     if (!infoEl) return
     infoEl.addEventListener('click', () => {
-      window.ipc?.commandPalette?.showFiltered('Restore Agent Database')
+      window.ipc?.commandPalette?.show({ screen: 'restore' })
     })
   }
 
