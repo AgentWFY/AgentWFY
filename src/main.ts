@@ -21,6 +21,7 @@ import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
   isAgentDir,
+  initAgent,
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentRoots } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
@@ -47,6 +48,10 @@ function devRebuild(): Promise<void> {
 }
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
+
+if (process.env.AGENTWFY_HEADLESS && process.platform === 'darwin') {
+  app.dock?.hide();
+}
 
 // Write main process logs to .dev.log when not packaged (readable via scripts/cdp logs)
 if (!app.isPackaged) {
@@ -447,6 +452,10 @@ async function createInitialWindow() {
   const cliAgentPath = getAgentPathFromArgs();
   if (cliAgentPath) {
     const resolved = path.resolve(cliAgentPath);
+    if (!isAgentDir(resolved)) {
+      // Initialize as a new agent directory (creates .agentwfy/ and seeds default agent)
+      await initAgent(resolved);
+    }
     if (isAgentDir(resolved)) {
       // Register all persisted agents in sidebar without initializing
       const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
@@ -459,7 +468,7 @@ async function createInitialWindow() {
       await windowManager.createMainWindow(resolved);
       return;
     }
-    console.error(`[main] --agent-path "${cliAgentPath}" is not a valid agent directory (missing .agentwfy/)`);
+    console.error(`[main] --agent-path "${cliAgentPath}" failed to initialize`);
   }
 
   // 2. Try persisted agents (register all, only init the first one)

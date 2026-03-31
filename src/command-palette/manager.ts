@@ -189,9 +189,11 @@ export class CommandPaletteManager {
   private showAndNotify(channel: string, ...args: unknown[]): void {
     const paletteWindow = this.ensureWindow();
     this.syncBounds();
-    paletteWindow.show();
-    paletteWindow.moveTop();
-    paletteWindow.focus();
+    if (!process.env.AGENTWFY_HEADLESS) {
+      paletteWindow.show();
+      paletteWindow.moveTop();
+      paletteWindow.focus();
+    }
     paletteWindow.webContents.focus();
 
     const focusSearchInput = () => {

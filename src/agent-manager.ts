@@ -16,20 +16,12 @@ export function getAgentDir(agentRoot: string): string {
 
 async function ensureAgentDir(agentRoot: string): Promise<void> {
   const agentDir = getAgentDir(agentRoot);
-  try {
-    await mkdir(agentDir, { recursive: true });
-  } catch (error) {
-    console.error(`[agent-runtime] failed to ensure private agent directory at ${agentDir}`, error);
-  }
+  await mkdir(agentDir, { recursive: true });
 }
 
 export async function ensureAgentRuntimeBootstrap(agentRoot: string): Promise<void> {
   await ensureAgentDir(agentRoot);
-  try {
-    await ensureViewsSchema(agentRoot);
-  } catch (error) {
-    console.error(`[agent-runtime] failed to initialize views schema for ${agentRoot}`, error);
-  }
+  await ensureViewsSchema(agentRoot);
 }
 
 export function isAgentDir(dirPath: string): boolean {

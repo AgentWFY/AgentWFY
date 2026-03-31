@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const GLOBAL_CONFIG_PATH = path.join(os.homedir(), '.agentwfy.json');
+const GLOBAL_CONFIG_PATH = process.env.AGENTWFY_CONFIG || path.join(os.homedir(), '.agentwfy.json');
 
 let cache: Record<string, unknown> | null = null;
 let selfWrite = false;

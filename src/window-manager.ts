@@ -212,7 +212,11 @@ class WindowManager {
       this.confirmation?.syncBounds();
     });
 
-    window.maximize();
+    if (process.env.AGENTWFY_HEADLESS) {
+      window.setSize(1920, 1080);
+    } else {
+      window.maximize();
+    }
 
     window.webContents.on('will-navigate', (event, url) => {
       if (!url.startsWith('app://')) {
@@ -258,7 +262,7 @@ class WindowManager {
     this.persistInstalledAgents();
 
     window.loadURL('app://index.html');
-    window.show();
+    if (!process.env.AGENTWFY_HEADLESS) window.show();
 
     // After renderer loads: start triggers and open default view for active agent
     window.webContents.once('did-finish-load', () => {

@@ -109,9 +109,11 @@ export class ConfirmationManager {
 
       const win = this.ensureWindow()
       win.setBounds(this.resolveBounds())
-      win.show()
-      win.moveTop()
-      win.focus()
+      if (!process.env.AGENTWFY_HEADLESS) {
+        win.show()
+        win.moveTop()
+        win.focus()
+      }
       win.webContents.focus()
 
       const notify = () => {

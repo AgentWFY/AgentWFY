@@ -2,7 +2,7 @@
 
 Complete reference documentation for AgentWFY — the local runtime for AI agents.
 
-For an overview and quick start, see the [README](../README.md).
+For an overview and quick start, see the [README](../README.md). For testing and CDP automation, see [TESTING.md](TESTING.md).
 
 ---
 

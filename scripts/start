@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'child_process'
+import { randomBytes } from 'crypto'
 import { statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
@@ -10,13 +11,18 @@ const root = join(__dirname, '..')
 
 ensureVendor(root)
 
-// Auto-isolate worktree instances: .git is a file in worktrees, a directory in the main repo.
 if (!process.env.AGENTWFY_APP_ID) {
-  try {
-    if (statSync(join(root, '.git')).isFile()) {
-      process.env.AGENTWFY_APP_ID = `AgentWFY-${basename(root)}`
-    }
-  } catch {}
+  if (process.env.AGENTWFY_HEADLESS) {
+    // Headless: always isolate with a unique app ID so parallel test runs don't collide.
+    process.env.AGENTWFY_APP_ID = `AgentWFY-test-${randomBytes(4).toString('hex')}`
+  } else {
+    // Auto-isolate worktree instances: .git is a file in worktrees, a directory in the main repo.
+    try {
+      if (statSync(join(root, '.git')).isFile()) {
+        process.env.AGENTWFY_APP_ID = `AgentWFY-${basename(root)}`
+      }
+    } catch {}
+  }
 }
 
 const electronDir = join(root, 'vendor', 'electron')
@@ -34,8 +40,11 @@ function resetTerminal() {
 process.on('SIGINT', () => { resetTerminal(); process.exit(130) })
 process.on('SIGTERM', () => { resetTerminal(); process.exit(143) })
 
+const cdpPort = process.env.CDP_PORT
+
 function launchElectron() {
-  const child = spawn(binaryPath, [root, ...process.argv.slice(2)], {
+  const extraArgs = cdpPort ? [`--remote-debugging-port=${cdpPort}`] : []
+  const child = spawn(binaryPath, [root, ...extraArgs, ...process.argv.slice(2)], {
     stdio: ['ignore', 'inherit', 'inherit'],
     env: { ...process.env, NODE_OPTIONS: '--disable-warning=ExperimentalWarning' },
   })
