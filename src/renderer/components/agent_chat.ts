@@ -853,29 +853,48 @@ const STYLES = `
     padding: 4px 4px 4px 72px; /* macOS traffic light buttons */
   }
   .awfy-app-root.zen-mode .session-item {
-    padding: 0 6px 0 10px;
+    padding: 0 10px;
     height: 28px;
     border-radius: var(--radius-md);
     background: transparent;
+    color: var(--color-text2);
+    font-size: 12px;
     flex-shrink: 0;
     max-width: 200px;
     transition: color var(--transition-fast), background var(--transition-fast);
   }
+  .awfy-app-root.zen-mode .session-item:hover {
+    color: var(--color-text3);
+    background: var(--color-item-hover);
+  }
   .awfy-app-root.zen-mode .session-item.active {
+    color: var(--color-text4);
     background: var(--color-bg1);
-    box-shadow: 0 0.5px 2px rgba(0,0,0,0.08);
+    font-weight: 500;
+    box-shadow: 0 0 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
   }
   .awfy-app-root.zen-mode .session-item-dot {
-    display: none;
+    display: block;
+    opacity: 0.45;
+  }
+  .awfy-app-root.zen-mode .session-item.active .session-item-dot {
+    opacity: 0.75;
+  }
+  .awfy-app-root.zen-mode .session-item:hover .session-item-dot {
+    opacity: 0.65;
   }
   .awfy-app-root.zen-mode .session-item.streaming .session-item-dot {
-    display: block;
+    opacity: 1;
   }
   .awfy-app-root.zen-mode .session-item.active .session-item-label {
     font-weight: 500;
   }
   .awfy-app-root.zen-mode .session-item-close {
     display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
     visibility: hidden;
   }
   .awfy-app-root.zen-mode .session-item:hover .session-item-close {
