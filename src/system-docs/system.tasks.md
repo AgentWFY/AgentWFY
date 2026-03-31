@@ -6,7 +6,7 @@ The `content` column contains JavaScript code to execute. `timeout_ms` is an opt
 
 ## APIs
 
-- `startTask({ taskId, input? })` → `{ runId }` — starts the task in a new worker. Non-blocking.
+- `startTask({ taskName, input? })` → `{ runId }` — starts the task in a new worker. Non-blocking.
 - `stopTask({ runId })` → void — terminates a running task.
 
 ## Input
@@ -24,9 +24,9 @@ When a task is triggered (by a trigger or by the user from the command palette),
 Task completion is published to the event bus:
 
 ```js
-const { runId } = await startTask({ taskId, input: 'some input' })
+const { runId } = await startTask({ taskName: 'my-task', input: 'some input' })
 const result = await waitFor({ topic: 'task:run:' + runId })
-// result: { runId, taskId, title, status, result, error, logs }
+// result: { runId, taskName, title, status, result, error, logs }
 ```
 
 For inter-task data passing, use the bus with runId as correlation ID:

@@ -3,7 +3,7 @@ type TaskOrigin =
   | { type: 'command-palette' }
   | { type: 'task-panel' }
   | { type: 'agent' }
-  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
+  | { type: 'trigger'; triggerName: string; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
 
 interface TaskLogHistoryItem {
@@ -16,15 +16,15 @@ interface TaskLogHistoryItem {
 import { escapeHtml } from './chat_utils.js'
 
 interface TaskItem {
-  id: number
+  name: string
   title: string
   description: string
   timeout_ms: number | null
 }
 
 interface TriggerItem {
-  id: number
-  task_id: number
+  name: string
+  task_name: string
   type: 'schedule' | 'http' | 'event'
   config: string
   description: string
@@ -425,10 +425,10 @@ export class TlTaskPanel extends HTMLElement {
   private triggers: TriggerItem[] = []
   private logHistory: TaskLogHistoryItem[] = []
   private activeTab: ActiveTab = 'runs'
-  private expandedTaskId: number | null = null
+  private expandedTaskName: string | null = null
   private detailView: DetailView | null = null
   private detailAutoScroll = true
-  private activeRuns: Array<{ runId: string; taskId: number; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
+  private activeRuns: Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private runFinishedUnsub: (() => void) | null = null
   private runningTimer: ReturnType<typeof setInterval> | null = null
 
@@ -485,13 +485,13 @@ export class TlTaskPanel extends HTMLElement {
     this.loadRunningTasks()
   }
 
-  private onRunTaskEvent = (e: CustomEvent<{ taskId: number; input?: string }>) => {
-    const taskId = e.detail?.taskId
-    if (typeof taskId === 'number') {
+  private onRunTaskEvent = (e: CustomEvent<{ taskName: string; input?: string }>) => {
+    const taskName = e.detail?.taskName
+    if (typeof taskName === 'string' && taskName) {
       const ipc = window.ipc
       if (ipc) {
         const input = e.detail?.input
-        ipc.tasks.start(taskId, input || undefined, { type: 'command-palette' } as any).then(() => {
+        ipc.tasks.start(taskName, input || undefined, { type: 'command-palette' } as any).then(() => {
           this.loadRunningTasks()
         }).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
@@ -506,7 +506,7 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: 'SELECT id, title, description, timeout_ms FROM tasks ORDER BY title ASC',
+        sql: 'SELECT name, title, description, timeout_ms FROM tasks ORDER BY title ASC',
       }) as TaskItem[]
       this.tasks = Array.isArray(rows) ? rows : []
     } catch { this.tasks = [] }
@@ -519,8 +519,8 @@ export class TlTaskPanel extends HTMLElement {
     try {
       const rows = await ipc.sql.run({
         target: 'agent',
-        sql: `SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, k.title as task_title
-              FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id
+        sql: `SELECT t.name, t.task_name, t.type, t.config, t.description, t.enabled, k.title as task_title
+              FROM triggers t LEFT JOIN tasks k ON t.task_name = k.name
               ORDER BY t.enabled DESC, k.title ASC`,
       }) as TriggerItem[]
       this.triggers = Array.isArray(rows) ? rows : []
@@ -645,12 +645,12 @@ export class TlTaskPanel extends HTMLElement {
 
     let html = ''
     for (const task of this.tasks) {
-      const isExpanded = this.expandedTaskId === task.id
-      const taskTriggers = this.triggers.filter(t => t.task_id === task.id && t.enabled)
-      html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-id="${task.id}">
+      const isExpanded = this.expandedTaskName === task.name
+      const taskTriggers = this.triggers.filter(t => t.task_name === task.name && t.enabled)
+      html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-name="${escapeHtml(task.name)}">
         <div class="task-card-top">
           <span class="tc-name">${escapeHtml(task.title)}</span>
-          <button class="tc-run" data-run-task="${task.id}">Run</button>
+          <button class="tc-run" data-run-task="${escapeHtml(task.name)}">Run</button>
         </div>`
       if (task.description) {
         html += `<div class="tc-desc">${escapeHtml(task.description)}</div>`
@@ -667,8 +667,8 @@ export class TlTaskPanel extends HTMLElement {
       }
       if (isExpanded) {
         html += `<div class="task-input-row">
-          <input class="run-input" data-input-task="${task.id}" placeholder="Input (optional)..." />
-          <button class="run-input-btn" data-run-task-input="${task.id}">Run</button>
+          <input class="run-input" data-input-task="${escapeHtml(task.name)}" placeholder="Input (optional)..." />
+          <button class="run-input-btn" data-run-task-input="${escapeHtml(task.name)}">Run</button>
         </div>`
       }
       html += '</div>'
@@ -682,14 +682,14 @@ export class TlTaskPanel extends HTMLElement {
     let html = ''
     for (const trigger of this.triggers) {
       const disabled = !trigger.enabled
-      const taskName = trigger.task_title || `task #${trigger.task_id}`
+      const taskName = trigger.task_title || trigger.task_name
       const configKV = formatTriggerConfig(trigger.type, trigger.config)
 
       html += `<div class="trig-card${disabled ? ' disabled' : ''}">
         <div class="trig-top">
           <span class="tb tb-${escapeHtml(trigger.type)}">${escapeHtml(trigger.type)}</span>
           <span class="trig-name">${escapeHtml(taskName)}</span>
-          <button class="trig-toggle${disabled ? ' off' : ''}" data-trigger-toggle="${trigger.id}"></button>
+          <button class="trig-toggle${disabled ? ' off' : ''}" data-trigger-toggle="${escapeHtml(trigger.name)}"></button>
         </div>`
       if (trigger.description) {
         html += `<div class="trig-desc">${escapeHtml(trigger.description)}</div>`
@@ -823,11 +823,11 @@ export class TlTaskPanel extends HTMLElement {
     })
 
     // Task card expand/collapse
-    this.shadow.querySelectorAll('.task-card[data-task-id]').forEach(el => {
+    this.shadow.querySelectorAll('.task-card[data-task-name]').forEach(el => {
       el.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.tc-run') || (e.target as HTMLElement).closest('.run-input') || (e.target as HTMLElement).closest('.run-input-btn')) return
-        const taskId = Number((el as HTMLElement).dataset.taskId)
-        this.expandedTaskId = this.expandedTaskId === taskId ? null : taskId
+        const taskName = (el as HTMLElement).dataset.taskName!
+        this.expandedTaskName = this.expandedTaskName === taskName ? null : taskName
         this.updateContent()
       })
     })
@@ -836,8 +836,8 @@ export class TlTaskPanel extends HTMLElement {
     this.shadow.querySelectorAll('.tc-run[data-run-task]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
-        const taskId = Number((btn as HTMLElement).dataset.runTask)
-        this.runWithInput(taskId)
+        const taskName = (btn as HTMLElement).dataset.runTask!
+        this.runWithInput(taskName)
       })
     })
 
@@ -845,8 +845,8 @@ export class TlTaskPanel extends HTMLElement {
     this.shadow.querySelectorAll('[data-run-task-input]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
-        const taskId = Number((btn as HTMLElement).dataset.runTaskInput)
-        this.runWithInput(taskId)
+        const taskName = (btn as HTMLElement).dataset.runTaskInput!
+        this.runWithInput(taskName)
       })
     })
 
@@ -855,15 +855,15 @@ export class TlTaskPanel extends HTMLElement {
       el.addEventListener('keydown', (e) => {
         if ((e as KeyboardEvent).key === 'Enter') {
           e.preventDefault()
-          const taskId = Number((el as HTMLInputElement).dataset.inputTask)
-          this.runWithInput(taskId)
+          const taskName = (el as HTMLInputElement).dataset.inputTask!
+          this.runWithInput(taskName)
         }
       })
     })
 
     // Focus input if expanded
-    if (this.expandedTaskId !== null) {
-      const inputEl = this.shadow.querySelector(`.run-input[data-input-task="${this.expandedTaskId}"]`) as HTMLInputElement | null
+    if (this.expandedTaskName !== null) {
+      const inputEl = this.shadow.querySelector(`.run-input[data-input-task="${this.expandedTaskName}"]`) as HTMLInputElement | null
       if (inputEl && !inputEl.value) inputEl.focus()
     }
   }
@@ -913,16 +913,16 @@ export class TlTaskPanel extends HTMLElement {
   // ACTIONS
   // ==========================================
 
-  private runWithInput(taskId: number) {
-    if (!taskId) return
-    const inputEl = this.shadow.querySelector(`.run-input[data-input-task="${taskId}"]`) as HTMLInputElement | null
+  private runWithInput(taskName: string) {
+    if (!taskName) return
+    const inputEl = this.shadow.querySelector(`.run-input[data-input-task="${taskName}"]`) as HTMLInputElement | null
     const inputValue = inputEl?.value?.trim() || undefined
     const ipc = window.ipc
     if (ipc) {
-      ipc.tasks.start(taskId, inputValue, { type: 'task-panel' } as any).then(() => {
+      ipc.tasks.start(taskName, inputValue, { type: 'task-panel' } as any).then(() => {
         this.loadRunningTasks()
         this.activeTab = 'runs'
-        this.expandedTaskId = null
+        this.expandedTaskName = null
         this.updateContent()
       }).catch(err => console.error('[TlTaskPanel] run failed', err))
       if (inputEl) inputEl.value = ''

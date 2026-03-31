@@ -36,10 +36,10 @@ export function registerTaskRunnerHandlers(
 
   // --- Direct task execution handlers ---
 
-  ipcMain.handle(Channels.tasks.start, async (event, taskId: number, input?: unknown, origin?: TaskOrigin) => {
+  ipcMain.handle(Channels.tasks.start, async (event, taskName: string, input?: unknown, origin?: TaskOrigin) => {
     const runner = getTaskRunner(event);
     const effectiveOrigin = origin ?? { type: 'view' as const };
-    const runId = await runner.startTask(taskId, input, effectiveOrigin);
+    const runId = await runner.startTask(taskName, input, effectiveOrigin);
     return { runId };
   });
 
@@ -82,7 +82,7 @@ export function registerTaskRunnerHandlers(
           items.push({
             file: entry.name,
             updatedAt: typeof parsed.finishedAt === 'number' ? parsed.finishedAt : Math.floor(stats.mtimeMs),
-            taskName: typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
+            taskName: typeof parsed.taskTitle === 'string' ? parsed.taskTitle : typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
             status: typeof parsed.status === 'string' ? parsed.status : 'unknown',
             origin: parsed.origin ?? undefined,
           });

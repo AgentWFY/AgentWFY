@@ -1,8 +1,8 @@
 export interface TasksApi {
   // Direct task execution
-  start(taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }>
+  start(taskName: string, input?: unknown, origin?: unknown): Promise<{ runId: string }>
   stop(runId: string): Promise<void>
-  listRunning(): Promise<Array<{ runId: string; taskId: number; title: string; status: string; origin: unknown; startedAt: number }>>
+  listRunning(): Promise<Array<{ runId: string; taskName: string; title: string; status: string; origin: unknown; startedAt: number }>>
   // Log persistence (IPC to main process)
   listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string; origin?: unknown }>>
   listLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>

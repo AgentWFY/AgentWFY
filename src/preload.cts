@@ -273,13 +273,13 @@ if (isApp) {
       return ipcRenderer.invoke('app:getDefaultView');
     },
     tasks: {
-      start(taskId: number, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
-        return ipcRenderer.invoke(Channels.tasks.start, taskId, input, origin);
+      start(taskName: string, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
+        return ipcRenderer.invoke(Channels.tasks.start, taskName, input, origin);
       },
       stop(runId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.stop, runId);
       },
-      listRunning(): Promise<Array<{ runId: string; taskId: number; title: string; status: string; origin: unknown; startedAt: number }>> {
+      listRunning(): Promise<Array<{ runId: string; taskName: string; title: string; status: string; origin: unknown; startedAt: number }>> {
         return ipcRenderer.invoke(Channels.tasks.listRunning);
       },
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {

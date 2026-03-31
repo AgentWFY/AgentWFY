@@ -7,11 +7,11 @@ export function registerTasks(registry: FunctionRegistry, deps: { getTaskRunner:
 
   registry.register('startTask', async (params) => {
     const request = params as WorkerHostMethodMap['startTask']['params']
-    if (!request || typeof request.taskId !== 'number') {
-      throw new Error('startTask requires a taskId number')
+    if (!request || typeof request.taskName !== 'string' || !request.taskName.trim()) {
+      throw new Error('startTask requires a taskName string')
     }
     const taskRunner = getTaskRunner()
-    const runId = await taskRunner.startTask(request.taskId, request.input, { type: 'agent' })
+    const runId = await taskRunner.startTask(request.taskName, request.input, { type: 'agent' })
     return { runId }
   })
 

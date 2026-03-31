@@ -435,14 +435,14 @@ export class CommandPaletteManager {
     try {
       const tasks = await listTasks(this.deps.getAgentRoot());
       return tasks.map((task) => ({
-        id: `task:${task.id}`,
+        id: `task:${task.name}`,
         title: task.title,
         subtitle: task.description || undefined,
         group: 'Tasks' as const,
         action: {
           type: 'run-task' as const,
-          taskId: task.id,
-          taskName: task.title,
+          taskName: task.name,
+          taskTitle: task.title,
           taskDescription: task.description || undefined,
         },
       }));
@@ -740,7 +740,7 @@ export class CommandPaletteManager {
       case 'run-task': {
         const taskAction = action as Extract<CommandPaletteAction, { type: 'run-task' }>;
         this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:run-task', {
-          taskId: taskAction.taskId,
+          taskName: taskAction.taskName,
           input: taskAction.input || undefined,
         });
         break;

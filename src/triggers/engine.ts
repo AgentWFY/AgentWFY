@@ -7,8 +7,8 @@ import { parseExpression, nextMatch } from './scheduler.js';
 import type { HttpApiServer, HttpRequestData } from '../http-api/server.js';
 
 interface TriggerRow {
-  id: number;
-  task_id: number;
+  name: string;
+  task_name: string;
   type: 'schedule' | 'http' | 'event';
   config: string;
   description: string;
@@ -37,7 +37,7 @@ type TriggerOrigin = Extract<TaskOrigin, { type: 'trigger' }>;
 
 interface TriggerEngineDeps {
   getAgentRoot: () => string;
-  startTask: (taskId: number, input?: unknown, origin?: TriggerOrigin) => Promise<{ runId: string }>;
+  startTask: (taskName: string, input?: unknown, origin?: TriggerOrigin) => Promise<{ runId: string }>;
   waitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
   httpApi: HttpApiServer;
   busSubscribe: (topic: string, fn: (data: unknown) => void) => () => void;
@@ -45,7 +45,7 @@ interface TriggerEngineDeps {
 }
 
 type ActiveTrigger = {
-  id: number;
+  name: string;
   cleanup: () => void;
 };
 
@@ -94,7 +94,7 @@ export class TriggerEngine {
     let rows: TriggerRow[];
     try {
       const raw = await runAgentDbSql(agentRoot, {
-        sql: 'SELECT id, task_id, type, config, description, enabled FROM triggers WHERE enabled = 1',
+        sql: 'SELECT name, task_name, type, config, description, enabled FROM triggers WHERE enabled = 1',
       });
       rows = raw as TriggerRow[];
     } catch (err) {
@@ -109,7 +109,7 @@ export class TriggerEngine {
           this.activeTriggers.push(trigger);
         }
       } catch (err) {
-        console.error(`[triggers] Failed to setup trigger ${row.id} (${row.type}):`, err);
+        console.error(`[triggers] Failed to setup trigger ${row.name} (${row.type}):`, err);
       }
     }
 
@@ -121,7 +121,7 @@ export class TriggerEngine {
       try {
         trigger.cleanup();
       } catch (err) {
-        console.error(`[triggers] Cleanup error for trigger ${trigger.id}:`, err);
+        console.error(`[triggers] Cleanup error for trigger ${trigger.name}:`, err);
       }
     }
     this.activeTriggers = [];
@@ -138,24 +138,24 @@ export class TriggerEngine {
     try {
       config = JSON.parse(row.config);
     } catch {
-      console.error(`[triggers] Invalid JSON config for trigger ${row.id}`);
+      console.error(`[triggers] Invalid JSON config for trigger ${row.name}`);
       return null;
     }
 
     switch (row.type) {
       case 'schedule':
-        return this.setupSchedule(row.id, row.task_id, config as ScheduleConfig);
+        return this.setupSchedule(row.name, row.task_name, config as ScheduleConfig);
       case 'http':
-        return this.setupHttp(row.id, row.task_id, config as HttpConfig);
+        return this.setupHttp(row.name, row.task_name, config as HttpConfig);
       case 'event':
-        return this.setupEvent(row.id, row.task_id, config as EventConfig);
+        return this.setupEvent(row.name, row.task_name, config as EventConfig);
       default:
         console.error(`[triggers] Unknown trigger type: ${row.type}`);
         return null;
     }
   }
 
-  private setupSchedule(triggerId: number, taskId: number, config: ScheduleConfig): ActiveTrigger {
+  private setupSchedule(triggerName: string, taskName: string, config: ScheduleConfig): ActiveTrigger {
     if (!config.expression || typeof config.expression !== 'string') {
       throw new Error('Schedule trigger requires an "expression" field');
     }
@@ -169,15 +169,15 @@ export class TriggerEngine {
 
       const next = nextMatch(parsed, new Date());
       if (!next) {
-        console.error(`[triggers] No next match for trigger ${triggerId} expression "${config.expression}"`);
+        console.error(`[triggers] No next match for trigger ${triggerName} expression "${config.expression}"`);
         return;
       }
 
       const delay = next.getTime() - Date.now();
       timer = setTimeout(() => {
         if (stopped) return;
-        this.deps.startTask(taskId, config.input, { type: 'trigger', triggerId, triggerType: 'schedule', triggerConfig: config.expression }).catch(err => {
-          console.error(`[triggers] Schedule trigger ${triggerId} failed to start task ${taskId}:`, err);
+        this.deps.startTask(taskName, config.input, { type: 'trigger', triggerName, triggerType: 'schedule', triggerConfig: config.expression }).catch(err => {
+          console.error(`[triggers] Schedule trigger ${triggerName} failed to start task ${taskName}:`, err);
         });
         scheduleNext();
       }, Math.max(delay, 0));
@@ -186,7 +186,7 @@ export class TriggerEngine {
     scheduleNext();
 
     return {
-      id: triggerId,
+      name: triggerName,
       cleanup: () => {
         stopped = true;
         if (timer !== null) clearTimeout(timer);
@@ -194,7 +194,7 @@ export class TriggerEngine {
     };
   }
 
-  private setupHttp(triggerId: number, taskId: number, config: HttpConfig): ActiveTrigger {
+  private setupHttp(triggerName: string, taskName: string, config: HttpConfig): ActiveTrigger {
     if (!config.path || typeof config.path !== 'string') {
       throw new Error('HTTP trigger requires a "path" field');
     }
@@ -205,7 +205,7 @@ export class TriggerEngine {
 
     const handler = async (request: HttpRequestData): Promise<{ status?: number; body: unknown }> => {
       try {
-        const { runId } = await this.deps.startTask(taskId, config.input ?? request, { type: 'trigger', triggerId, triggerType: 'http', triggerConfig });
+        const { runId } = await this.deps.startTask(taskName, config.input ?? request, { type: 'trigger', triggerName, triggerType: 'http', triggerConfig });
 
         // Wait for task completion via bus
         const result = await this.deps.waitFor(`task:run:${runId}`, 120_000) as {
@@ -231,14 +231,14 @@ export class TriggerEngine {
     this.deps.httpApi.registerRoute(routePath, method, handler);
 
     return {
-      id: triggerId,
+      name: triggerName,
       cleanup: () => {
         this.deps.httpApi.unregisterRoute(routePath, method);
       },
     };
   }
 
-  private setupEvent(triggerId: number, taskId: number, config: EventConfig): ActiveTrigger {
+  private setupEvent(triggerName: string, taskName: string, config: EventConfig): ActiveTrigger {
     if (!config.topic || typeof config.topic !== 'string') {
       throw new Error('Event trigger requires a "topic" field');
     }
@@ -250,13 +250,13 @@ export class TriggerEngine {
     }
 
     const unsubscribe = this.deps.busSubscribe(config.topic, (data: unknown) => {
-      this.deps.startTask(taskId, config.input ?? data, { type: 'trigger', triggerId, triggerType: 'event', triggerConfig: config.topic }).catch(err => {
-        console.error(`[triggers] Event trigger ${triggerId} failed to start task ${taskId}:`, err);
+      this.deps.startTask(taskName, config.input ?? data, { type: 'trigger', triggerName, triggerType: 'event', triggerConfig: config.topic }).catch(err => {
+        console.error(`[triggers] Event trigger ${triggerName} failed to start task ${taskName}:`, err);
       });
     });
 
     return {
-      id: triggerId,
+      name: triggerName,
       cleanup: () => {
         unsubscribe();
         if (watcherCleanup) watcherCleanup();

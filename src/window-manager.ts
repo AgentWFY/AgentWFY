@@ -783,8 +783,8 @@ class WindowManager {
       writeLockfile(agentRoot, ctx.httpApi.port());
       ctx.triggerEngine = new TriggerEngine({
         getAgentRoot: () => agentRoot,
-        startTask: async (taskId, input?, origin?) => {
-          const runId = await ctx.taskRunner.startTask(taskId, input, origin as any);
+        startTask: async (taskName, input?, origin?) => {
+          const runId = await ctx.taskRunner.startTask(taskName, input, origin as any);
           return { runId };
         },
         waitFor: (topic, timeoutMs?) => ctx.eventBus.waitFor(topic, timeoutMs),

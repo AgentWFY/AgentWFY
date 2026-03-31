@@ -4,8 +4,8 @@ import type { CommandPaletteItem } from '../../types.js'
 import { createActionButtons } from '../helpers.js'
 
 export interface TaskDetailParams {
-  taskId: number
   taskName: string
+  taskTitle: string
   taskDescription?: string
 }
 
@@ -27,7 +27,7 @@ export class TaskDetailScreen implements PaletteScreen {
   constructor(bridge: CommandPaletteBridge, params: TaskDetailParams) {
     this.bridge = bridge
     this.params = params
-    this.breadcrumb = params.taskName
+    this.breadcrumb = params.taskTitle
   }
 
   getItems(): CommandPaletteItem[] {
@@ -51,8 +51,8 @@ export class TaskDetailScreen implements PaletteScreen {
       type: 'action',
       action: {
         type: 'run-task',
-        taskId: this.params.taskId,
         taskName: this.params.taskName,
+        taskTitle: this.params.taskTitle,
         input: inputValue || undefined,
       },
     }

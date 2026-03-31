@@ -25,17 +25,17 @@ Targets:
 
 Agent DB schema:
 ```
-views (id, name UNIQUE, title, content, created_at, updated_at)
+views (name PK, title, content, created_at, updated_at)
 docs (name PK, content, created_at, updated_at)
-tasks (id, title, description, content, timeout_ms, created_at, updated_at)
-triggers (id, task_id FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
+tasks (name PK, title, description, content, timeout_ms, created_at, updated_at)
+triggers (name PK, task_name FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
 config (name PK, value, description, created_at, updated_at)
-plugins (id, name UNIQUE, title, description, version, code, author, repository, license, enabled, created_at, updated_at)
+plugins (name PK, title, description, version, code, author, repository, license, enabled, created_at, updated_at)
 ```
 
 `created_at` and `updated_at` are Unix epoch seconds, managed automatically. `created_at` is set on INSERT, `updated_at` is set on INSERT and auto-bumped on every UPDATE by a trigger. Do not set them manually.
 
-Name format (enforced by the database): `views.name`, `docs.name`, `config.name` must match `[a-z0-9._-]+`.
+Name format (enforced by the database): `views.name`, `docs.name`, `config.name`, `tasks.name`, `triggers.name` must match `[a-z0-9._-]+`.
 
 Returns an array of row objects. Use parameterized queries with `params` array.
 
@@ -63,7 +63,7 @@ For displaying views and interacting with web pages in a browser context. Prefer
 
 ### Other APIs
 
-- Tasks & Triggers: `startTask({ taskId, input? })`, `stopTask({ runId })`. See `system.tasks` and `system.triggers`.
+- Tasks & Triggers: `startTask({ taskName, input? })`, `stopTask({ runId })`. See `system.tasks` and `system.triggers`.
 - EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `system.eventbus`.
 - Sessions: `spawnSession({ prompt })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.

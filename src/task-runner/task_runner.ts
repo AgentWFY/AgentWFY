@@ -9,12 +9,12 @@ export type TaskOrigin =
   | { type: 'command-palette' }
   | { type: 'task-panel' }
   | { type: 'agent' }
-  | { type: 'trigger'; triggerId: number; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
+  | { type: 'trigger'; triggerName: string; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
 
 interface TaskRun {
   runId: string
-  taskId: number
+  taskName: string
   title: string
   status: 'running' | 'completed' | 'failed'
   origin: TaskOrigin
@@ -26,8 +26,8 @@ interface TaskRun {
   logs: ExecJsLogEntry[]
 }
 
-function createRunId(taskId: number): string {
-  return `task-${taskId}-${crypto.randomUUID()}`
+function createRunId(taskName: string): string {
+  return `task-${taskName}-${crypto.randomUUID()}`
 }
 
 function createLogFileName(): string {
@@ -55,35 +55,35 @@ export class TaskRunner {
     return this._runs.filter(r => r.status === 'running').length
   }
 
-  listRunning(): Array<{ runId: string; taskId: number; title: string; status: string; origin: TaskOrigin; startedAt: number }> {
+  listRunning(): Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> {
     return this._runs
       .filter(r => r.status === 'running')
-      .map(r => ({ runId: r.runId, taskId: r.taskId, title: r.title, status: r.status, origin: r.origin, startedAt: r.startedAt }))
+      .map(r => ({ runId: r.runId, taskName: r.taskName, title: r.title, status: r.status, origin: r.origin, startedAt: r.startedAt }))
   }
 
-  async startTask(taskId: number, input?: unknown, origin?: TaskOrigin): Promise<string> {
+  async startTask(taskName: string, input?: unknown, origin?: TaskOrigin): Promise<string> {
     const { agentRoot, getJsRuntime } = this.deps
 
     const parsed = parseRunSqlRequest({
       target: 'agent',
-      sql: 'SELECT id, title, content, timeout_ms FROM tasks WHERE id = ? LIMIT 1',
-      params: [taskId],
+      sql: 'SELECT name, title, content, timeout_ms FROM tasks WHERE name = ? LIMIT 1',
+      params: [taskName],
     })
-    const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ id: number; title: string; content: string; timeout_ms: number | null }>
+    const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ name: string; title: string; content: string; timeout_ms: number | null }>
 
     if (!rows || rows.length === 0) {
-      throw new Error(`Task ${taskId} not found`)
+      throw new Error(`Task ${taskName} not found`)
     }
 
     const task = rows[0]
-    const runId = createRunId(taskId)
+    const runId = createRunId(taskName)
     const timeoutMs = typeof task.timeout_ms === 'number' && task.timeout_ms > 0
       ? task.timeout_ms
       : 0
 
     const run: TaskRun = {
       runId,
-      taskId,
+      taskName,
       title: task.title,
       status: 'running',
       origin: origin ?? { type: 'task-panel' },
@@ -155,7 +155,7 @@ export class TaskRunner {
       this.removeFinishedRun(run.runId)
 
       const payload = {
-        runId: run.runId, taskId: run.taskId, title: run.title,
+        runId: run.runId, taskName: run.taskName, title: run.title,
         status: run.status, origin: run.origin, startedAt: run.startedAt,
         finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
       }
@@ -178,8 +178,8 @@ export class TaskRunner {
 
       const logFileName = createLogFileName()
       const logData = {
-        taskId: run.taskId,
-        taskName: run.title,
+        taskName: run.taskName,
+        taskTitle: run.title,
         status: run.status,
         origin: run.origin,
         input: run.input ?? null,

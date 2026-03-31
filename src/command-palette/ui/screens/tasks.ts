@@ -39,8 +39,8 @@ export class TasksScreen implements PaletteScreen {
       return {
         type: 'push',
         screen: new TaskDetailScreen(this.bridge, {
-          taskId: item.action.taskId,
           taskName: item.action.taskName,
+          taskTitle: item.action.taskTitle,
           taskDescription: item.action.taskDescription,
         }),
       }

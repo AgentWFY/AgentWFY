@@ -19,8 +19,8 @@ export type CommandPaletteAction =
   }
   | {
     type: 'run-task'
-    taskId: number
     taskName: string
+    taskTitle: string
     taskDescription?: string
     input?: string
   }

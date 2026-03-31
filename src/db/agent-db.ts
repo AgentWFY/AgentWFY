@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS docs (
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL PRIMARY KEY,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS triggers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  name TEXT NOT NULL PRIMARY KEY,
+  task_name TEXT NOT NULL REFERENCES tasks(name) ON DELETE CASCADE,
   type TEXT NOT NULL CHECK(type IN ('schedule', 'http', 'event')),
   config TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
@@ -98,22 +98,22 @@ CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_update AFTER UPDATE ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_delete AFTER DELETE ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', OLD.id, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _triggers_insert AFTER INSERT ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.id, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _triggers_update AFTER UPDATE ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.id, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _triggers_delete AFTER DELETE ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.id, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _config_insert AFTER INSERT ON config BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.name, 'insert');
@@ -217,6 +217,8 @@ END;
 const VIEW_NAME_FORMAT_SQL = makeNameFormatSql('views', '*[^a-z0-9._-]*', 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
 const DOC_NAME_FORMAT_SQL = makeNameFormatSql('docs', '*[^a-z0-9._-]*', 'doc name must contain only lowercase letters, digits, dots, hyphens, and underscores');
 const CONFIG_NAME_FORMAT_SQL = makeNameFormatSql('config', '*[^a-z0-9._-]*', 'config name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+const TASK_NAME_FORMAT_SQL = makeNameFormatSql('tasks', '*[^a-z0-9._-]*', 'task name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+const TRIGGER_NAME_FORMAT_SQL = makeNameFormatSql('triggers', '*[^a-z0-9._-]*', 'trigger name must contain only lowercase letters, digits, dots, hyphens, and underscores');
 // Plugin names: no dots (dots are namespace separators in plugin.* prefixes)
 const PLUGIN_NAME_FORMAT_SQL = makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens');
 
@@ -251,6 +253,10 @@ DROP TRIGGER IF EXISTS _docs_name_format_insert;
 DROP TRIGGER IF EXISTS _docs_name_format_update;
 DROP TRIGGER IF EXISTS _config_name_format_insert;
 DROP TRIGGER IF EXISTS _config_name_format_update;
+DROP TRIGGER IF EXISTS _tasks_name_format_insert;
+DROP TRIGGER IF EXISTS _tasks_name_format_update;
+DROP TRIGGER IF EXISTS _triggers_name_format_insert;
+DROP TRIGGER IF EXISTS _triggers_name_format_update;
 DROP TRIGGER IF EXISTS _plugins_name_format_insert;
 DROP TRIGGER IF EXISTS _plugins_name_format_update;
 DROP TRIGGER IF EXISTS _config_system_guard_insert;
@@ -265,6 +271,8 @@ const ALL_GUARD_SQL = [
   VIEW_NAME_FORMAT_SQL,
   DOC_NAME_FORMAT_SQL,
   CONFIG_NAME_FORMAT_SQL,
+  TASK_NAME_FORMAT_SQL,
+  TRIGGER_NAME_FORMAT_SQL,
   PLUGIN_NAME_FORMAT_SQL,
 ];
 

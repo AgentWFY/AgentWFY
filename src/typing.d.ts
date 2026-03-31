@@ -30,7 +30,7 @@ declare global {
       publish(topic: string, data: unknown): Promise<void>;
       waitFor(topic: string, timeoutMs?: number): Promise<unknown>;
       spawnSession(prompt: string): Promise<{ sessionId: string }>;
-      startTask(taskId: number, input?: unknown): Promise<{ runId: string }>;
+      startTask(taskName: string, input?: unknown): Promise<{ runId: string }>;
       stopTask(runId: string): Promise<void>;
     };
   }
