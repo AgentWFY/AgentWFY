@@ -18,7 +18,7 @@ rmSync(dist, { recursive: true, force: true })
 
 mkdirSync(join(dist, 'renderer'), { recursive: true })
 cpSync(join(src, 'renderer', 'index.html'), join(dist, 'renderer', 'index.html'))
-cpSync(join(src, 'renderer', 'src', 'global.css'), join(dist, 'renderer', 'global.css'))
+cpSync(join(src, 'renderer', 'global.css'), join(dist, 'renderer', 'global.css'))
 cpSync(join(src, 'command_palette.html'), join(dist, 'command_palette.html'))
 cpSync(join(src, 'confirmation.html'), join(dist, 'confirmation.html'))
 cpSync(join(src, 'welcome.html'), join(dist, 'welcome.html'))

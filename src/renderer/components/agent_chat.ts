@@ -1,4 +1,4 @@
-import type { DisplayMessage } from '../../../agent/provider_types.js'
+import type { DisplayMessage } from '../../agent/provider_types.js'
 import {
   buildRenderBlocks,
   updateMessagesEl
