@@ -12,7 +12,6 @@ export interface PaletteScreen {
   searchIsFilter: boolean
   navigable: boolean
   initialSearchValue?: string
-  initialSelectedIndex?: number
 
   renderContent?(container: HTMLElement): void
   saveAll?(): Promise<void>

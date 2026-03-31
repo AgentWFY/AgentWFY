@@ -22,10 +22,6 @@ export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInv
     return getCommandPalette(event).updateSetting(key, value, scope);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_AGENT_OVERRIDE, async (event, key: string) => {
-    getCommandPalette(event).clearAgentOverride(key);
-  });
-
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_TO_DEFAULT, async (event, key: string) => {
     getCommandPalette(event).clearToDefault(key);
   });

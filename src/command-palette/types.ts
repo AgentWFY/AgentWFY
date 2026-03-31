@@ -78,7 +78,7 @@ export interface CommandPaletteItem {
   subtitle?: string
   shortcut?: string
   expandable?: boolean
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Scope' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -97,7 +97,6 @@ export const COMMAND_PALETTE_CHANNEL = {
   OPENED_WITH_FILTER: 'app:command-palette:opened-with-filter',
   LIST_BACKUPS: 'app:command-palette:list-backups',
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
-  CLEAR_AGENT_OVERRIDE: 'app:command-palette:clear-agent-override',
   CLEAR_TO_DEFAULT: 'app:command-palette:clear-to-default',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',

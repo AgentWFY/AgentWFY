@@ -9,7 +9,6 @@ export interface CommandPaletteBridge {
   onOpenedAtScreen(callback: (options: { screen: string; params?: Record<string, unknown> }) => void): () => void
   listSettings(): Promise<CommandPaletteItem[]>
   updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }>
-  clearAgentOverride(key: string): Promise<void>
   clearToDefault(key: string): Promise<void>
   openSettingsFile(): Promise<void>
   listBackups(): Promise<CommandPaletteItem[]>

@@ -415,7 +415,7 @@ export class CommandPaletteManager {
     return { success: true };
   }
 
-  clearAgentOverride(name: string): void {
+  private clearAgentOverride(name: string): void {
     // system.* and plugin.* rows can't be deleted — set value to NULL instead
     if (name.startsWith('system.') || name.startsWith('plugin.')) {
       clearAgentConfig(this.deps.getAgentRoot(), name);
