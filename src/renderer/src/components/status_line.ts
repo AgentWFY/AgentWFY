@@ -289,7 +289,7 @@ export class TlStatusLine extends HTMLElement {
     if (!portEl || !sepEl) return
     if (!this._clicksBound) {
       portEl.addEventListener('click', () => {
-        window.ipc?.commandPalette?.show({ screen: 'agent-settings' })
+        window.ipc?.commandPalette?.show({ screen: 'settings' })
       })
     }
     try {

@@ -506,16 +506,6 @@ const STYLES = `
   .provider-panel {
     padding: 4px 0;
   }
-  .setup-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    max-width: 360px;
-    margin: 0 auto;
-  }
-  .setup-container h3 { margin-bottom: 12px; }
   .gear-btn {
     background: none;
     border: none;
@@ -908,7 +898,7 @@ export class TlAgentChat extends HTMLElement {
   private _programmaticScrollCount = 0
   private _scrollToBottomBtn: HTMLElement | null = null
   private _scrollBtnVisible = false
-  private _renderMode: 'initializing' | 'setup' | 'chat' | null = null
+  private _renderMode: 'initializing' | 'chat' | null = null
   private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
   private _retryBanner: HTMLElement | null = null
@@ -1427,29 +1417,12 @@ export class TlAgentChat extends HTMLElement {
   private render() {
     if (!this.containerEl) return
 
-    const mode = this.isInitializing ? 'initializing'
-      : !agentSessionStore.state.ready ? 'setup'
-      : 'chat'
+    const mode = (this.isInitializing || !agentSessionStore.state.ready) ? 'initializing' : 'chat'
 
     if (mode === 'initializing') {
       this.clearChatRefs()
       this.containerEl.innerHTML = `<div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;"><div class="initializing">Initializing agent...</div></div>`
       this._renderMode = 'initializing'
-      return
-    }
-
-    if (mode === 'setup') {
-      this.clearChatRefs()
-      this.containerEl.innerHTML = `
-        <div class="container" style="display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;">
-          <div class="setup-container">
-            <h3>Agent Settings</h3>
-            <awfy-agent-settings id="setup-settings"></awfy-agent-settings>
-            ${this.error ? `<div class="error-banner">${escapeHtml(this.error)}</div>` : ''}
-          </div>
-        </div>`
-      this.attachSetupSettingsListeners()
-      this._renderMode = 'setup'
       return
     }
 
@@ -2092,10 +2065,4 @@ export class TlAgentChat extends HTMLElement {
     }).join('')
   }
 
-  private attachSetupSettingsListeners() {
-    const settingsEl = this.containerEl.querySelector('#setup-settings') as HTMLElement | null
-    if (settingsEl) {
-      settingsEl.addEventListener('reconnect', () => this.handleReconnect())
-    }
-  }
 }
