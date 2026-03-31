@@ -53,8 +53,7 @@ CREATE TABLE IF NOT EXISTS config (
 );
 
 CREATE TABLE IF NOT EXISTS plugins (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',
   description TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '1.0.0',
@@ -127,13 +126,13 @@ CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS plugins_insert AFTER INSERT ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.id, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS plugins_update AFTER UPDATE ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.id, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS plugins_delete AFTER DELETE ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', OLD.id, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', OLD.name, 'delete');
 END;
 `;
 

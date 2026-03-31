@@ -720,7 +720,7 @@
       agy.runSql({ target: "agent", sql: "SELECT id, name, title, content, created_at, updated_at FROM views ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT id, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
       agy.runSql({ target: "agent", sql: "SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id ORDER BY t.id" }),
-      agy.runSql({ target: "agent", sql: "SELECT id, name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
+      agy.runSql({ target: "agent", sql: "SELECT name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT name AS key, value, description FROM config ORDER BY name" }),
     ]);
     allDocs = docs || [];
@@ -749,7 +749,8 @@
   function refreshSelected() {
     if (!selected) return;
     const source = selected.type === 'docs' ? allDocs : selected.type === 'views' ? allViews : selected.type === 'triggers' ? allTriggers : selected.type === 'plugins' ? allPlugins : allTasks;
-    const fresh = source.find(i => selected.type === 'docs' ? i.name === selected.name : i.id === selected.id);
+    const findByName = selected.type === 'docs' || selected.type === 'plugins';
+    const fresh = source.find(i => findByName ? i.name === selected.name : i.id === selected.id);
     if (fresh) { const m = selected.type; selected = { ...selected, ...fresh, type: m }; if (m === 'triggers') selected.trigType = fresh.type; if (!editing) showContent(); }
     else clearContent();
   }
@@ -891,13 +892,13 @@
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE plugins SET enabled = ? WHERE id = ?",
-        params: [newEnabled, selected.id],
+        sql: "UPDATE plugins SET enabled = ? WHERE name = ?",
+        params: [newEnabled, selected.name],
         confirmed: true
       });
       showToast(newEnabled ? 'Plugin enabled' : 'Plugin disabled');
       await loadAll();
-      const fresh = allPlugins.find(p => p.id === selected.id);
+      const fresh = allPlugins.find(p => p.name === selected.name);
       if (fresh) { selected = { type: 'plugins', ...fresh }; showContent(); renderList(); }
     } catch (err) {
       showToast('Toggle failed: ' + err.message, 'error');
@@ -993,9 +994,9 @@
     } else if (mode === 'plugins') {
       const items = allPlugins.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q));
       list.innerHTML = items.map(p => {
-        const active = selected && selected.type === 'plugins' && selected.id === p.id;
+        const active = selected && selected.type === 'plugins' && selected.name === p.name;
         const enabledCls = p.enabled ? 'plugin-enabled' : 'plugin-disabled';
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectPlugin(' + p.id + ')">'
+        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectPlugin(\'' + p.name + '\')">'
           + '<div class="item-name">' + escHtml(p.name) + '</div>'
           + '<div class="item-meta">'
           + '<span class="badge version-badge">v' + escHtml(p.version) + '</span>'
@@ -1018,7 +1019,7 @@
   function selectItem(type, id) {
     if (dirty && !confirm('Discard unsaved changes?')) return;
     const source = type === 'docs' ? allDocs : type === 'views' ? allViews : type === 'triggers' ? allTriggers : type === 'plugins' ? allPlugins : allTasks;
-    const item = source.find(i => type === 'docs' ? i.name === id : i.id === id);
+    const item = source.find(i => (type === 'docs' || type === 'plugins') ? i.name === id : i.id === id);
     if (!item) return;
     selected = { ...item, type };
     if (type === 'triggers') selected.trigType = item.type;
@@ -1026,9 +1027,9 @@
     showContent(); renderList();
   }
 
-  function selectPlugin(id) {
+  function selectPlugin(name) {
     if (dirty && !confirm('Discard unsaved changes?')) return;
-    const item = allPlugins.find(p => p.id === id);
+    const item = allPlugins.find(p => p.name === name);
     if (!item) return;
     selected = { ...item, type: 'plugins' };
     editing = false; dirty = false; lastRunOutput = null;
@@ -1046,7 +1047,7 @@
     const typeLabel = '<span class="type-label ' + labelMap[s.type] + '">' + nameMap[s.type] + '</span>';
 
     const displayName = s.title || s.name;
-    let metaInfo = s.type !== 'docs' ? 'id: ' + s.id + ' \u00b7 ' : '';
+    let metaInfo = (s.type !== 'docs' && s.type !== 'plugins') ? 'id: ' + s.id + ' \u00b7 ' : '';
     metaInfo += size + ' \u00b7 ' + lines + ' lines';
     if (s.type === 'views' && s.title) metaInfo = s.name + ' \u00b7 ' + metaInfo;
     if (s.type === 'tasks' && s.timeout_ms) metaInfo += ' \u00b7 timeout: ' + fmtTimeout(s.timeout_ms);

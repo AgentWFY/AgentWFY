@@ -289,7 +289,7 @@
   }
 
   async function loadRegistryPluginDetail(registryPlugin) {
-    const cached = registryDetailCache.get(registryPlugin.id);
+    const cached = registryDetailCache.get(registryPlugin.name);
     if (cached) return { ...cached, activeTab: 'overview', expandedDoc: null };
     await downloadPackage(registryPlugin.download_url, TMP_PACKAGE_PATH);
     const sqlOpts = { target: 'sqlite-file', path: TMP_PACKAGE_PATH };
@@ -299,10 +299,10 @@
     catch { try { const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' }); pkgPlugins = basic.map(p => ({ ...p, title: '', author: null, repository: null, license: null })); } catch {} } }
     let pkgDocs = []; try { pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' }); } catch {}
     let pkgViews = []; try { pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' }); } catch {}
-    const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.id) || pkgPlugins[0];
+    const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.name) || pkgPlugins[0];
     if (!mainPlugin) throw new Error('No plugins found in package');
     const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, title: mainPlugin.title || '', description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
-    registryDetailCache.set(registryPlugin.id, detail);
+    registryDetailCache.set(registryPlugin.name, detail);
     return detail;
   }
 
@@ -416,9 +416,9 @@
     if (filtered.length === 0) { h += '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No plugins match your search</div></div>'; container.innerHTML = h; return; }
     h += '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '') + ' in registry</div><div class="plugin-list">';
     for (const p of filtered) {
-      const installed = isPluginInstalled(p.id); const installing = installingPlugins.has(p.id);
+      const installed = isPluginInstalled(p.name); const installing = installingPlugins.has(p.name);
       h += '<div class="plugin-row"><div class="plugin-info"><div class="plugin-name-row">';
-      h += '<span class="plugin-name" data-action="open-detail" data-source="registry" data-id="' + esc(p.id) + '">' + esc(p.title || p.name) + '</span>';
+      h += '<span class="plugin-name" data-action="open-detail" data-source="registry" data-name="' + esc(p.name) + '">' + esc(p.title || p.name) + '</span>';
       h += '<span class="plugin-version">v' + esc(p.version) + '</span>';
       if (installed) h += '<span class="badge-installed">installed</span>';
       if (typeof p.downloads === 'number' && p.downloads > 0) h += '<span class="badge-downloads">' + p.downloads + ' downloads</span>';
@@ -428,8 +428,8 @@
       h += '<div class="plugin-meta">'; if (p.author) h += '<span>' + esc(p.author) + '</span>'; if (p.license) h += '<span>' + esc(p.license) + '</span>'; if (p.repository) h += '<a href="' + esc(p.repository) + '" target="_blank">' + esc(p.repository) + '</a>'; h += '</div>';
       h += '</div><div class="plugin-actions">';
       if (installing) h += '<button class="btn" disabled>Installing...</button>';
-      else if (installed) h += '<button class="btn btn-install" data-action="registry-install-plugin" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Update</button>';
-      else h += '<button class="btn btn-install" data-action="registry-install-plugin" data-id="' + esc(p.id) + '" data-url="' + esc(p.download_url) + '">Install</button>';
+      else if (installed) h += '<button class="btn btn-install" data-action="registry-install-plugin" data-name="' + esc(p.name) + '" data-url="' + esc(p.download_url) + '">Update</button>';
+      else h += '<button class="btn btn-install" data-action="registry-install-plugin" data-name="' + esc(p.name) + '" data-url="' + esc(p.download_url) + '">Install</button>';
       h += '</div></div>';
     }
     h += '</div>';
@@ -575,13 +575,13 @@
       if (openBtn) {
         const source = openBtn.dataset.source;
         if (source === 'installed') openDetail('installed', openBtn.dataset.name);
-        else if (source === 'registry') { const rp = registryPlugins && registryPlugins.find(p => p.id === openBtn.dataset.id); if (rp) openDetail('registry', rp); }
+        else if (source === 'registry') { const rp = registryPlugins && registryPlugins.find(p => p.name === openBtn.dataset.name); if (rp) openDetail('registry', rp); }
         return;
       }
       const uninstallBtn = e.target.closest('[data-action="uninstall"]');
       if (uninstallBtn) { uninstallPlugin(uninstallBtn.dataset.name); return; }
       const installPluginBtn = e.target.closest('[data-action="registry-install-plugin"]');
-      if (installPluginBtn) { installPluginFromRegistry(installPluginBtn.dataset.id, installPluginBtn.dataset.url); return; }
+      if (installPluginBtn) { installPluginFromRegistry(installPluginBtn.dataset.name, installPluginBtn.dataset.url); return; }
       const installAgentBtn = e.target.closest('[data-action="registry-install-agent"]');
       if (installAgentBtn) { e.stopPropagation(); installAgentFromRegistry(installAgentBtn.dataset.id, installAgentBtn.dataset.url); return; }
       const previewRow = e.target.closest('[data-action="preview-agent"]');
