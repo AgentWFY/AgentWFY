@@ -33,6 +33,8 @@ config (name PK, value, description)
 plugins (id, name UNIQUE, description, version, code, author, repository, license, enabled, created_at, updated_at)
 ```
 
+Name format (enforced by the database): `views.name`, `docs.name`, `config.name` must match `[a-z0-9._-]+`.
+
 Returns an array of row objects. Use parameterized queries with `params` array.
 
 Restrictions:

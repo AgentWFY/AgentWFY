@@ -8,6 +8,8 @@ App settings are stored in the `config` table. Each setting can be set at agent 
 - `plugin.*` — plugin settings, installed/uninstalled with plugins
 - Other names — user-defined settings
 
+Config names must match `[a-z0-9._-]+` (enforced by the database).
+
 System and plugin config rows cannot be inserted or deleted by the agent, but their `value` can be updated.
 
 ## Resolution Order

@@ -434,6 +434,8 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 | `content` | TEXT | Document content |
 | `updated_at` | INTEGER | Unix epoch seconds |
 
+**Name format:** lowercase letters, digits, dots, hyphens, and underscores only (`[a-z0-9._-]`).
+
 **Namespacing:**
 - Names **without dots**: Automatically preloaded into the system prompt
 - `system.*`: Built-in documentation, **read-only**
@@ -497,7 +499,7 @@ Read-only for agents.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | INTEGER | Auto-incrementing primary key |
-| `name` | TEXT (UNIQUE) | Plugin name |
+| `name` | TEXT (UNIQUE) | Plugin name (lowercase letters, digits, hyphens only — no dots) |
 | `description` | TEXT | Plugin description |
 | `version` | TEXT | Version string |
 | `code` | TEXT | Plugin JavaScript source |
@@ -889,7 +891,7 @@ Registry: [github.com/AgentWFY/plugins](https://github.com/AgentWFY/plugins)
 4. Maintainer reviews and adds `approved` label
 5. GitHub Actions validates and adds to registry
 
-**Requirements:** One plugin per package. Required fields: `name`, `description`, `version`, `author`, `license`. Accepted licenses: MIT, Apache-2.0, GPL-2.0, GPL-3.0, LGPL-2.1, LGPL-3.0, BSD-2-Clause, BSD-3-Clause, MPL-2.0, ISC, Unlicense, CC0-1.0.
+**Requirements:** One plugin per package. Plugin names must contain only lowercase letters, digits, and hyphens (`[a-z0-9-]`). Required fields: `name`, `description`, `version`, `author`, `license`. Accepted licenses: MIT, Apache-2.0, GPL-2.0, GPL-3.0, LGPL-2.1, LGPL-3.0, BSD-2-Clause, BSD-3-Clause, MPL-2.0, ISC, Unlicense, CC0-1.0.
 
 #### Agent Registry
 

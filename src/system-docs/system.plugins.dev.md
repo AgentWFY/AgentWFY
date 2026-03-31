@@ -354,7 +354,8 @@ A package can contain one or multiple plugins (plugin pack).
 
 ### Naming conventions
 
-- **docs**: must start with `plugin.<name>` where `<name>` matches a plugin in the `plugins` table. Example: `plugin.ffmpeg`, `plugin.ffmpeg.usage`.
+- **plugins**: names must match `[a-z0-9-]+` (no dots — dots are namespace separators).
+- **docs**: must start with `plugin.<name>` where `<name>` matches a plugin in the `plugins` table. Example: `plugin.ffmpeg`, `plugin.ffmpeg.usage`. Names must match `[a-z0-9._-]+`.
 - **views**: must start with `plugin.<name>`. Example: `plugin.my-llm.settings`. Views are synced to the agent's `views` table on install and can be opened as tabs.
 - **config**: must start with `plugin.<name>`. Example: `plugin.my-llm.apiKey`. Config rows are synced to the agent's `config` table on install. Use `value` for default values or `NULL` for unset.
 - **assets**: must use `<name>/<filename>` format. Example: `ffmpeg/ffmpeg-darwin-arm64`. Extracted to `.agentwfy/plugin-assets/<name>/<filename>` on install.

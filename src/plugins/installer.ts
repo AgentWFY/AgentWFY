@@ -3,6 +3,9 @@ import path from 'path'
 import fs from 'fs'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
 
+const PLUGIN_NAME_RE = /^[a-z0-9][a-z0-9-]*$/
+const NAME_FORMAT_RE = /^[a-z0-9][a-z0-9._-]*$/
+
 interface PackagePlugin {
   name: string
   description: string
@@ -98,6 +101,9 @@ function validatePluginNames(
       errors.push(`${type} '${item.name}' must start with 'plugin.'`)
       continue
     }
+    if (!NAME_FORMAT_RE.test(item.name)) {
+      errors.push(`${type} name '${item.name}' must contain only lowercase letters, digits, dots, hyphens, and underscores`)
+    }
     const pluginName = item.name.split('.')[1]
     if (!pluginNames.has(pluginName)) {
       errors.push(`${type} '${item.name}' references unknown plugin '${pluginName}'`)
@@ -124,6 +130,9 @@ function validatePackage(
     if (typeof p.name !== 'string' || p.name.trim().length === 0) {
       errors.push('Plugin has missing or empty name')
       continue
+    }
+    if (!PLUGIN_NAME_RE.test(p.name)) {
+      errors.push(`Plugin name '${p.name}' must contain only lowercase letters, digits, and hyphens`)
     }
     if (typeof p.code !== 'string' || p.code.trim().length === 0) {
       errors.push(`Plugin '${p.name}' has missing or empty code`)

@@ -191,20 +191,27 @@ BEGIN
 END;
 `;
 
-// Enforce view name format: lowercase letters, digits, dots, hyphens, underscores only
-const VIEW_NAME_FORMAT_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS _views_name_format_insert BEFORE INSERT ON views
-WHEN NEW.name GLOB '*[^a-z0-9._-]*'
+function makeNameFormatSql(table: string, glob: string, message: string): string {
+  return `
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_name_format_insert BEFORE INSERT ON ${table}
+WHEN NEW.name GLOB '${glob}' OR NEW.name NOT GLOB '[a-z0-9]*'
 BEGIN
-  SELECT RAISE(ABORT, 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+  SELECT RAISE(ABORT, '${message}');
 END;
 
-CREATE TEMP TRIGGER IF NOT EXISTS _views_name_format_update BEFORE UPDATE OF name ON views
-WHEN NEW.name GLOB '*[^a-z0-9._-]*'
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_name_format_update BEFORE UPDATE OF name ON ${table}
+WHEN NEW.name GLOB '${glob}' OR NEW.name NOT GLOB '[a-z0-9]*'
 BEGIN
-  SELECT RAISE(ABORT, 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+  SELECT RAISE(ABORT, '${message}');
 END;
 `;
+}
+
+const VIEW_NAME_FORMAT_SQL = makeNameFormatSql('views', '*[^a-z0-9._-]*', 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+const DOC_NAME_FORMAT_SQL = makeNameFormatSql('docs', '*[^a-z0-9._-]*', 'doc name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+const CONFIG_NAME_FORMAT_SQL = makeNameFormatSql('config', '*[^a-z0-9._-]*', 'config name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+// Plugin names: no dots (dots are namespace separators in plugin.* prefixes)
+const PLUGIN_NAME_FORMAT_SQL = makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens');
 
 // Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
 const SYSTEM_CONFIG_GUARD_SQL = `
@@ -233,9 +240,26 @@ DROP TRIGGER IF EXISTS _views_system_guard_update;
 DROP TRIGGER IF EXISTS _views_system_guard_delete;
 DROP TRIGGER IF EXISTS _views_name_format_insert;
 DROP TRIGGER IF EXISTS _views_name_format_update;
+DROP TRIGGER IF EXISTS _docs_name_format_insert;
+DROP TRIGGER IF EXISTS _docs_name_format_update;
+DROP TRIGGER IF EXISTS _config_name_format_insert;
+DROP TRIGGER IF EXISTS _config_name_format_update;
+DROP TRIGGER IF EXISTS _plugins_name_format_insert;
+DROP TRIGGER IF EXISTS _plugins_name_format_update;
 DROP TRIGGER IF EXISTS _config_system_guard_insert;
 DROP TRIGGER IF EXISTS _config_system_guard_delete;
 `;
+
+const ALL_GUARD_SQL = [
+  SYSTEM_DOCS_GUARD_SQL,
+  SYSTEM_VIEWS_GUARD_SQL,
+  SYSTEM_CONFIG_GUARD_SQL,
+  PLUGINS_TABLE_GUARD_SQL,
+  VIEW_NAME_FORMAT_SQL,
+  DOC_NAME_FORMAT_SQL,
+  CONFIG_NAME_FORMAT_SQL,
+  PLUGIN_NAME_FORMAT_SQL,
+];
 
 interface SystemDataSync<T extends { name: string }> {
   jsonPath: string;
@@ -309,11 +333,7 @@ class AgentDb {
     });
 
     this.db.exec(CHANGE_TRACKING_SQL);
-    this.db.exec(SYSTEM_DOCS_GUARD_SQL);
-    this.db.exec(SYSTEM_VIEWS_GUARD_SQL);
-    this.db.exec(VIEW_NAME_FORMAT_SQL);
-    this.db.exec(SYSTEM_CONFIG_GUARD_SQL);
-    this.db.exec(PLUGINS_TABLE_GUARD_SQL);
+    for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
   }
 
   getEnabledPlugins(): Array<{ name: string; description: string; version: string; code: string }> {
@@ -429,10 +449,7 @@ class AgentDb {
     try {
       fn();
     } finally {
-      this.db.exec(SYSTEM_DOCS_GUARD_SQL);
-      this.db.exec(SYSTEM_VIEWS_GUARD_SQL);
-      this.db.exec(SYSTEM_CONFIG_GUARD_SQL);
-      this.db.exec(PLUGINS_TABLE_GUARD_SQL);
+      for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
     }
   }
 
