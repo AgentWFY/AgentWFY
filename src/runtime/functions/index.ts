@@ -4,6 +4,7 @@ import type { AgentTabTools } from '../../ipc/tabs.js'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { TaskRunner } from '../../task-runner/task_runner.js'
 import type { CommandPaletteManager } from '../../command-palette/manager.js'
+import type { EventBus } from '../../event-bus.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -21,14 +22,14 @@ interface BuiltInFunctionDeps {
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
   getCommandPalette: () => CommandPaletteManager
-  busPublish?: (topic: string, data: unknown) => void
+  eventBus: EventBus
 }
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { agentRoot: deps.agentRoot })
   registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
   registerTabs(registry, { tabTools: deps.tabTools, agentRoot: deps.agentRoot })
-  registerEvents(registry, { win: deps.win, busPublish: deps.busPublish })
+  registerEvents(registry, { eventBus: deps.eventBus })
   registerAgent(registry, { getSessionManager: deps.getSessionManager, win: deps.win })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
   registerPlugins(registry, {

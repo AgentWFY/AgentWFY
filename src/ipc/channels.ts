@@ -49,16 +49,6 @@ export const Channels = {
     open: 'dialog:open',
     openExternal: 'dialog:openExternal',
   },
-  bus: {
-    publish: 'bus:publish',
-    waitFor: 'bus:waitFor',
-    waitForResolved: 'bus:waitForResolved',
-    forwardPublish: 'bus:forwardPublish',
-    forwardWaitFor: 'bus:forwardWaitFor',
-    forwardSubscribe: 'bus:forwardSubscribe',
-    forwardUnsubscribe: 'bus:forwardUnsubscribe',
-    subscribeEvent: 'bus:subscribeEvent',
-  },
   db: {
     changed: 'db:changed',
   },
@@ -70,6 +60,7 @@ export const Channels = {
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
+    runFinished: 'tasks:runFinished',
   },
   plugins: {
     call: 'plugin:call',

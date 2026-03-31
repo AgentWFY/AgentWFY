@@ -1,11 +1,9 @@
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
-import type { BrowserWindow } from 'electron'
 import type { ExecJsLogEntry, ExecJsDetails } from '../runtime/types.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
-import { forwardBusPublish } from '../ipc/bus.js'
 
 export type TaskOrigin =
   | { type: 'command-palette' }
@@ -40,9 +38,9 @@ function createLogFileName(): string {
 
 interface TaskRunnerDeps {
   agentRoot: string
-  win: BrowserWindow
   getJsRuntime: () => JsRuntime
-  busPublish?: (topic: string, data: unknown) => void
+  busPublish: (topic: string, data: unknown) => void
+  onRunFinished?: (payload: unknown) => void
 }
 
 export class TaskRunner {
@@ -156,17 +154,13 @@ export class TaskRunner {
       }
       this.removeFinishedRun(run.runId)
 
-      // Publish bus events (gated via deps.busPublish if provided)
-      if (!this.deps.win.isDestroyed()) {
-        const payload = {
-          runId: run.runId, taskId: run.taskId, title: run.title,
-          status: run.status, origin: run.origin, startedAt: run.startedAt,
-          finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
-        }
-        const publish = this.deps.busPublish ?? ((topic: string, data: unknown) => forwardBusPublish(this.deps.win, topic, data))
-        publish(`task:run:${run.runId}`, payload)
-        publish('task:run:finished', payload)
+      const payload = {
+        runId: run.runId, taskId: run.taskId, title: run.title,
+        status: run.status, origin: run.origin, startedAt: run.startedAt,
+        finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
       }
+      this.deps.busPublish(`task:run:${run.runId}`, payload)
+      this.deps.onRunFinished?.(payload)
     }
   }
 

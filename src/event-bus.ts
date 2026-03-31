@@ -104,6 +104,15 @@ export class EventBus {
     }
   }
 
+  dispose(): void {
+    for (const topicWaiters of this.waiters.values()) {
+      for (const waiter of topicWaiters) {
+        if (waiter.timer) clearTimeout(waiter.timer)
+        waiter.reject(new Error('EventBus disposed'))
+      }
+    }
+    this.waiters.clear()
+    this.queues.clear()
+    this.subscribers.clear()
+  }
 }
-
-export const bus = new EventBus()

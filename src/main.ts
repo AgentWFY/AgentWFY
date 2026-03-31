@@ -6,7 +6,6 @@ import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
-import { registerBusHandlers, forwardBusPublish } from './ipc/bus.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
@@ -135,9 +134,6 @@ registerTabsHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
 );
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
-registerBusHandlers(
-  (e) => windowManager.getWindowForEvent(e),
-);
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);
 registerTaskRunnerHandlers(
@@ -172,14 +168,9 @@ registerAgentSessionHandlers(
     const agentRootForReconnect = ctx.agentRoot;
     const newMgr = new AgentSessionManager({
       agentRoot: agentRootForReconnect,
-      win: ctx.window,
       providerRegistry: ctx.providerRegistry,
       getJsRuntime: () => ctx.jsRuntime,
-      busPublish: (topic, data) => {
-        if (!ctx.window.isDestroyed()) {
-          forwardBusPublish(ctx.window, topic, data);
-        }
-      },
+      busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
     });
     ctx.sessionManager = newMgr;
     ctx.agentStateStreamingCleanup = setupAgentStateStreaming(

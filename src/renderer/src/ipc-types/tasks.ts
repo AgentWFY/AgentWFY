@@ -8,4 +8,5 @@ export interface TasksApi {
   listLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>>
   readLog(logFileName: string): Promise<string>
   writeLog(logFileName: string, content: string): Promise<void>
+  onRunFinished(callback: (payload: unknown) => void): () => void
 }

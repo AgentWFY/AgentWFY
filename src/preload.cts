@@ -1,30 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const Channels = {
-  files: {
-    read: 'files:read',
-    write: 'files:write',
-    writeBinary: 'files:writeBinary',
-    readBinary: 'files:readBinary',
-    edit: 'files:edit',
-    ls: 'files:ls',
-    mkdir: 'files:mkdir',
-    remove: 'files:remove',
-    find: 'files:find',
-    grep: 'files:grep',
-  },
   sql: {
     run: 'sql:run',
   },
   tabs: {
-    getTabs: 'tabs:getTabs',
     openTab: 'tabs:openTab',
     closeTab: 'tabs:closeTab',
     selectTab: 'tabs:selectTab',
-    reloadTab: 'tabs:reloadTab',
-    captureTab: 'tabs:captureTab',
-    getConsoleLogs: 'tabs:getConsoleLogs',
-    execJs: 'tabs:execJs',
     mountView: 'tabs:mountView',
     updateViewBounds: 'tabs:updateViewBounds',
     destroyView: 'tabs:destroyView',
@@ -51,16 +34,6 @@ const Channels = {
     open: 'dialog:open',
     openExternal: 'dialog:openExternal',
   },
-  bus: {
-    publish: 'bus:publish',
-    waitFor: 'bus:waitFor',
-    waitForResolved: 'bus:waitForResolved',
-    forwardPublish: 'bus:forwardPublish',
-    forwardWaitFor: 'bus:forwardWaitFor',
-    forwardSubscribe: 'bus:forwardSubscribe',
-    forwardUnsubscribe: 'bus:forwardUnsubscribe',
-    subscribeEvent: 'bus:subscribeEvent',
-  },
   db: {
     changed: 'db:changed',
   },
@@ -72,6 +45,7 @@ const Channels = {
     listLogs: 'tasks:listLogs',
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
+    runFinished: 'tasks:runFinished',
   },
   plugins: {
     call: 'plugin:call',
@@ -158,87 +132,12 @@ function invokeRunSql(request: RunSqlRequest): Promise<unknown[]> {
   return ipcRenderer.invoke(Channels.sql.run, normalized);
 }
 
-// --- Builder functions for shared domains ---
-
-function buildFilesApi() {
-  return {
-    read(path: string, offset?: number, limit?: number): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.read, path, offset, limit);
-    },
-    write(path: string, content: string): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.write, path, content);
-    },
-    writeBinary(path: string, base64: string): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.writeBinary, path, base64);
-    },
-    readBinary(path: string): Promise<{ base64: string; mimeType: string; size: number }> {
-      return ipcRenderer.invoke(Channels.files.readBinary, path);
-    },
-    edit(path: string, oldText: string, newText: string): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.edit, path, oldText, newText);
-    },
-    ls(path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.ls, path, limit);
-    },
-    mkdir(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke(Channels.files.mkdir, path, recursive);
-    },
-    remove(path: string, recursive?: boolean): Promise<void> {
-      return ipcRenderer.invoke(Channels.files.remove, path, recursive);
-    },
-    find(pattern: string, path?: string, limit?: number): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.find, pattern, path, limit);
-    },
-    grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string> {
-      return ipcRenderer.invoke(Channels.files.grep, pattern, path, options);
-    },
-  };
-}
+// --- Builder functions ---
 
 function buildSqlApi() {
   return {
     run(request: RunSqlRequest): Promise<unknown[]> {
       return invokeRunSql(request);
-    },
-  };
-}
-
-function buildAgentTabsApi() {
-  return {
-    getTabs(): Promise<unknown> {
-      return ipcRenderer.invoke(Channels.tabs.getTabs);
-    },
-    openTab(request: unknown): Promise<{ tabId: string }> {
-      return ipcRenderer.invoke(Channels.tabs.openTab, request);
-    },
-    closeTab(request: unknown): Promise<void> {
-      return ipcRenderer.invoke(Channels.tabs.closeTab, request);
-    },
-    selectTab(request: unknown): Promise<void> {
-      return ipcRenderer.invoke(Channels.tabs.selectTab, request);
-    },
-    reloadTab(request: unknown): Promise<void> {
-      return ipcRenderer.invoke(Channels.tabs.reloadTab, request);
-    },
-    captureTab(request: unknown): Promise<{ base64: string; mimeType: 'image/png' }> {
-      return ipcRenderer.invoke(Channels.tabs.captureTab, request);
-    },
-    getConsoleLogs(request: unknown): Promise<Array<{ level: string; message: string; timestamp: number }>> {
-      return ipcRenderer.invoke(Channels.tabs.getConsoleLogs, request);
-    },
-    execJs(request: unknown): Promise<unknown> {
-      return ipcRenderer.invoke(Channels.tabs.execJs, request);
-    },
-  };
-}
-
-function buildBusAgentApi() {
-  return {
-    publish(topic: string, data: unknown): Promise<void> {
-      return ipcRenderer.invoke(Channels.bus.publish, topic, data);
-    },
-    waitFor(topic: string, timeoutMs?: number): Promise<unknown> {
-      return ipcRenderer.invoke(Channels.bus.waitFor, topic, timeoutMs);
     },
   };
 }
@@ -251,16 +150,20 @@ const isApp = window.location.protocol === 'app:';
 // --- app:// — expose window.ipc (domain-namespaced, all domains) ---
 
 if (isApp) {
-  const files = buildFilesApi();
   const sql = buildSqlApi();
-  const agentTabs = buildAgentTabsApi();
-  const busAgent = buildBusAgentApi();
 
   contextBridge.exposeInMainWorld('ipc', {
-    files,
     sql,
     tabs: {
-      ...agentTabs,
+      openTab(request: unknown): Promise<{ tabId: string }> {
+        return ipcRenderer.invoke(Channels.tabs.openTab, request);
+      },
+      closeTab(request: unknown): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.closeTab, request);
+      },
+      selectTab(request: unknown): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.selectTab, request);
+      },
       mountView(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.mountView, request);
       },
@@ -335,35 +238,6 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.dialog.openExternal, url);
       },
     },
-    bus: {
-      ...busAgent,
-      onForwardPublish(callback: (detail: { topic: string; data: unknown }) => void): () => void {
-        const handler = (_event: unknown, detail: { topic: string; data: unknown }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardPublish, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardPublish, handler);
-      },
-      onForwardWaitFor(callback: (detail: { waiterId: string; topic: string; timeoutMs?: number }) => void): () => void {
-        const handler = (_event: unknown, detail: { waiterId: string; topic: string; timeoutMs?: number }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardWaitFor, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardWaitFor, handler);
-      },
-      waitForResolved(waiterId: string, data: unknown): void {
-        ipcRenderer.send(Channels.bus.waitForResolved, { waiterId, data });
-      },
-      onForwardSubscribe(callback: (detail: { subId: string; topic: string }) => void): () => void {
-        const handler = (_event: unknown, detail: { subId: string; topic: string }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardSubscribe, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardSubscribe, handler);
-      },
-      onForwardUnsubscribe(callback: (detail: { subId: string }) => void): () => void {
-        const handler = (_event: unknown, detail: { subId: string }) => callback(detail);
-        ipcRenderer.on(Channels.bus.forwardUnsubscribe, handler);
-        return () => ipcRenderer.removeListener(Channels.bus.forwardUnsubscribe, handler);
-      },
-      subscribeEvent(subId: string, data: unknown): void {
-        ipcRenderer.send(Channels.bus.subscribeEvent, { subId, data });
-      },
-    },
     db: {
       onDbChanged(callback: (detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
         const handler = (_event: unknown, detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
@@ -435,6 +309,11 @@ if (isApp) {
       },
       writeLog(logFileName: string, content: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
+      },
+      onRunFinished(callback: (payload: unknown) => void): () => void {
+        const handler = (_event: unknown, payload: unknown) => callback(payload);
+        ipcRenderer.on(Channels.tasks.runFinished, handler);
+        return () => ipcRenderer.removeListener(Channels.tasks.runFinished, handler);
       },
     },
     providers: {

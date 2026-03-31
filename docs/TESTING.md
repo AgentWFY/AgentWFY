@@ -142,28 +142,11 @@ The main page exposes `window.ipc`. Call via `cdp eval` or `cdp ipc`:
 // SQL
 window.ipc.sql.run({ sql: 'SELECT * FROM views', params: [] })
 
-// Files
-window.ipc.files.read(path)
-window.ipc.files.write(path, content)
-window.ipc.files.writeBinary(path, base64)
-window.ipc.files.readBinary(path)
-window.ipc.files.edit(path, oldText, newText)
-window.ipc.files.ls(path?, limit?)
-window.ipc.files.mkdir(path, recursive?)
-window.ipc.files.remove(path, recursive?)
-window.ipc.files.find(pattern, path?, limit?)
-window.ipc.files.grep(pattern, path?, options?)
-
 // Tabs
 window.ipc.tabs.getTabState()
-window.ipc.tabs.getTabs()
 window.ipc.tabs.openTab({ viewId?, viewName?, filePath?, url?, title?, hidden? })
 window.ipc.tabs.closeTab({ tabId: '...' })
 window.ipc.tabs.selectTab({ tabId: '...' })
-window.ipc.tabs.reloadTab({ tabId: '...' })
-window.ipc.tabs.captureTab({ tabId: '...' })      // → base64 PNG
-window.ipc.tabs.getConsoleLogs({ tabId: '...', since?, limit? })
-window.ipc.tabs.execJs({ tabId: '...', code: '...', timeoutMs? })
 window.ipc.tabs.reorderTabs(tabIds)
 window.ipc.tabs.togglePin({ tabId: '...' })
 window.ipc.tabs.revealTab({ tabId: '...' })
@@ -208,6 +191,7 @@ window.ipc.tasks.listLogHistory()
 window.ipc.tasks.listLogs(limit?)
 window.ipc.tasks.readLog(logFileName)
 window.ipc.tasks.writeLog(logFileName, content)
+window.ipc.tasks.onRunFinished(callback)           // → unsubscribe fn
 
 // Plugins
 window.ipc.plugins.call(method, params)
@@ -231,10 +215,6 @@ window.ipc.store.remove(key)
 // Dialog
 window.ipc.dialog.open(options)
 window.ipc.dialog.openExternal(url)
-
-// Event bus (inter-agent messaging)
-window.ipc.bus.publish(topic, data)
-window.ipc.bus.waitFor(topic, timeoutMs?)
 
 // Database change notifications
 window.ipc.db.onDbChanged(callback)

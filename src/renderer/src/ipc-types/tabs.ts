@@ -1,15 +1,3 @@
-import type {
-  WorkerGetTabsResult,
-  WorkerOpenTabRequest,
-  WorkerCloseTabRequest,
-  WorkerSelectTabRequest,
-  WorkerReloadTabRequest,
-  WorkerCaptureTabRequest,
-  WorkerGetTabConsoleLogsRequest,
-  WorkerExecTabJsRequest,
-  WorkerTabConsoleLogEntry,
-} from '../../../runtime/types.js'
-
 export interface TabViewBounds {
   x: number
   y: number
@@ -73,16 +61,9 @@ export interface TabState {
 }
 
 export interface TabsApi {
-  // Agent tool operations
-  getTabs(): Promise<WorkerGetTabsResult>
-  openTab(request: WorkerOpenTabRequest): Promise<{ tabId: string }>
-  closeTab(request: WorkerCloseTabRequest): Promise<void>
-  selectTab(request: WorkerSelectTabRequest): Promise<void>
-  reloadTab(request: WorkerReloadTabRequest): Promise<void>
-  captureTab(request: WorkerCaptureTabRequest): Promise<{ base64: string; mimeType: 'image/png' }>
-  getConsoleLogs(request: WorkerGetTabConsoleLogsRequest): Promise<WorkerTabConsoleLogEntry[]>
-  execJs(request: WorkerExecTabJsRequest): Promise<unknown>
-  // View management (app only)
+  openTab(request: unknown): Promise<{ tabId: string }>
+  closeTab(request: unknown): Promise<void>
+  selectTab(request: unknown): Promise<void>
   mountView(request: MountTabViewRequest): Promise<void>
   updateViewBounds(request: UpdateTabViewBoundsRequest): Promise<void>
   destroyView(request: DestroyTabViewRequest): Promise<void>

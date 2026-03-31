@@ -1,4 +1,4 @@
-import { Notification, nativeImage, type BrowserWindow } from 'electron'
+import { Notification, nativeImage } from 'electron'
 import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
@@ -7,7 +7,6 @@ import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
-import { forwardBusPublish } from '../ipc/bus.js'
 import {
   readSessionFile,
   listSessionFiles,
@@ -63,10 +62,9 @@ export interface SessionListItem {
 
 interface AgentSessionManagerDeps {
   agentRoot: string
-  win: BrowserWindow
   providerRegistry: ProviderRegistry
   getJsRuntime: () => JsRuntime
-  busPublish?: (topic: string, data: unknown) => void
+  busPublish: (topic: string, data: unknown) => void
 }
 
 export class AgentSessionManager {
@@ -534,9 +532,8 @@ export class AgentSessionManager {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
       const sessionFile = entry.agent.sessionFile
-      if (sessionFile && !this.deps.win.isDestroyed()) {
-        const publish = this.deps.busPublish ?? ((topic: string, data: unknown) => forwardBusPublish(this.deps.win, topic, data))
-        publish(`session:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
+      if (sessionFile) {
+        this.deps.busPublish(`session:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
       }
 
       // Dispose spawned/background sessions immediately

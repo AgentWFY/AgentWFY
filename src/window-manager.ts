@@ -11,7 +11,7 @@ import { ShortcutManager } from './shortcuts/manager.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
-import { forwardBusWaitFor, forwardBusSubscribe, forwardBusUnsubscribe } from './ipc/bus.js';
+import { EventBus } from './event-bus.js';
 import { AgentSessionManager } from './agent/session_manager.js';
 import { TaskRunner } from './task-runner/task_runner.js';
 import { getOrCreateRuntime, disposeRuntime } from './ipc/exec-js.js';
@@ -27,7 +27,6 @@ import type { AgentDbChange } from './db/sqlite.js';
 import { closeAgentDb, getOrCreateAgentDb } from './db/agent-db.js';
 import { getViewByName } from './db/views.js';
 import { loadPlugins } from './plugins/loader.js';
-import { forwardBusPublish } from './ipc/bus.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { ConfirmationManager } from './confirmation/manager.js';
@@ -40,6 +39,7 @@ import { Channels } from './ipc/channels.js';
 export interface AppWindowContext {
   window: BrowserWindow;
   agentRoot: string;
+  eventBus: EventBus;
   rendererBridge: RendererBridge;
   tabViewManager: TabViewManager;
   commandPalette: CommandPaletteManager;
@@ -62,6 +62,7 @@ export interface AppWindowContext {
 /** Per-agent context (everything that is agent-specific). */
 interface AgentContext {
   agentRoot: string;
+  eventBus: EventBus;
   tabViewManager: TabViewManager;
   httpApi: HttpApiServer | null;
   triggerEngine: TriggerEngine | null;
@@ -309,11 +310,8 @@ class WindowManager {
 
     const functionRegistry = new FunctionRegistry();
 
-    const busPublish = (topic: string, data: unknown) => {
-      if (!win.isDestroyed()) {
-        forwardBusPublish(win, topic, data);
-      }
-    };
+    const eventBus = new EventBus();
+    const busPublish = (topic: string, data: unknown) => eventBus.publish(topic, data);
 
     const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry);
 
@@ -364,7 +362,7 @@ class WindowManager {
       getSessionManager: () => agentCtx.sessionManager,
       getTaskRunner: () => agentCtx.taskRunner,
       getCommandPalette: () => this.commandPalette!,
-      busPublish,
+      eventBus,
     });
 
     const jsRuntime = getOrCreateRuntime(agentRoot, {
@@ -373,7 +371,6 @@ class WindowManager {
 
     const sessionManager = new AgentSessionManager({
       agentRoot,
-      win,
       providerRegistry,
       getJsRuntime: () => jsRuntime,
       busPublish,
@@ -381,15 +378,20 @@ class WindowManager {
 
     const taskRunner = new TaskRunner({
       agentRoot,
-      win,
       getJsRuntime: () => jsRuntime,
       busPublish,
+      onRunFinished: (payload) => {
+        if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
+          win.webContents.send(Channels.tasks.runFinished, payload);
+        }
+      },
     });
 
     const shortcutManager = new ShortcutManager(agentRoot);
 
     const agentCtx: AgentContext = {
       agentRoot,
+      eventBus,
       tabViewManager,
       httpApi: null,
       triggerEngine: null,
@@ -436,6 +438,7 @@ class WindowManager {
     ctx.agentStateStreamingCleanup = null;
     ctx.sessionManager.disposeAll().catch((err) => { console.warn('[WindowManager] disposeAll failed:', err) });
     ctx.taskRunner.dispose();
+    ctx.eventBus.dispose();
 
     if (ctx.dbChangeDebounceTimer) {
       clearTimeout(ctx.dbChangeDebounceTimer);
@@ -664,9 +667,6 @@ class WindowManager {
     return this.getContextForSender(event.sender.id).agentRoot;
   }
 
-  getWindowForEvent(_event: IpcMainInvokeEvent): BrowserWindow {
-    return this.mainWindow!;
-  }
 
   // --- Protocol support ---
 
@@ -755,24 +755,9 @@ class WindowManager {
           const runId = await ctx.taskRunner.startTask(taskId, input, origin as any);
           return { runId };
         },
-        waitFor: (topic, timeoutMs?) => {
-          if (win.isDestroyed()) throw new Error('Main window is not available');
-          return forwardBusWaitFor(win, topic, timeoutMs);
-        },
-        busSubscribe: (topic, fn) => {
-          if (win.isDestroyed()) throw new Error('Main window is not available');
-          const subId = forwardBusSubscribe(win, topic, fn);
-          return () => {
-            if (!win.isDestroyed()) {
-              forwardBusUnsubscribe(win, subId);
-            }
-          };
-        },
-        busPublish: (topic, data) => {
-          if (!win.isDestroyed()) {
-            forwardBusPublish(win, topic, data);
-          }
-        },
+        waitFor: (topic, timeoutMs?) => ctx.eventBus.waitFor(topic, timeoutMs),
+        busSubscribe: (topic, fn) => ctx.eventBus.subscribe(topic, fn),
+        busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
         httpApi: ctx.httpApi,
       });
     } catch (err) {

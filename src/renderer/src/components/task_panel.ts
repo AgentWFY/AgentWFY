@@ -14,7 +14,6 @@ interface TaskLogHistoryItem {
   origin?: TaskOrigin
 }
 import { escapeHtml } from './chat_utils.js'
-import { bus } from '../event-bus.js'
 
 interface TaskItem {
   id: number
@@ -430,7 +429,7 @@ export class TlTaskPanel extends HTMLElement {
   private detailView: DetailView | null = null
   private detailAutoScroll = true
   private activeRuns: Array<{ runId: string; taskId: number; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
-  private busUnsub: (() => void) | null = null
+  private runFinishedUnsub: (() => void) | null = null
   private runningTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
@@ -446,10 +445,10 @@ export class TlTaskPanel extends HTMLElement {
     this.loadLogHistory()
     this.loadRunningTasks()
 
-    this.busUnsub = bus.subscribe('task:run:finished', () => {
+    this.runFinishedUnsub = window.ipc?.tasks.onRunFinished(() => {
       this.loadRunningTasks()
       this.loadLogHistory()
-    })
+    }) ?? null
 
     this.runningTimer = setInterval(() => {
       if (this.activeRuns.length > 0) {
@@ -464,8 +463,8 @@ export class TlTaskPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.busUnsub?.()
-    this.busUnsub = null
+    this.runFinishedUnsub?.()
+    this.runFinishedUnsub = null
     if (this.runningTimer) {
       clearInterval(this.runningTimer)
       this.runningTimer = null

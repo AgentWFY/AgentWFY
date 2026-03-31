@@ -1,20 +1,16 @@
-export type { FilesApi } from './files.js'
 export type { SqlApi } from './sql.js'
 export type { TabsApi, TabViewBounds, MountTabViewRequest, UpdateTabViewBoundsRequest, DestroyTabViewRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent, TabData, TabDataType, TabState } from './tabs.js'
 export type { SessionsApi } from './sessions.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
-export type { BusApi } from './bus.js'
 export type { DbApi, AgentDbChange } from './db.js'
 export type { TasksApi } from './tasks.js'
 
-import type { FilesApi } from './files.js'
 import type { SqlApi } from './sql.js'
 import type { TabsApi } from './tabs.js'
 import type { SessionsApi } from './sessions.js'
 import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
-import type { BusApi } from './bus.js'
 import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 
@@ -74,13 +70,11 @@ export interface AgentSidebarApi {
 }
 
 export interface AppIpc {
-  files: FilesApi
   sql: SqlApi
   tabs: TabsApi
   sessions: SessionsApi
   store: StoreApi
   dialog: DialogApi
-  bus: BusApi
   db: DbApi
   tasks: TasksApi
   plugins: PluginsApi
