@@ -41,7 +41,7 @@ Returns an array of row objects. Use parameterized queries with `params` array.
 
 Restrictions:
 - **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
-- **`system.*` and `plugin.*` namespaces are read-only** in `docs` and `views` tables (inserts, updates, and deletes are rejected).
+- **`system.*` and `plugin.*` namespaces are read-only** in `docs`, `views`, `tasks`, and `triggers` tables (inserts, updates, and deletes are rejected).
 - **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
 - **`plugins` table is entirely read-only.**
 

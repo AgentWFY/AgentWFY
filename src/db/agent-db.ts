@@ -222,6 +222,50 @@ const TRIGGER_NAME_FORMAT_SQL = makeNameFormatSql('triggers', '*[^a-z0-9._-]*', 
 // Plugin names: no dots (dots are namespace separators in plugin.* prefixes)
 const PLUGIN_NAME_FORMAT_SQL = makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens');
 
+// Block agent from writing to system.* and plugin.* tasks
+const SYSTEM_TASKS_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_insert BEFORE INSERT ON tasks
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_update BEFORE UPDATE ON tasks
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
+  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_delete BEFORE DELETE ON tasks
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
+END;
+`;
+
+// Block agent from writing to system.* and plugin.* triggers
+const SYSTEM_TRIGGERS_GUARD_SQL = `
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_insert BEFORE INSERT ON triggers
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_update BEFORE UPDATE ON triggers
+WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
+  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
+END;
+
+CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_delete BEFORE DELETE ON triggers
+WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
+BEGIN
+  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
+END;
+`;
+
 // Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
 const SYSTEM_CONFIG_GUARD_SQL = `
 CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_insert BEFORE INSERT ON config
@@ -253,6 +297,12 @@ DROP TRIGGER IF EXISTS _docs_name_format_insert;
 DROP TRIGGER IF EXISTS _docs_name_format_update;
 DROP TRIGGER IF EXISTS _config_name_format_insert;
 DROP TRIGGER IF EXISTS _config_name_format_update;
+DROP TRIGGER IF EXISTS _tasks_system_guard_insert;
+DROP TRIGGER IF EXISTS _tasks_system_guard_update;
+DROP TRIGGER IF EXISTS _tasks_system_guard_delete;
+DROP TRIGGER IF EXISTS _triggers_system_guard_insert;
+DROP TRIGGER IF EXISTS _triggers_system_guard_update;
+DROP TRIGGER IF EXISTS _triggers_system_guard_delete;
 DROP TRIGGER IF EXISTS _tasks_name_format_insert;
 DROP TRIGGER IF EXISTS _tasks_name_format_update;
 DROP TRIGGER IF EXISTS _triggers_name_format_insert;
@@ -266,6 +316,8 @@ DROP TRIGGER IF EXISTS _config_system_guard_delete;
 const ALL_GUARD_SQL = [
   SYSTEM_DOCS_GUARD_SQL,
   SYSTEM_VIEWS_GUARD_SQL,
+  SYSTEM_TASKS_GUARD_SQL,
+  SYSTEM_TRIGGERS_GUARD_SQL,
   SYSTEM_CONFIG_GUARD_SQL,
   PLUGINS_TABLE_GUARD_SQL,
   VIEW_NAME_FORMAT_SQL,
