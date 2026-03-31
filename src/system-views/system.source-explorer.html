@@ -716,7 +716,7 @@
 
   async function loadAll() {
     const [docs, views, tasks, triggers, plugins, config] = await Promise.all([
-      agy.runSql({ target: "agent", sql: "SELECT id, name, content, updated_at FROM docs ORDER BY name" }),
+      agy.runSql({ target: "agent", sql: "SELECT name, content, updated_at FROM docs ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT id, name, title, content, created_at, updated_at FROM views ORDER BY name" }),
       agy.runSql({ target: "agent", sql: "SELECT id, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
       agy.runSql({ target: "agent", sql: "SELECT t.id, t.task_id, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_id = k.id ORDER BY t.id" }),
@@ -749,7 +749,7 @@
   function refreshSelected() {
     if (!selected) return;
     const source = selected.type === 'docs' ? allDocs : selected.type === 'views' ? allViews : selected.type === 'triggers' ? allTriggers : selected.type === 'plugins' ? allPlugins : allTasks;
-    const fresh = source.find(i => i.id === selected.id);
+    const fresh = source.find(i => selected.type === 'docs' ? i.name === selected.name : i.id === selected.id);
     if (fresh) { const m = selected.type; selected = { ...selected, ...fresh, type: m }; if (m === 'triggers') selected.trigType = fresh.type; if (!editing) showContent(); }
     else clearContent();
   }
@@ -760,17 +760,19 @@
     const newContent = editor.value;
     const now = Math.floor(Date.now() / 1000);
     const table = selected.type === 'docs' ? 'docs' : selected.type === 'views' ? 'views' : 'tasks';
+    const whereClause = selected.type === 'docs' ? 'WHERE name = ?' : 'WHERE id = ?';
+    const whereParam = selected.type === 'docs' ? selected.name : selected.id;
     try {
       await agy.runSql({
         target: "agent",
-        sql: "UPDATE " + table + " SET content = ?, updated_at = ? WHERE id = ?",
-        params: [newContent, now, selected.id],
+        sql: "UPDATE " + table + " SET content = ?, updated_at = ? " + whereClause,
+        params: [newContent, now, whereParam],
         confirmed: true
       });
       selected.content = newContent;
       selected.updated_at = now;
       const source = selected.type === 'docs' ? allDocs : selected.type === 'views' ? allViews : selected.type === 'triggers' ? allTriggers : selected.type === 'plugins' ? allPlugins : allTasks;
-      const idx = source.findIndex(i => i.id === selected.id);
+      const idx = source.findIndex(i => selected.type === 'docs' ? i.name === selected.name : i.id === selected.id);
       if (idx >= 0) Object.assign(source[idx], { content: newContent, updated_at: now });
       dirty = false; editing = false;
       showContent(); renderList();
@@ -786,11 +788,13 @@
     const itemName = selected.title || selected.name || selected.description || (selected.type + ' #' + selected.id);
     if (!confirm('Delete this ' + label + ' "' + itemName + '"?')) return;
     const table = selected.type === 'tasks' ? 'tasks' : selected.type === 'triggers' ? 'triggers' : 'docs';
+    const whereClause = selected.type === 'docs' ? 'WHERE name = ?' : 'WHERE id = ?';
+    const whereParam = selected.type === 'docs' ? selected.name : selected.id;
     try {
       await agy.runSql({
         target: "agent",
-        sql: "DELETE FROM " + table + " WHERE id = ?",
-        params: [selected.id],
+        sql: "DELETE FROM " + table + " " + whereClause,
+        params: [whereParam],
         confirmed: true
       });
       showToast('Deleted');
@@ -921,8 +925,8 @@
       const items = allDocs.filter(d => d.name.toLowerCase().includes(q));
       list.innerHTML = items.map(d => {
         const size = fmtSize(d.content ? d.content.length : 0);
-        const active = selected && selected.type === 'docs' && selected.id === d.id;
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'docs\', ' + d.id + ')">'
+        const active = selected && selected.type === 'docs' && selected.name === d.name;
+        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'docs\', \'' + d.name + '\')">'
           + '<div class="item-name">' + escHtml(d.name) + '</div>'
           + '<div class="item-meta"><span>' + size + '</span>'
           + '<span>' + fmtDate(d.updated_at) + '</span>'
@@ -1014,7 +1018,7 @@
   function selectItem(type, id) {
     if (dirty && !confirm('Discard unsaved changes?')) return;
     const source = type === 'docs' ? allDocs : type === 'views' ? allViews : type === 'triggers' ? allTriggers : type === 'plugins' ? allPlugins : allTasks;
-    const item = source.find(i => i.id === id);
+    const item = source.find(i => type === 'docs' ? i.name === id : i.id === id);
     if (!item) return;
     selected = { ...item, type };
     if (type === 'triggers') selected.trigType = item.type;
@@ -1042,7 +1046,8 @@
     const typeLabel = '<span class="type-label ' + labelMap[s.type] + '">' + nameMap[s.type] + '</span>';
 
     const displayName = s.title || s.name;
-    let metaInfo = 'id: ' + s.id + ' \u00b7 ' + size + ' \u00b7 ' + lines + ' lines';
+    let metaInfo = s.type !== 'docs' ? 'id: ' + s.id + ' \u00b7 ' : '';
+    metaInfo += size + ' \u00b7 ' + lines + ' lines';
     if (s.type === 'views' && s.title) metaInfo = s.name + ' \u00b7 ' + metaInfo;
     if (s.type === 'tasks' && s.timeout_ms) metaInfo += ' \u00b7 timeout: ' + fmtTimeout(s.timeout_ms);
     const ts = s.updated_at || s.created_at;
@@ -1137,7 +1142,7 @@
         const enableBtnLabel = s.enabled ? ICO.x + ' Disable' : ICO.play + ' Enable';
         const pluginDocName = 'plugin.' + s.name;
         const hasDoc = allDocs.some(d => d.name === pluginDocName);
-        const docBtn = hasDoc ? '<button class="btn btn-default" onclick="setMode(\'docs\');setTimeout(()=>{const d=allDocs.find(x=>x.name===\'' + pluginDocName + '\');if(d)selectItem(\'docs\',d.id)},50)">' + ICO.edit + ' Docs</button>' : '';
+        const docBtn = hasDoc ? '<button class="btn btn-default" onclick="setMode(\'docs\');setTimeout(()=>{const d=allDocs.find(x=>x.name===\'' + pluginDocName + '\');if(d)selectItem(\'docs\',d.name)},50)">' + ICO.edit + ' Docs</button>' : '';
         document.getElementById('contentPane').innerHTML =
           '<div class="content-header">'
           + '<div class="left">' + typeLabel

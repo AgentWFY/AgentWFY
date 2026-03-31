@@ -429,8 +429,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | INTEGER | Auto-incrementing primary key |
-| `name` | TEXT (UNIQUE) | Document identifier |
+| `name` | TEXT (PK) | Document identifier |
 | `content` | TEXT | Document content |
 | `updated_at` | INTEGER | Unix epoch seconds |
 

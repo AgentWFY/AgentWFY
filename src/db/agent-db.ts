@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS views (
 );
 
 CREATE TABLE IF NOT EXISTS docs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  name TEXT PRIMARY KEY,
   content TEXT NOT NULL,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
@@ -83,13 +82,13 @@ CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.id, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.rowid, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.id, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.rowid, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.id, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.rowid, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'insert');
