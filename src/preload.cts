@@ -234,8 +234,8 @@ if (isApp) {
       },
     },
     db: {
-      onDbChanged(callback: (detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
-        const handler = (_event: unknown, detail: { table: string; rowId: number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
+      onDbChanged(callback: (detail: { table: string; rowId: string | number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
+        const handler = (_event: unknown, detail: { table: string; rowId: string | number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
         ipcRenderer.on(Channels.db.changed, handler);
         return () => ipcRenderer.removeListener(Channels.db.changed, handler);
       },

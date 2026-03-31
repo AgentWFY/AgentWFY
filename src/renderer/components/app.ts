@@ -483,7 +483,7 @@ export class TlApp extends HTMLElement {
     this.unlistenAgentDbChanged = ipc.db.onDbChanged((change: AgentDbChange) => {
       if (!change) return
       if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
-      if (typeof change.rowId !== 'number' || !Number.isFinite(change.rowId)) return
+      if (change.rowId == null) return
 
       if (change.table === 'views') {
         window.dispatchEvent(new CustomEvent<{ change: AgentDbChange }>('agentwfy:views-db-changed', {

@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS views (
 );
 
 CREATE TABLE IF NOT EXISTS docs (
-  name TEXT PRIMARY KEY,
+  name TEXT NOT NULL PRIMARY KEY,
   content TEXT NOT NULL,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
 );
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS plugins (
 const CHANGE_TRACKING_SQL = `
 CREATE TEMP TABLE IF NOT EXISTS _changes (
   table_name TEXT NOT NULL,
-  row_id INTEGER NOT NULL,
+  row_id NOT NULL,
   op TEXT NOT NULL
 );
 
@@ -82,13 +82,13 @@ CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.id, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.rowid, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.rowid, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.rowid, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.id, 'insert');
@@ -109,13 +109,13 @@ CREATE TEMP TRIGGER IF NOT EXISTS _triggers_delete AFTER DELETE ON triggers BEGI
   INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.id, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _config_insert AFTER INSERT ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.rowid, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _config_update AFTER UPDATE ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.rowid, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.rowid, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS plugins_insert AFTER INSERT ON plugins BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.id, 'insert');
@@ -475,7 +475,7 @@ class AgentDb {
         const change = raw as Record<string, unknown>;
         onDbChange({
           table: change.table_name as string,
-          rowId: Number(change.row_id),
+          rowId: change.row_id as string | number,
           op: change.op as 'insert' | 'update' | 'delete',
         });
       }
