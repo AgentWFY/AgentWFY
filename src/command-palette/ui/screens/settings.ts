@@ -49,9 +49,14 @@ export class SettingsScreen implements PaletteScreen {
   private searchValue = ''
   private loaded = false
   private container: HTMLElement | null = null
+  initialSearchValue?: string
 
-  constructor(bridge: CommandPaletteBridge) {
+  constructor(bridge: CommandPaletteBridge, params?: Record<string, unknown>) {
     this.bridge = bridge
+    if (params?.filter) {
+      this.searchValue = String(params.filter)
+      this.initialSearchValue = this.searchValue
+    }
   }
 
   onActivate(): void {
@@ -88,6 +93,7 @@ export class SettingsScreen implements PaletteScreen {
         this.rowsByKey = new Map(this.allRows.map(r => [r.key, r]))
         this.filteredRows = this.allRows
         this.loaded = true
+        if (this.searchValue) this.applyFilter()
       } catch (error) {
         console.error('Failed to load settings:', error)
       }
