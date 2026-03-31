@@ -8,7 +8,7 @@ export interface SqlExecutionRequest {
 
 export interface AgentDbChange {
   table: string;
-  rowId: number;
+  rowId: string | number;
   op: 'insert' | 'update' | 'delete';
 }
 
