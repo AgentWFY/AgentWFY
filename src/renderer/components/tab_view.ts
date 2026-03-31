@@ -9,7 +9,7 @@ type TabType = 'view' | 'file' | 'url'
 export class TlTabView extends HTMLElement {
   private _tabId = ''
   private _tabType: TabType = 'view'
-  private _source = ''  // viewId for view, filePath for file, url for url
+  private _source = ''  // viewName for view, filePath for file, url for url
   private _viewUpdatedAt: number | null = null
   private _viewChanged = false
   private _hiddenTab = false
@@ -29,12 +29,6 @@ export class TlTabView extends HTMLElement {
   private wrapperResizeObserver: ResizeObserver | null = null
   private parentVisibilityObserver: MutationObserver | null = null
   private unsubscribeTabViewEvents: (() => void) | null = null
-  private onRefreshView = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    if (detail.viewId === this._tabId) {
-      this.handleReload()
-    }
-  }
 
   private onWindowOrVisibilityChanged = () => {
     if (!this._hiddenTab) {
@@ -47,23 +41,23 @@ export class TlTabView extends HTMLElement {
   }
 
   static get observedAttributes() {
-    return ['tab-id', 'tab-type', 'view-id', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab', 'view-params']
+    return ['tab-id', 'tab-type', 'view-name', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab', 'view-params']
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
     const nextValue = value || ''
     if (name === 'tab-id') this._tabId = nextValue
     if (name === 'tab-type') this._tabType = (nextValue as TabType) || 'view'
-    if (name === 'view-id') this._source = nextValue
-    if (name === 'view-path' && !this.hasAttribute('view-id')) this._source = nextValue
-    if (name === 'view-url' && !this.hasAttribute('view-id') && !this.hasAttribute('view-path')) this._source = nextValue
+    if (name === 'view-name') this._source = nextValue
+    if (name === 'view-path' && !this.hasAttribute('view-name')) this._source = nextValue
+    if (name === 'view-url' && !this.hasAttribute('view-name') && !this.hasAttribute('view-path')) this._source = nextValue
     if (name === 'view-updated-at') this._viewUpdatedAt = parseOptionalNumber(value)
     if (name === 'hidden-tab') this._hiddenTab = value !== null
     if (name === 'view-params') this._viewParams = TlTabView.parseJsonParams(value)
 
     if (!this.isConnected || oldValue === nextValue) return
 
-    if (name === 'view-id' || name === 'view-path' || name === 'view-url' || name === 'view-updated-at') {
+    if (name === 'view-name' || name === 'view-path' || name === 'view-url' || name === 'view-updated-at') {
       this._viewChanged = false
       this.mounted = false
 
@@ -86,7 +80,7 @@ export class TlTabView extends HTMLElement {
   }
 
   get tabId() { return this._tabId }
-  get viewId() { return this._source }
+  get viewName() { return this._source }
 
   private static parseJsonParams(value: string | null): Record<string, string> | null {
     if (!value) return null
@@ -102,7 +96,7 @@ export class TlTabView extends HTMLElement {
   connectedCallback() {
     this._tabId = this.getAttribute('tab-id') || ''
     this._tabType = (this.getAttribute('tab-type') as TabType) || 'view'
-    this._source = this.getAttribute('view-id') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
+    this._source = this.getAttribute('view-name') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
     this._viewUpdatedAt = parseOptionalNumber(this.getAttribute('view-updated-at'))
     this._hiddenTab = this.hasAttribute('hidden-tab')
     this._viewParams = TlTabView.parseJsonParams(this.getAttribute('view-params'))
@@ -124,7 +118,6 @@ export class TlTabView extends HTMLElement {
     this.attachParentVisibilityObserver()
     this.subscribeToTabViewEvents()
 
-    window.addEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.addEventListener('resize', this.onWindowOrVisibilityChanged)
     document.addEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
 
@@ -166,7 +159,6 @@ export class TlTabView extends HTMLElement {
       this.unsubscribeTabViewEvents = null
     }
 
-    window.removeEventListener('agentwfy:refresh-view', this.onRefreshView)
     window.removeEventListener('resize', this.onWindowOrVisibilityChanged)
     document.removeEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
 
@@ -397,9 +389,9 @@ export class TlTabView extends HTMLElement {
       url = `agentview://view/${encodedPath}?source=file&rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
     } else {
       // Default: view
-      const encodedViewId = encodeURIComponent(source)
+      const encodedViewName = encodeURIComponent(source)
       const revision = this._viewUpdatedAt ?? Date.now()
-      url = `agentview://view/${encodedViewId}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
+      url = `agentview://view/${encodedViewName}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
     }
 
     // Append custom params
@@ -444,7 +436,7 @@ export class TlTabView extends HTMLElement {
     const visible = this._hiddenTab ? false : this.isViewVisible(bounds)
     const request: MountTabViewRequest = {
       tabId,
-      viewId: source,
+      viewName: source,
       src: this.buildSrc(source),
       bounds,
       visible,

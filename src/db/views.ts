@@ -1,7 +1,6 @@
 import { runAgentDbSql } from './sqlite.js';
 
 interface ViewCatalogRecord {
-  id: number;
   name: string;
   title: string;
   updated_at: number;
@@ -45,7 +44,6 @@ function asNumber(value: unknown, fieldName: string): number {
 function toCatalogRecord(row: unknown): ViewCatalogRecord {
   const record = asObject(row);
   return {
-    id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
     title: typeof record.title === 'string' ? record.title : '',
     updated_at: asNumber(record.updated_at, 'updated_at'),
@@ -55,7 +53,6 @@ function toCatalogRecord(row: unknown): ViewCatalogRecord {
 function toViewRecord(row: unknown): ViewRecord {
   const record = asObject(row);
   return {
-    id: asNumber(record.id, 'id'),
     name: asString(record.name, 'name'),
     title: typeof record.title === 'string' ? record.title : '',
     content: asString(record.content, 'content'),
@@ -72,7 +69,7 @@ export async function ensureViewsSchema(dataDir: string): Promise<void> {
 
 export async function listViews(dataDir: string): Promise<ViewCatalogRecord[]> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: `SELECT id, name, title, updated_at FROM views
+    sql: `SELECT name, title, updated_at FROM views
 ORDER BY
   CASE
     WHEN name NOT LIKE 'system.%' AND name NOT LIKE 'plugin.%' THEN 0
@@ -85,28 +82,12 @@ ORDER BY
   return rows.map((row) => toCatalogRecord(row));
 }
 
-export async function getViewById(
-  dataDir: string,
-  viewId: number | string
-): Promise<ViewRecord | null> {
-  const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, title, content, created_at, updated_at FROM views WHERE id = ? LIMIT 1',
-    params: [viewId],
-  });
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  return toViewRecord(rows[0]);
-}
-
 export async function getViewByName(
   dataDir: string,
   name: string
 ): Promise<ViewCatalogRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT id, name, title, updated_at FROM views WHERE name = ? LIMIT 1',
+    sql: 'SELECT name, title, updated_at FROM views WHERE name = ? LIMIT 1',
     params: [name],
   });
 
@@ -115,4 +96,20 @@ export async function getViewByName(
   }
 
   return toCatalogRecord(rows[0]);
+}
+
+export async function getViewContent(
+  dataDir: string,
+  name: string
+): Promise<ViewRecord | null> {
+  const rows = await runAgentDbSql(dataDir, {
+    sql: 'SELECT name, title, content, created_at, updated_at FROM views WHERE name = ? LIMIT 1',
+    params: [name],
+  });
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return toViewRecord(rows[0]);
 }

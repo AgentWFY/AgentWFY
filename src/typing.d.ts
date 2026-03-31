@@ -20,7 +20,7 @@ declare global {
       grep(pattern: string, path?: string, options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number }): Promise<string>;
       runSql(request: ElectronRunSqlRequest): Promise<unknown>;
       getTabs(): Promise<{ tabs: Array<{ id: string; title: string; type: 'view' | 'file' | 'url'; target: string | number; viewUpdatedAt: number | null; viewChanged: boolean; pinned: boolean; selected: boolean }> }>;
-      openTab(request: { viewId?: string | number; filePath?: string; url?: string; title?: string }): Promise<void>;
+      openTab(request: { viewName?: string | number; filePath?: string; url?: string; title?: string }): Promise<void>;
       closeTab(request: { tabId: string }): Promise<void>;
       selectTab(request: { tabId: string }): Promise<void>;
       reloadTab(request: { tabId: string }): Promise<void>;

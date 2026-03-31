@@ -306,9 +306,9 @@ const rows = await runSql({
 
 Get all open tabs with their state.
 
-#### `openTab({ viewId?, viewName?, filePath?, url?, title?, hidden?, params? })`
+#### `openTab({ viewName?, filePath?, url?, title?, hidden?, params? })`
 
-Open a new tab. Exactly **one** of `viewId`, `viewName`, `filePath`, or `url` is required.
+Open a new tab. Exactly **one** of `viewName`, `filePath`, or `url` is required.
 
 ```js
 await openTab({ viewName: 'system.docs' })

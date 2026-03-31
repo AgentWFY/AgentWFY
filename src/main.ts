@@ -221,7 +221,7 @@ ipcMain.handle('app:getDefaultView', async () => {
     const viewName = trimmed || 'home';
     const view = await getViewByName(root, viewName);
     if (!view) return null;
-    return { viewId: view.id, title: view.title || view.name, viewUpdatedAt: view.updated_at };
+    return { viewName: view.name, title: view.title || view.name, viewUpdatedAt: view.updated_at };
   } catch {
     return null;
   }

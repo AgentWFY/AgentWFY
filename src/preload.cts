@@ -269,7 +269,7 @@ if (isApp) {
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
       return ipcRenderer.invoke('app:getBackupStatus');
     },
-    getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null> {
+    getDefaultView(): Promise<{ viewName: string; title: string; viewUpdatedAt: number } | null> {
       return ipcRenderer.invoke('app:getDefaultView');
     },
     tasks: {

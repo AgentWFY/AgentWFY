@@ -323,7 +323,7 @@ export class TlTabs extends HTMLElement {
           viewEl.setAttribute('hidden-tab', '')
         }
         if (tab.type === 'view') {
-          viewEl.setAttribute('view-id', String(tab.target))
+          viewEl.setAttribute('view-name', String(tab.target))
           viewEl.setAttribute('view-updated-at', tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))
         } else if (tab.type === 'file') {
           viewEl.setAttribute('view-path', String(tab.target))
@@ -348,8 +348,8 @@ export class TlTabs extends HTMLElement {
       // Sync attributes for view tabs
       if (tab.type === 'view') {
         const targetStr = String(tab.target)
-        if (viewEl.getAttribute('view-id') !== targetStr) {
-          viewEl.setAttribute('view-id', targetStr)
+        if (viewEl.getAttribute('view-name') !== targetStr) {
+          viewEl.setAttribute('view-name', targetStr)
         }
         const updatedAtStr = tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt)
         if (viewEl.getAttribute('view-updated-at') !== updatedAtStr) {

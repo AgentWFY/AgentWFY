@@ -8,8 +8,7 @@ const DDL_RE = /^\s*(CREATE|ALTER|DROP)\s+(TABLE|INDEX|TRIGGER|VIEW)\b/i;
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
@@ -81,13 +80,13 @@ CREATE TEMP TABLE IF NOT EXISTS _changes (
 );
 
 CREATE TEMP TRIGGER IF NOT EXISTS _views_insert AFTER INSERT ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.id, 'insert');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.name, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _views_update AFTER UPDATE ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.id, 'update');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.id, 'delete');
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.name, 'delete');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
   INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.name, 'insert');

@@ -1,7 +1,7 @@
 export type CommandPaletteAction =
   | {
     type: 'open-view'
-    viewId: string
+    viewName: string
     title: string
     viewUpdatedAt: number | null
   }

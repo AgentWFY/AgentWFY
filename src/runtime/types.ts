@@ -97,7 +97,7 @@ export interface WorkerGetTabsResult {
   tabs: Array<{
     id: string
     title: string
-    viewId: string | number | null
+    viewName: string | null
     viewUpdatedAt: number | null
     viewChanged: boolean
     pinned: boolean
@@ -107,7 +107,6 @@ export interface WorkerGetTabsResult {
 }
 
 export interface WorkerOpenTabRequest {
-  viewId?: string | number
   viewName?: string
   filePath?: string
   url?: string

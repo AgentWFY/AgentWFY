@@ -16,32 +16,32 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       throw new Error('openTab requires a request object')
     }
 
-    // Resolve viewName → viewId
+    // Validate viewName exists and resolve title
     const hasViewName = typeof request.viewName === 'string' && request.viewName.length > 0
-    let resolvedViewId = request.viewId
+    let resolvedViewName = request.viewName
     let resolvedTitle = request.title
     if (hasViewName) {
       const view = await getViewByName(agentRoot, request.viewName!)
       if (!view) {
         throw new Error(`View not found: ${request.viewName}`)
       }
-      resolvedViewId = view.id
+      resolvedViewName = view.name
       if (typeof resolvedTitle !== 'string') {
         resolvedTitle = view.title || view.name
       }
     }
 
-    const hasViewId = typeof resolvedViewId === 'string' || typeof resolvedViewId === 'number'
+    const hasResolvedViewName = typeof resolvedViewName === 'string' && resolvedViewName.length > 0
     const hasFilePath = typeof request.filePath === 'string' && request.filePath.length > 0
     const hasUrl = typeof request.url === 'string' && request.url.length > 0
-    const sourceCount = (hasViewId ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0)
+    const sourceCount = (hasResolvedViewName ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0)
 
     if (sourceCount !== 1) {
-      throw new Error('openTab requires exactly one of viewId, viewName, filePath, or url')
+      throw new Error('openTab requires exactly one of viewName, filePath, or url')
     }
 
     return tabTools.openTab({
-      viewId: hasViewId ? resolvedViewId : undefined,
+      viewName: hasResolvedViewName ? resolvedViewName : undefined,
       filePath: hasFilePath ? request.filePath : undefined,
       url: hasUrl ? request.url : undefined,
       title: resolvedTitle,

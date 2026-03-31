@@ -79,7 +79,7 @@ export interface AppIpc {
   getAgentRoot(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>
-  getDefaultView(): Promise<{ viewId: number; title: string; viewUpdatedAt: number } | null>
+  getDefaultView(): Promise<{ viewName: string; title: string; viewUpdatedAt: number } | null>
 }
 
 declare global {

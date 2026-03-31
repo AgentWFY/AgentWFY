@@ -193,11 +193,11 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
       const viewName = link.dataset.view;
       const rows = await window.agentwfy.runSql({
         target: 'agent',
-        sql: 'SELECT id, title FROM views WHERE name = ? LIMIT 1',
+        sql: 'SELECT name, title FROM views WHERE name = ? LIMIT 1',
         params: [viewName],
       });
       if (rows.length > 0) {
-        await window.agentwfy.openTab({ viewId: String(rows[0].id), title: rows[0].title || viewName });
+        await window.agentwfy.openTab({ viewName: rows[0].name, title: rows[0].title || viewName });
       }
     });
   </script>

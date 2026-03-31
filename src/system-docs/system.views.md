@@ -2,14 +2,14 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"). Opened via `openTab({ viewId })` or `openTab({ viewName })`.
+- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openTab({ viewName })`. Always bump `updated_at` when updating content.
 - **File views** — HTML files in the working directory. Opened via `openTab({ filePath })`.
 
 Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL tabs (`openTab({ url })`) do NOT get the runtime.
 
-**Opening by name:** `openTab({ viewName: 'Home' })` resolves the view by its `name` column and auto-populates the tab title. Prefer `viewName` over `viewId` when the name is known — no need to query the DB for the ID first.
+**Opening by name:** `openTab({ viewName: 'my-view' })` resolves the view by its `name` column (primary key) and auto-populates the tab title. Always use `viewName` to open views.
 
-**View params:** Pass custom parameters when opening a view via `openTab({ viewId, params: { key: 'value' } })` or `openTab({ viewName, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
+**View params:** Pass custom parameters when opening a view via `openTab({ viewName, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 
@@ -77,28 +77,28 @@ For small views (under ~40000 characters), read/write the full content normally.
 **Reading a section** — use `INSTR()` to find a section, `SUBSTR()` to read it:
 ```js
 // Read the TOC
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, 1, 500) as head FROM views WHERE id = ?', params: [viewId] })
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, 1, 500) as head FROM views WHERE name = ?', params: [viewName] })
 
 // Read a specific section
 const [{start}] = await runSql({
   target: 'agent',
-  sql: `SELECT INSTR(content, '<script id="script-chart">') as start FROM views WHERE id = ?`,
-  params: [viewId]
+  sql: `SELECT INSTR(content, '<script id="script-chart">') as start FROM views WHERE name = ?`,
+  params: [viewName]
 })
 const [{end}] = await runSql({
   target: 'agent',
-  sql: `SELECT INSTR(SUBSTR(content, ?), '</script>') + ? - 1 + 9 as end FROM views WHERE id = ?`,
-  params: [start, start, viewId]
+  sql: `SELECT INSTR(SUBSTR(content, ?), '</script>') + ? - 1 + 9 as end FROM views WHERE name = ?`,
+  params: [start, start, viewName]
 })
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) as s FROM views WHERE id = ?', params: [start, end - start, viewId] })
+await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) as s FROM views WHERE name = ?', params: [start, end - start, viewName] })
 ```
 
 **Surgical edits** — use `REPLACE()` with enough context in `oldText` to match uniquely (`REPLACE()` replaces all occurrences):
 ```js
 await runSql({
   target: 'agent',
-  sql: 'UPDATE views SET content = REPLACE(content, ?, ?) WHERE id = ?',
-  params: [oldText, newText, viewId]
+  sql: 'UPDATE views SET content = REPLACE(content, ?, ?), updated_at = unixepoch() WHERE name = ?',
+  params: [oldText, newText, viewName]
 })
 ```
 
@@ -109,7 +109,7 @@ await runSql({
 **Always use hidden tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS — NEVER open visible tabs. Use `hidden: true`:
 
 ```js
-await openTab({ viewId: id, hidden: true })
+await openTab({ viewName: name, hidden: true })
 await openTab({ filePath: path, hidden: true })
 ```
 

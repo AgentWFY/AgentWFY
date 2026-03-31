@@ -4,8 +4,8 @@ import { pathToFileURL } from 'url';
 import { readFile } from 'fs/promises';
 import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
 import { serveFile } from './file-server.js';
-import { buildViewDocument, parseViewId, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, parseAgentHash } from './view-document.js';
-import { getViewById } from '../db/views.js';
+import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, parseAgentHash } from './view-document.js';
+import { getViewContent } from '../db/views.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
@@ -117,9 +117,9 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       });
     }
 
-    let viewId: string;
+    let viewName: string;
     try {
-      viewId = parseViewId(url);
+      viewName = parseViewName(url);
     } catch (error: unknown) {
       return toHtmlResponse(400, `<pre>${escapeHtml((error as Error)?.message || 'Invalid agent view URL')}</pre>`);
     }
@@ -127,26 +127,26 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
     // File-sourced view: read from filesystem instead of DB
     if (url.searchParams.get('source') === 'file') {
       try {
-        const absolutePath = await assertPathAllowed(agentRoot, viewId, { allowMissing: false });
+        const absolutePath = await assertPathAllowed(agentRoot, viewName, { allowMissing: false });
         const content = await readFile(absolutePath, 'utf-8');
         const html = buildViewDocument(content);
         return toHtmlResponse(200, html);
       } catch (error: unknown) {
         console.error('[agentview] failed to read file view', error);
-        return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(viewId)}</pre>`);
+        return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(viewName)}</pre>`);
       }
     }
 
     let record;
     try {
-      record = await getViewById(agentRoot, viewId);
+      record = await getViewContent(agentRoot, viewName);
     } catch (error: unknown) {
       console.error('[agentview] failed to read view from agent DB', error);
       return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);
     }
 
     if (!record) {
-      return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewId)}</pre>`);
+      return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewName)}</pre>`);
     }
 
     const html = buildViewDocument(record.content);

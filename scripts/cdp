@@ -16,7 +16,7 @@
 //   eval-target <id> <js>        — Evaluate JS in a specific target
 //   dom                          — Get DOM summary of main page
 //   tabs                         — List open tabs via IPC
-//   open-tab <url-or-viewId>     — Open a tab via IPC
+//   open-tab <url-or-viewName>   — Open a tab via IPC
 //   close-tab <tabId>            — Close a tab via IPC
 //   console                      — Get console messages from the main page
 //   ipc <method> [json-args]     — Call any IPC method
@@ -204,11 +204,11 @@ async function cmdTabs() {
   await cmdEval('window.ipc.tabs.getTabState()');
 }
 
-async function cmdOpenTab(urlOrViewId) {
-  const isNumber = /^\d+$/.test(urlOrViewId);
-  const arg = isNumber
-    ? `{ viewId: ${urlOrViewId} }`
-    : `{ url: ${JSON.stringify(urlOrViewId)} }`;
+async function cmdOpenTab(urlOrViewName) {
+  const isUrl = /^https?:\/\//.test(urlOrViewName);
+  const arg = isUrl
+    ? `{ url: ${JSON.stringify(urlOrViewName)} }`
+    : `{ viewName: ${JSON.stringify(urlOrViewName)} }`;
   await cmdEval(`window.ipc.tabs.openTab(${arg})`);
 }
 
@@ -777,7 +777,7 @@ if (!cmd || !commands[cmd]) {
   console.log('  eval-target <id> <js>         Evaluate JS in specific target');
   console.log('  dom                           DOM summary');
   console.log('  tabs                          List open tabs');
-  console.log('  open-tab <url-or-viewId>      Open a tab');
+  console.log('  open-tab <url-or-viewName>    Open a tab');
   console.log('  close-tab <tabId>             Close a tab');
   console.log('  console                       Stream console messages');
   console.log('  ipc <method> [json-args]      Call IPC method');

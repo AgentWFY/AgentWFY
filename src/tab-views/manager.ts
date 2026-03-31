@@ -1,7 +1,7 @@
 import { BaseWindow, BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
-import { isViewDocumentRequest, parseViewId } from '../protocol/view-document.js';
+import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
 import { Channels } from '../ipc/channels.js';
 
 // --- Types & Constants ---
@@ -12,7 +12,7 @@ export interface TabData {
   id: string
   type: TabDataType
   title: string
-  target: string | number
+  target: string
   viewUpdatedAt?: number | null
   viewChanged: boolean
   pinned: boolean
@@ -34,7 +34,7 @@ interface ViewConsoleLogEntry {
 interface ViewRuntimeEntry {
   webContentsId: number
   webContents: WebContents
-  viewId: string
+  viewName: string
   tabId: string | null
   ownerWindowId: number | null
   lastNavigationAt: number
@@ -44,7 +44,7 @@ interface ViewRuntimeEntry {
 
 interface TabViewState {
   tabId: string
-  viewId: string
+  viewName: string
   currentSrc: string | null
   view: WebContentsView
   logs: ViewConsoleLogEntry[]
@@ -61,7 +61,7 @@ interface TabViewBoundsPayload {
 
 interface TabViewMountPayload {
   tabId: string
-  viewId: string
+  viewName: string
   src: string
   bounds: TabViewBoundsPayload
   visible: boolean
@@ -223,7 +223,7 @@ export class TabViewManager {
 
   // --- Tab lifecycle ---
 
-  createTabViewState(tabId: string, viewId: string, options?: { tabType?: TabType }): TabViewState {
+  createTabViewState(tabId: string, viewName: string, options?: { tabType?: TabType }): TabViewState {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       throw new Error('Main window is unavailable');
@@ -243,7 +243,7 @@ export class TabViewManager {
 
     const state: TabViewState = {
       tabId,
-      viewId,
+      viewName,
       currentSrc: null,
       view,
       logs: [],
@@ -341,14 +341,14 @@ export class TabViewManager {
     return state;
   }
 
-  ensureTabViewState(tabId: string, viewId: string, options?: { tabType?: TabType }): TabViewState {
+  ensureTabViewState(tabId: string, viewName: string, options?: { tabType?: TabType }): TabViewState {
     const existing = this.tabViewsByTabId.get(tabId);
     if (existing) {
-      existing.viewId = viewId;
+      existing.viewName = viewName;
       return existing;
     }
 
-    return this.createTabViewState(tabId, viewId, options);
+    return this.createTabViewState(tabId, viewName, options);
   }
 
   private attachTabViewToWindow(state: TabViewState): void {
@@ -399,13 +399,13 @@ export class TabViewManager {
   async mountTabView(payload: unknown): Promise<void> {
     const input = payload && typeof payload === 'object' ? payload as Partial<TabViewMountPayload> : {};
     const tabId = toNonEmptyString(input.tabId);
-    const viewId = toNonEmptyString(input.viewId);
+    const viewName = toNonEmptyString(input.viewName);
     const rawSrc = toNonEmptyString(input.src);
     const src = this.rewriteAgentViewUrl(rawSrc);
     const visible = Boolean(input.visible);
     const bounds = normalizeTabViewBounds(input.bounds);
     const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
-    const state = this.ensureTabViewState(tabId, viewId, { tabType });
+    const state = this.ensureTabViewState(tabId, viewName, { tabType });
 
     this.applyTabViewPlacement(state, bounds, visible);
 
@@ -560,15 +560,15 @@ export class TabViewManager {
     };
   }
 
-  async openTabHandler(request: { viewId?: string | number; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<{ tabId: string }> {
+  async openTabHandler(request: { viewName?: string; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<{ tabId: string }> {
     const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
-    let target: string | number;
+    let target: string;
     if (type === 'url') {
       target = request.url!;
     } else if (type === 'file') {
       target = request.filePath!;
     } else {
-      target = request.viewId!;
+      target = request.viewName!;
     }
 
     const tabId = this.generateTabId();
@@ -676,7 +676,7 @@ export class TabViewManager {
 
   // --- Webview tracking ---
 
-  parseTrackedViewFromUrl(urlString: string): { viewId: string; tabId: string | null } | null {
+  parseTrackedViewFromUrl(urlString: string): { viewName: string; tabId: string | null } | null {
     if (typeof urlString !== 'string' || !urlString.startsWith('agentview://')) {
       return null;
     }
@@ -693,16 +693,16 @@ export class TabViewManager {
       return null;
     }
 
-    let viewId: string;
+    let viewName: string;
     try {
-      viewId = parseViewId(parsedUrl);
+      viewName = parseViewName(parsedUrl);
     } catch {
       return null;
     }
 
     const rawTabId = parsedUrl.searchParams.get('tabId');
     const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
-    return { viewId: String(viewId), tabId };
+    return { viewName, tabId };
   }
 
   updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {
@@ -718,7 +718,7 @@ export class TabViewManager {
       const entry: ViewRuntimeEntry = {
         webContentsId: webContents.id,
         webContents,
-        viewId: tracked.viewId,
+        viewName: tracked.viewName,
         tabId: tracked.tabId,
         ownerWindowId: resolveOwnerWindowId(webContents),
         lastNavigationAt: now,
@@ -729,7 +729,7 @@ export class TabViewManager {
       return;
     }
 
-    existing.viewId = tracked.viewId;
+    existing.viewName = tracked.viewName;
     existing.tabId = tracked.tabId;
     existing.ownerWindowId = resolveOwnerWindowId(webContents);
     existing.lastNavigationAt = now;
@@ -806,10 +806,10 @@ export class TabViewManager {
 
   // --- Tab state mutations ---
 
-  markViewChanged(viewId: string | number): void {
+  markViewChanged(viewName: string): void {
     let changed = false;
     for (const tab of this.tabs) {
-      if (tab.type !== 'view' || tab.target != viewId) continue;
+      if (tab.type !== 'view' || tab.target !== viewName) continue;
       tab.viewChanged = true;
       changed = true;
     }

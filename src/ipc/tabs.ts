@@ -23,7 +23,6 @@ interface GetTabsResult {
 }
 
 interface OpenTabRequest {
-  viewId?: string | number
   viewName?: string
   filePath?: string
   url?: string
@@ -84,35 +83,35 @@ export function registerTabsHandlers(
     return getTabTools(event).getTabs();
   });
 
-  // openTab({ viewId?, viewName?, filePath?, url?, title? }) — exactly one of viewId, viewName, filePath, url required
+  // openTab({ viewName?, filePath?, url?, title? }) — exactly one of viewName, filePath, url required
   ipcMain.handle(Channels.tabs.openTab, async (event, payload: unknown) => {
     const input = payload as OpenTabRequest | undefined;
     if (!input) {
       throw new Error('openTab requires a request object');
     }
 
-    // Resolve viewName → viewId
+    // Validate viewName exists and resolve title
     const hasViewName = typeof input.viewName === 'string' && input.viewName.length > 0;
-    let resolvedViewId = input.viewId;
+    let resolvedViewName = input.viewName;
     let resolvedTitle = input.title;
     if (hasViewName) {
       const view = await getViewByName(getAgentRoot(event), input.viewName!);
       if (!view) {
         throw new Error(`View not found: ${input.viewName}`);
       }
-      resolvedViewId = view.id;
+      resolvedViewName = view.name;
       if (typeof resolvedTitle !== 'string') {
         resolvedTitle = view.title || view.name;
       }
     }
 
-    const hasViewId = typeof resolvedViewId === 'string' || typeof resolvedViewId === 'number';
+    const hasResolvedViewName = typeof resolvedViewName === 'string' && resolvedViewName.length > 0;
     const hasFilePath = typeof input.filePath === 'string' && input.filePath.length > 0;
     const hasUrl = typeof input.url === 'string' && input.url.length > 0;
-    const sourceCount = (hasViewId ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0);
+    const sourceCount = (hasResolvedViewName ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0);
 
     if (sourceCount !== 1) {
-      throw new Error('openTab requires exactly one of viewId, viewName, filePath, or url');
+      throw new Error('openTab requires exactly one of viewName, filePath, or url');
     }
 
     const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
@@ -122,7 +121,7 @@ export function registerTabsHandlers(
       : undefined;
 
     return getTabTools(event).openTab({
-      viewId: hasViewId ? resolvedViewId : undefined,
+      viewName: hasResolvedViewName ? resolvedViewName : undefined,
       filePath: hasFilePath ? input.filePath : undefined,
       url: hasUrl ? input.url : undefined,
       title: typeof resolvedTitle === 'string' ? resolvedTitle : undefined,

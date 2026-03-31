@@ -160,7 +160,7 @@ export function parseAgentHash(hostname: string): string | null {
   return null;
 }
 
-export function parseViewId(url: URL): string {
+export function parseViewName(url: URL): string {
   if (!isViewHostname(url.hostname)) {
     throw new Error(`Unsupported view route: ${url.hostname}`);
   }
@@ -168,7 +168,7 @@ export function parseViewId(url: URL): string {
   const rawPath = decodeURIComponent(url.pathname || '');
   const normalized = rawPath.replace(/^\/+/, '').trim();
   if (normalized.length === 0) {
-    throw new Error('Missing view id');
+    throw new Error('Missing view name');
   }
 
   return normalized;

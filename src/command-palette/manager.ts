@@ -262,12 +262,12 @@ export class CommandPaletteManager {
         group = 'Views';
       }
       return {
-        id: `view:${row.id}`,
+        id: `view:${row.name}`,
         title: displayTitle,
         group,
         action: {
           type: 'open-view',
-          viewId: String(row.id),
+          viewName: row.name,
           title: displayTitle,
           viewUpdatedAt: row.updated_at ?? null,
         },
@@ -524,7 +524,7 @@ export class CommandPaletteManager {
       void getViewByName(agentRoot, viewName).then((view) => {
         if (view) {
           void tabViewManager.openTabHandler({
-            viewId: view.id,
+            viewName: view.name,
             title: view.title || view.name,
           }).catch((err) => {
             console.error(`[command-palette] failed to open welcome view ${viewName}:`, err);
@@ -716,7 +716,7 @@ export class CommandPaletteManager {
       case 'open-view': {
         const openViewAction = action as Extract<CommandPaletteAction, { type: 'open-view' }>;
         await this.deps.getTabViewManager().openTabHandler({
-          viewId: openViewAction.viewId,
+          viewName: openViewAction.viewName,
           title: openViewAction.title,
         });
         break;

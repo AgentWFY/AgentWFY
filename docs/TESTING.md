@@ -66,7 +66,7 @@ Everything goes through `scripts/cdp` which talks to the app via Chrome DevTools
 ./scripts/cdp dom                                  # DOM element summary
 ./scripts/cdp targets                              # List all CDP targets
 ./scripts/cdp tabs                                 # List open tabs
-./scripts/cdp open-tab 2                           # Open view by ID
+./scripts/cdp open-tab home                        # Open view by name
 ./scripts/cdp open-tab "https://example.com"       # Open URL tab
 ./scripts/cdp close-tab <tabId>                    # Close a tab
 ./scripts/cdp console                              # Stream console messages
@@ -144,7 +144,7 @@ window.ipc.sql.run({ sql: 'SELECT * FROM views', params: [] })
 
 // Tabs
 window.ipc.tabs.getTabState()
-window.ipc.tabs.openTab({ viewId?, viewName?, filePath?, url?, title?, hidden? })
+window.ipc.tabs.openTab({ viewName?, filePath?, url?, title?, hidden? })
 window.ipc.tabs.closeTab({ tabId: '...' })
 window.ipc.tabs.selectTab({ tabId: '...' })
 window.ipc.tabs.reorderTabs(tabIds)

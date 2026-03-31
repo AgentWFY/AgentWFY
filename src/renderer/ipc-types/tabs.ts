@@ -7,7 +7,7 @@ export interface TabViewBounds {
 
 export interface MountTabViewRequest {
   tabId: string
-  viewId: string
+  viewName: string
   src: string
   bounds: TabViewBounds
   visible: boolean
@@ -47,7 +47,7 @@ export interface TabData {
   id: string
   type: TabDataType
   title: string
-  target: string | number
+  target: string
   viewUpdatedAt?: number | null
   viewChanged: boolean
   pinned: boolean

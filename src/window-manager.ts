@@ -745,7 +745,7 @@ class WindowManager {
     }
 
     if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {
-      agentCtx.tabViewManager.markViewChanged(change.rowId);
+      agentCtx.tabViewManager.markViewChanged(change.rowId as string);
     }
 
     if (change.table === 'config') {
@@ -966,7 +966,7 @@ class WindowManager {
       const state = ctx.tabViewManager.getState();
       if (state.tabs.length > 0) return;
       await ctx.tabViewManager.openTabHandler({
-        viewId: String(view.id),
+        viewName: view.name,
         title: view.title || view.name,
       });
     } catch (err) {
