@@ -161,10 +161,13 @@ export class CommandPaletteManager {
     }
 
     // Handle keyboard shortcuts when the palette has focus (e.g. Cmd+K to toggle off)
+    // Skip Ctrl+J/K/N/P — those are palette navigation keys handled by the UI
     this.commandPaletteWindow.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
+
+      if (input.control && !input.meta && 'jknp'.includes(key)) return;
 
       const action = this.deps.matchShortcut(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
       if (!action) return;

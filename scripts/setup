@@ -80,6 +80,8 @@ async function setupElectron() {
     console.log('[setup] extracting...')
     if (PLATFORM === 'win32') {
       execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${electronDir}' -Force"`)
+    } else if (PLATFORM === 'darwin') {
+      execSync(`ditto -xk "${zipPath}" "${electronDir}"`)
     } else {
       execSync(`unzip -q -o "${zipPath}" -d "${electronDir}"`)
     }
@@ -129,6 +131,33 @@ async function setupTsgo() {
   }
 }
 
+// ── rcedit (Windows exe resource editor) ──
+
+const RCEDIT_VERSION = '2.0.0'
+
+async function setupRcedit() {
+  if (PLATFORM !== 'win32') return
+
+  const rceditDir = join(vendorDir, 'rcedit')
+  const versionFile = join(rceditDir, 'version')
+
+  if (existsSync(versionFile) && readFileSync(versionFile, 'utf-8').trim() === RCEDIT_VERSION) {
+    console.log(`[setup] rcedit ${RCEDIT_VERSION} already installed`)
+    return
+  }
+
+  console.log(`[setup] downloading rcedit ${RCEDIT_VERSION}...`)
+
+  if (existsSync(rceditDir)) rmSync(rceditDir, { recursive: true })
+  mkdirSync(rceditDir, { recursive: true })
+
+  const exePath = join(rceditDir, 'rcedit-x64.exe')
+  await download(`https://github.com/electron/rcedit/releases/download/v${RCEDIT_VERSION}/rcedit-x64.exe`, exePath)
+
+  writeFileSync(versionFile, RCEDIT_VERSION)
+  console.log(`[setup] rcedit ${RCEDIT_VERSION} installed`)
+}
+
 // ── Main ──
 
 mkdirSync(vendorDir, { recursive: true })
@@ -136,6 +165,7 @@ mkdirSync(vendorDir, { recursive: true })
 await Promise.all([
   setupElectron(),
   setupTsgo(),
+  setupRcedit(),
 ])
 
 console.log('[setup] done')

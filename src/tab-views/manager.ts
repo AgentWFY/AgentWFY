@@ -1,4 +1,4 @@
-import { BaseWindow, BrowserWindow, Menu, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
+import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
@@ -240,6 +240,7 @@ export class TabViewManager {
         backgroundThrottling: false,
       },
     });
+    view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#ffffff');
 
     const state: TabViewState = {
       tabId,

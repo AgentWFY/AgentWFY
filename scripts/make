@@ -276,8 +276,10 @@ Section "Install"
 
   ; Shortcuts
   CreateDirectory "$SMPROGRAMS\\${APP_NAME}"
-  CreateShortcut "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe"
-  CreateShortcut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe"
+  Delete "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk"
+  Delete "$DESKTOP\\${APP_NAME}.lnk"
+  CreateShortcut "$SMPROGRAMS\\${APP_NAME}\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe" "" "$INSTDIR\\icon.ico" 0
+  CreateShortcut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\${APP_NAME}.exe" "" "$INSTDIR\\icon.ico" 0
 
   ; Uninstaller
   WriteUninstaller "$INSTDIR\\Uninstall.exe"

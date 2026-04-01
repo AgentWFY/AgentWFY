@@ -1006,6 +1006,13 @@ class WindowManager {
     if (nativeTheme.themeSource !== source) {
       nativeTheme.themeSource = source;
     }
+    if (process.platform !== 'darwin' && this.mainWindow && !this.mainWindow.isDestroyed()) {
+      const dark = nativeTheme.shouldUseDarkColors;
+      this.mainWindow.setTitleBarOverlay({
+        color: dark ? '#1a1a1a' : '#f0f0f0',
+        symbolColor: dark ? '#808080' : '#999999',
+      });
+    }
   }
 }
 

@@ -144,6 +144,7 @@ const STYLES = `
     border-radius: 2px;
     line-height: inherit;
     font-family: inherit;
+    vertical-align: baseline;
     user-select: none;
   }
   .backup-info:hover {
@@ -151,9 +152,13 @@ const STYLES = `
     color: var(--color-text3);
   }
   .separator {
-    color: var(--color-text1);
+    display: inline-block;
+    width: 1px;
+    height: 12px;
+    background: var(--color-text1);
     opacity: 0.3;
-    padding: 0 2px;
+    margin: 0 4px;
+    flex-shrink: 0;
   }
 `
 
@@ -288,11 +293,11 @@ export class TlStatusLine extends HTMLElement {
       if (port != null) {
         portEl.innerHTML = `<svg class="port-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/><path d="M5 11A4.5 4.5 0 0 1 5 5"/><path d="M11 5a4.5 4.5 0 0 1 0 6"/><path d="M3 13A7.5 7.5 0 0 1 3 3"/><path d="M13 3a7.5 7.5 0 0 1 0 10"/></svg><span class="port-number">:${port}</span>`
         portEl.setAttribute('title', `HTTP API on port ${port}`)
-        sepEl.textContent = '|'
+        sepEl.style.display = ''
       } else {
         portEl.innerHTML = ''
         portEl.removeAttribute('title')
-        sepEl.textContent = ''
+        sepEl.style.display = 'none'
       }
     } catch {
       // ignore — IPC not available
@@ -358,7 +363,7 @@ export class TlStatusLine extends HTMLElement {
       // Only update DOM if content changed — avoids stealing focus
       if (infoEl.textContent !== text) infoEl.textContent = text
       if (infoEl.getAttribute('title') !== title) infoEl.setAttribute('title', title)
-      if (sepEl.textContent !== '|') sepEl.textContent = '|'
+      sepEl.style.display = ''
     } catch {
       // ignore — IPC not available
     }

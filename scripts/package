@@ -59,8 +59,9 @@ function packageMacOS() {
   const appBundle = join(platformOutDir, `${APP_NAME}.app`)
   const electronApp = join(electronDist, 'Electron.app')
 
-  // Copy Electron.app as our app bundle
-  cpSync(electronApp, appBundle, { recursive: true })
+  // Copy Electron.app as our app bundle (ditto preserves macOS framework symlinks correctly)
+  execSync(`ditto "${electronApp}" "${appBundle}"`)
+
 
   // Replace default app with our code
   const resources = join(appBundle, 'Contents', 'Resources')
@@ -68,6 +69,7 @@ function packageMacOS() {
   const appDir = join(resources, 'app')
   mkdirSync(appDir, { recursive: true })
   cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'icons'), join(appDir, 'icons'), { recursive: true })
   cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
 
   // Replace icon
@@ -145,6 +147,7 @@ function packageLinux() {
   const appDir = join(resources, 'app')
   mkdirSync(appDir, { recursive: true })
   cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'icons'), join(appDir, 'icons'), { recursive: true })
   cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
 }
 
@@ -161,8 +164,15 @@ function packageWindows() {
   // Copy electron dist contents
   cpSync(electronDist, platformOutDir, { recursive: true })
 
-  // Rename binary
-  renameSync(join(platformOutDir, 'electron.exe'), join(platformOutDir, `${APP_NAME}.exe`))
+  // Rename binary and patch icon/metadata with rcedit
+  const exePath = join(platformOutDir, `${APP_NAME}.exe`)
+  renameSync(join(platformOutDir, 'electron.exe'), exePath)
+  const rcedit = join(root, 'vendor', 'rcedit', 'rcedit-x64.exe')
+  const icoPath = join(root, 'icons', 'icon.ico')
+  execSync(`"${rcedit}" "${exePath}" --set-icon "${icoPath}" --set-version-string ProductName "${APP_NAME}" --set-version-string FileDescription "${APP_NAME}" --set-file-version "${VERSION}" --set-product-version "${VERSION}"`)
+
+  // Copy icon for shortcut use
+  cpSync(icoPath, join(platformOutDir, 'icon.ico'))
 
   // Replace default app with our code
   const resources = join(platformOutDir, 'resources')
@@ -170,6 +180,7 @@ function packageWindows() {
   const appDir = join(resources, 'app')
   mkdirSync(appDir, { recursive: true })
   cpSync(join(root, 'dist'), join(appDir, 'dist'), { recursive: true })
+  cpSync(join(root, 'icons'), join(appDir, 'icons'), { recursive: true })
   cpSync(join(root, 'package.json'), join(appDir, 'package.json'))
 }
 

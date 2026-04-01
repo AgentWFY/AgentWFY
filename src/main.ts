@@ -476,8 +476,11 @@ async function createInitialWindow() {
   }
 
   // 3. No persisted agents — show picker
+  // Prevent app from quitting when the welcome window closes (before main window opens)
+  suppressWindowAllClosedQuit = true;
   const { showAgentPickerDialog } = await import('./agent-manager.js');
   const picked = await showAgentPickerDialog();
+  suppressWindowAllClosedQuit = false;
   if (!picked) {
     app.quit();
     return;
@@ -552,8 +555,10 @@ app.on('web-contents-created', (_event, webContents) => {
   }
 });
 
+let suppressWindowAllClosedQuit = false;
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !suppressWindowAllClosedQuit) {
     app.quit();
   }
 });
