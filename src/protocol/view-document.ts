@@ -194,13 +194,13 @@ export function isViewDocumentRequest(url: URL): boolean {
     return false;
   }
 
-  if (url.searchParams.has('tabId') || url.searchParams.has('rev') || url.searchParams.has('t')) {
-    return true;
-  }
-
   // Treat paths that look like files (contains "/" or extension) as data-dir assets.
   if (normalizedPath.includes('/') || normalizedPath.includes('.')) {
     return false;
+  }
+
+  if (url.searchParams.has('tabId') || url.searchParams.has('rev') || url.searchParams.has('t')) {
+    return true;
   }
 
   return true;
