@@ -1,46 +1,16 @@
 #!/usr/bin/env node
 // =============================================================================
-// cdp — Zero-dependency CDP client for Electron app interaction
-//
-// Talks directly to Chrome DevTools Protocol via HTTP + WebSocket.
-// No Playwright, no npm dependencies — just Node.js builtins.
-//
-// Usage:
-//   ./scripts/cdp <command> [args...]
+// cdp — CDP-based test runner for the Electron app
 //
 // Commands:
-//   targets                      — List all CDP targets (pages/windows)
-//   screenshot [path]            — Screenshot the main app page
-//   screenshot-target <id> [path]— Screenshot a specific target
-//   eval <js>                    — Evaluate JS in the main page
-//   eval-target <id> <js>        — Evaluate JS in a specific target
-//   dom                          — Get DOM summary of main page
-//   tabs                         — List open tabs via IPC
-//   open-tab <url-or-viewName>   — Open a tab via IPC
-//   close-tab <tabId>            — Close a tab via IPC
-//   console                      — Get console messages from the main page
-//   ipc <method> [json-args]     — Call any IPC method
-//   test                         — Run connection test
-//
-// Real Input (dispatches through Chromium's input pipeline):
-//   click <selector>             — Click element (traverses shadow DOM)
-//   click-target <id> <selector> — Click element in a specific target
-//   click-at <x> <y>             — Click at raw coordinates
-//   type <text>                  — Type text character by character
-//   type-target <id> <text>      — Type text in a specific target
-//   press <key+combo>            — Press key combo (e.g. Meta+k, Enter)
-//   press-target <id> <combo>    — Press key combo in a specific target
-//   fill <selector> <text>       — Click, clear, type into an element
-//   fill-target <id> <sel> <text>— Fill element in a specific target
-//   wait-for <selector> [secs]   — Wait for element to appear (default 10s)
-//   wait-for-target <id> <sel>   — Wait for element in a specific target
-//   assert-visible <selector>    — Assert element has non-zero size
-//   assert-text <selector> <text>— Assert element contains text
-//   assert-gone <selector>       — Assert element is not in DOM
+//   start [--visible]        Start isolated test instance (headless by default)
+//   stop                     Stop app and clean up test data
+//   restart                  Restart app and wait until ready
+//   run <script-or-file>     Execute a JS test script with the full API in scope
 // =============================================================================
 
-import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, statSync, rmSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { writeFileSync, readFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, unlinkSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir, homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -68,8 +38,6 @@ async function getBrowserWsUrl() {
 }
 
 async function getTargets() {
-  // Standard HTTP list — may not include WebContentsView targets attached to a
-  // BaseWindow (Electron only registers the primary renderer view here).
   let httpTargets;
   try {
     httpTargets = await cdpFetch('/json/list');
@@ -77,8 +45,6 @@ async function getTargets() {
     httpTargets = [];
   }
 
-  // Augment with browser-level Target domain discovery, which sees ALL targets
-  // including additional WebContentsView instances (tab views, system views).
   try {
     const browserWsUrl = await getBrowserWsUrl();
     const browser = await connectWebSocket(browserWsUrl);
@@ -146,396 +112,8 @@ function connectWebSocket(wsUrl) {
   });
 }
 
-// ── Commands ────────────────────────────────────────────────────────────────
+// ── Session-based connection (for WebContentsView targets) ────────────────
 
-async function cmdTargets() {
-  const targets = await getTargets();
-  for (const t of targets) {
-    const prefix = t.id ? `${t.id.slice(0, 8)} ` : '';
-    console.log(`${prefix}[${t.type}] "${t.title}" @ ${t.url}`);
-  }
-  return targets;
-}
-
-async function cmdScreenshot(targetOrPath, path) {
-  let targetId;
-  if (targetOrPath && !targetOrPath.includes('/') && !targetOrPath.includes('.')) {
-    targetId = targetOrPath;
-  } else {
-    path = targetOrPath; // first arg was actually the path
-  }
-
-  const outPath = path || '/tmp/agentwfy-screenshot.png';
-  const cdp = await connectTo(targetId);
-
-  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(outPath, Buffer.from(data, 'base64'));
-  console.log(outPath);
-
-  cdp.close();
-}
-
-async function cmdEval(targetId, js) {
-  if (!js) {
-    js = targetId;
-    targetId = undefined;
-  }
-
-  const cdp = await connectTo(targetId);
-  await cdp.send('Runtime.enable');
-
-  const result = await cdp.send('Runtime.evaluate', {
-    expression: js,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-
-  if (result.exceptionDetails) {
-    console.error('Error:', result.exceptionDetails.text);
-  } else {
-    const val = result.result.value;
-    if (val === undefined || val === null) { /* void — no output */ }
-    else if (typeof val === 'object') console.log(JSON.stringify(val, null, 2));
-    else console.log(val);
-  }
-
-  cdp.close();
-}
-
-async function cmdDom() {
-  const target = await getMainTarget();
-  if (!target) { console.error('No target found'); process.exit(1); }
-
-  const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
-  await cdp.send('Runtime.enable');
-
-  const result = await cdp.send('Runtime.evaluate', {
-    expression: `(() => {
-      const allEls = document.querySelectorAll('*');
-      const tagCounts = {};
-      let shadowRoots = 0;
-      for (const el of allEls) {
-        tagCounts[el.tagName.toLowerCase()] = (tagCounts[el.tagName.toLowerCase()] || 0) + 1;
-        if (el.shadowRoot) shadowRoots++;
-      }
-      return { total: allEls.length, shadowRoots, tags: tagCounts };
-    })()`,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-
-  const info = result.result.value;
-  console.log(`Elements: ${info.total} | Shadow roots: ${info.shadowRoots}`);
-  console.log('Tags:', Object.entries(info.tags).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t, c]) => `${t}(${c})`).join(', '));
-
-  cdp.close();
-}
-
-async function cmdTabs() {
-  await cmdEval('window.ipc.tabs.getTabState()');
-}
-
-async function cmdOpenTab(urlOrViewName) {
-  const isUrl = /^https?:\/\//.test(urlOrViewName);
-  const arg = isUrl
-    ? `{ url: ${JSON.stringify(urlOrViewName)} }`
-    : `{ viewName: ${JSON.stringify(urlOrViewName)} }`;
-  await cmdEval(`window.ipc.tabs.openTab(${arg})`);
-}
-
-async function cmdCloseTab(tabId) {
-  await cmdEval(`window.ipc.tabs.closeTab({ tabId: ${JSON.stringify(tabId)} })`);
-}
-
-async function cmdConsole() {
-  const target = await getMainTarget();
-  if (!target) { console.error('No target found'); process.exit(1); }
-
-  const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
-  await cdp.send('Runtime.enable');
-  await cdp.send('Console.enable');
-
-  console.log('Listening for console messages (Ctrl+C to stop)...\n');
-
-  cdp.ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    if (msg.method === 'Runtime.consoleAPICalled') {
-      const type = msg.params.type;
-      const text = msg.params.args.map(a => a.value ?? a.description ?? '').join(' ');
-      console.log(`[${type}] ${text}`);
-    } else if (msg.method === 'Runtime.exceptionThrown') {
-      console.log(`[exception] ${msg.params.exceptionDetails.text}`);
-    }
-  };
-
-  // Keep alive until Ctrl+C
-  await new Promise(() => {});
-}
-
-async function cmdIpc(method, argsJson) {
-  const args = argsJson ? JSON.parse(argsJson) : [];
-  const argsStr = Array.isArray(args) ? args.map(a => JSON.stringify(a)).join(', ') : JSON.stringify(args);
-
-  // Parse "domain.method" into window.ipc.domain.method(...)
-  const parts = method.split('.');
-  let expr;
-  if (parts.length === 2) {
-    expr = `window.ipc.${parts[0]}.${parts[1]}(${argsStr})`;
-  } else {
-    expr = `window.ipc.${method}(${argsStr})`;
-  }
-
-  await cmdEval(expr);
-}
-
-async function cmdLogs() {
-  const n = parseInt(args[0] || '50', 10);
-  const logPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.dev.log');
-  try {
-    const content = readFileSync(logPath, 'utf-8');
-    const lines = content.split('\n');
-    const tail = lines.slice(-n).join('\n');
-    if (tail.trim()) console.log(tail.trim());
-    else console.log('(empty)');
-  } catch {
-    console.error('No log file found. Is npm run dev running?');
-    process.exit(1);
-  }
-}
-
-async function cmdRestart() {
-  // Send restart, expect the connection to drop (that's success)
-  try {
-    const target = await getMainTarget();
-    if (!target) { console.error('No target found'); process.exit(1); }
-    const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
-    await cdp.send('Runtime.enable');
-    // Fire and don't wait for response — the app exits immediately
-    cdp.send('Runtime.evaluate', {
-      expression: 'window.ipc.restart()',
-      returnByValue: true,
-      awaitPromise: true,
-    }).catch(() => {});
-    // Wait a moment for the process to actually die
-    await new Promise(r => setTimeout(r, 500));
-  } catch {}
-  // Now wait for the new instance
-  await cmdWait();
-}
-
-async function cmdStop() {
-  const port = getCdpPort();
-  try {
-    const target = await getMainTarget();
-    if (!target) { console.error('No target found'); process.exit(1); }
-    const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
-    await cdp.send('Runtime.enable');
-    cdp.send('Runtime.evaluate', {
-      expression: 'window.ipc.stop()',
-      returnByValue: true,
-      awaitPromise: true,
-    }).catch(() => {});
-    await new Promise(r => setTimeout(r, 500));
-  } catch {}
-
-  // Clean up test session data if this was started via cdp start
-  const metaPath = sessionMetaPath(port);
-  try {
-    const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
-    if (meta.testDir) rmSync(meta.testDir, { recursive: true, force: true });
-    if (meta.appId) {
-      const userDataDir = join(homedir(), 'Library', 'Application Support', meta.appId);
-      rmSync(userDataDir, { recursive: true, force: true });
-    }
-    unlinkSync(metaPath);
-  } catch {}
-
-  console.log('stopped');
-}
-
-async function cmdWait() {
-  const timeout = parseInt(args[0] || '30', 10) * 1000;
-  const start = Date.now();
-
-  while (Date.now() - start < timeout) {
-    try {
-      const targets = await cdpFetch('/json/list');
-      const main = targets.find(t => t.url.includes('app://'));
-      if (main) {
-        // Verify WebSocket + IPC work (app fully loaded, not just process started)
-        const cdp = await connectWebSocket(main.webSocketDebuggerUrl);
-        await cdp.send('Runtime.enable');
-        const result = await cdp.send('Runtime.evaluate', {
-          expression: 'typeof window.ipc !== "undefined" && typeof window.ipc.getAgentRoot === "function"',
-          returnByValue: true,
-        });
-        cdp.close();
-        if (result.result.value === true) {
-          console.log('ready');
-          return;
-        }
-      }
-    } catch {}
-    await new Promise(r => setTimeout(r, 300));
-  }
-
-  console.error(`Timed out after ${timeout / 1000}s`);
-  process.exit(1);
-}
-
-async function cmdTest() {
-  console.log(`Connecting to CDP on port ${getCdpPort()}...`);
-
-  // 1. List targets
-  const targets = await getTargets();
-  console.log(`✓ ${targets.length} target(s)`);
-  for (const t of targets) console.log(`  [${t.type}] "${t.title}" @ ${t.url}`);
-
-  // 2. Connect to main page
-  const main = targets.find(t => t.url.includes('app://'));
-  if (!main) { console.error('✗ No main app page'); process.exit(1); }
-
-  const cdp = await connectWebSocket(main.webSocketDebuggerUrl);
-  console.log(`✓ WebSocket connected`);
-
-  // 3. Screenshot
-  await cdp.send('Runtime.enable');
-  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync('/tmp/agentwfy-test.png', Buffer.from(data, 'base64'));
-  console.log(`✓ Screenshot saved to /tmp/agentwfy-test.png`);
-
-  // 4. Evaluate JS
-  const evalResult = await cdp.send('Runtime.evaluate', {
-    expression: '({ title: document.title, elements: document.querySelectorAll("*").length })',
-    returnByValue: true,
-  });
-  const info = evalResult.result.value;
-  console.log(`✓ Eval works: "${info.title}", ${info.elements} elements`);
-
-  // 5. IPC test
-  const ipcResult = await cdp.send('Runtime.evaluate', {
-    expression: 'window.ipc.getAgentRoot()',
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  console.log(`✓ IPC works: agentRoot=${ipcResult.result.value}`);
-
-  cdp.close();
-  console.log('\nAll checks passed.');
-}
-
-// ── Deep Query Helper (Shadow DOM traversal) ───────────────────────────────
-
-const DEEP_QUERY_FN = `
-function deepQuery(selector) {
-  let el = document.querySelector(selector);
-  if (el) return el;
-  const walk = (root) => {
-    for (const child of root.querySelectorAll('*')) {
-      if (child.shadowRoot) {
-        const found = child.shadowRoot.querySelector(selector);
-        if (found) return found;
-        const deeper = walk(child.shadowRoot);
-        if (deeper) return deeper;
-      }
-    }
-    return null;
-  };
-  return walk(document);
-}`;
-
-async function getElementRect(cdp, selector) {
-  const result = await cdp.send('Runtime.evaluate', {
-    expression: `(() => {
-      ${DEEP_QUERY_FN}
-      const el = deepQuery(${JSON.stringify(selector)});
-      if (!el) return { error: 'not found' };
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) return { error: 'zero size (hidden?)' };
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-    })()`,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  const val = result.result.value;
-  if (val.error) throw new Error(`Element "${selector}": ${val.error}`);
-  return val;
-}
-
-// ── Input Dispatch Helpers ─────────────────────────────────────────────────
-
-async function dispatchClick(cdp, x, y, button = 'left', clickCount = 1) {
-  await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mousePressed', x, y, button, clickCount,
-  });
-  await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased', x, y, button, clickCount,
-  });
-}
-
-// Modifier flag bitmask for CDP Input events
-const MODIFIERS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
-
-// Map readable key names to CDP key/code values
-const KEY_MAP = {
-  enter:     { key: 'Enter',     code: 'Enter',       keyCode: 13 },
-  tab:       { key: 'Tab',       code: 'Tab',         keyCode: 9 },
-  escape:    { key: 'Escape',    code: 'Escape',      keyCode: 27 },
-  backspace: { key: 'Backspace', code: 'Backspace',   keyCode: 8 },
-  delete:    { key: 'Delete',    code: 'Delete',      keyCode: 46 },
-  arrowup:   { key: 'ArrowUp',   code: 'ArrowUp',     keyCode: 38 },
-  arrowdown: { key: 'ArrowDown', code: 'ArrowDown',   keyCode: 40 },
-  arrowleft: { key: 'ArrowLeft', code: 'ArrowLeft',   keyCode: 37 },
-  arrowright:{ key: 'ArrowRight',code: 'ArrowRight',  keyCode: 39 },
-  space:     { key: ' ',         code: 'Space',        keyCode: 32 },
-  home:      { key: 'Home',      code: 'Home',         keyCode: 36 },
-  end:       { key: 'End',       code: 'End',          keyCode: 35 },
-  pageup:    { key: 'PageUp',    code: 'PageUp',       keyCode: 33 },
-  pagedown:  { key: 'PageDown',  code: 'PageDown',     keyCode: 34 },
-};
-
-function resolveKey(name) {
-  const lower = name.toLowerCase();
-  if (KEY_MAP[lower]) return KEY_MAP[lower];
-  // Single character
-  if (name.length === 1) {
-    const upper = name.toUpperCase();
-    return { key: name, code: `Key${upper}`, keyCode: upper.charCodeAt(0) };
-  }
-  // Fallback
-  return { key: name, code: name, keyCode: 0 };
-}
-
-async function dispatchKey(cdp, keyName, modifiers = 0) {
-  const k = resolveKey(keyName);
-  // Use 'rawKeyDown' when modifiers are held to avoid native menu/command
-  // processing in Chromium. 'keyDown' goes through the native key pipeline
-  // which on macOS can trigger app menu actions.
-  const downType = modifiers ? 'rawKeyDown' : 'keyDown';
-  await cdp.send('Input.dispatchKeyEvent', {
-    type: downType, key: k.key, code: k.code,
-    windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
-    modifiers,
-  });
-  // For printable characters without modifiers, also send a char event
-  if (k.key.length === 1 && modifiers === 0) {
-    await cdp.send('Input.dispatchKeyEvent', {
-      type: 'char', text: k.key, key: k.key,
-      windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
-      modifiers,
-    });
-  }
-  await cdp.send('Input.dispatchKeyEvent', {
-    type: 'keyUp', key: k.key, code: k.code,
-    windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
-    modifiers,
-  });
-}
-
-// ── Shared Helpers ─────────────────────────────────────────────────────────
-
-// Connect to a target via the browser WebSocket using a flat CDP session.
-// This works for WebContentsView targets that aren't in /json/list.
 function connectViaSession(targetId) {
   return new Promise(async (resolve, reject) => {
     let browserWsUrl;
@@ -553,7 +131,6 @@ function connectViaSession(targetId) {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       if (!msg.id || !pending.has(msg.id)) return;
-      // Match: pre-session messages (no sessionId) or our session's messages
       if (sessionId && msg.sessionId && msg.sessionId !== sessionId) return;
       const { resolve: res, reject: rej } = pending.get(msg.id);
       pending.delete(msg.id);
@@ -577,7 +154,6 @@ function connectViaSession(targetId) {
       };
 
       try {
-        // Attach to target — flatten mode lets us send commands on this connection
         const result = await sendMsg('Target.attachToTarget', { targetId, flatten: true });
         sessionId = result.sessionId;
 
@@ -609,15 +185,12 @@ async function connectTo(targetId) {
   if (targetId) {
     const targets = await getTargets();
     target = targets.find(t => t.id.startsWith(targetId));
-    if (!target) { console.error(`Target not found: ${targetId}`); process.exit(1); }
+    if (!target) throw new Error(`Target not found: ${targetId}`);
   } else {
     target = await getMainTarget();
-    if (!target) { console.error('No target found'); process.exit(1); }
+    if (!target) throw new Error('No target found');
   }
 
-  // Targets from /json/list have working direct WebSocket URLs.
-  // Targets discovered via browser Target domain (WebContentsView) may not —
-  // try direct first, fall back to session-based connection.
   if (target.webSocketDebuggerUrl) {
     try {
       return await connectWebSocket(target.webSocketDebuggerUrl);
@@ -629,18 +202,91 @@ async function connectTo(targetId) {
   return connectViaSession(target.id);
 }
 
-async function typeText(cdp, text) {
-  for (const ch of text) {
-    await dispatchKey(cdp, ch);
+// ── Deep Query (Shadow DOM traversal) ─────────────────────────────────────
+
+const DEEP_QUERY_FN = `
+function deepQuery(selector) {
+  let el = document.querySelector(selector);
+  if (el) return el;
+  const walk = (root) => {
+    for (const child of root.querySelectorAll('*')) {
+      if (child.shadowRoot) {
+        const found = child.shadowRoot.querySelector(selector);
+        if (found) return found;
+        const deeper = walk(child.shadowRoot);
+        if (deeper) return deeper;
+      }
+    }
+    return null;
+  };
+  return walk(document);
+}`;
+
+// ── Input Dispatch Helpers ────────────────────────────────────────────────
+
+async function dispatchClick(cdp, x, y, button = 'left', clickCount = 1) {
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x, y, button, clickCount,
+  });
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x, y, button, clickCount,
+  });
+}
+
+const MODIFIERS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+
+const KEY_MAP = {
+  enter:     { key: 'Enter',     code: 'Enter',       keyCode: 13 },
+  tab:       { key: 'Tab',       code: 'Tab',         keyCode: 9 },
+  escape:    { key: 'Escape',    code: 'Escape',      keyCode: 27 },
+  backspace: { key: 'Backspace', code: 'Backspace',   keyCode: 8 },
+  delete:    { key: 'Delete',    code: 'Delete',      keyCode: 46 },
+  arrowup:   { key: 'ArrowUp',   code: 'ArrowUp',     keyCode: 38 },
+  arrowdown: { key: 'ArrowDown', code: 'ArrowDown',   keyCode: 40 },
+  arrowleft: { key: 'ArrowLeft', code: 'ArrowLeft',   keyCode: 37 },
+  arrowright:{ key: 'ArrowRight',code: 'ArrowRight',  keyCode: 39 },
+  space:     { key: ' ',         code: 'Space',        keyCode: 32 },
+  home:      { key: 'Home',      code: 'Home',         keyCode: 36 },
+  end:       { key: 'End',       code: 'End',          keyCode: 35 },
+  pageup:    { key: 'PageUp',    code: 'PageUp',       keyCode: 33 },
+  pagedown:  { key: 'PageDown',  code: 'PageDown',     keyCode: 34 },
+};
+
+function resolveKey(name) {
+  const lower = name.toLowerCase();
+  if (KEY_MAP[lower]) return KEY_MAP[lower];
+  if (name.length === 1) {
+    const upper = name.toUpperCase();
+    return { key: name, code: `Key${upper}`, keyCode: upper.charCodeAt(0) };
   }
+  return { key: name, code: name, keyCode: 0 };
+}
+
+async function dispatchKey(cdp, keyName, modifiers = 0) {
+  const k = resolveKey(keyName);
+  const downType = modifiers ? 'rawKeyDown' : 'keyDown';
+  await cdp.send('Input.dispatchKeyEvent', {
+    type: downType, key: k.key, code: k.code,
+    windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
+    modifiers,
+  });
+  if (k.key.length === 1 && modifiers === 0) {
+    await cdp.send('Input.dispatchKeyEvent', {
+      type: 'char', text: k.key, key: k.key,
+      windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
+      modifiers,
+    });
+  }
+  await cdp.send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: k.key, code: k.code,
+    windowsVirtualKeyCode: k.keyCode, nativeVirtualKeyCode: k.keyCode,
+    modifiers,
+  });
 }
 
 function parseCombo(combo) {
   const parts = combo.split('+');
   const keyName = parts.pop();
-  // Calculate modifier bitmask — don't send separate modifier key events,
-  // just set the bitmask on the main key event. Sending Meta as a separate
-  // keyDown triggers native macOS menu activation in Chromium.
   let modBits = 0;
   for (const part of parts) {
     const mod = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
@@ -649,143 +295,43 @@ function parseCombo(combo) {
   return { keyName, modBits };
 }
 
-function targetSuffix(targetId) {
-  return targetId ? ` in target ${targetId}` : '';
-}
-
-// ── New Commands: Real Input ───────────────────────────────────────────────
-
-async function cmdClick(selector, targetId) {
-  const cdp = await connectTo(targetId);
-  await cdp.send('Runtime.enable');
-  const rect = await getElementRect(cdp, selector);
-  const x = Math.round(rect.x + rect.width / 2);
-  const y = Math.round(rect.y + rect.height / 2);
-  await dispatchClick(cdp, x, y);
-  console.log(`clicked "${selector}" at ${x},${y}${targetSuffix(targetId)}`);
-  cdp.close();
-}
-
-async function cmdClickAt(x, y) {
-  const cdp = await connectTo();
-  await dispatchClick(cdp, parseInt(x, 10), parseInt(y, 10));
-  console.log(`clicked at ${x},${y}`);
-  cdp.close();
-}
-
-async function cmdType(text, targetId) {
-  const cdp = await connectTo(targetId);
-  await typeText(cdp, text);
-  console.log(`typed: ${text}${targetSuffix(targetId)}`);
-  cdp.close();
-}
-
-async function cmdPress(combo, targetId) {
-  const cdp = await connectTo(targetId);
-  const { keyName, modBits } = parseCombo(combo);
-  await dispatchKey(cdp, keyName, modBits);
-  console.log(`pressed: ${combo}${targetSuffix(targetId)}`);
-  cdp.close();
-}
-
-async function cmdFill(selector, text, targetId) {
-  const cdp = await connectTo(targetId);
-  await cdp.send('Runtime.enable');
-  const rect = await getElementRect(cdp, selector);
-  const x = Math.round(rect.x + rect.width / 2);
-  const y = Math.round(rect.y + rect.height / 2);
-  await dispatchClick(cdp, x, y);
-  await dispatchKey(cdp, 'a', MODIFIERS.Meta);
-  await dispatchKey(cdp, 'Backspace');
-  await typeText(cdp, text);
-  console.log(`filled "${selector}" with: ${text}${targetSuffix(targetId)}`);
-  cdp.close();
-}
-
-async function cmdWaitFor(selector, timeoutSecs, targetId) {
-  const timeout = parseInt(timeoutSecs || '10', 10) * 1000;
-  const cdp = await connectTo(targetId);
-  await cdp.send('Runtime.enable');
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    try {
-      await getElementRect(cdp, selector);
-      console.log(`found: ${selector}${targetSuffix(targetId)}`);
-      cdp.close();
-      return;
-    } catch {}
-    await new Promise(r => setTimeout(r, 200));
+async function typeText(cdp, text) {
+  for (const ch of text) {
+    await dispatchKey(cdp, ch);
   }
-  cdp.close();
-  console.error(`Timed out waiting for "${selector}"${targetSuffix(targetId)} after ${timeout / 1000}s`);
-  process.exit(1);
 }
 
-async function cmdAssertVisible(selector) {
-  const cdp = await connectTo();
-  await cdp.send('Runtime.enable');
-  try {
-    const rect = await getElementRect(cdp, selector);
-    console.log(`✓ visible: "${selector}" (${rect.width}x${rect.height} at ${Math.round(rect.x)},${Math.round(rect.y)})`);
-  } catch (e) {
-    console.error(`✗ not visible: "${selector}" — ${e.message}`);
-    cdp.close();
-    process.exit(1);
-  }
-  cdp.close();
-}
+// ── Element helpers (used by API functions) ───────────────────────────────
 
-async function cmdAssertText(selector, expected) {
-  const cdp = await connectTo();
+async function evalInTarget(cdp, js) {
   await cdp.send('Runtime.enable');
   const result = await cdp.send('Runtime.evaluate', {
-    expression: `(() => {
-      ${DEEP_QUERY_FN}
-      const el = deepQuery(${JSON.stringify(selector)});
-      if (!el) return { error: 'not found' };
-      return { text: el.textContent.trim() };
-    })()`,
+    expression: js,
     returnByValue: true,
     awaitPromise: true,
   });
-  const val = result.result.value;
-  if (val.error) {
-    console.error(`✗ element "${selector}": ${val.error}`);
-    cdp.close();
-    process.exit(1);
+  if (result.exceptionDetails) {
+    const text = result.exceptionDetails.text;
+    const desc = result.exceptionDetails.exception?.description || '';
+    throw new Error(desc || text);
   }
-  if (val.text.includes(expected)) {
-    console.log(`✓ text match: "${selector}" contains "${expected}"`);
-  } else {
-    console.error(`✗ text mismatch: "${selector}" has "${val.text}", expected to contain "${expected}"`);
-    cdp.close();
-    process.exit(1);
-  }
-  cdp.close();
+  return result.result.value;
 }
 
-async function cmdAssertGone(selector) {
-  const cdp = await connectTo();
-  await cdp.send('Runtime.enable');
-  const result = await cdp.send('Runtime.evaluate', {
-    expression: `(() => {
-      ${DEEP_QUERY_FN}
-      return deepQuery(${JSON.stringify(selector)}) === null;
-    })()`,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  if (result.result.value === true) {
-    console.log(`✓ gone: "${selector}" not in DOM`);
-  } else {
-    console.error(`✗ still present: "${selector}"`);
-    cdp.close();
-    process.exit(1);
-  }
-  cdp.close();
+async function getElementRect(cdp, selector) {
+  const val = await evalInTarget(cdp, `(() => {
+    ${DEEP_QUERY_FN}
+    const el = deepQuery(${JSON.stringify(selector)});
+    if (!el) return { error: 'not found' };
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return { error: 'zero size (hidden?)' };
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  })()`);
+  if (val.error) throw new Error(`Element "${selector}": ${val.error}`);
+  return val;
 }
 
-// ── Start / Lifecycle ──────────────────────────────────────────────────────
+// ── Lifecycle ─────────────────────────────────────────────────────────────
 
 function sessionMetaPath(port) {
   return join(tmpdir(), `agentwfy-cdp-${port}.json`);
@@ -802,7 +348,34 @@ function findFreePort() {
   });
 }
 
-async function cmdStart() {
+async function cmdWait(timeoutSecs = 30) {
+  const timeout = timeoutSecs * 1000;
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    try {
+      const targets = await cdpFetch('/json/list');
+      const main = targets.find(t => t.url.includes('app://'));
+      if (main) {
+        const cdp = await connectWebSocket(main.webSocketDebuggerUrl);
+        await cdp.send('Runtime.enable');
+        const result = await cdp.send('Runtime.evaluate', {
+          expression: 'typeof window.ipc !== "undefined" && typeof window.ipc.getAgentRoot === "function"',
+          returnByValue: true,
+        });
+        cdp.close();
+        if (result.result.value === true) {
+          return;
+        }
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  throw new Error(`Timed out after ${timeoutSecs}s`);
+}
+
+async function cmdStart(args) {
   const visible = args.includes('--visible');
   const port = parseInt(process.env.CDP_PORT, 10) || await findFreePort();
   const appId = `AgentWFY-test-${randomBytes(4).toString('hex')}`;
@@ -831,7 +404,6 @@ async function cmdStart() {
   });
   child.unref();
 
-  // Save session metadata so cdp stop can clean up
   writeFileSync(sessionMetaPath(port), JSON.stringify({ testDir, appId }));
 
   process.env.CDP_PORT = String(port);
@@ -840,82 +412,382 @@ async function cmdStart() {
   console.log(`port: ${port}`);
 }
 
-// ── Main ────────────────────────────────────────────────────────────────────
+async function cmdStop() {
+  const port = getCdpPort();
+  try {
+    const target = await getMainTarget();
+    if (target) {
+      const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
+      await cdp.send('Runtime.enable');
+      cdp.send('Runtime.evaluate', {
+        expression: 'window.ipc.stop()',
+        returnByValue: true,
+        awaitPromise: true,
+      }).catch(() => {});
+      await new Promise(r => setTimeout(r, 500));
+    }
+  } catch {}
+
+  const metaPath = sessionMetaPath(port);
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    if (meta.testDir) rmSync(meta.testDir, { recursive: true, force: true });
+    if (meta.appId) {
+      const userDataDir = join(homedir(), 'Library', 'Application Support', meta.appId);
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
+    unlinkSync(metaPath);
+  } catch {}
+
+  console.log('stopped');
+}
+
+async function cmdRestart() {
+  try {
+    const target = await getMainTarget();
+    if (target) {
+      const cdp = await connectWebSocket(target.webSocketDebuggerUrl);
+      await cdp.send('Runtime.enable');
+      cdp.send('Runtime.evaluate', {
+        expression: 'window.ipc.restart()',
+        returnByValue: true,
+        awaitPromise: true,
+      }).catch(() => {});
+      await new Promise(r => setTimeout(r, 500));
+    }
+  } catch {}
+  await cmdWait();
+  console.log('ready');
+}
+
+// ── Run Command ───────────────────────────────────────────────────────────
+
+function emit(type, data) {
+  console.log(JSON.stringify({ type, ...data }));
+}
+
+async function cmdRun(scriptArg) {
+  if (!scriptArg) {
+    console.error('Usage: ./scripts/cdp run <js-string-or-file>');
+    process.exit(1);
+  }
+
+  // Determine if arg is a file path or inline JS
+  let script;
+  const resolved = resolve(scriptArg);
+  if (existsSync(resolved) && !scriptArg.includes('(') && !scriptArg.includes('=')) {
+    script = readFileSync(resolved, 'utf-8');
+  } else {
+    script = scriptArg;
+  }
+
+  // Connection pool: one connection per target, reused across all API calls
+  const connCache = new Map(); // key: targetId or '__main__' → CDP connection
+
+  async function getConn(targetId) {
+    const key = targetId || '__main__';
+    if (connCache.has(key)) return connCache.get(key);
+    const conn = await connectTo(targetId);
+    await conn.send('Runtime.enable');
+    connCache.set(key, conn);
+    return conn;
+  }
+
+  function closeAll() {
+    for (const conn of connCache.values()) {
+      try { conn.close(); } catch {}
+    }
+    connCache.clear();
+  }
+
+  // Build the API
+  const api = {
+    // ── Targets ──────────────────────────────────────────────────
+
+    async targets() {
+      const t = await getTargets();
+      return t.map(({ id, type, title, url }) => ({ id: id.slice(0, 8), fullId: id, type, title, url }));
+    },
+
+    async mainTarget() {
+      const t = await getMainTarget();
+      if (!t) throw new Error('No main target found');
+      return { id: t.id.slice(0, 8), fullId: t.id, type: t.type, title: t.title, url: t.url };
+    },
+
+    // ── Eval ─────────────────────────────────────────────────────
+
+    async eval(js) {
+      const conn = await getConn();
+      return evalInTarget(conn, js);
+    },
+
+    async evalTarget(targetId, js) {
+      const conn = await getConn(targetId);
+      return evalInTarget(conn, js);
+    },
+
+    // ── Click ────────────────────────────────────────────────────
+
+    async click(selector) {
+      const conn = await getConn();
+      const rect = await getElementRect(conn, selector);
+      const x = Math.round(rect.x + rect.width / 2);
+      const y = Math.round(rect.y + rect.height / 2);
+      await dispatchClick(conn, x, y);
+      emit('action', { action: 'click', selector, x, y });
+    },
+
+    async clickTarget(targetId, selector) {
+      const conn = await getConn(targetId);
+      const rect = await getElementRect(conn, selector);
+      const x = Math.round(rect.x + rect.width / 2);
+      const y = Math.round(rect.y + rect.height / 2);
+      await dispatchClick(conn, x, y);
+      emit('action', { action: 'click', target: targetId, selector, x, y });
+    },
+
+    async clickAt(x, y) {
+      const conn = await getConn();
+      await dispatchClick(conn, Math.round(x), Math.round(y));
+      emit('action', { action: 'clickAt', x, y });
+    },
+
+    // ── Type ─────────────────────────────────────────────────────
+
+    async type(text) {
+      const conn = await getConn();
+      await typeText(conn, text);
+      emit('action', { action: 'type', text });
+    },
+
+    async typeTarget(targetId, text) {
+      const conn = await getConn(targetId);
+      await typeText(conn, text);
+      emit('action', { action: 'type', target: targetId, text });
+    },
+
+    // ── Press ────────────────────────────────────────────────────
+
+    async press(combo) {
+      const conn = await getConn();
+      const { keyName, modBits } = parseCombo(combo);
+      await dispatchKey(conn, keyName, modBits);
+      emit('action', { action: 'press', combo });
+    },
+
+    async pressTarget(targetId, combo) {
+      const conn = await getConn(targetId);
+      const { keyName, modBits } = parseCombo(combo);
+      await dispatchKey(conn, keyName, modBits);
+      emit('action', { action: 'press', target: targetId, combo });
+    },
+
+    // ── Fill ─────────────────────────────────────────────────────
+
+    async fill(selector, text) {
+      const conn = await getConn();
+      const rect = await getElementRect(conn, selector);
+      const x = Math.round(rect.x + rect.width / 2);
+      const y = Math.round(rect.y + rect.height / 2);
+      await dispatchClick(conn, x, y);
+      await dispatchKey(conn, 'a', MODIFIERS.Meta);
+      await dispatchKey(conn, 'Backspace');
+      await typeText(conn, text);
+      emit('action', { action: 'fill', selector, text });
+    },
+
+    async fillTarget(targetId, selector, text) {
+      const conn = await getConn(targetId);
+      const rect = await getElementRect(conn, selector);
+      const x = Math.round(rect.x + rect.width / 2);
+      const y = Math.round(rect.y + rect.height / 2);
+      await dispatchClick(conn, x, y);
+      await dispatchKey(conn, 'a', MODIFIERS.Meta);
+      await dispatchKey(conn, 'Backspace');
+      await typeText(conn, text);
+      emit('action', { action: 'fill', target: targetId, selector, text });
+    },
+
+    // ── Wait / Assert ───────────────────────────────────────────
+
+    async waitFor(selector, timeoutSecs = 10) {
+      const timeout = timeoutSecs * 1000;
+      const conn = await getConn();
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          await getElementRect(conn, selector);
+          emit('action', { action: 'waitFor', selector, found: true });
+          return;
+        } catch {}
+        await new Promise(r => setTimeout(r, 200));
+      }
+      throw new Error(`Timed out waiting for "${selector}" after ${timeoutSecs}s`);
+    },
+
+    async waitForTarget(targetId, selector, timeoutSecs = 10) {
+      const timeout = timeoutSecs * 1000;
+      const conn = await getConn(targetId);
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          await getElementRect(conn, selector);
+          emit('action', { action: 'waitFor', target: targetId, selector, found: true });
+          return;
+        } catch {}
+        await new Promise(r => setTimeout(r, 200));
+      }
+      throw new Error(`Timed out waiting for "${selector}" in target ${targetId} after ${timeoutSecs}s`);
+    },
+
+    async assertVisible(selector) {
+      const conn = await getConn();
+      const rect = await getElementRect(conn, selector);
+      emit('assert', { assertion: 'visible', selector, rect });
+    },
+
+    async assertText(selector, expected) {
+      const conn = await getConn();
+      const text = await evalInTarget(conn, `(() => {
+        ${DEEP_QUERY_FN}
+        const el = deepQuery(${JSON.stringify(selector)});
+        if (!el) return null;
+        return el.textContent.trim();
+      })()`);
+      if (text === null) throw new Error(`Element "${selector}" not found`);
+      if (!text.includes(expected)) {
+        throw new Error(`Text mismatch: "${selector}" has "${text}", expected to contain "${expected}"`);
+      }
+      emit('assert', { assertion: 'text', selector, expected, actual: text });
+    },
+
+    async assertGone(selector) {
+      const conn = await getConn();
+      const gone = await evalInTarget(conn, `(() => {
+        ${DEEP_QUERY_FN}
+        return deepQuery(${JSON.stringify(selector)}) === null;
+      })()`);
+      if (!gone) throw new Error(`Element "${selector}" still present in DOM`);
+      emit('assert', { assertion: 'gone', selector });
+    },
+
+    // ── Screenshot ──────────────────────────────────────────────
+
+    async screenshot(path) {
+      const outPath = path || '/tmp/agentwfy-screenshot.png';
+      const conn = await getConn();
+      const { data } = await conn.send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(outPath, Buffer.from(data, 'base64'));
+      emit('action', { action: 'screenshot', path: outPath });
+      return outPath;
+    },
+
+    async screenshotTarget(targetId, path) {
+      const outPath = path || '/tmp/agentwfy-screenshot.png';
+      const conn = await getConn(targetId);
+      const { data } = await conn.send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(outPath, Buffer.from(data, 'base64'));
+      emit('action', { action: 'screenshot', target: targetId, path: outPath });
+      return outPath;
+    },
+
+    // ── DOM Queries ─────────────────────────────────────────────
+
+    async getRect(selector) {
+      const conn = await getConn();
+      return getElementRect(conn, selector);
+    },
+
+    async getText(selector) {
+      const conn = await getConn();
+      const text = await evalInTarget(conn, `(() => {
+        ${DEEP_QUERY_FN}
+        const el = deepQuery(${JSON.stringify(selector)});
+        if (!el) return null;
+        return el.textContent.trim();
+      })()`);
+      if (text === null) throw new Error(`Element "${selector}" not found`);
+      return text;
+    },
+
+    async getHTML(selector) {
+      const conn = await getConn();
+      const html = await evalInTarget(conn, `(() => {
+        ${DEEP_QUERY_FN}
+        const el = deepQuery(${JSON.stringify(selector)});
+        if (!el) return null;
+        return el.innerHTML;
+      })()`);
+      if (html === null) throw new Error(`Element "${selector}" not found`);
+      return html;
+    },
+
+    // ── Utility ─────────────────────────────────────────────────
+
+    async sleep(ms) {
+      await new Promise(r => setTimeout(r, ms));
+    },
+
+    log(label, data) {
+      emit('log', { label, data });
+    },
+
+    async logs(n = 50) {
+      const logPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.dev.log');
+      try {
+        const content = readFileSync(logPath, 'utf-8');
+        const lines = content.split('\n');
+        return lines.slice(-n).join('\n').trim();
+      } catch {
+        return null;
+      }
+    },
+  };
+
+  // Execute script
+  const fnNames = Object.keys(api);
+  const fnValues = fnNames.map(n => api[n]);
+
+  // Wrap script in async function with API destructured into scope
+  const wrappedScript = `return (async (${fnNames.join(', ')}) => {\n${script}\n})(${fnNames.map((_, i) => `args[${i}]`).join(', ')});`;
+
+  let result;
+  try {
+    const fn = new Function('args', wrappedScript);
+    result = await fn(fnValues);
+  } catch (e) {
+    emit('error', { message: e.message, stack: e.stack });
+    closeAll();
+    process.exit(1);
+  }
+
+  if (result !== undefined) {
+    emit('result', { data: result });
+  }
+
+  closeAll();
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
 
 const [cmd, ...args] = process.argv.slice(2);
 
 const commands = {
-  targets: () => cmdTargets(),
-  screenshot: () => cmdScreenshot(args[0], args[1]),
-  'screenshot-target': () => cmdScreenshot(args[0], args[1]),
-  eval: () => cmdEval(args[0], args[1]),
-  'eval-target': () => cmdEval(args[0], args[1]),
-  dom: () => cmdDom(),
-  tabs: () => cmdTabs(),
-  'open-tab': () => cmdOpenTab(args[0]),
-  'close-tab': () => cmdCloseTab(args[0]),
-  console: () => cmdConsole(),
-  ipc: () => cmdIpc(args[0], args[1]),
-  logs: () => cmdLogs(),
-  restart: () => cmdRestart(),
-  start: () => cmdStart(),
+  start: () => cmdStart(args),
   stop: () => cmdStop(),
-  wait: () => cmdWait(),
-  test: () => cmdTest(),
-  // Real input commands
-  click: () => cmdClick(args[0]),
-  'click-target': () => cmdClick(args[1], args[0]),
-  'click-at': () => cmdClickAt(args[0], args[1]),
-  type: () => cmdType(args.join(' ')),
-  'type-target': () => cmdType(args.slice(1).join(' '), args[0]),
-  press: () => cmdPress(args[0]),
-  'press-target': () => cmdPress(args[1], args[0]),
-  fill: () => cmdFill(args[0], args.slice(1).join(' ')),
-  'fill-target': () => cmdFill(args[1], args.slice(2).join(' '), args[0]),
-  'wait-for': () => cmdWaitFor(args[0], args[1]),
-  'wait-for-target': () => cmdWaitFor(args[1], args[2], args[0]),
-  'assert-visible': () => cmdAssertVisible(args[0]),
-  'assert-text': () => cmdAssertText(args[0], args.slice(1).join(' ')),
-  'assert-gone': () => cmdAssertGone(args[0]),
+  restart: () => cmdRestart(),
+  run: () => cmdRun(args.join(' ')),
 };
 
 if (!cmd || !commands[cmd]) {
   console.log('Usage: ./scripts/cdp <command> [args...]');
   console.log('');
   console.log('Commands:');
-  console.log('  targets                       List all CDP targets');
-  console.log('  screenshot [path]             Screenshot main page');
-  console.log('  screenshot-target <id> [path] Screenshot specific target');
-  console.log('  eval <js>                     Evaluate JS in main page');
-  console.log('  eval-target <id> <js>         Evaluate JS in specific target');
-  console.log('  dom                           DOM summary');
-  console.log('  tabs                          List open tabs');
-  console.log('  open-tab <url-or-viewName>    Open a tab');
-  console.log('  close-tab <tabId>             Close a tab');
-  console.log('  console                       Stream console messages');
-  console.log('  ipc <method> [json-args]      Call IPC method');
-  console.log('  logs [lines]                  Show Electron main process logs (default: 50)');
-  console.log('  start [path] [--visible]      Start isolated test instance (headless by default)');
-  console.log('  restart                       Restart app and wait until ready');
-  console.log('  stop                          Stop app');
-  console.log('  wait [timeout-secs]           Wait until app is ready (default: 30s)');
-  console.log('  test                          Run connection test');
-  console.log('');
-  console.log('Real Input (dispatches through Chromium input pipeline):');
-  console.log('  click <selector>              Click element (deep-queries shadow DOM)');
-  console.log('  click-target <id> <selector>  Click element in specific target');
-  console.log('  click-at <x> <y>              Click at raw coordinates');
-  console.log('  type <text>                   Type text via key events');
-  console.log('  type-target <id> <text>       Type text in specific target');
-  console.log('  press <key+combo>             Press key combo (e.g., Meta+k, Enter)');
-  console.log('  press-target <id> <key+combo> Press key combo in specific target');
-  console.log('  fill <selector> <text>        Click, clear, type into element');
-  console.log('  fill-target <id> <sel> <text> Fill element in specific target');
-  console.log('  wait-for <selector> [timeout] Wait for element to be visible (default: 10s)');
-  console.log('  wait-for-target <id> <sel> [t]Wait for element in specific target');
-  console.log('  assert-visible <selector>     Assert element is visible');
-  console.log('  assert-text <selector> <text> Assert element contains text');
-  console.log('  assert-gone <selector>        Assert element is not in DOM');
+  console.log('  start [--visible]      Start isolated test instance (headless by default)');
+  console.log('  stop                   Stop app and clean up test data');
+  console.log('  restart                Restart app and wait until ready');
+  console.log('  run <script-or-file>   Execute a JS test script with the full API');
   process.exit(1);
 }
 
