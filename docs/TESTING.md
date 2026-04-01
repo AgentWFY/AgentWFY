@@ -1,267 +1,285 @@
-# Testing Infrastructure
+# Testing Guide
 
-How to run, interact with, and test the AgentWFY Electron app programmatically.
+How to test the AgentWFY app through its UI. Read this before testing. Update this doc when you discover something that will make future testing faster or more reliable — corrected selectors, timing quirks, non-obvious gotchas. Don't add noise.
+
+For CDP tool reference (API signatures, commands, output format), see [CDP.md](CDP.md).
 
 ## Setup
 
-Build and start an isolated test instance:
-
 ```bash
 ./scripts/build
-./scripts/cdp start                    # headless, fresh default agent, auto-picks free port
-./scripts/cdp start --visible          # show windows (watch tests run)
-```
-
-Prints the assigned port on success (e.g. `port: 57407`). Use `CDP_PORT=<port>` for all subsequent commands:
-
-```bash
-CDP_PORT=57407 ./scripts/cdp screenshot /tmp/app.png
-CDP_PORT=57407 ./scripts/cdp press Meta+k
-CDP_PORT=57407 ./scripts/cdp stop
-```
-
-Each `cdp start` creates a fully isolated instance with:
-- Fresh default agent in a temp directory (no real agent data touched)
-- Unique app ID (no collision with other instances or the real app)
-- Temp global config (tests don't affect `~/.agentwfy.json`)
-- Free CDP port (parallel runs don't conflict)
-
-`cdp stop` cleans up all temp files (agent data, global config, Chromium userData).
-
-## After Editing Code
-
-Rebuild and restart:
-
-```bash
+./scripts/cdp start              # headless, isolated instance
+# After code changes:
 ./scripts/build && ./scripts/cdp restart
-```
-
-This rebuilds all source files, then restarts the app and waits until the new instance is ready.
-
-For renderer-only changes (no restart needed):
-
-```bash
-./scripts/cdp eval "window.ipc.reloadRenderer()"
-```
-
-Humans can also press Cmd+Shift+Option+R (rebuild + restart) or Cmd+Shift+R (rebuild + reload renderer) in the app.
-
-**Important**: The in-app reload (Cmd+Shift+R) runs only the TypeScript compiler (tsgo), not the full build. Use `./scripts/build` from the terminal for a full clean build including static assets and system data.
-
-## Stopping the App
-
-```bash
+# When done:
 ./scripts/cdp stop
 ```
 
-## Interacting with the App
+## App Layout
 
-Everything goes through `scripts/cdp` which talks to the app via Chrome DevTools Protocol.
+```
+awfy-app
+└─ .awfy-app-root
+   ├─ .awfy-app-body
+   │  ├─ <awfy-agent-sidebar>          78px, Shadow DOM, agent list
+   │  ├─ .awfy-app-sidebar             380px, resizable
+   │  │  ├─ .awfy-app-sidebar-top      toggle button + Chat/Tasks switcher
+   │  │  ├─ <awfy-agent-chat>          chat panel (or .panel-hidden)
+   │  │  └─ <awfy-task-panel>          task panel (or .panel-hidden), Shadow DOM
+   │  ├─ .awfy-app-resize-handle       4px drag handle
+   │  └─ .awfy-app-main-column
+   │     ├─ .awfy-app-header           tab bar + inline toggle
+   │     │  └─ <awfy-tabs>
+   │     └─ .awfy-app-main-area        WebContentsView tab content
+   └─ <awfy-status-line>               24px footer, Shadow DOM
+```
+
+Shadow DOM components: `awfy-agent-sidebar`, `awfy-task-panel`, `awfy-status-line`. CDP primitives (`click`, `getText`, etc.) traverse shadow roots automatically. But `eval()` JS needs explicit `.shadowRoot` access.
+
+## Selectors
+
+### Sidebar Header
+
+| Element | Selector |
+|---------|----------|
+| Toggle sidebar | `.awfy-app-sidebar-toggle` |
+| Chat button | `.awfy-app-sidebar-switcher-btn[data-panel="agent-chat"]` |
+| Tasks button | `.awfy-app-sidebar-switcher-btn[data-panel="tasks"]` |
+| Reopen sidebar (when closed) | `.awfy-app-inline-toggle` |
+
+Active button: `.active` class. Hidden panel: `.panel-hidden` class.
+
+### Agent Sidebar (Shadow DOM)
+
+| Element | Selector |
+|---------|----------|
+| Agent item | `.agent-item` |
+| Active agent | `.agent-item-wrapper.active` |
+| Add agent | `.add-btn` |
+
+### Chat Panel
+
+**Input:**
+
+| Element | Selector |
+|---------|----------|
+| Text input | `textarea#msg-input` |
+| Stop streaming | `.stop-btn` (display:none when idle) |
+
+Enter sends. Shift+Enter for newline.
+
+**Messages:**
+
+| Element | Selector |
+|---------|----------|
+| Container | `.messages` |
+| User message | `.block-user` |
+| Assistant text | `.assistant-text` |
+| Thinking text | `.thinking-text` |
+| Tool card | `.tool-card` |
+| Tool header (click to toggle) | `.tool-header` |
+| Error banner | `.error-banner` |
+| Retry banner | `.retry-banner` |
+| Scroll to bottom | `.scroll-to-bottom` |
+
+**Providers (shown when no session):**
+
+| Element | Selector |
+|---------|----------|
+| Provider card | `.provider-card[data-provider-id="..."]` |
+| Settings button | `.provider-card-settings-btn` |
+| Set default | `.set-default-btn[data-provider-id="..."]` |
+| Add provider | `[data-action="browse-providers"]` |
+
+Selected: `.provider-card.selected`.
+
+**Sessions:**
+
+| Element | Selector |
+|---------|----------|
+| Session item | `.session-item` |
+| Active session | `.session-item.active` |
+| Streaming | `.session-item.streaming` |
+| Close session | `.session-item-close` (visible on hover) |
+| New session | `.gear-btn[title="New session"]` |
+| All sessions | `.gear-btn[title="All sessions"]` |
+| Settings | `.gear-btn[title="Settings"]` |
+
+**Retry/Error:**
+
+| Element | Selector |
+|---------|----------|
+| Retry now | `button[data-action="retry-now"]` |
+| Stop retry | `button[data-action="stop-retry"]` |
+
+### Task Panel (Shadow DOM)
+
+**Tabs:**
+
+| Element | Selector |
+|---------|----------|
+| Runs | `.tab[data-tab="runs"]` |
+| Tasks | `.tab[data-tab="tasks"]` |
+| Triggers | `.tab[data-tab="triggers"]` |
+
+Active: `.tab.active`.
+
+**Runs:**
+
+| Element | Selector |
+|---------|----------|
+| Running row | `.rr[data-detail-run="<runId>"]` |
+| Running dot | `.rr-pulse` |
+| Stop | `.rr-stop[data-stop-run="<runId>"]` |
+| History row | `.hr[data-detail-file="<logFile>"]` |
+| Status dot | `.hr-dot.ok` / `.hr-dot.err` |
+
+**Tasks:**
+
+| Element | Selector |
+|---------|----------|
+| Task card | `.task-card[data-task-name="<name>"]` |
+| Run button | `.tc-run[data-run-task="<name>"]` |
+| Input field | `.run-input[data-input-task="<name>"]` |
+| Run with input | `.run-input-btn[data-run-task-input="<name>"]` |
+
+Expanded: `.task-card.expanded`.
+
+**Triggers:**
+
+| Element | Selector |
+|---------|----------|
+| Trigger card | `.trig-card[data-trigger-name="<name>"]` |
+| Toggle | `.trig-toggle[data-trigger-toggle="<name>"]` |
+
+Disabled: `.trig-card.disabled`, `.trig-toggle.off`.
+
+**Detail view:**
+
+| Element | Selector |
+|---------|----------|
+| Back | `.d-back` |
+| Stop | `[data-detail-stop]` |
+| Copy logs | `[data-copy-logs]` |
+| Auto-scroll | `[data-auto-scroll]` |
+| Log output | `.d-log` |
+
+### Tab Bar
+
+| Element | Selector |
+|---------|----------|
+| Tab item | `.tab-item` |
+| Active tab | `.tab-item.active` |
+| Pinned tab | `.tab-item.pinned` |
+| Close button | `.tab-close` |
+| Hidden tabs toggle | `.hidden-tabs-btn` |
+| Hidden tab item | `.hidden-tab-item` |
+
+Middle-click closes tab (if not pinned). Right-click opens context menu. Draggable for reorder.
+
+### Status Line (Shadow DOM)
+
+| Element | Selector |
+|---------|----------|
+| Agent indicator | `#agent-indicator` |
+| Task indicator | `#task-indicator` |
+| Port info | `#port-info` |
+| Backup info | `#backup-info` |
+| Data dir | `#data-dir` |
+
+### Command Palette (separate CDP target)
+
+Not in main page DOM. Opens as a child window.
+
+```js
+await press("Meta+k");
+await sleep(300);
+const t = await targets();
+const p = t.find(t => t.title === "Command Palette");
+await typeTarget(p.id, "query");
+await clickTarget(p.id, ".item:first-child");
+await pressTarget(p.id, "Escape"); // close
+```
+
+Disappears from targets when closed.
+
+## Flows
+
+### Send a chat message
+
+```js
+await click("textarea#msg-input");
+await type("Hello!");
+await press("Enter");
+await waitFor(".assistant-text");
+```
+
+### Switch sidebar panels
+
+```js
+await click('.awfy-app-sidebar-switcher-btn[data-panel="tasks"]');
+await waitFor("awfy-task-panel");
+```
+
+### Toggle sidebar
+
+```js
+await click(".awfy-app-sidebar-toggle");       // close
+await click(".awfy-app-inline-toggle");         // reopen
+```
+
+### Close active tab
+
+```js
+await click(".tab-item.active .tab-close");
+```
+
+### Run a task
+
+```js
+await click('.awfy-app-sidebar-switcher-btn[data-panel="tasks"]');
+await click('.tab[data-tab="tasks"]');
+await click('.task-card[data-task-name="my-task"]');
+await click('.tc-run[data-run-task="my-task"]');
+await click('.tab[data-tab="runs"]');
+await waitFor(".rr-pulse");
+```
+
+### Select a provider
+
+```js
+await click('.provider-card[data-provider-id="openai-compatible"]');
+```
+
+### Check streaming state
+
+```js
+const isStreaming = await eval('document.querySelector(".stop-btn")?.style.display !== "none"');
+```
+
+## Testing Tips
+
+<!-- Add findings here that will make future testing faster or more reliable. -->
+
+### Headless mode limitations
+
+- Command palette `BrowserWindow` is never shown/hidden visually in headless mode (`AGENTWFY_HEADLESS=1`). `isVisible()` is always false, so `toggle()` always calls `show()`. The blur handler and race conditions between blur/toggle cannot be tested headlessly — use `--visible` for those.
+- The palette target persists in the CDP target list even after closing (window is hidden, not destroyed). Check item count or search input instead of target presence to verify open/close state.
+
+### Plugin installation without file dialog
+
+Insert directly into the agent's `agent.db` via the `sqlite3` CLI (bypasses the app's TEMP write-guard triggers since it's a separate connection), then restart:
 
 ```bash
-./scripts/cdp screenshot /tmp/app.png             # Screenshot main page
-./scripts/cdp screenshot-target <id> /tmp/x.png   # Screenshot specific target
-./scripts/cdp eval "document.title"                # Evaluate JS in main page
-./scripts/cdp eval-target <id> "document.title"   # Evaluate JS in specific target
-./scripts/cdp dom                                  # DOM element summary
-./scripts/cdp targets                              # List all CDP targets
-./scripts/cdp tabs                                 # List open tabs
-./scripts/cdp open-tab home                        # Open view by name
-./scripts/cdp open-tab "https://example.com"       # Open URL tab
-./scripts/cdp close-tab <tabId>                    # Close a tab
-./scripts/cdp console                              # Stream console messages
-./scripts/cdp ipc "sql.run" '[{"sql":"SELECT name FROM views"}]'
-./scripts/cdp logs                                 # Show Electron main process logs
-./scripts/cdp logs 100                              # Last 100 lines
-./scripts/cdp restart                              # Restart app + wait until ready
-./scripts/cdp stop                                 # Stop app + clean up test data
-./scripts/cdp wait                                 # Wait until app is ready
-./scripts/cdp test                                 # Full connection test
+AGENT_ROOT=$(CDP_PORT=... ./scripts/cdp run 'return await eval("window.ipc.getAgentRoot()")' | jq -r .data)
+sqlite3 "$AGENT_ROOT/.agentwfy/agent.db" "INSERT INTO plugins (name, title, description, version, code, enabled, created_at, updated_at) VALUES ('my-plugin', 'My Plugin', '', '1.0.0', 'module.exports = { activate(api) { ... } }', 1, unixepoch(), unixepoch());"
+./scripts/cdp restart
 ```
 
-Set `CDP_PORT` env var if using a different port (default: 9223).
+### Session close button needs hover
 
-### Real input (UI interaction)
+`.session-item-close` is `display: none` by default, only visible on CSS `:hover`. CDP click still works because it resolves coordinates via deep query, but `getRect` will fail (zero size). Use `eval` to force `display: flex` first, or close sessions via IPC (`window.ipc.agent.closeSession()`).
 
-These commands dispatch events through Chromium's input pipeline — real clicks and keystrokes, not JS injection. They work without the app being focused and traverse Shadow DOM automatically.
+### Test provider setup
 
-```bash
-./scripts/cdp click <selector>              # Click element (deep-queries shadow DOM)
-./scripts/cdp click-target <id> <selector>  # Click element in specific target
-./scripts/cdp click-at <x> <y>              # Click at raw coordinates
-./scripts/cdp type <text>                   # Type text via key events
-./scripts/cdp type-target <id> <text>       # Type text in specific target
-./scripts/cdp press <key+combo>             # Press key combo (e.g., Meta+k, Enter)
-./scripts/cdp press-target <id> <key+combo> # Press key combo in specific target
-./scripts/cdp fill <selector> <text>        # Click, clear, type into element
-./scripts/cdp fill-target <id> <sel> <text> # Fill element in specific target
-./scripts/cdp wait-for <selector> [timeout] # Wait for element to be visible (default: 10s)
-./scripts/cdp wait-for-target <id> <sel> [t]# Wait for element in specific target
-./scripts/cdp assert-visible <selector>     # Assert element is visible
-./scripts/cdp assert-text <selector> <text> # Assert element contains text
-./scripts/cdp assert-gone <selector>        # Assert element is not in DOM
-```
-
-Example — open command palette, navigate to sessions, load the first one:
-
-```bash
-./scripts/cdp press Meta+k
-# Find the command palette target ID
-./scripts/cdp targets
-./scripts/cdp type-target <id> ses
-./scripts/cdp click-target <id> ".item:nth-child(2)"
-./scripts/cdp click-target <id> ".item:first-child"
-./scripts/cdp screenshot /tmp/session.png
-```
-
-### Inspecting other targets
-
-The app uses a single main window. Agent view tabs (rendered as WebContentsViews) and floating child windows (command palette, confirmation dialog) appear as separate CDP targets. Use `targets` to list them (output includes an 8-char target ID prefix), then `screenshot-target` or `eval-target` to interact:
-
-```bash
-./scripts/cdp targets
-
-# Example output:
-#   A1B2C3D4 [page] "AgentWFY" @ app://index.html/
-#   E5F6A7B8 [page] "" @ agentview://...view/16?...
-#   C9D0E1F2 [page] "Command Palette" @ file:///.../command_palette.html
-
-./scripts/cdp screenshot-target A1B2C3D4 /tmp/main.png
-./scripts/cdp eval-target E5F6A7B8 "document.querySelector('input').value"
-```
-
-Agent view tabs and URL tabs are always present while open. The command palette only appears as a target while it's open — open it first with `cdp press Meta+k`.
-
-## IPC API
-
-**Important:** IPC calls bypass the UI — they invoke main process handlers directly without clicking buttons, typing in inputs, or triggering event listeners. A test that uses `window.ipc.tabs.openTab(...)` won't catch a broken tab bar click handler. Prefer real input commands (`click`, `type`, `press`) for testing user-facing flows. Use IPC for setup/teardown, reading state, or operations unrelated to what you're currently testing (e.g., using IPC to set up data before testing a UI flow that reads it).
-
-The main page exposes `window.ipc`. Call via `cdp eval` or `cdp ipc`:
-
-```javascript
-// SQL
-window.ipc.sql.run({ sql: 'SELECT * FROM views', params: [] })
-
-// Tabs
-window.ipc.tabs.getTabState()
-window.ipc.tabs.openTab({ viewName?, filePath?, url?, title?, hidden? })
-window.ipc.tabs.closeTab({ tabId: '...' })
-window.ipc.tabs.selectTab({ tabId: '...' })
-window.ipc.tabs.reorderTabs(tabIds)
-window.ipc.tabs.togglePin({ tabId: '...' })
-window.ipc.tabs.revealTab({ tabId: '...' })
-window.ipc.tabs.toggleDevTools({ tabId: '...' })
-window.ipc.tabs.showContextMenu({ tabId: '...' })
-
-// Command palette
-window.ipc.commandPalette.show(options?)           // options: { screen?, params? }
-window.ipc.commandPalette.showFiltered(query)
-
-// Agent sessions
-window.ipc.agent.createSession({ label?, prompt?, providerId? })
-window.ipc.agent.sendMessage(text, options?)       // options: { streamingBehavior? }
-window.ipc.agent.abort()
-window.ipc.agent.getSnapshot()
-window.ipc.agent.onSnapshot(callback)
-window.ipc.agent.onStreaming(callback)
-window.ipc.agent.closeSession()
-window.ipc.agent.loadSession(file)
-window.ipc.agent.switchTo(sessionId)
-window.ipc.agent.getSessionList()
-window.ipc.agent.disposeSession(file)
-window.ipc.agent.setNotifyOnFinish(value)
-window.ipc.agent.reconnect()
-window.ipc.agent.retryNow()
-
-// Agent sidebar
-window.ipc.agentSidebar.getInstalled()
-window.ipc.agentSidebar.switch(agentRoot)
-window.ipc.agentSidebar.add()
-window.ipc.agentSidebar.addFromFile()
-window.ipc.agentSidebar.remove(agentRoot)
-window.ipc.agentSidebar.reorder(agentPaths)
-window.ipc.agentSidebar.showContextMenu(agentRoot)
-window.ipc.agentSidebar.onSwitched(callback)
-
-// Tasks
-window.ipc.tasks.start(taskId, input?, origin?)
-window.ipc.tasks.stop(runId)
-window.ipc.tasks.listRunning()
-window.ipc.tasks.listLogHistory()
-window.ipc.tasks.listLogs(limit?)
-window.ipc.tasks.readLog(logFileName)
-window.ipc.tasks.writeLog(logFileName, content)
-window.ipc.tasks.onRunFinished(callback)           // → unsubscribe fn
-
-// Providers
-window.ipc.providers.list()
-window.ipc.providers.getStatusLine(providerId)
-
-// Sessions (raw file access)
-window.ipc.sessions.list(limit?)
-window.ipc.sessions.read(sessionFileName)
-window.ipc.sessions.write(sessionFileName, content)
-
-// Store (persistent key-value)
-window.ipc.store.get(key)
-window.ipc.store.set(key, value)
-window.ipc.store.remove(key)
-
-// Dialog
-window.ipc.dialog.open(options)
-window.ipc.dialog.openExternal(url)
-
-// Database change notifications
-window.ipc.db.onDbChanged(callback)
-
-// App control
-window.ipc.restart()
-window.ipc.stop()
-window.ipc.reloadRenderer()
-window.ipc.getAgentRoot()
-window.ipc.getHttpApiPort()
-window.ipc.getBackupStatus()
-window.ipc.getDefaultView()
-```
-
-## Parallel Runs
-
-Multiple `cdp start` calls run safely in parallel — each gets a unique port, app ID, and temp directory. No coordination needed:
-
-```bash
-./scripts/cdp start    # → port: 57407
-./scripts/cdp start    # → port: 58192
-./scripts/cdp start    # → port: 59001
-```
-
-Each instance is fully isolated. `CDP_PORT=<port> ./scripts/cdp stop` cleans up that specific instance.
-
-## macOS Screen Control (`scripts/macos-control`)
-
-For the rare cases where you need to interact with native macOS UI that is not a CDP target (system file picker dialogs, macOS menu bar, Dock):
-
-```bash
-./scripts/macos-control screenshot-app Electron /tmp/app.png
-./scripts/macos-control click 500 300
-./scripts/macos-control type "hello"
-./scripts/macos-control key k command
-./scripts/macos-control list-windows Electron
-./scripts/macos-control menu Electron File "Open Agent…"
-```
-
-## Troubleshooting
-
-### App doesn't reflect code changes
-
-Rebuild and restart:
-
-```bash
-./scripts/build && ./scripts/cdp restart
-```
-
-### Wrong window in screenshot
-
-```bash
-./scripts/cdp targets
-./scripts/cdp screenshot-target <id> /tmp/specific.png
-```
+A minimal echo provider can be installed as a plugin. It echoes back "Echo: {input}" with character-by-character streaming. See the plugin installation tip above for how to insert it. After inserting, restart the app and click `.provider-card[data-provider-id="test-provider"]` to select it.
