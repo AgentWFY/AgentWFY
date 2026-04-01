@@ -65,7 +65,7 @@ async function showMessageBox(parentWindow: BaseWindow | null, options: Electron
  */
 export async function showOpenAgentDialog(parentWindow: BaseWindow | null = null): Promise<string | null> {
   const result = await showOpenDialog(parentWindow, {
-    properties: ['openDirectory'],
+    properties: ['openDirectory', 'createDirectory'],
     title: 'Add Agent',
   });
   if (result.canceled || result.filePaths.length === 0) return null;
