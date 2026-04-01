@@ -173,6 +173,7 @@ class WindowManager {
       getConfirmation: () => this.confirmation!,
       getSessionManager: () => this.getActiveAgentContext()!.sessionManager,
       getDisplayShortcut: (actionId) => this.getActiveAgentContext()?.shortcutManager.getDisplayShortcut(actionId) ?? null,
+      matchShortcut: (key, meta, ctrl, shift, alt) => this.getActiveAgentContext()?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
       reloadRenderer: () => {
         const wc = this.rendererView?.webContents;
@@ -233,6 +234,19 @@ class WindowManager {
       syncRendererBounds();
       this.commandPalette?.syncBounds();
       this.confirmation?.syncBounds();
+    });
+
+    // When the main window regains focus (e.g. Cmd+Tab back to the app),
+    // ensure a WebContents has focus so before-input-event handlers fire.
+    window.on('focus', () => {
+      // Don't steal focus from child windows (command palette, confirmation dialogs)
+      const cpWindow = this.commandPalette?.getWindow();
+      if (cpWindow && !cpWindow.isDestroyed() && cpWindow.isFocused()) return;
+
+      const rwcRef = this.rendererView?.webContents;
+      if (rwcRef && !rwcRef.isDestroyed() && !rwcRef.isFocused()) {
+        rwcRef.focus();
+      }
     });
 
     if (process.env.AGENTWFY_HEADLESS) {

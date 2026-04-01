@@ -38,6 +38,7 @@ export interface CommandPaletteManagerDeps {
   getConfirmation: () => ConfirmationManager;
   getSessionManager: () => AgentSessionManager;
   getDisplayShortcut: (actionId: string) => string | null;
+  matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleShortcutAction: (action: string) => void;
   reloadRenderer: () => void;
 }
@@ -158,6 +159,19 @@ export class CommandPaletteManager {
       this.commandPaletteWindow.setAlwaysOnTop(true, 'floating');
       this.commandPaletteWindow.setWindowButtonVisibility(false);
     }
+
+    // Handle keyboard shortcuts when the palette has focus (e.g. Cmd+K to toggle off)
+    this.commandPaletteWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const key = String(input.key || '').toLowerCase();
+      if (!key || input.isAutoRepeat) return;
+
+      const action = this.deps.matchShortcut(key, !!input.meta, !!input.control, !!input.shift, !!input.alt);
+      if (!action) return;
+
+      event.preventDefault();
+      this.deps.handleShortcutAction(action);
+    });
 
     this.commandPaletteWindow.on('blur', () => {
       setTimeout(() => {
