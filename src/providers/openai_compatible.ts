@@ -704,9 +704,9 @@ export function createOpenAICompatibleFactory(
 
   function readProviderConfig(): { baseUrl: string; modelId: string; apiKey: string; reasoning: string | undefined } {
     return {
-      baseUrl: (getConfig(`${CONFIG_PREFIX}.baseUrl`, DEFAULT_BASE_URL) as string),
-      modelId: (getConfig(`${CONFIG_PREFIX}.modelId`, DEFAULT_MODEL_ID) as string),
-      apiKey: (getConfig(`${CONFIG_PREFIX}.apiKey`, '') as string),
+      baseUrl: (getConfig(`${CONFIG_PREFIX}.base-url`, DEFAULT_BASE_URL) as string),
+      modelId: (getConfig(`${CONFIG_PREFIX}.model-id`, DEFAULT_MODEL_ID) as string),
+      apiKey: (getConfig(`${CONFIG_PREFIX}.api-key`, '') as string),
       reasoning: getConfig(`${CONFIG_PREFIX}.reasoning`, undefined) as string | undefined,
     }
   }

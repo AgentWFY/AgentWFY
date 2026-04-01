@@ -216,7 +216,7 @@ ipcMain.handle('app:getDefaultView', async () => {
   try {
     const root = windowManager.getActiveAgentRoot();
     if (!root) return null;
-    const configValue = getConfigValue(root, 'system.defaultView', 'home');
+    const configValue = getConfigValue(root, 'system.default-view', 'home');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
     const viewName = trimmed || 'home';
     const view = await getViewByName(root, viewName);

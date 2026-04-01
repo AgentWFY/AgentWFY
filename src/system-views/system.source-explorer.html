@@ -1373,11 +1373,11 @@
 </script>
 <script id="script-config">
   const CONFIG_REFERENCE = [
-    { key: 'backup.intervalHours', type: 'number', def: '24', range: '1\u20138760', desc: 'Auto backup interval (hours)' },
-    { key: 'backup.maxCount', type: 'number', def: '5', range: '1\u2013100', desc: 'Max backups to keep per agent' },
-    { key: 'cleanup.sessionRetentionDays', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old sessions (0 = keep forever)' },
-    { key: 'cleanup.taskLogRetentionDays', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old task logs (0 = keep forever)' },
-    { key: 'httpApi.port', type: 'number', def: '9877', range: '1\u201365535', desc: 'HTTP API port (restart required)' },
+    { key: 'backup.interval-hours', type: 'number', def: '24', range: '1\u20138760', desc: 'Auto backup interval (hours)' },
+    { key: 'backup.max-count', type: 'number', def: '5', range: '1\u2013100', desc: 'Max backups to keep per agent' },
+    { key: 'cleanup.session-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old sessions (0 = keep forever)' },
+    { key: 'cleanup.task-log-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old task logs (0 = keep forever)' },
+    { key: 'http-api.port', type: 'number', def: '9877', range: '1\u201365535', desc: 'HTTP API port (restart required)' },
   ];
 
   function selectConfigItem(key) {

@@ -280,7 +280,7 @@ export class TlStatusLine extends HTMLElement {
     if (!portEl || !sepEl) return
     if (!this._clicksBound) {
       portEl.addEventListener('click', () => {
-        window.ipc?.commandPalette?.show({ screen: 'settings', params: { filter: 'httpapi' } })
+        window.ipc?.commandPalette?.show({ screen: 'settings', params: { filter: 'http-api' } })
       })
     }
     try {

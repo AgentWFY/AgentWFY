@@ -745,7 +745,7 @@ await runSql({ sql: 'UPDATE triggers SET enabled = 0 WHERE id = ?', params: [tri
 
 Local HTTP server for external integrations.
 
-- **Default port:** 9877 (configurable via `system.httpApi.port`)
+- **Default port:** 9877 (configurable in settings)
 - **CORS:** Enabled for all origins
 - **Max body size:** 10 MB
 - **Lockfile:** `.agentwfy/http-api.pid` → `{ "port": 9877, "pid": 12345 }`
@@ -908,12 +908,7 @@ An `.agent.awfy` file must contain at least `views` and `docs` tables. Upload, o
 
 ### Built-in: OpenAI Compatible
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `system.openai-compatible-provider.baseUrl` | `https://openrouter.ai/api` | API base URL |
-| `system.openai-compatible-provider.modelId` | `deepseek/deepseek-v3.2` | Model identifier |
-| `system.openai-compatible-provider.apiKey` | (none) | Bearer token |
-| `system.openai-compatible-provider.reasoning` | off | `off`, `low`, `medium`, `high` |
+Provider settings are defined in `src/system-config/system-config.json`.
 
 **Reasoning/Thinking:** When enabled, sends `reasoning.effort` parameter and displays thinking blocks.
 
@@ -923,17 +918,7 @@ An `.agent.awfy` file must contain at least `views` and `docs` tables. Upload, o
 
 ## Configuration Reference
 
-All settings stored in the `config` table.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `system.defaultView` | `home` | View to open on startup |
-| `system.provider` | `openai-compatible` | Active LLM provider ID |
-| `system.httpApi.port` | `9877` | HTTP API port |
-| `system.backup.intervalHours` | `24` | Auto-backup frequency |
-| `system.backup.maxCount` | `5` | Max backups to retain |
-| `system.cleanup.sessionRetentionDays` | `30` | Days to keep old sessions |
-| `system.cleanup.taskLogRetentionDays` | `30` | Days to keep task logs |
+All settings stored in the `config` table. See `src/system-config/system-config.json` for the full list of system settings and their descriptions.
 
 ### Global vs Agent Settings
 

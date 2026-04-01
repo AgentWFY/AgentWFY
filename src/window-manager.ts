@@ -776,7 +776,7 @@ class WindowManager {
     const { agentRoot } = ctx;
     const win = this.mainWindow!;
     cleanStaleLockfile(agentRoot);
-    const preferredPort = Number(getConfigValue(agentRoot, 'system.httpApi.port', '9877'));
+    const preferredPort = Number(getConfigValue(agentRoot, 'system.http-api.port', '9877'));
 
     try {
       ctx.httpApi = await startHttpApi({ getAgentRoot: () => agentRoot, preferredPort });
@@ -958,7 +958,7 @@ class WindowManager {
 
   private async openDefaultViewForContext(ctx: AgentContext): Promise<void> {
     try {
-      const configValue = getConfigValue(ctx.agentRoot, 'system.defaultView', 'home');
+      const configValue = getConfigValue(ctx.agentRoot, 'system.default-view', 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
       const viewName = trimmed || 'home';
       const view = await getViewByName(ctx.agentRoot, viewName);
