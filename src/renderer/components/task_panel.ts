@@ -700,7 +700,6 @@ export class TlTaskPanel extends HTMLElement {
         for (const [k, v] of entries) {
           html += `<div class="trig-kv"><span class="trig-k">${escapeHtml(k)}</span><span class="trig-v">${escapeHtml(v)}</span></div>`
         }
-        html += `<div class="trig-kv"><span class="trig-k">task</span><span class="trig-v">${escapeHtml(taskName)}</span></div>`
         html += '</div>'
       }
       html += '</div>'
