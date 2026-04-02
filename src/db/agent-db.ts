@@ -561,10 +561,11 @@ class AgentDb {
 const connections = new Map<string, AgentDb>();
 
 export function getOrCreateAgentDb(dataDir: string): AgentDb {
-  let conn = connections.get(dataDir);
+  const key = path.resolve(dataDir);
+  let conn = connections.get(key);
   if (conn) return conn;
 
-  const agentDir = path.join(dataDir, '.agentwfy');
+  const agentDir = path.join(key, '.agentwfy');
   fs.mkdirSync(agentDir, { recursive: true });
   const agentDbPath = path.join(agentDir, 'agent.db');
   const systemDocsPath = path.join(import.meta.dirname, '..', 'system-docs.json');
@@ -572,14 +573,15 @@ export function getOrCreateAgentDb(dataDir: string): AgentDb {
   const systemConfigPath = path.join(import.meta.dirname, '..', 'system-config.json');
 
   conn = new AgentDb({ dbPath: agentDbPath, systemDocsPath, systemViewsPath, systemConfigPath });
-  connections.set(dataDir, conn);
+  connections.set(key, conn);
   return conn;
 }
 
 export function closeAgentDb(dataDir: string): void {
-  const conn = connections.get(dataDir);
+  const key = path.resolve(dataDir);
+  const conn = connections.get(key);
   if (conn) {
     conn.close();
-    connections.delete(dataDir);
+    connections.delete(key);
   }
 }

@@ -39,14 +39,16 @@ interface PackageAsset {
   data: Buffer
 }
 
-function readPackage(packagePath: string): {
+export interface PackageData {
   plugins: PackagePlugin[]
   docs: PackageDoc[]
   views: PackageView[]
   config: PackageConfig[]
   assets: PackageAsset[]
-} {
-  const db = new DatabaseSync(packagePath)
+}
+
+function readPackage(packagePath: string): PackageData {
+  const db = new DatabaseSync(packagePath, { readOnly: true })
   try {
     let plugins: PackagePlugin[]
     try {
@@ -167,27 +169,20 @@ function validatePackage(
   return errors
 }
 
-export function readPackageMetadata(packagePath: string): { plugins: Array<{ name: string; title: string; description: string; version: string; author: string | null; repository: string | null; license: string | null }> } {
-  const { plugins, docs, views, config, assets } = readPackage(packagePath)
-
-  const errors = validatePackage(plugins, docs, views, config, assets)
+export function readValidatedPackage(packagePath: string): PackageData {
+  const data = readPackage(packagePath)
+  const errors = validatePackage(data.plugins, data.docs, data.views, data.config, data.assets)
   if (errors.length > 0) {
     throw new Error(`Invalid plugin package:\n${errors.join('\n')}`)
   }
-
-  return {
-    plugins: plugins.map(p => ({ name: p.name, title: p.title, description: p.description, version: p.version, author: p.author, repository: p.repository, license: p.license })),
-  }
+  return data
 }
 
 export function installFromPackage(agentRoot: string, packagePath: string): { installed: string[] } {
-  const { plugins, docs, views, config, assets } = readPackage(packagePath)
+  return installPackageData(agentRoot, readValidatedPackage(packagePath))
+}
 
-  const errors = validatePackage(plugins, docs, views, config, assets)
-  if (errors.length > 0) {
-    throw new Error(`Invalid plugin package:\n${errors.join('\n')}`)
-  }
-
+export function installPackageData(agentRoot: string, { plugins, docs, views, config, assets }: PackageData): { installed: string[] } {
   const db = getOrCreateAgentDb(agentRoot)
   db.installPlugins(plugins, docs, views, config)
 

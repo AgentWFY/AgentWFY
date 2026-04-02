@@ -5,7 +5,7 @@ import { listViews, getViewByName } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
-import { installFromPackage, uninstallPlugin, readPackageMetadata } from '../plugins/installer.js';
+import { installFromPackage, installPackageData, uninstallPlugin, readValidatedPackage } from '../plugins/installer.js';
 import { storeRemove } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig, getGlobalValue } from '../settings/config.js';
 import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
@@ -516,8 +516,10 @@ export class CommandPaletteManager {
 
   performInstall(packagePath: string): { installed: string[] } {
     const agentRoot = this.deps.getAgentRoot();
-    const installResult = installFromPackage(agentRoot, packagePath);
+    return this.finishInstall(agentRoot, installFromPackage(agentRoot, packagePath));
+  }
 
+  private finishInstall(agentRoot: string, installResult: { installed: string[] }): { installed: string[] } {
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry && installResult.installed.length > 0) {
       const db = getOrCreateAgentDb(agentRoot);
@@ -607,16 +609,16 @@ export class CommandPaletteManager {
   async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
     const agentRoot = this.deps.getAgentRoot();
     packagePath = path.isAbsolute(packagePath) ? packagePath : path.resolve(agentRoot, packagePath);
-    const metadata = readPackageMetadata(packagePath);
+    const packageData = readValidatedPackage(packagePath);
     const confirmation = this.deps.getConfirmation();
     const result = await confirmation.requestConfirmation('confirm-plugin-install', {
       packagePath,
-      plugins: metadata.plugins,
+      plugins: packageData.plugins.map(({ code, ...meta }) => meta),
     });
     if (!result.confirmed) {
       return { installed: [] };
     }
-    return this.performInstall(packagePath);
+    return this.finishInstall(agentRoot, installPackageData(agentRoot, packageData));
   }
 
   async requestPluginToggle(pluginName: string): Promise<{ toggled: boolean; enabled?: boolean }> {
