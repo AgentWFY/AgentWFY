@@ -250,7 +250,7 @@ export interface WorkerHostMethodMap {
     result: unknown
   }
   spawnSession: {
-    params: { prompt: string }
+    params: { prompt: string; providerId?: string }
     result: { sessionId: string }
   }
   sendToSession: {
@@ -284,6 +284,10 @@ export interface WorkerHostMethodMap {
   getAvailableFunctions: {
     params: Record<string, never>
     result: Array<{ name: string; source: string }>
+  }
+  getAvailableProviders: {
+    params: Record<string, never>
+    result: Array<{ id: string; name: string }>
   }
   openExternal: {
     params: { url: string }

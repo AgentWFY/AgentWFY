@@ -5,6 +5,7 @@ import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { TaskRunner } from '../../task-runner/task_runner.js'
 import type { CommandPaletteManager } from '../../command-palette/manager.js'
 import type { EventBus } from '../../event-bus.js'
+import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -23,6 +24,7 @@ interface BuiltInFunctionDeps {
   getTaskRunner: () => TaskRunner
   getCommandPalette: () => CommandPaletteManager
   eventBus: EventBus
+  providerRegistry: ProviderRegistry
 }
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
@@ -38,6 +40,10 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
 
   registry.register('getAvailableFunctions', async () => {
     return registry.getFunctionInfo()
+  })
+
+  registry.register('getAvailableProviders', async () => {
+    return deps.providerRegistry.list().map(({ id, name }) => ({ id, name }))
   })
 
   registry.register('openExternal', async (params) => {
