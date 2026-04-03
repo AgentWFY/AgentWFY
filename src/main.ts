@@ -339,7 +339,12 @@ function buildAndSetMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'toggleDevTools' },
+        {
+          label: 'Toggle Developer Tools',
+          click: () => {
+            windowManager.handleShortcutAction('toggle-dev-tools');
+          },
+        },
         { type: 'separator' },
         {
           label: 'Reload Renderer',

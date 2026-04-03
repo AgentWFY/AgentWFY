@@ -931,6 +931,9 @@ class WindowManager {
       case 'open-settings':
         this.commandPalette?.show({ screen: 'settings' });
         break;
+      case 'toggle-dev-tools':
+        this.rendererView?.webContents.toggleDevTools();
+        break;
       default:
         if (action.startsWith('switch-to-tab-')) {
           const index = parseInt(action.slice(-1), 10) - 1;

@@ -138,5 +138,9 @@
   {
     "name": "system.shortcuts.open-settings",
     "description": "Shortcut for Open Settings (default: mod+,). Set to 'disabled' to unbind."
+  },
+  {
+    "name": "system.shortcuts.toggle-dev-tools",
+    "description": "Shortcut for Toggle Developer Tools (default: alt+mod+i). Set to 'disabled' to unbind."
   }
 ]
