@@ -194,13 +194,17 @@ export function isViewDocumentRequest(url: URL): boolean {
     return false;
   }
 
+  // View document URLs always carry a tabId param (used by tab tracking in
+  // TabViewManager.parseTrackedViewFromUrl). Sub-resource fetches (images, scripts)
+  // resolve relative to the view URL and never inherit query params, so tabId
+  // reliably distinguishes view documents from data-dir file assets.
+  if (url.searchParams.has('tabId')) {
+    return true;
+  }
+
   // Treat paths that look like files (contains "/" or extension) as data-dir assets.
   if (normalizedPath.includes('/') || normalizedPath.includes('.')) {
     return false;
-  }
-
-  if (url.searchParams.has('tabId') || url.searchParams.has('rev') || url.searchParams.has('t')) {
-    return true;
   }
 
   return true;
