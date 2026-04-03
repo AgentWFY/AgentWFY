@@ -93,8 +93,6 @@ const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 const FALLBACK_VIEW_WIDTH = 1280;
 const FALLBACK_VIEW_HEIGHT = 720;
-const IS_DARWIN = process.platform === 'darwin';
-
 const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
   info: 'info',

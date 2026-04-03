@@ -21,11 +21,9 @@ export class TaskDetailScreen implements PaletteScreen {
   readonly searchIsFilter = false
   readonly navigable = false
 
-  private readonly bridge: CommandPaletteBridge
   private readonly params: TaskDetailParams
 
-  constructor(bridge: CommandPaletteBridge, params: TaskDetailParams) {
-    this.bridge = bridge
+  constructor(_bridge: CommandPaletteBridge, params: TaskDetailParams) {
     this.params = params
     this.breadcrumb = params.taskTitle
   }

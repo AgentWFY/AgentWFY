@@ -535,7 +535,6 @@ class WindowManager {
     if (!this.persistedAgentPaths.includes(agentRoot) && !this.agentContexts.has(agentRoot)) return;
 
     const prevRoot = this.activeAgentRoot;
-    const win = this.mainWindow;
 
     // Lazy-init: initialize agent context on first switch
     let ctx = this.agentContexts.get(agentRoot);
@@ -788,7 +787,6 @@ class WindowManager {
 
   private async startHttpServerForAgentContext(ctx: AgentContext): Promise<void> {
     const { agentRoot } = ctx;
-    const win = this.mainWindow!;
     cleanStaleLockfile(agentRoot);
     const preferredPort = Number(getConfigValue(agentRoot, 'system.http-api.port', '9877'));
 

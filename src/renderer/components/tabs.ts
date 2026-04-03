@@ -142,7 +142,7 @@ export class TlTabs extends HTMLElement {
     } else {
       const tabBar = this.tabBarEl
 
-      visible.forEach((tab, index) => {
+      visible.forEach((tab) => {
         const tabItem = document.createElement('div')
         tabItem.className = 'tab-item'
         if (tab.id === this.selectedTabId) tabItem.classList.add('active')

@@ -1,4 +1,3 @@
-import type { DisplayMessage } from '../../agent/provider_types.js'
 import {
   buildRenderBlocks,
   updateMessagesEl
@@ -1133,23 +1132,6 @@ export class TlAgentChat extends HTMLElement {
     }
 
     this.render()
-  }
-
-  private async handleReconnect() {
-    this.error = null
-    const keepPanelOpen = agentSessionStore.state.ready && this.activePanel === 'providers'
-    this.isInitializing = true
-    this.render()
-    try {
-      await agentSessionStore.loadProviders()
-      await agentSessionStore.reconnect()
-      this.activePanel = keepPanelOpen ? 'providers' : null
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-    } finally {
-      this.isInitializing = false
-      this.render()
-    }
   }
 
   private async handleStop() {

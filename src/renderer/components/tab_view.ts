@@ -496,13 +496,6 @@ export class TlTabView extends HTMLElement {
     this.pendingLoadAnimationFrame = requestAnimationFrame(tryLoad)
   }
 
-  private handleReload() {
-    if (!this._source) return
-    this._viewChanged = false
-    this.mounted = false
-    this.scheduleLoad(this._source)
-  }
-
   private render() {
     if (!this.containerEl || !this.wrapperEl || !this.loadingEl || !this.errorEl) return
 
