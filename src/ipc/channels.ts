@@ -61,6 +61,7 @@ export const Channels = {
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
     runFinished: 'tasks:runFinished',
+    runStarted: 'tasks:runStarted',
   },
   plugins: {
     call: 'plugin:call',

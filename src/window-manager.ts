@@ -424,6 +424,11 @@ class WindowManager {
           this.sendToRenderer(Channels.tasks.runFinished, payload);
         }
       },
+      onRunStarted: (payload) => {
+        if (!win.isDestroyed() && this.activeAgentRoot === agentRoot) {
+          this.sendToRenderer(Channels.tasks.runStarted, payload);
+        }
+      },
     });
 
     const shortcutManager = new ShortcutManager(agentRoot);

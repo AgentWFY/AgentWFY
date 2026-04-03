@@ -430,6 +430,7 @@ export class TlTaskPanel extends HTMLElement {
   private detailAutoScroll = true
   private activeRuns: Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private runFinishedUnsub: (() => void) | null = null
+  private runStartedUnsub: (() => void) | null = null
   private runningTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
@@ -450,6 +451,11 @@ export class TlTaskPanel extends HTMLElement {
       this.loadLogHistory()
     }) ?? null
 
+    this.runStartedUnsub = window.ipc?.tasks.onRunStarted((payload: any) => {
+      this.activeRuns.unshift(payload)
+      this.updateContent()
+    }) ?? null
+
     this.runningTimer = setInterval(() => {
       if (this.activeRuns.length > 0) {
         this.updateRunTimers()
@@ -465,6 +471,8 @@ export class TlTaskPanel extends HTMLElement {
   disconnectedCallback() {
     this.runFinishedUnsub?.()
     this.runFinishedUnsub = null
+    this.runStartedUnsub?.()
+    this.runStartedUnsub = null
     if (this.runningTimer) {
       clearInterval(this.runningTimer)
       this.runningTimer = null
@@ -491,9 +499,7 @@ export class TlTaskPanel extends HTMLElement {
       const ipc = window.ipc
       if (ipc) {
         const input = e.detail?.input
-        ipc.tasks.start(taskName, input || undefined, { type: 'command-palette' } as any).then(() => {
-          this.loadRunningTasks()
-        }).catch(err => {
+        ipc.tasks.start(taskName, input || undefined, { type: 'command-palette' } as any).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })
       }
@@ -919,7 +925,6 @@ export class TlTaskPanel extends HTMLElement {
     const ipc = window.ipc
     if (ipc) {
       ipc.tasks.start(taskName, inputValue, { type: 'task-panel' } as any).then(() => {
-        this.loadRunningTasks()
         this.activeTab = 'runs'
         this.expandedTaskName = null
         this.updateContent()
