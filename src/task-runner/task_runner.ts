@@ -41,6 +41,7 @@ interface TaskRunnerDeps {
   getJsRuntime: () => JsRuntime
   busPublish: (topic: string, data: unknown) => void
   onRunFinished?: (payload: unknown) => void
+  onRunStarted?: (payload: unknown) => void
 }
 
 export class TaskRunner {
@@ -93,6 +94,11 @@ export class TaskRunner {
     }
 
     this._runs.unshift(run)
+
+    this.deps.onRunStarted?.({
+      runId: run.runId, taskName: run.taskName, title: run.title,
+      status: run.status, origin: run.origin, startedAt: run.startedAt,
+    })
 
     const runtime = getJsRuntime()
     runtime.ensureWorker(runId)

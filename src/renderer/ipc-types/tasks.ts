@@ -9,4 +9,5 @@ export interface TasksApi {
   readLog(logFileName: string): Promise<string>
   writeLog(logFileName: string, content: string): Promise<void>
   onRunFinished(callback: (payload: unknown) => void): () => void
+  onRunStarted(callback: (payload: unknown) => void): () => void
 }

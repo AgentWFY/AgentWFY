@@ -46,6 +46,7 @@ const Channels = {
     readLog: 'tasks:readLog',
     writeLog: 'tasks:writeLog',
     runFinished: 'tasks:runFinished',
+    runStarted: 'tasks:runStarted',
   },
   providers: {
     list: 'provider:list',
@@ -298,6 +299,11 @@ if (isApp) {
         const handler = (_event: unknown, payload: unknown) => callback(payload);
         ipcRenderer.on(Channels.tasks.runFinished, handler);
         return () => ipcRenderer.removeListener(Channels.tasks.runFinished, handler);
+      },
+      onRunStarted(callback: (payload: unknown) => void): () => void {
+        const handler = (_event: unknown, payload: unknown) => callback(payload);
+        ipcRenderer.on(Channels.tasks.runStarted, handler);
+        return () => ipcRenderer.removeListener(Channels.tasks.runStarted, handler);
       },
     },
     providers: {
