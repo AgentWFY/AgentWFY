@@ -65,7 +65,7 @@ For displaying views and interacting with web pages in a browser context. Prefer
 
 - Tasks & Triggers: `startTask({ taskName, input? })`, `stopTask({ runId })`. See `system.tasks` and `system.triggers`.
 - EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `system.eventbus`.
-- Sessions: `spawnSession({ prompt })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
+- Sessions: `spawnSession({ prompt, providerId? })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
 
 ## Other docs

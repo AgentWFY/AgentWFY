@@ -257,8 +257,8 @@ export class AgentSessionManager {
     return () => this.listeners.delete(listener)
   }
 
-  async spawnSession(prompt: string): Promise<{ sessionId: string }> {
-    const agent = await this.createAgentInstance({})
+  async spawnSession(prompt: string, providerId?: string): Promise<{ sessionId: string }> {
+    const agent = await this.createAgentInstance({ providerId })
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
 

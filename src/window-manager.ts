@@ -402,6 +402,7 @@ class WindowManager {
       getTaskRunner: () => agentCtx.taskRunner,
       getCommandPalette: () => this.commandPalette!,
       eventBus,
+      providerRegistry,
     });
 
     const jsRuntime = getOrCreateRuntime(agentRoot, {

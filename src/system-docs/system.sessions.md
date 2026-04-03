@@ -4,7 +4,7 @@ Spawn and interact with sessions.
 
 ## Spawning Sessions
 
-`spawnSession({ prompt })` → `{ sessionId }` — spawn a session. It runs independently with its own execJs context and the same host APIs. The `sessionId` is a session file name — the conversation is persisted to disk.
+`spawnSession({ prompt, providerId? })` → `{ sessionId }` — spawn a session. It runs independently with its own execJs context and the same host APIs. The `sessionId` is a session file name — the conversation is persisted to disk. Pass `providerId` to use a specific provider instead of the default.
 
 When a spawned session finishes processing, its last assistant response is auto-published to `session:response:{sessionId}`.
 
@@ -39,3 +39,7 @@ console.log(r2)
 ## Opening Sessions in Chat
 
 `openSessionInChat({ sessionId })` → void — opens a spawned session in the main chat panel. Works for both running and finished sessions.
+
+## Providers
+
+`getAvailableProviders()` → `[{ id, name }]` — list registered LLM providers. Use with `spawnSession` to run a session on a specific provider.

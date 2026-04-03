@@ -50,11 +50,11 @@ export function registerAgentSessionHandlers(
     return getManager(event).getSnapshot()
   })
 
-  ipcMain.handle(Channels.agent.spawnSession, async (event, prompt: string) => {
+  ipcMain.handle(Channels.agent.spawnSession, async (event, prompt: string, providerId?: string) => {
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('spawnSession requires a non-empty prompt string')
     }
-    return getManager(event).spawnSession(prompt)
+    return getManager(event).spawnSession(prompt, providerId)
   })
 
   ipcMain.handle(Channels.agent.sendToSession, async (event, sessionId: string, message: string) => {
