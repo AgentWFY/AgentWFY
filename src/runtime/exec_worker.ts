@@ -54,11 +54,35 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-function serializeError(error: unknown): ExecJsSerializedError {
+// AsyncFunction adds 2 implicit lines (function signature) +
+// our body wrapper adds 2 lines ("use strict";\n + return await (async () => {\n)
+const V8_LINE_OFFSET = 4
+
+function cleanStack(raw: string | undefined, codeLineCount?: number): string | undefined {
+  if (!raw) return undefined
+
+  const frames: string[] = []
+  for (const line of raw.split('\n')) {
+    const m = line.match(/<anonymous>:(\d+):(\d+)/)
+    if (!m) continue
+    const userLine = parseInt(m[1], 10) - V8_LINE_OFFSET
+    if (userLine < 1) continue
+    if (codeLineCount !== undefined && userLine > codeLineCount) continue
+    const entry = `  at line ${userLine}, col ${m[2]}`
+    if (frames.length === 0 || frames[frames.length - 1] !== entry) {
+      frames.push(entry)
+    }
+  }
+
+  return frames.length > 0 ? frames.join('\n') : undefined
+}
+
+function serializeError(error: unknown, codeLineCount?: number): ExecJsSerializedError {
   if (error instanceof Error) {
     return {
       name: error.name,
       message: error.message,
+      stack: cleanStack(error.stack, codeLineCount),
     }
   }
 
@@ -296,7 +320,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
   } catch (error) {
     const details: ExecJsDetails = {
       ok: false,
-      error: serializeError(error),
+      error: serializeError(error, code.split('\n').length),
       logs,
       files: capturedFiles,
       timeoutMs,

@@ -137,7 +137,8 @@ export class TaskRunner {
         run.result = details.value
       } else {
         run.status = 'failed'
-        run.error = details.error?.message ?? 'Unknown error'
+        const msg = details.error?.message ?? 'Unknown error'
+        run.error = details.error?.stack ? `${msg}\n${details.error.stack}` : msg
       }
     } catch (err) {
       // Don't overwrite status/error if stopTask already finalized this run

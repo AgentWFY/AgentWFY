@@ -21,14 +21,12 @@ export class FunctionRegistry {
     if (!entry) {
       throw new Error(`Unknown function: ${name}`)
     }
-    if (entry.source === BUILT_IN_SOURCE) {
-      return entry.handler(params)
-    }
     try {
       return await entry.handler(params)
     } catch (err) {
+      const label = entry.source === BUILT_IN_SOURCE ? name : `${name} (${entry.source})`
       throw new Error(
-        `Plugin function '${name}' (${entry.source}) failed: ${err instanceof Error ? err.message : String(err)}`
+        `${label}: ${err instanceof Error ? err.message : String(err)}`
       )
     }
   }
