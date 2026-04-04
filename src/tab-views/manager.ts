@@ -371,7 +371,6 @@ export class TabViewManager {
     } else {
       // Keep real dimensions so the WebContents renders at a proper viewport
       // (CSS layouts, media queries, capturePage all depend on non-zero bounds).
-      // setVisible(false) removes the view from the compositor — no visual or input side effects.
       const mainWindow = this.deps.getMainWindow();
       const [w, h] = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getContentSize() : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
       state.view.setBounds({ x: 0, y: 0, width: w, height: h });
@@ -623,11 +622,30 @@ export class TabViewManager {
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
     const state = this.resolveTabViewState(request.tabId);
-    const image = await state.view.webContents.capturePage();
-    return {
-      base64: image.toPNG().toString('base64'),
-      mimeType: 'image/png',
-    };
+
+    // Non-selected views have setVisible(false) to save compositor resources.
+    // Temporarily enable compositing behind all other views for the capture.
+    const needsCompositing = state.tabId !== this.selectedTabId;
+    if (needsCompositing) {
+      const mainWindow = this.deps.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.contentView.addChildView(state.view, 0);
+      }
+      state.view.setVisible(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+
+    try {
+      const image = await state.view.webContents.capturePage();
+      return {
+        base64: image.toPNG().toString('base64'),
+        mimeType: 'image/png',
+      };
+    } finally {
+      if (needsCompositing) {
+        state.view.setVisible(false);
+      }
+    }
   }
 
   async getTabConsoleLogsById(request: {
