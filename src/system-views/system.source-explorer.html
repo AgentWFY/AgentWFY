@@ -1,1572 +1,1210 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Source Explorer</title>
-  <!--
-    SECTIONS:
-    style-layout      – page shell: header, sidebar, container, mode tabs
-    style-components  – list items, badges, buttons, type labels, content area
-    style-editor      – code viewer, editor, line numbers, syntax highlighting, run output
-    style-modals      – modal overlay, toast, config tables, trigger detail
-    script-highlight  – syntax highlighting: HTML, JS, CSS, Markdown
-    script-data       – state, data loading, CRUD operations, task runner
-    script-render     – sidebar list rendering, content display, mode switching
-    script-config     – config tab: overview, editing, create modal, reference table
-    script-init       – event wiring and startup
-  -->
-<style id="style-layout">
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: var(--font-family);
-    background: var(--color-bg1);
-    color: var(--color-text3);
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+<meta charset="utf-8">
+<title>Source Explorer</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-family);
+  background: var(--color-bg1);
+  color: var(--color-text3);
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+svg.ic {
+  width: 14px; height: 14px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  vertical-align: -2px;
+}
 
-  svg.icon {
-    width: 14px; height: 14px;
-    stroke: currentColor; fill: none;
-    stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
-    vertical-align: -2px;
-  }
+/* Sidebar */
+.sidebar {
+  width: 260px; min-width: 260px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg2);
+  display: flex; flex-direction: column;
+}
+.sidebar-top { padding: 10px 10px 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; }
+.tab {
+  padding: 5px 10px; font-size: 11px; font-weight: 500;
+  cursor: pointer; border: none; background: none;
+  color: var(--color-text2); border-radius: 6px;
+  font-family: var(--font-family); white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+  transition: all var(--transition-fast);
+}
+.tab:hover { color: var(--color-text3); background: var(--color-item-hover); }
+.tab.active { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.tab .cnt {
+  font-size: 9px; font-weight: 600;
+  background: var(--color-bg3); color: var(--color-text1);
+  padding: 0 5px; border-radius: 6px; line-height: 16px;
+}
+.tab.active .cnt {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+}
+.toolbar {
+  display: flex; gap: 4px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.toolbar input {
+  flex: 1; min-width: 0; padding: 6px 10px;
+  border: 1px solid var(--color-input-border); border-radius: 6px;
+  background: var(--color-input-bg); color: var(--color-text3);
+  font-size: 12px; font-family: var(--font-family); outline: none;
+  transition: border var(--transition-fast);
+}
+.toolbar input:focus { border-color: var(--color-focus-border); }
+.toolbar input::placeholder { color: var(--color-placeholder); }
+.tool-btn {
+  padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg3); color: var(--color-text2);
+  cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-family);
+  transition: all var(--transition-fast);
+}
+.tool-btn:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-bg2);
-    flex-shrink: 0;
-  }
-  header h1 {
-    font-size: 15px; font-weight: 600; margin: 0;
-    display: flex; align-items: center; gap: 8px;
-  }
-  header .header-actions { display: flex; gap: 6px; }
-  .container { display: flex; flex: 1; overflow: hidden; }
+/* List */
+.list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.item {
+  padding: 8px 12px; cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.item:hover { background: var(--color-item-hover); }
+.item.active { background: var(--color-surface); }
+.item-name {
+  font-size: 12px; font-weight: 500;
+  font-family: var(--font-mono); word-break: break-all; line-height: 1.4;
+}
+.item-meta {
+  font-size: 10px; color: var(--color-text1);
+  margin-top: 2px; display: flex; gap: 6px; align-items: center;
+}
 
-  .sidebar {
-    width: 280px; min-width: 280px;
-    border-right: 1px solid var(--color-border);
-    background: var(--color-bg2);
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .mode-tabs {
-    display: flex; gap: 2px;
-    align-items: center;
-  }
-  .mode-tab {
-    padding: 6px 12px;
-    font-size: 12px; font-weight: 500;
-    cursor: pointer; border: none; background: none;
-    color: var(--color-text2);
-    border-radius: var(--radius-md);
-    transition: all var(--transition-fast);
-    display: flex; align-items: center; gap: 5px;
-    font-family: var(--font-family);
-    white-space: nowrap;
-  }
-  .mode-tab:hover { color: var(--color-text3); background: var(--color-item-hover); }
-  .mode-tab.active { color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-  .mode-tab .tab-count {
-    font-size: 10px; font-weight: 600;
-    background: var(--color-bg3); color: var(--color-text1);
-    padding: 1px 6px; border-radius: 8px;
-  }
-  .mode-tab.active .tab-count {
-    background: color-mix(in srgb, var(--color-accent) 20%, transparent);
-    color: var(--color-accent);
-  }
-  .sidebar .search-box {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--color-divider);
-    flex-shrink: 0;
-    display: flex; gap: 6px;
-  }
-  .sidebar input[type="text"] {
-    width: 100%; padding: 7px 10px;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-md);
-    background: var(--color-input-bg); color: var(--color-text3);
-    font-size: 12px; font-family: var(--font-family);
-    outline: none; transition: border var(--transition-fast);
-    flex: 1; min-width: 0;
-  }
-  .sidebar input[type="text"]:focus { border-color: var(--color-focus-border); }
-  .sidebar input::placeholder { color: var(--color-placeholder); }
-</style>
-<style id="style-components">
-  .item-list { flex: 1; overflow-y: auto; padding: 4px 0; }
-  .list-item {
-    padding: 9px 14px; cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: background var(--transition-fast);
-  }
-  .list-item:hover { background: var(--color-item-hover); }
-  .list-item.active { background: var(--color-surface); border-left-color: var(--color-accent); }
-  .list-item .item-name {
-    font-size: 12px; font-weight: 500;
-    font-family: var(--font-mono); word-break: break-all; line-height: 1.4;
-  }
-  .list-item .item-meta {
-    font-size: 11px; color: var(--color-text1);
-    margin-top: 3px; display: flex; gap: 8px; align-items: center;
-  }
-  .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
-  .badge.task-badge { background: color-mix(in srgb, var(--color-accent) 12%, transparent); color: var(--color-accent); }
-  .badge.timeout-badge { background: var(--color-bg3); color: var(--color-text1); }
-  .badge.trigger-schedule { background: color-mix(in srgb, #61afef 15%, transparent); color: #61afef; }
-  .badge.trigger-http { background: color-mix(in srgb, var(--color-green-fg) 15%, transparent); color: var(--color-green-fg); }
-  .badge.trigger-event { background: color-mix(in srgb, #d19a66 15%, transparent); color: #d19a66; }
-  .badge.trigger-enabled { background: var(--color-green-bg); color: var(--color-green-fg); }
-  .badge.trigger-disabled { background: color-mix(in srgb, var(--color-red-fg) 15%, transparent); color: var(--color-red-fg); }
-  .badge.plugin-enabled { background: var(--color-green-bg); color: var(--color-green-fg); }
-  .badge.plugin-disabled { background: color-mix(in srgb, var(--color-red-fg) 15%, transparent); color: var(--color-red-fg); }
-  .badge.version-badge { background: var(--color-bg3); color: var(--color-text1); }
+/* Content */
+.content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; border-bottom: 1px solid var(--color-divider);
+  flex-shrink: 0; gap: 10px;
+}
+.hd-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hd-title {
+  font-size: 13px; font-weight: 600; font-family: var(--font-mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hd-info { font-size: 11px; color: var(--color-text1); white-space: nowrap; }
+.hd-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.dirty { display: inline-block; width: 7px; height: 7px; background: var(--color-accent); border-radius: 50%; }
 
-  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .content-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 20px;
-    border-bottom: 1px solid var(--color-divider);
-    flex-shrink: 0; background: var(--color-bg1); gap: 12px;
-  }
-  .content-header .left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .content-header .type-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.5px; padding: 2px 8px; border-radius: 4px; flex-shrink: 0;
-  }
-  .type-label.doc-label { background: var(--color-yellow-bg); color: var(--color-yellow-fg); }
-  .type-label.view-label { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
-  .type-label.task-label { background: color-mix(in srgb, var(--color-green-fg) 15%, transparent); color: var(--color-green-fg); }
-  .type-label.plugin-label { background: color-mix(in srgb, #c678dd 15%, transparent); color: #c678dd; }
-  .type-label.trigger-label { background: color-mix(in srgb, #61afef 15%, transparent); color: #61afef; }
-  .content-header .title {
-    font-size: 13px; font-weight: 600; font-family: var(--font-mono);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .content-header .info { font-size: 11px; color: var(--color-text1); white-space: nowrap; }
-  .content-header .actions { display: flex; gap: 6px; flex-shrink: 0; }
-  .content-body { flex: 1; overflow: auto; padding: 16px 20px; }
-  .content-body pre {
-    margin: 0; font-family: var(--font-mono);
-    font-size: 12px; line-height: 1.65;
-    white-space: pre;
-    color: var(--color-text3); tab-size: 2;
-  }
-  .content-body code { font-family: var(--font-mono); font-size: 12px; line-height: 1.65; }
-  .content-body textarea {
-    width: 100%; height: 100%; resize: none;
-    border: none; outline: none;
-    background: transparent; color: var(--color-text3);
-    font-family: var(--font-mono); font-size: 12px;
-    line-height: 1.65; padding: 0; tab-size: 2;
-  }
-  .content-body.editing { display: flex; }
-  .empty-state {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-    color: var(--color-text1); font-size: 13px;
-    flex-direction: column; gap: 8px;
-  }
-  .empty-state svg.icon { width: 32px; height: 32px; opacity: 0.3; }
+/* Type badges */
+.bt {
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+}
+.bt-docs { background: var(--color-yellow-bg); color: var(--color-yellow-fg); }
+.bt-views { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
+.bt-tasks { background: color-mix(in srgb, var(--color-green-fg) 15%, transparent); color: var(--color-green-fg); }
+.bt-triggers { background: color-mix(in srgb, #61afef 15%, transparent); color: #61afef; }
+.bt-plugins { background: color-mix(in srgb, #c678dd 15%, transparent); color: #c678dd; }
+.bt-config { background: color-mix(in srgb, var(--color-green-fg) 15%, transparent); color: var(--color-green-fg); }
 
-  .btn {
-    border: 1px solid var(--color-border);
-    padding: 5px 12px; border-radius: var(--radius-md);
-    cursor: pointer; font-size: 11px; font-family: var(--font-family);
-    transition: all var(--transition-fast);
-    display: inline-flex; align-items: center; gap: 5px;
-    white-space: nowrap;
-  }
-  .btn-default { background: var(--color-bg3); color: var(--color-text2); }
-  .btn-default:hover { background: var(--color-item-hover); color: var(--color-text3); }
-  .btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
-  .btn-primary:hover { background: var(--color-accent-hover); }
-  .btn-green { background: var(--color-green-fg); border-color: var(--color-green-fg); color: #fff; }
-  .btn-green:hover { opacity: 0.85; }
-  .btn-danger { background: var(--color-red-fg); border-color: var(--color-red-fg); color: #fff; }
-  .btn-danger:hover { opacity: 0.85; }
-  .btn-add {
-    padding: 5px 8px; border-radius: var(--radius-md); flex-shrink: 0;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg3); color: var(--color-text2);
-    cursor: pointer; font-size: 14px; font-weight: 500;
-    display: flex; align-items: center; justify-content: center;
-    transition: all var(--transition-fast);
-    font-family: var(--font-family);
-  }
-  .btn-add:hover { background: var(--color-item-hover); color: var(--color-accent); border-color: var(--color-accent); }
+/* Status badges */
+.st { font-size: 9px; padding: 1px 5px; border-radius: 6px; font-weight: 600; }
+.st-on { background: var(--color-green-bg); color: var(--color-green-fg); }
+.st-off { background: color-mix(in srgb, var(--color-red-fg) 12%, transparent); color: var(--color-red-fg); }
+.st-schedule { background: color-mix(in srgb, #61afef 12%, transparent); color: #61afef; }
+.st-http { background: color-mix(in srgb, var(--color-green-fg) 12%, transparent); color: var(--color-green-fg); }
+.st-event { background: color-mix(in srgb, #d19a66 12%, transparent); color: #d19a66; }
 
-  .dirty-dot { display: inline-block; width: 8px; height: 8px; background: var(--color-accent); border-radius: 50%; }
-</style>
-<style id="style-editor">
-  .code-wrap { display: flex; gap: 0; min-width: max-content; }
-  .line-nums {
-    text-align: right; padding-right: 14px;
-    color: var(--color-text1); font-family: var(--font-mono);
-    font-size: 12px; line-height: 1.65;
-    user-select: none; opacity: 0.5;
-    border-right: 1px solid var(--color-divider);
-    margin-right: 14px; flex-shrink: 0;
-    position: sticky; left: 0;
-    background: var(--color-bg1); z-index: 1;
-  }
+/* Buttons */
+.btn {
+  border: 1px solid var(--color-border); padding: 4px 10px;
+  border-radius: 6px; cursor: pointer; font-size: 11px;
+  font-family: var(--font-family);
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  background: var(--color-bg3); color: var(--color-text2);
+  transition: all var(--transition-fast);
+}
+.btn:hover { background: var(--color-item-hover); color: var(--color-text3); }
+.btn-primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-green { background: var(--color-green-fg); border-color: var(--color-green-fg); color: #fff; }
+.btn-green:hover { filter: brightness(1.1); }
+.btn-danger { color: var(--color-red-fg); }
+.btn-danger:hover { background: var(--color-red-fg); border-color: var(--color-red-fg); color: #fff; }
 
-  /* Run output panel */
-  .run-output {
-    border-top: 1px solid var(--color-divider);
-    max-height: 200px; overflow-y: auto;
-    background: var(--color-bg2);
-    flex-shrink: 0;
-  }
-  .run-output-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 16px;
-    border-bottom: 1px solid var(--color-divider);
-    font-size: 11px; font-weight: 600; color: var(--color-text2);
-  }
-  .run-output-body {
-    padding: 8px 16px;
-    font-family: var(--font-mono); font-size: 11px;
-    line-height: 1.6; white-space: pre-wrap; word-break: break-all;
-    color: var(--color-text3);
-  }
-  .run-output-body .log-line { padding: 1px 0; }
-  .run-output-body .log-error { color: var(--color-red-fg); }
-  .run-output-body .log-warn { color: var(--color-yellow-fg); }
-  .run-status { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
-  .run-status.running  { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
-  .run-status.success  { background: var(--color-green-bg); color: var(--color-green-fg); }
-  .run-status.error    { background: color-mix(in srgb, var(--color-red-fg) 15%, transparent); color: var(--color-red-fg); }
+/* Code viewer */
+.code-body { flex: 1; overflow: auto; padding: 12px 16px; }
+.code-wrap { display: flex; min-width: max-content; }
+.ln {
+  text-align: right; padding-right: 12px;
+  color: var(--color-text1); font-family: var(--font-mono);
+  font-size: 12px; line-height: 1.65; user-select: none; opacity: 0.4;
+  border-right: 1px solid var(--color-divider); margin-right: 12px;
+  position: sticky; left: 0; background: var(--color-bg1); z-index: 1;
+}
+.code-body pre { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.65; white-space: pre; tab-size: 2; }
+.code-body code { font-family: var(--font-mono); font-size: 12px; }
 
-  /* Syntax highlighting */
-  .hl-tag   { color: #e06c75; }
-  .hl-attr  { color: #d19a66; }
-  .hl-aval  { color: #98c379; }
-  .hl-str   { color: #98c379; }
-  .hl-kw    { color: #c678dd; }
-  .hl-num   { color: #d19a66; }
-  .hl-cmt   { color: #5c6370; font-style: italic; }
-  .hl-fn    { color: #61afef; }
-  .hl-prop  { color: #e06c75; }
-  .hl-val   { color: #d19a66; }
-  .hl-sel   { color: #e5c07b; }
-  .hl-punct { color: #abb2bf; }
-  .hl-ent   { color: #56b6c2; }
-  .hl-doctype { color: #5c6370; }
+/* Editor */
+.editor-body { flex: 1; overflow: hidden; display: flex; }
+.editor-body textarea {
+  width: 100%; height: 100%; resize: none;
+  border: none; outline: none;
+  background: transparent; color: var(--color-text3);
+  font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.65; padding: 12px 16px; tab-size: 2;
+}
 
-  @media (prefers-color-scheme: light) {
-    .hl-tag   { color: #be3631; }
-    .hl-attr  { color: #9a6600; }
-    .hl-aval  { color: #50852a; }
-    .hl-str   { color: #50852a; }
-    .hl-kw    { color: #a626a4; }
-    .hl-num   { color: #986801; }
-    .hl-cmt   { color: #a0a1a7; font-style: italic; }
-    .hl-fn    { color: #4078f2; }
-    .hl-prop  { color: #be3631; }
-    .hl-val   { color: #986801; }
-    .hl-sel   { color: #c18401; }
-    .hl-punct { color: #383a42; }
-    .hl-ent   { color: #0184bc; }
-    .hl-doctype { color: #a0a1a7; }
-  }
-</style>
-<style id="style-modals">
-  .toast {
-    position: fixed; bottom: 20px; right: 20px;
-    padding: 10px 18px; border-radius: var(--radius-md);
-    font-size: 12px; color: #fff; z-index: 999;
-    opacity: 0; transform: translateY(8px);
-    transition: all 0.25s ease; pointer-events: none;
-  }
-  .toast.show { opacity: 1; transform: translateY(0); }
-  .toast.success { background: var(--color-green-fg); }
-  .toast.error   { background: var(--color-red-fg); }
+/* Run output */
+.run-out { border-top: 1px solid var(--color-divider); max-height: 200px; overflow-y: auto; background: var(--color-bg2); flex-shrink: 0; }
+.run-out-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; border-bottom: 1px solid var(--color-divider);
+  font-size: 11px; font-weight: 600; color: var(--color-text2);
+}
+.run-out-body {
+  padding: 8px 16px; font-family: var(--font-mono); font-size: 11px;
+  line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+}
+.run-st { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+.run-st.running { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
+.run-st.success { background: var(--color-green-bg); color: var(--color-green-fg); }
+.run-st.error { background: color-mix(in srgb, var(--color-red-fg) 15%, transparent); color: var(--color-red-fg); }
+.log-error { color: var(--color-red-fg); }
+.log-warn { color: var(--color-yellow-fg); }
 
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4); z-index: 100;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .modal {
-    background: var(--color-bg1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg, 10px);
-    padding: 20px 24px; width: 420px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-  }
-  .modal h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
-  .modal label {
-    display: block; font-size: 11px; font-weight: 600;
-    color: var(--color-text2); margin-bottom: 4px; margin-top: 12px;
-  }
-  .modal label:first-of-type { margin-top: 0; }
-  .modal input[type="text"], .modal input[type="number"] {
-    width: 100%; padding: 7px 10px;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-md);
-    background: var(--color-input-bg); color: var(--color-text3);
-    font-size: 12px; font-family: var(--font-family);
-    outline: none;
-  }
-  .modal input:focus { border-color: var(--color-focus-border); }
-  .modal .modal-actions {
-    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
-  }
+/* Detail view */
+.detail { padding: 16px 20px; max-width: 600px; }
+.detail-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: baseline; }
+.detail-label { font-size: 11px; font-weight: 600; color: var(--color-text1); min-width: 80px; text-transform: uppercase; letter-spacing: 0.3px; }
+.detail-value { font-size: 13px; font-family: var(--font-mono); color: var(--color-text3); word-break: break-all; flex: 1; }
+.detail-block {
+  background: var(--color-bg2); border: 1px solid var(--color-divider);
+  border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono);
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap;
+}
+.detail input, .detail select, .detail textarea {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--color-input-border); border-radius: 6px;
+  background: var(--color-input-bg); color: var(--color-text3);
+  font-size: 12px; font-family: var(--font-family); outline: none;
+}
+.detail textarea { font-family: var(--font-mono); resize: vertical; }
+.detail input:focus, .detail select:focus, .detail textarea:focus { border-color: var(--color-focus-border); }
 
-  /* Config tab styles */
-  .config-table { width: 100%; border-collapse: collapse; }
-  .config-table th {
-    text-align: left; font-size: 11px; font-weight: 600; color: var(--color-text2);
-    text-transform: uppercase; letter-spacing: 0.3px;
-    padding: 8px 14px; border-bottom: 2px solid var(--color-divider);
-    position: sticky; top: 0; background: var(--color-bg1); z-index: 1;
-  }
-  .config-table td {
-    padding: 10px 14px; border-bottom: 1px solid var(--color-divider);
-    font-size: 12px; vertical-align: top;
-  }
-  .config-table tr:hover td { background: var(--color-item-hover); }
-  .config-table .key-cell { font-family: var(--font-mono); font-weight: 500; white-space: nowrap; color: var(--color-accent); }
-  .config-table .val-cell { font-family: var(--font-mono); word-break: break-all; color: var(--color-text3); }
-  .config-table .actions-cell { white-space: nowrap; text-align: right; }
-  .config-table .actions-cell button {
-    background: none; border: none; cursor: pointer; padding: 2px 6px;
-    color: var(--color-text1); transition: color var(--transition-fast);
-  }
-  .config-table .actions-cell button:hover { color: var(--color-text3); }
-  .config-table .actions-cell button.del:hover { color: var(--color-red-fg); }
-  .config-empty { text-align: center; padding: 40px 20px; color: var(--color-text1); font-size: 13px; }
-  .config-info-box {
-    margin: 16px 0; padding: 12px 16px;
-    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-    border-radius: var(--radius-md); font-size: 12px; color: var(--color-text2);
-    line-height: 1.6;
-  }
-  .config-info-box code {
-    font-family: var(--font-mono); font-size: 11px;
-    background: var(--color-bg3); padding: 1px 5px; border-radius: 3px;
-  }
-  /* Trigger detail */
-  .trigger-detail .detail-row { display: flex; gap: 12px; margin-bottom: 14px; align-items: baseline; }
-  .trigger-detail .detail-label { font-size: 11px; font-weight: 600; color: var(--color-text1); min-width: 90px; text-transform: uppercase; letter-spacing: 0.3px; }
-  .trigger-detail .detail-value { font-size: 13px; font-family: var(--font-mono); color: var(--color-text3); word-break: break-all; }
-  .trigger-detail .config-block { background: var(--color-bg2); border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: 12px 14px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; color: var(--color-text3); }
+/* Description bar */
+.desc-bar { padding: 8px 16px; border-bottom: 1px solid var(--color-divider); font-size: 12px; color: var(--color-text2); }
+
+/* Plugin info bar */
+.plugin-info {
+  padding: 10px 16px; border-bottom: 1px solid var(--color-divider);
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+
+/* Config table */
+.cfg-table { width: 100%; border-collapse: collapse; }
+.cfg-table th {
+  text-align: left; font-size: 10px; font-weight: 600; color: var(--color-text2);
+  text-transform: uppercase; letter-spacing: 0.3px;
+  padding: 8px 14px; border-bottom: 2px solid var(--color-divider);
+  position: sticky; top: 0; background: var(--color-bg1);
+}
+.cfg-table td { padding: 8px 14px; border-bottom: 1px solid var(--color-divider); font-size: 12px; vertical-align: top; }
+.cfg-table tr:hover td { background: var(--color-item-hover); }
+.cfg-key { font-family: var(--font-mono); font-weight: 500; color: var(--color-accent); }
+.cfg-val { font-family: var(--font-mono); word-break: break-all; }
+.cfg-actions { white-space: nowrap; text-align: right; }
+.cfg-actions button { background: none; border: none; cursor: pointer; padding: 2px 6px; color: var(--color-text1); transition: color var(--transition-fast); }
+.cfg-actions button:hover { color: var(--color-text3); }
+.cfg-actions button.del:hover { color: var(--color-red-fg); }
+
+/* Config info box */
+.info-box {
+  margin: 12px 0; padding: 10px 14px;
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-radius: 6px; font-size: 12px; color: var(--color-text2); line-height: 1.5;
+}
+.info-box code { font-family: var(--font-mono); font-size: 11px; background: var(--color-bg3); padding: 1px 5px; border-radius: 3px; }
+
+/* Config value display */
+.cfg-value-display {
+  font-family: var(--font-mono); font-size: 14px;
+  padding: 10px 14px; background: var(--color-bg2);
+  border: 1px solid var(--color-divider); border-radius: 6px;
+}
+.cfg-edit-input {
+  width: 100%; padding: 8px 12px;
+  border: 1px solid var(--color-input-border); border-radius: 6px;
+  background: var(--color-input-bg); color: var(--color-text3);
+  font-family: var(--font-mono); font-size: 13px; outline: none;
+}
+.cfg-edit-input:focus { border-color: var(--color-focus-border); }
+
+/* Empty state */
+.empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--color-text1); font-size: 13px; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  padding: 8px 16px; border-radius: 6px;
+  font-size: 12px; color: #fff; z-index: 999;
+  opacity: 0; transform: translateY(8px);
+  transition: all 0.2s; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.success { background: var(--color-green-fg); }
+.toast.error { background: var(--color-red-fg); }
+
+/* Modal */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: var(--color-bg1); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 20px 24px; width: 400px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.modal h3 { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+.modal label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--color-text2); margin-bottom: 4px; margin-top: 12px;
+}
+.modal label:first-of-type { margin-top: 0; }
+.modal input, .modal select, .modal textarea {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--color-input-border); border-radius: 6px;
+  background: var(--color-input-bg); color: var(--color-text3);
+  font-size: 12px; font-family: var(--font-family); outline: none;
+}
+.modal textarea { font-family: var(--font-mono); resize: vertical; }
+.modal input:focus, .modal select:focus, .modal textarea:focus { border-color: var(--color-focus-border); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* Syntax highlighting */
+.hl-tag{color:#e06c75}.hl-attr{color:#d19a66}.hl-aval{color:#98c379}
+.hl-str{color:#98c379}.hl-kw{color:#c678dd}.hl-num{color:#d19a66}
+.hl-cmt{color:#5c6370;font-style:italic}.hl-fn{color:#61afef}
+.hl-prop{color:#e06c75}.hl-val{color:#d19a66}.hl-sel{color:#e5c07b}
+.hl-punct{color:#abb2bf}.hl-ent{color:#56b6c2}.hl-doctype{color:#5c6370}
+@media(prefers-color-scheme:light){
+  .hl-tag{color:#be3631}.hl-attr{color:#9a6600}.hl-aval{color:#50852a}
+  .hl-str{color:#50852a}.hl-kw{color:#a626a4}.hl-num{color:#986801}
+  .hl-cmt{color:#a0a1a7;font-style:italic}.hl-fn{color:#4078f2}
+  .hl-prop{color:#be3631}.hl-val{color:#986801}.hl-sel{color:#c18401}
+  .hl-punct{color:#383a42}.hl-ent{color:#0184bc}.hl-doctype{color:#a0a1a7}
+}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>
-    <svg class="icon" style="width:17px;height:17px" viewBox="0 0 24 24"><path d="M16 18l2-2v-7l-5-5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8"/><polyline points="13 4 13 9 18 9"/><path d="M18 22l4-4-4-4"/><path d="M22 18h-8"/></svg>
-    Source Explorer
-  </h1>
-  <div class="mode-tabs">
-    <button class="mode-tab active" data-mode="docs" onclick="setMode('docs')">
-      Docs <span class="tab-count" id="docsCount">0</span>
-    </button>
-    <button class="mode-tab" data-mode="views" onclick="setMode('views')">
-      Views <span class="tab-count" id="viewsCount">0</span>
-    </button>
-    <button class="mode-tab" data-mode="tasks" onclick="setMode('tasks')">
-      Tasks <span class="tab-count" id="tasksCount">0</span>
-    </button>
-    <button class="mode-tab" data-mode="triggers" onclick="setMode('triggers')">
-      Triggers <span class="tab-count" id="triggersCount">0</span>
-    </button>
-    <button class="mode-tab" data-mode="plugins" onclick="setMode('plugins')">
-      Plugins <span class="tab-count" id="pluginsCount">0</span>
-    </button>
-    <button class="mode-tab" data-mode="config" onclick="setMode('config')">
-      Config <span class="tab-count" id="configCount">0</span>
-    </button>
-  </div>
-  <div class="header-actions">
-    <button class="btn btn-default" onclick="loadAll()">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
-      Refresh
-    </button>
-  </div>
-</header>
-
-<div class="container">
-  <div class="sidebar">
-    <div class="search-box">
+<div class="sidebar">
+  <div class="sidebar-top">
+    <div class="tabs" id="tabs"></div>
+    <div class="toolbar">
       <input type="text" id="search" placeholder="Filter..." oninput="renderList()">
-      <button class="btn-add" id="addBtn" onclick="showCreateModal()" title="Create new" style="display:none">
-        <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <button class="tool-btn" onclick="loadAll()" title="Refresh">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
+      </button>
+      <button class="tool-btn" id="createBtn" onclick="showCreateModal()" style="display:none" title="Create">
+        <svg class="ic" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
-    <div class="item-list" id="itemList"></div>
   </div>
-  <div class="content" id="contentPane">
-    <div class="empty-state">
-      <svg class="icon" style="width:32px;height:32px" viewBox="0 0 24 24"><path d="M16 18l2-2v-7l-5-5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8"/><polyline points="13 4 13 9 18 9"/><path d="M18 22l4-4-4-4"/><path d="M22 18h-8"/></svg>
-      <div>Select a doc, view, task, trigger, plugin, or config key to inspect</div>
-    </div>
-  </div>
+  <div class="list" id="list"></div>
 </div>
 
-<div id="modalRoot"></div>
+<main class="content" id="content">
+  <div class="empty">Select an item to inspect</div>
+</main>
+
+<div id="modal"></div>
 <div class="toast" id="toast"></div>
 
-<script id="script-highlight">
-  function W(cls, text) { return '<span class="hl-' + cls + '">' + text + '</span>'; }
+<script>
+// ── Syntax Highlighting ──
 
-  function highlight(src, lang) {
-    if (lang === 'html') return highlightHTML(src);
-    if (lang === 'js')   return highlightJS(src);
-    if (lang === 'css')  return highlightCSS(src);
-    if (lang === 'md')   return highlightMarkdown(src);
-    return escHtml(src);
+function W(cls, text) { return '<span class="hl-' + cls + '">' + text + '</span>'; }
+
+function highlight(src, lang) {
+  if (lang === 'html') return highlightHTML(src);
+  if (lang === 'js')   return highlightJS(src);
+  if (lang === 'css')  return highlightCSS(src);
+  if (lang === 'md')   return highlightMarkdown(src);
+  return esc(src);
+}
+
+function highlightHTML(src) {
+  let out = '', i = 0;
+  const len = src.length;
+  while (i < len) {
+    if (src.startsWith('<!--', i)) {
+      const end = src.indexOf('-->', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end + 3);
+      out += W('cmt', esc(slice)); i += slice.length; continue;
+    }
+    if (src.startsWith('<!', i) && !src.startsWith('<!--', i)) {
+      const end = src.indexOf('>', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end + 1);
+      out += W('doctype', esc(slice)); i += slice.length; continue;
+    }
+    if (src.slice(i).match(/^<style[^>]*>/i)) {
+      const tagEnd = src.indexOf('>', i);
+      out += highlightTag(src.slice(i, tagEnd + 1)); i = tagEnd + 1;
+      const closeIdx = src.toLowerCase().indexOf('<\/style>', i);
+      const cssBlock = closeIdx === -1 ? src.slice(i) : src.slice(i, closeIdx);
+      out += highlightCSS(cssBlock); i += cssBlock.length;
+      if (closeIdx !== -1) { out += W('tag', esc('</' + 'style>')); i += 8; }
+      continue;
+    }
+    if (src.slice(i).match(/^<script[^>]*>/i)) {
+      const tagEnd = src.indexOf('>', i);
+      out += highlightTag(src.slice(i, tagEnd + 1)); i = tagEnd + 1;
+      const closeIdx = src.toLowerCase().indexOf('</' + 'script>', i);
+      const jsBlock = closeIdx === -1 ? src.slice(i) : src.slice(i, closeIdx);
+      out += highlightJS(jsBlock); i += jsBlock.length;
+      if (closeIdx !== -1) { out += W('tag', esc('</' + 'script>')); i += 9; }
+      continue;
+    }
+    if (src.startsWith('</', i)) {
+      const end = src.indexOf('>', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end + 1);
+      out += W('tag', esc(slice)); i += slice.length; continue;
+    }
+    if (src[i] === '<' && i + 1 < len && /[a-zA-Z]/.test(src[i + 1])) {
+      let end = i + 1, inQ = false, qChar = '';
+      while (end < len) {
+        const c = src[end];
+        if (inQ) { if (c === qChar) inQ = false; }
+        else { if (c === '"' || c === "'") { inQ = true; qChar = c; } else if (c === '>') { end++; break; } }
+        end++;
+      }
+      out += highlightTag(src.slice(i, end)); i = end; continue;
+    }
+    if (src[i] === '&') {
+      const semi = src.indexOf(';', i);
+      if (semi !== -1 && semi - i < 10) {
+        out += W('ent', esc(src.slice(i, semi + 1))); i = semi + 1; continue;
+      }
+    }
+    out += esc(src[i]); i++;
   }
+  return out;
+}
 
-  function highlightHTML(src) {
-    let out = '';
-    let i = 0;
-    const len = src.length;
-    while (i < len) {
-      if (src.startsWith('<!--', i)) {
-        const end = src.indexOf('-->', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end + 3);
-        out += W('cmt', escHtml(slice));
-        i += slice.length; continue;
-      }
-      if (src.startsWith('<!', i) && !src.startsWith('<!--', i)) {
-        const end = src.indexOf('>', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end + 1);
-        out += W('doctype', escHtml(slice));
-        i += slice.length; continue;
-      }
-      if (src.slice(i).match(/^<style[^>]*>/i)) {
-        const tagEnd = src.indexOf('>', i);
-        out += highlightTag(src.slice(i, tagEnd + 1));
-        i = tagEnd + 1;
-        const closeIdx = src.toLowerCase().indexOf('<\/style>', i);
-        const cssBlock = closeIdx === -1 ? src.slice(i) : src.slice(i, closeIdx);
-        out += highlightCSS(cssBlock);
-        i += cssBlock.length;
-        if (closeIdx !== -1) { out += W('tag', escHtml('</' + 'style>')); i += 8; }
-        continue;
-      }
-      if (src.slice(i).match(/^<script[^>]*>/i)) {
-        const tagEnd = src.indexOf('>', i);
-        out += highlightTag(src.slice(i, tagEnd + 1));
-        i = tagEnd + 1;
-        const closeIdx = src.toLowerCase().indexOf('<\/script>', i);
-        const jsBlock = closeIdx === -1 ? src.slice(i) : src.slice(i, closeIdx);
-        out += highlightJS(jsBlock);
-        i += jsBlock.length;
-        if (closeIdx !== -1) { out += W('tag', escHtml('</' + 'script>')); i += 9; }
-        continue;
-      }
-      if (src.startsWith('</', i)) {
-        const end = src.indexOf('>', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end + 1);
-        out += W('tag', escHtml(slice));
-        i += slice.length; continue;
-      }
-      if (src[i] === '<' && i + 1 < len && /[a-zA-Z]/.test(src[i + 1])) {
-        let end = i + 1;
-        let inQ = false, qChar = '';
-        while (end < len) {
-          const c = src[end];
-          if (inQ) { if (c === qChar) inQ = false; }
-          else {
-            if (c === '"' || c === "'") { inQ = true; qChar = c; }
-            else if (c === '>') { end++; break; }
+function highlightTag(tag) {
+  const m = tag.match(/^(<\/?)([a-zA-Z][a-zA-Z0-9-]*)/);
+  if (!m) return W('tag', esc(tag));
+  let out = W('tag', esc(m[1])) + W('tag', esc(m[2]));
+  let rest = tag.slice(m[0].length);
+  const attrRe = /([\s]+)([a-zA-Z_:][a-zA-Z0-9_.:-]*)(?:(\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
+  let lastIdx = 0, am;
+  while ((am = attrRe.exec(rest)) !== null) {
+    if (am.index > lastIdx) out += esc(rest.slice(lastIdx, am.index));
+    out += am[1] + W('attr', esc(am[2]));
+    if (am[3] !== undefined) {
+      out += esc(am[3]);
+      if (am[4] !== undefined) out += W('aval', '&quot;' + esc(am[4]) + '&quot;');
+      else if (am[5] !== undefined) out += W('aval', "'" + esc(am[5]) + "'");
+      else if (am[6] !== undefined) out += W('aval', esc(am[6]));
+    }
+    lastIdx = am.index + am[0].length;
+  }
+  if (lastIdx < rest.length) out += esc(rest.slice(lastIdx));
+  return out;
+}
+
+function highlightCSS(src) {
+  let out = '', i = 0;
+  const len = src.length;
+  while (i < len) {
+    if (src.startsWith('/*', i)) {
+      const end = src.indexOf('*/', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end + 2);
+      out += W('cmt', esc(slice)); i += slice.length; continue;
+    }
+    if (src[i] === '"' || src[i] === "'") {
+      const q = src[i]; let j = i + 1;
+      while (j < len && src[j] !== q) { if (src[j] === '\\') j++; j++; }
+      if (j < len) j++;
+      out += W('str', esc(src.slice(i, j))); i = j; continue;
+    }
+    const numM = src.slice(i).match(/^(-?\d+\.?\d*)(px|em|rem|%|vh|vw|vmin|vmax|s|ms|deg|fr|ch)?\b/);
+    if (numM && (i === 0 || !/[a-zA-Z_-]/.test(src[i-1]))) {
+      out += W('num', esc(numM[0])); i += numM[0].length; continue;
+    }
+    const hexM = src.slice(i).match(/^#[0-9a-fA-F]{3,8}\b/);
+    if (hexM) { out += W('num', esc(hexM[0])); i += hexM[0].length; continue; }
+    const fnM = src.slice(i).match(/^(var|calc|rgb|rgba|hsl|hsla|color-mix|linear-gradient|radial-gradient|url|min|max|clamp|env)\s*\(/);
+    if (fnM) { out += W('fn', esc(fnM[1])) + esc('('); i += fnM[0].length; continue; }
+    const atM = src.slice(i).match(/^@[a-zA-Z-]+/);
+    if (atM) { out += W('kw', esc(atM[0])); i += atM[0].length; continue; }
+    if (src.startsWith('!important', i)) { out += W('kw', '!important'); i += 10; continue; }
+    out += esc(src[i]); i++;
+  }
+  return out;
+}
+
+function highlightJS(src) {
+  const KW = new Set(['const','let','var','function','return','if','else','for','while',
+    'do','switch','case','break','continue','new','this','class','extends','super',
+    'import','export','from','default','try','catch','finally','throw','typeof','instanceof',
+    'in','of','async','await','yield','delete','void','null','undefined','true','false',
+    'NaN','Infinity','static','get','set','constructor']);
+  let out = '', i = 0;
+  const len = src.length;
+  while (i < len) {
+    if (src.startsWith('//', i)) {
+      const end = src.indexOf('\n', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end);
+      out += W('cmt', esc(slice)); i += slice.length; continue;
+    }
+    if (src.startsWith('/*', i)) {
+      const end = src.indexOf('*/', i);
+      const slice = end === -1 ? src.slice(i) : src.slice(i, end + 2);
+      out += W('cmt', esc(slice)); i += slice.length; continue;
+    }
+    if (src[i] === '`') {
+      let j = i + 1, result = esc('`');
+      while (j < len) {
+        if (src[j] === '\\') { result += esc(src.slice(j, j+2)); j += 2; continue; }
+        if (src[j] === '`') { result += esc('`'); j++; break; }
+        if (src[j] === '$' && j+1 < len && src[j+1] === '{') {
+          result += '</span><span class="hl-punct">' + esc('${') + '</span>';
+          j += 2; let braces = 1;
+          while (j < len && braces > 0) {
+            if (src[j] === '{') braces++;
+            else if (src[j] === '}') { braces--; if (braces === 0) break; }
+            j++;
           }
-          end++;
+          result += '<span class="hl-punct">' + esc('}') + '</span><span class="hl-str">';
+          if (j < len) j++;
+          continue;
         }
-        out += highlightTag(src.slice(i, end));
-        i = end; continue;
+        result += esc(src[j]); j++;
       }
-      if (src[i] === '&') {
-        const semi = src.indexOf(';', i);
-        if (semi !== -1 && semi - i < 10) {
-          out += W('ent', escHtml(src.slice(i, semi + 1)));
-          i = semi + 1; continue;
-        }
-      }
-      out += escHtml(src[i]);
-      i++;
+      out += W('str', result); i = j; continue;
     }
-    return out;
-  }
-
-  function highlightTag(tag) {
-    const m = tag.match(/^(<\/?)([a-zA-Z][a-zA-Z0-9-]*)/);
-    if (!m) return W('tag', escHtml(tag));
-    let out = W('tag', escHtml(m[1])) + W('tag', escHtml(m[2]));
-    let rest = tag.slice(m[0].length);
-    const attrRe = /([\s]+)([a-zA-Z_:][a-zA-Z0-9_.:-]*)(?:(\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
-    let lastIdx = 0, am;
-    while ((am = attrRe.exec(rest)) !== null) {
-      if (am.index > lastIdx) out += escHtml(rest.slice(lastIdx, am.index));
-      out += am[1];
-      out += W('attr', escHtml(am[2]));
-      if (am[3] !== undefined) {
-        out += escHtml(am[3]);
-        if (am[4] !== undefined) out += W('aval', '&quot;' + escHtml(am[4]) + '&quot;');
-        else if (am[5] !== undefined) out += W('aval', "'" + escHtml(am[5]) + "'");
-        else if (am[6] !== undefined) out += W('aval', escHtml(am[6]));
-      }
-      lastIdx = am.index + am[0].length;
+    if (src[i] === '"' || src[i] === "'") {
+      const q = src[i]; let j = i + 1;
+      while (j < len && src[j] !== q && src[j] !== '\n') { if (src[j] === '\\') j++; j++; }
+      if (j < len && src[j] === q) j++;
+      out += W('str', esc(src.slice(i, j))); i = j; continue;
     }
-    if (lastIdx < rest.length) out += escHtml(rest.slice(lastIdx));
-    return out;
-  }
-
-  function highlightCSS(src) {
-    let out = '';
-    let i = 0;
-    const len = src.length;
-    while (i < len) {
-      if (src.startsWith('/*', i)) {
-        const end = src.indexOf('*/', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end + 2);
-        out += W('cmt', escHtml(slice));
-        i += slice.length; continue;
-      }
-      if (src[i] === '"' || src[i] === "'") {
-        const q = src[i]; let j = i + 1;
-        while (j < len && src[j] !== q) { if (src[j] === '\\') j++; j++; }
-        if (j < len) j++;
-        out += W('str', escHtml(src.slice(i, j)));
-        i = j; continue;
-      }
-      const numM = src.slice(i).match(/^(-?\d+\.?\d*)(px|em|rem|%|vh|vw|vmin|vmax|s|ms|deg|fr|ch)?\b/);
-      if (numM && (i === 0 || !/[a-zA-Z_-]/.test(src[i-1]))) {
-        out += W('num', escHtml(numM[0]));
-        i += numM[0].length; continue;
-      }
-      const hexM = src.slice(i).match(/^#[0-9a-fA-F]{3,8}\b/);
-      if (hexM) { out += W('num', escHtml(hexM[0])); i += hexM[0].length; continue; }
-      const fnM = src.slice(i).match(/^(var|calc|rgb|rgba|hsl|hsla|color-mix|linear-gradient|radial-gradient|url|min|max|clamp|env)\s*\(/);
-      if (fnM) { out += W('fn', escHtml(fnM[1])) + escHtml('('); i += fnM[0].length; continue; }
-      const atM = src.slice(i).match(/^@[a-zA-Z-]+/);
-      if (atM) { out += W('kw', escHtml(atM[0])); i += atM[0].length; continue; }
-      if (src.startsWith('!important', i)) { out += W('kw', '!important'); i += 10; continue; }
-      out += escHtml(src[i]); i++;
+    const numM = src.slice(i).match(/^(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*([eE][+-]?\d+)?)/);
+    if (numM && (i === 0 || !/[a-zA-Z_$]/.test(src[i-1]))) {
+      out += W('num', esc(numM[0])); i += numM[0].length; continue;
     }
-    return out;
-  }
-
-  function highlightJS(src) {
-    const KW = new Set(['const','let','var','function','return','if','else','for','while',
-      'do','switch','case','break','continue','new','this','class','extends','super',
-      'import','export','from','default','try','catch','finally','throw','typeof','instanceof',
-      'in','of','async','await','yield','delete','void','null','undefined','true','false',
-      'NaN','Infinity','static','get','set','constructor']);
-    let out = '';
-    let i = 0;
-    const len = src.length;
-    while (i < len) {
-      if (src.startsWith('//', i)) {
-        const end = src.indexOf('\n', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end);
-        out += W('cmt', escHtml(slice)); i += slice.length; continue;
-      }
-      if (src.startsWith('/*', i)) {
-        const end = src.indexOf('*/', i);
-        const slice = end === -1 ? src.slice(i) : src.slice(i, end + 2);
-        out += W('cmt', escHtml(slice)); i += slice.length; continue;
-      }
-      if (src[i] === '`') {
-        let j = i + 1, result = escHtml('`');
-        while (j < len) {
-          if (src[j] === '\\') { result += escHtml(src.slice(j, j+2)); j += 2; continue; }
-          if (src[j] === '`') { result += escHtml('`'); j++; break; }
-          if (src[j] === '$' && j+1 < len && src[j+1] === '{') {
-            result += '</span><span class="hl-punct">' + escHtml('${') + '</span>';
-            j += 2;
-            let braces = 1;
-            while (j < len && braces > 0) {
-              if (src[j] === '{') braces++;
-              else if (src[j] === '}') { braces--; if (braces === 0) break; }
-              j++;
-            }
-            result += '<span class="hl-punct">' + escHtml('}') + '</span><span class="hl-str">';
-            if (j < len) j++;
-            continue;
-          }
-          result += escHtml(src[j]); j++;
-        }
-        out += W('str', result); i = j; continue;
-      }
-      if (src[i] === '"' || src[i] === "'") {
-        const q = src[i]; let j = i + 1;
-        while (j < len && src[j] !== q && src[j] !== '\n') { if (src[j] === '\\') j++; j++; }
-        if (j < len && src[j] === q) j++;
-        out += W('str', escHtml(src.slice(i, j))); i = j; continue;
-      }
-      const numM = src.slice(i).match(/^(0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*([eE][+-]?\d+)?)/);
-      if (numM && (i === 0 || !/[a-zA-Z_$]/.test(src[i-1]))) {
-        out += W('num', escHtml(numM[0])); i += numM[0].length; continue;
-      }
-      const wordM = src.slice(i).match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
-      if (wordM) {
-        const w = wordM[0];
-        if (KW.has(w)) out += W('kw', escHtml(w));
-        else if (i + w.length < len && src[i + w.length] === '(') out += W('fn', escHtml(w));
-        else out += escHtml(w);
-        i += w.length; continue;
-      }
-      if (src.startsWith('=>', i)) { out += W('kw', '=&gt;'); i += 2; continue; }
-      out += escHtml(src[i]); i++;
+    const wordM = src.slice(i).match(/^[a-zA-Z_$][a-zA-Z0-9_$]*/);
+    if (wordM) {
+      const w = wordM[0];
+      if (KW.has(w)) out += W('kw', esc(w));
+      else if (i + w.length < len && src[i + w.length] === '(') out += W('fn', esc(w));
+      else out += esc(w);
+      i += w.length; continue;
     }
-    return out;
+    if (src.startsWith('=>', i)) { out += W('kw', '=&gt;'); i += 2; continue; }
+    out += esc(src[i]); i++;
   }
+  return out;
+}
 
-  function highlightMarkdown(src) {
-    return src.split('\n').map(line => {
-      const hm = line.match(/^(#{1,6})\s(.*)$/);
-      if (hm) return W('kw', escHtml(hm[1])) + ' ' + W('tag', escHtml(hm[2]));
-      let l = escHtml(line);
-      l = l.replace(/\*\*(.+?)\*\*/g, W('tag', '**$1**'));
-      l = l.replace(/\`([^\`]+)\`/g, W('str', '`$1`'));
-      l = l.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '[' + W('fn', '$1') + '](' + W('str', '$2') + ')');
-      if (/^\s*[-*]\s/.test(line)) l = l.replace(/^(\s*)([-*])/, '$1' + W('kw', '$2'));
-      return l;
-    }).join('\n');
+function highlightMarkdown(src) {
+  return src.split('\n').map(line => {
+    const hm = line.match(/^(#{1,6})\s(.*)$/);
+    if (hm) return W('kw', esc(hm[1])) + ' ' + W('tag', esc(hm[2]));
+    let l = esc(line);
+    l = l.replace(/\*\*(.+?)\*\*/g, W('tag', '**$1**'));
+    l = l.replace(/\`([^\`]+)\`/g, W('str', '`$1`'));
+    l = l.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '[' + W('fn', '$1') + '](' + W('str', '$2') + ')');
+    if (/^\s*[-*]\s/.test(line)) l = l.replace(/^(\s*)([-*])/, '$1' + W('kw', '$2'));
+    return l;
+  }).join('\n');
+}
+
+// ── State & Helpers ──
+
+const agy = window.agentwfy;
+const $ = id => document.getElementById(id);
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+let allDocs = [], allViews = [], allTasks = [], allTriggers = [], allPlugins = [], allConfig = [];
+let mode = 'docs', selected = null, editing = false, dirty = false, lastRun = null;
+
+const IC = {
+  edit: '<svg class="ic" viewBox="0 0 24 24"><path d="M17 3l4 4L7 21H3v-4Z"/></svg>',
+  save: '<svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
+  x: '<svg class="ic" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  play: '<svg class="ic" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  trash: '<svg class="ic" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  copy: '<svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+};
+
+function fmtSize(n) { return n > 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B'; }
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(/^\d{10}$/.test(String(ts)) ? ts * 1000 : ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+function fmtTimeout(ms) { return !ms ? 'default' : ms >= 60000 ? (ms / 60000) + 'm' : (ms / 1000) + 's'; }
+function lineNums(c) { const n = (c || '').split('\n').length; return Array.from({ length: n }, (_, i) => i + 1).join('\n'); }
+
+function detectLang(item) {
+  if (item.type === 'views') return 'html';
+  if (item.type === 'tasks' || item.type === 'plugins') return 'js';
+  const name = (item.name || '').toLowerCase();
+  if (name.endsWith('.html') || name.endsWith('.htm')) return 'html';
+  if (name.endsWith('.css')) return 'css';
+  if (name.endsWith('.js')) return 'js';
+  const c = (item.content || '').trimStart();
+  if (c.startsWith('<!') || c.startsWith('<html') || c.startsWith('<div')) return 'html';
+  return 'md';
+}
+
+// ── UI Building Blocks ──
+
+function typeBadge(type) {
+  const labels = { docs: 'DOC', views: 'VIEW', tasks: 'TASK', triggers: 'TRIGGER', plugins: 'PLUGIN', config: 'CONFIG' };
+  return '<span class="bt bt-' + type + '">' + labels[type] + '</span>';
+}
+
+function hdBar(badge, title, info, actions, showDirty) {
+  return '<div class="hd"><div class="hd-left">' + badge
+    + '<span class="hd-title">' + esc(title) + '</span>'
+    + (info ? '<span class="hd-info">' + info + '</span>' : '')
+    + (showDirty ? '<span id="dirtyDot"></span>' : '')
+    + '</div><div class="hd-actions">' + (actions || '') + '</div></div>';
+}
+
+function codeView(content, lang) {
+  return '<div class="code-body"><div class="code-wrap"><pre class="ln">'
+    + lineNums(content) + '</pre><pre><code>'
+    + (highlight(content, lang) || '(empty)') + '</code></pre></div></div>';
+}
+
+function detailRow(label, value) {
+  return '<div class="detail-row"><div class="detail-label">' + label + '</div><div class="detail-value">' + value + '</div></div>';
+}
+
+function listItem(id, name, meta, active) {
+  return '<div class="item' + (active ? ' active' : '') + '" data-id="' + esc(id) + '">'
+    + '<div class="item-name">' + esc(name) + '</div>'
+    + (meta ? '<div class="item-meta">' + meta + '</div>' : '') + '</div>';
+}
+
+function runOutputHtml() {
+  if (!lastRun) return '';
+  const r = lastRun;
+  const cls = r.status === 'running' ? 'running' : r.status === 'completed' ? 'success' : 'error';
+  const txt = r.status === 'running' ? 'Running\u2026' : r.status === 'completed' ? 'Completed' : 'Error';
+  let body = '';
+  if (r.logs && r.logs.length) {
+    body = r.logs.map(l => '<div class="' + (l.level === 'error' ? 'log-error' : l.level === 'warning' ? 'log-warn' : '') + '">' + esc(l.message) + '</div>').join('');
   }
-</script>
-<script id="script-data">
-  const agy = window.agentwfy;
-  let allDocs = [], allViews = [], allTasks = [], allTriggers = [], allPlugins = [], allConfig = [];
-  let mode = 'docs';
-  let selected = null;
-  let editing = false, dirty = false;
-  let lastRunOutput = null;
+  if (r.result != null) body += '<div style="color:var(--color-green-fg);margin-top:4px">\u2192 ' + esc(typeof r.result === 'string' ? r.result : JSON.stringify(r.result, null, 2)) + '</div>';
+  if (r.error) body += '<div class="log-error" style="margin-top:4px">Error: ' + esc(r.error) + '</div>';
+  return '<div class="run-out"><div class="run-out-hd"><span>Output</span><span class="run-st ' + cls + '">' + txt + '</span></div>'
+    + '<div class="run-out-body">' + (body || '<span style="color:var(--color-text1)">(no output)</span>') + '</div></div>';
+}
 
-  const ICO = {
-    edit: '<svg class="icon" viewBox="0 0 24 24"><path d="M17 3l4 4L7 21H3v-4Z"/></svg>',
-    save: '<svg class="icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
-    x: '<svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
-    play: '<svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
-    trash: '<svg class="icon" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
-    copy: '<svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-  };
+let toastTimer;
+function toast(msg, type) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type || 'success') + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
 
-  let toastTimer;
-  function showToast(msg, type = 'success') {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'toast ' + type + ' show';
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
-  }
+// ── Data Loading & CRUD ──
 
-  function escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+async function loadAll() {
+  const [docs, views, tasks, triggers, plugins, config] = await Promise.all([
+    agy.runSql({ target: "agent", sql: "SELECT name, content, updated_at FROM docs ORDER BY name" }),
+    agy.runSql({ target: "agent", sql: "SELECT name, title, LENGTH(content) as content_length, created_at, updated_at FROM views ORDER BY name" }),
+    agy.runSql({ target: "agent", sql: "SELECT name, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
+    agy.runSql({ target: "agent", sql: "SELECT t.name, t.task_name, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_name = k.name ORDER BY t.name" }),
+    agy.runSql({ target: "agent", sql: "SELECT name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
+    agy.runSql({ target: "agent", sql: "SELECT name AS key, value, description FROM config ORDER BY name" }),
+  ]);
+  allDocs = docs || []; allViews = views || []; allTasks = tasks || [];
+  allTriggers = triggers || []; allPlugins = plugins || []; allConfig = config || [];
+  renderTabs(); updateCreateBtn(); renderList(); refreshSelected();
+}
 
-  function fmtSize(n) { return n > 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B'; }
+function updateCreateBtn() {
+  $('createBtn').style.display = (mode === 'tasks' || mode === 'docs' || mode === 'triggers' || mode === 'config') ? '' : 'none';
+}
 
-  function fmtDate(ts) {
-    if (!ts) return '';
-    const d = new Date(/^\d{10}$/.test(String(ts)) ? ts * 1000 : ts);
-    return d.toLocaleDateString(undefined, { month:'short', day:'numeric' })
-      + ' ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
-  }
-
-  function fmtTimeout(ms) {
-    if (!ms) return 'default';
-    if (ms >= 60000) return (ms / 60000) + 'm';
-    return (ms / 1000) + 's';
-  }
-
-  function usesNameKey(type) { return type === 'docs' || type === 'views' || type === 'tasks' || type === 'triggers' || type === 'plugins'; }
-
-  function lineNums(content) {
-    const n = (content || '').split('\n').length;
-    return Array.from({length: n}, (_, i) => i + 1).join('\n');
-  }
-
-  function detectLang(item) {
-    if (item.type === 'views') return 'html';
-    if (item.type === 'tasks') return 'js';
-    if (item.type === 'plugins') return 'js';
-    const name = (item.name || '').toLowerCase();
-    if (name.endsWith('.html') || name.endsWith('.htm')) return 'html';
-    if (name.endsWith('.css')) return 'css';
-    if (name.endsWith('.js')) return 'js';
-    const c = (item.content || '').trimStart();
-    if (c.startsWith('<!') || c.startsWith('<html') || c.startsWith('<div')) return 'html';
-    return 'md';
-  }
-
-  async function loadAll() {
-    const [docs, views, tasks, triggers, plugins, config] = await Promise.all([
-      agy.runSql({ target: "agent", sql: "SELECT name, content, updated_at FROM docs ORDER BY name" }),
-      agy.runSql({ target: "agent", sql: "SELECT name, title, LENGTH(content) as content_length, created_at, updated_at FROM views ORDER BY name" }),
-      agy.runSql({ target: "agent", sql: "SELECT name, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
-      agy.runSql({ target: "agent", sql: "SELECT t.name, t.task_name, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_name = k.name ORDER BY t.name" }),
-      agy.runSql({ target: "agent", sql: "SELECT name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
-      agy.runSql({ target: "agent", sql: "SELECT name AS key, value, description FROM config ORDER BY name" }),
-    ]);
-    allDocs = docs || [];
-    allViews = views || [];
-    allTasks = tasks || [];
-    allTriggers = triggers || [];
-    allPlugins = plugins || [];
-    allConfig = config || [];
-    document.getElementById('docsCount').textContent = allDocs.length;
-    document.getElementById('viewsCount').textContent = allViews.length;
-    document.getElementById('tasksCount').textContent = allTasks.length;
-    document.getElementById('triggersCount').textContent = allTriggers.length;
-    document.getElementById('pluginsCount').textContent = allPlugins.length;
-    document.getElementById('configCount').textContent = allConfig.length;
-    updateAddBtn();
-    renderList();
-    refreshSelected();
-  }
-
-  function updateAddBtn() {
-    const btn = document.getElementById('addBtn');
-    btn.style.display = (mode === 'tasks' || mode === 'docs' || mode === 'triggers' || mode === 'config') ? '' : 'none';
-    btn.title = mode === 'tasks' ? 'Create task' : mode === 'docs' ? 'Create doc' : mode === 'triggers' ? 'Create trigger' : mode === 'config' ? 'Add config key' : '';
-  }
-
-  async function refreshSelected() {
-    if (!selected) return;
-    const source = selected.type === 'docs' ? allDocs : selected.type === 'views' ? allViews : selected.type === 'triggers' ? allTriggers : selected.type === 'plugins' ? allPlugins : allTasks;
-    const fresh = source.find(i => usesNameKey(selected.type) ? i.name === selected.name : i.id === selected.id);
-    if (fresh) {
-      const m = selected.type;
-      selected = { ...selected, ...fresh, type: m };
-      if (m === 'triggers') selected.trigType = fresh.type;
-      if (m === 'views' && !selected.content) {
-        const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [selected.name] });
-        if (rows[0]) selected.content = rows[0].content;
-      }
-      if (!editing) showContent();
-    }
-    else clearContent();
-  }
-
-  async function saveItem() {
-    const editor = document.getElementById('editor');
-    if (!editor || !selected) return;
-    const newContent = editor.value;
-    const now = Math.floor(Date.now() / 1000);
-    const table = selected.type === 'docs' ? 'docs' : selected.type === 'views' ? 'views' : 'tasks';
-    const whereClause = usesNameKey(selected.type) ? 'WHERE name = ?' : 'WHERE id = ?';
-    const whereParam = usesNameKey(selected.type) ? selected.name : selected.id;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "UPDATE " + table + " SET content = ? " + whereClause,
-        params: [newContent, whereParam],
-        confirmed: true
-      });
-      selected.content = newContent;
-      selected.updated_at = now;
-      const source = selected.type === 'docs' ? allDocs : selected.type === 'views' ? allViews : selected.type === 'triggers' ? allTriggers : selected.type === 'plugins' ? allPlugins : allTasks;
-      const idx = source.findIndex(i => usesNameKey(selected.type) ? i.name === selected.name : i.id === selected.id);
-      if (idx >= 0) Object.assign(source[idx], { content: newContent, updated_at: now });
-      dirty = false; editing = false;
-      showContent(); renderList();
-      showToast('Saved');
-    } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
-    }
-  }
-
-  async function deleteItem() {
-    if (!selected) return;
-    const label = selected.type === 'tasks' ? 'task' : selected.type === 'triggers' ? 'trigger' : 'doc';
-    const itemName = selected.title || selected.name || selected.description;
-    if (!confirm('Delete this ' + label + ' "' + itemName + '"?')) return;
-    const table = selected.type === 'tasks' ? 'tasks' : selected.type === 'triggers' ? 'triggers' : 'docs';
-    const whereClause = usesNameKey(selected.type) ? 'WHERE name = ?' : 'WHERE id = ?';
-    const whereParam = usesNameKey(selected.type) ? selected.name : selected.id;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "DELETE FROM " + table + " " + whereClause,
-        params: [whereParam],
-        confirmed: true
-      });
-      showToast('Deleted');
-      selected = null; editing = false; dirty = false;
-      clearContent();
-      await loadAll();
-    } catch (err) {
-      showToast('Delete failed: ' + err.message, 'error');
-    }
-  }
-
-  async function duplicateTask() {
-    if (!selected || selected.type !== 'tasks') return;
-    const newName = selected.name + '-copy';
-    const newTitle = selected.title + ' (copy)';
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
-        params: [newName, newTitle, selected.description || '', selected.content || '', selected.timeout_ms || null],
-        confirmed: true
-      });
-      showToast('Task cloned');
-      await loadAll();
-    } catch (err) {
-      showToast('Clone failed: ' + err.message, 'error');
-    }
-  }
-
-  async function runTask() {
-    if (!selected || selected.type !== 'tasks') return;
-    lastRunOutput = { status: 'running', logs: [], result: null, error: null };
-    showContent();
-    try {
-      const { runId } = await agy.startTask({ taskName: selected.name });
-      const result = await agy.waitFor({ topic: 'task:run:' + runId, timeoutMs: selected.timeout_ms || 120000 });
-      lastRunOutput = {
-        status: result.status || 'completed',
-        logs: result.logs || [],
-        result: result.result,
-        error: result.error
-      };
-    } catch (err) {
-      lastRunOutput = { status: 'error', logs: [], result: null, error: err.message || String(err) };
-    }
-    showContent();
-  }
-
-  async function toggleTrigger() {
-    if (!selected || selected.type !== 'triggers') return;
-    const newEnabled = selected.enabled ? 0 : 1;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "UPDATE triggers SET enabled = ? WHERE name = ?",
-        params: [newEnabled, selected.name],
-        confirmed: true
-      });
-      showToast(newEnabled ? 'Trigger enabled' : 'Trigger disabled');
-      await loadAll();
-      const fresh = allTriggers.find(t => t.name === selected.name);
-      if (fresh) { selected = { type: 'triggers', ...fresh }; showContent(); renderList(); }
-    } catch (err) {
-      showToast('Toggle failed: ' + err.message, 'error');
-    }
-  }
-
-  async function saveTrigger() {
-    if (!selected || selected.type !== 'triggers') return;
-    const taskName = document.getElementById('trigEditTask').value;
-    const type = document.getElementById('trigEditType').value;
-    const desc = document.getElementById('trigEditDesc').value.trim();
-    const configStr = document.getElementById('trigEditConfig').value.trim();
-    try { JSON.parse(configStr); } catch(e) { showToast('Invalid JSON in config', 'error'); return; }
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "UPDATE triggers SET task_name = ?, type = ?, description = ?, config = ? WHERE name = ?",
-        params: [taskName, type, desc, configStr, selected.name],
-        confirmed: true
-      });
-      showToast('Trigger saved');
-      editing = false; dirty = false;
-      await loadAll();
-      const fresh = allTriggers.find(t => t.name === selected.name);
-      if (fresh) { selected = { type: 'triggers', ...fresh }; showContent(); renderList(); }
-    } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
-    }
-  }
-
-  async function togglePlugin() {
-    if (!selected || selected.type !== 'plugins') return;
-    const newEnabled = selected.enabled ? 0 : 1;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "UPDATE plugins SET enabled = ? WHERE name = ?",
-        params: [newEnabled, selected.name],
-        confirmed: true
-      });
-      showToast(newEnabled ? 'Plugin enabled' : 'Plugin disabled');
-      await loadAll();
-      const fresh = allPlugins.find(p => p.name === selected.name);
-      if (fresh) { selected = { type: 'plugins', ...fresh }; showContent(); renderList(); }
-    } catch (err) {
-      showToast('Toggle failed: ' + err.message, 'error');
-    }
-  }
-</script>
-<script id="script-render">
-  function setMode(m) {
-    if (dirty && !confirm('Discard unsaved changes?')) return;
-    mode = m; editing = false; dirty = false;
-    document.querySelectorAll('.mode-tab').forEach(t =>
-      t.classList.toggle('active', t.dataset.mode === m));
-    document.getElementById('search').value = '';
-    const ph = { docs: 'Filter docs...', views: 'Filter views...', tasks: 'Filter tasks...', triggers: 'Filter triggers...', plugins: 'Filter plugins...', config: 'Filter config...' };
-    document.getElementById('search').placeholder = ph[m] || 'Filter...';
-    selected = null; lastRunOutput = null;
-    if (m === 'config') { showConfigOverview(); } else { clearContent(); }
-    updateAddBtn(); renderList();
-  }
-
-  function renderList() {
-    const q = document.getElementById('search').value.toLowerCase();
-    const list = document.getElementById('itemList');
-    if (mode === 'docs') {
-      const items = allDocs.filter(d => d.name.toLowerCase().includes(q));
-      list.innerHTML = items.map(d => {
-        const size = fmtSize(d.content ? d.content.length : 0);
-        const active = selected && selected.type === 'docs' && selected.name === d.name;
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'docs\', \'' + d.name + '\')">'
-          + '<div class="item-name">' + escHtml(d.name) + '</div>'
-          + '<div class="item-meta"><span>' + size + '</span>'
-          + '<span>' + fmtDate(d.updated_at) + '</span>'
-          + '</div></div>';
-      }).join('');
-    } else if (mode === 'views') {
-      const items = allViews.filter(v => {
-        const searchStr = (v.name + ' ' + (v.title || '')).toLowerCase();
-        return searchStr.includes(q);
-      });
-      list.innerHTML = items.map(v => {
-        const size = fmtSize(v.content_length || 0);
-        const active = selected && selected.type === 'views' && selected.name === v.name;
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'views\', \'' + escHtml(v.name) + '\')">'
-          + '<div class="item-name">' + escHtml(v.name) + '</div>'
-          + '<div class="item-meta">'
-          + '<span>' + size + '</span>'
-          + '<span>' + fmtDate(v.updated_at) + '</span></div>'
-          + (v.title ? '<div class="item-meta" style="margin-top:2px"><span style="font-size:10px;opacity:0.7">' + escHtml(v.title) + '</span></div>' : '')
-          + '</div>';
-      }).join('');
-    } else if (mode === 'tasks') {
-      const items = allTasks.filter(t => {
-        const searchStr = (t.title + ' ' + (t.description || '')).toLowerCase();
-        return searchStr.includes(q);
-      });
-      list.innerHTML = items.map(t => {
-        const size = fmtSize(t.content ? t.content.length : 0);
-        const active = selected && selected.type === 'tasks' && selected.name === t.name;
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'tasks\', \'' + escHtml(t.name) + '\')">'
-          + '<div class="item-name">' + escHtml(t.title) + '</div>'
-          + '<div class="item-meta">'
-          + '<span>' + size + '</span>'
-          + '<span class="badge timeout-badge">' + fmtTimeout(t.timeout_ms) + '</span>'
-          + '<span>' + fmtDate(t.updated_at || t.created_at) + '</span></div>'
-          + (t.description ? '<div class="item-meta" style="margin-top:2px"><span style="font-size:10px;opacity:0.7">' + escHtml(t.description.substring(0, 50)) + '</span></div>' : '')
-          + '</div>';
-      }).join('');
-    } else if (mode === 'triggers') {
-      const items = allTriggers.filter(t => {
-        const searchStr = (t.description || '') + ' ' + (t.task_title || '') + ' ' + (t.type || '') + ' ' + (t.config || '');
-        return searchStr.toLowerCase().includes(q);
-      });
-      list.innerHTML = items.map(t => {
-        const active = selected && selected.type === 'triggers' && selected.name === t.name;
-        const typeBadgeCls = 'trigger-' + t.type;
-        const enabledCls = t.enabled ? 'trigger-enabled' : 'trigger-disabled';
-        const label = t.description || (t.type + ' \u2192 ' + (t.task_title || t.task_name));
-        let configHint = '';
-        try {
-          const cfg = JSON.parse(t.config || '{}');
-          if (t.type === 'schedule') configHint = cfg.expression || '';
-          else if (t.type === 'http') configHint = (cfg.method || 'POST') + ' ' + (cfg.path || '');
-          else if (t.type === 'event') configHint = cfg.topic || '';
-        } catch(e) { configHint = t.config || ''; }
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectItem(\'triggers\', \'' + escHtml(t.name) + '\')">'
-          + '<div class="item-name">' + escHtml(label) + '</div>'
-          + '<div class="item-meta">'
-          + '<span class="badge ' + typeBadgeCls + '">' + escHtml(t.type) + '</span>'
-          + '<span class="badge ' + enabledCls + '">' + (t.enabled ? 'enabled' : 'disabled') + '</span>'
-          + (configHint ? '<span style="opacity:0.7;font-family:var(--font-mono);font-size:10px">' + escHtml(configHint) + '</span>' : '')
-          + '</div></div>';
-      }).join('');
-    } else if (mode === 'plugins') {
-      const items = allPlugins.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q));
-      list.innerHTML = items.map(p => {
-        const active = selected && selected.type === 'plugins' && selected.name === p.name;
-        const enabledCls = p.enabled ? 'plugin-enabled' : 'plugin-disabled';
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectPlugin(\'' + p.name + '\')">'
-          + '<div class="item-name">' + escHtml(p.name) + '</div>'
-          + '<div class="item-meta">'
-          + '<span class="badge version-badge">v' + escHtml(p.version) + '</span>'
-          + '<span class="badge ' + enabledCls + '">' + (p.enabled ? 'enabled' : 'disabled') + '</span>'
-          + '<span>' + fmtDate(p.updated_at) + '</span>'
-          + '</div></div>';
-      }).join('');
-    } else if (mode === 'config') {
-      const items = allConfig.filter(c => c.key.toLowerCase().includes(q) || (c.value || '').toLowerCase().includes(q));
-      list.innerHTML = items.map(c => {
-        const active = selected && selected.type === 'config' && selected.key === c.key;
-        return '<div class="list-item ' + (active ? 'active' : '') + '" onclick="selectConfigItem(\'' + escHtml(c.key).replace(/'/g, "\\'") + '\')">'
-          + '<div class="item-name">' + escHtml(c.key) + '</div>'
-          + '<div class="item-meta"><span style="font-family:var(--font-mono);font-size:11px;opacity:0.7">' + escHtml(String(c.value).substring(0, 40)) + '</span></div>'
-          + '</div>';
-      }).join('');
-    }
-  }
-
-  async function selectItem(type, id) {
-    if (dirty && !confirm('Discard unsaved changes?')) return;
-    const source = type === 'docs' ? allDocs : type === 'views' ? allViews : type === 'triggers' ? allTriggers : type === 'plugins' ? allPlugins : allTasks;
-    const item = source.find(i => usesNameKey(type) ? i.name === id : i.id === id);
-    if (!item) return;
-    selected = { ...item, type };
-    if (type === 'triggers') selected.trigType = item.type;
-    if (type === 'views' && !selected.content) {
-      const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [id] });
+async function refreshSelected() {
+  if (!selected) return;
+  const sources = { docs: allDocs, views: allViews, tasks: allTasks, triggers: allTriggers, plugins: allPlugins };
+  const source = sources[selected.type];
+  if (!source) return;
+  const fresh = source.find(i => i.name === selected.name);
+  if (fresh) {
+    const t = selected.type;
+    selected = { ...selected, ...fresh, type: t };
+    if (t === 'triggers') selected.trigType = fresh.type;
+    if (t === 'views' && !selected.content) {
+      const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [selected.name] });
       if (rows[0]) selected.content = rows[0].content;
     }
-    editing = false; dirty = false; lastRunOutput = null;
-    showContent(); renderList();
+    if (!editing) showContent();
+  } else clearContent();
+}
+
+async function saveItem() {
+  const editor = $('editor');
+  if (!editor || !selected) return;
+  const content = editor.value;
+  const table = { docs: 'docs', views: 'views', tasks: 'tasks' }[selected.type];
+  try {
+    await agy.runSql({ target: "agent", sql: "UPDATE " + table + " SET content = ? WHERE name = ?", params: [content, selected.name], confirmed: true });
+    selected.content = content;
+    selected.updated_at = Math.floor(Date.now() / 1000);
+    const source = { docs: allDocs, views: allViews, tasks: allTasks }[selected.type];
+    const idx = source.findIndex(i => i.name === selected.name);
+    if (idx >= 0) Object.assign(source[idx], { content, updated_at: selected.updated_at });
+    dirty = false; editing = false;
+    showContent(); renderList(); toast('Saved');
+  } catch (err) { toast('Save failed: ' + err.message, 'error'); }
+}
+
+async function deleteItem() {
+  if (!selected) return;
+  const label = { tasks: 'task', triggers: 'trigger', docs: 'doc' }[selected.type] || 'item';
+  if (!confirm('Delete this ' + label + ' "' + (selected.title || selected.name) + '"?')) return;
+  const table = { tasks: 'tasks', triggers: 'triggers', docs: 'docs' }[selected.type];
+  try {
+    await agy.runSql({ target: "agent", sql: "DELETE FROM " + table + " WHERE name = ?", params: [selected.name], confirmed: true });
+    toast('Deleted'); selected = null; editing = false; dirty = false;
+    clearContent(); await loadAll();
+  } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+}
+
+async function duplicateTask() {
+  if (!selected || selected.type !== 'tasks') return;
+  try {
+    await agy.runSql({ target: "agent",
+      sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
+      params: [selected.name + '-copy', selected.title + ' (copy)', selected.description || '', selected.content || '', selected.timeout_ms || null],
+      confirmed: true });
+    toast('Cloned'); await loadAll();
+  } catch (err) { toast('Clone failed: ' + err.message, 'error'); }
+}
+
+async function runTask() {
+  if (!selected || selected.type !== 'tasks') return;
+  lastRun = { status: 'running', logs: [], result: null, error: null };
+  showContent();
+  try {
+    const { runId } = await agy.startTask({ taskName: selected.name });
+    const result = await agy.waitFor({ topic: 'task:run:' + runId, timeoutMs: selected.timeout_ms || 120000 });
+    lastRun = { status: result.status || 'completed', logs: result.logs || [], result: result.result, error: result.error };
+  } catch (err) { lastRun = { status: 'error', logs: [], result: null, error: err.message || String(err) }; }
+  showContent();
+}
+
+async function toggleTrigger() {
+  if (!selected || selected.type !== 'triggers') return;
+  const on = selected.enabled ? 0 : 1;
+  try {
+    await agy.runSql({ target: "agent", sql: "UPDATE triggers SET enabled = ? WHERE name = ?", params: [on, selected.name], confirmed: true });
+    toast(on ? 'Enabled' : 'Disabled'); await loadAll();
+    const fresh = allTriggers.find(t => t.name === selected.name);
+    if (fresh) { selected = { type: 'triggers', ...fresh, trigType: fresh.type }; showContent(); renderList(); }
+  } catch (err) { toast('Toggle failed: ' + err.message, 'error'); }
+}
+
+async function saveTrigger() {
+  if (!selected || selected.type !== 'triggers') return;
+  const taskName = $('trigTask').value, type = $('trigType').value;
+  const desc = $('trigDesc').value.trim(), cfg = $('trigConfig').value.trim();
+  try { JSON.parse(cfg); } catch (e) { toast('Invalid JSON', 'error'); return; }
+  try {
+    await agy.runSql({ target: "agent", sql: "UPDATE triggers SET task_name=?,type=?,description=?,config=? WHERE name=?",
+      params: [taskName, type, desc, cfg, selected.name], confirmed: true });
+    toast('Saved'); editing = false; dirty = false; await loadAll();
+    const fresh = allTriggers.find(t => t.name === selected.name);
+    if (fresh) { selected = { type: 'triggers', ...fresh, trigType: fresh.type }; showContent(); renderList(); }
+  } catch (err) { toast('Save failed: ' + err.message, 'error'); }
+}
+
+async function togglePlugin() {
+  if (!selected || selected.type !== 'plugins') return;
+  const on = selected.enabled ? 0 : 1;
+  try {
+    await agy.runSql({ target: "agent", sql: "UPDATE plugins SET enabled = ? WHERE name = ?", params: [on, selected.name], confirmed: true });
+    toast(on ? 'Enabled' : 'Disabled'); await loadAll();
+    const fresh = allPlugins.find(p => p.name === selected.name);
+    if (fresh) { selected = { type: 'plugins', ...fresh }; showContent(); renderList(); }
+  } catch (err) { toast('Toggle failed: ' + err.message, 'error'); }
+}
+
+// ── Tabs & List Rendering ──
+
+const MODES = ['docs', 'views', 'tasks', 'triggers', 'plugins', 'config'];
+const MODE_LABELS = { docs: 'Docs', views: 'Views', tasks: 'Tasks', triggers: 'Triggers', plugins: 'Plugins', config: 'Config' };
+
+function renderTabs() {
+  const counts = { docs: allDocs.length, views: allViews.length, tasks: allTasks.length, triggers: allTriggers.length, plugins: allPlugins.length, config: allConfig.length };
+  $('tabs').innerHTML = MODES.map(m =>
+    '<button class="tab' + (mode === m ? ' active' : '') + '" data-mode="' + m + '">'
+    + MODE_LABELS[m] + ' <span class="cnt">' + counts[m] + '</span></button>'
+  ).join('');
+}
+
+function setMode(m) {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  mode = m; editing = false; dirty = false;
+  $('search').value = ''; selected = null; lastRun = null;
+  renderTabs(); updateCreateBtn(); renderList();
+  if (m === 'config') showConfigOverview(); else clearContent();
+}
+
+function renderList() {
+  const q = $('search').value.toLowerCase();
+  const el = $('list');
+
+  if (mode === 'docs') {
+    el.innerHTML = allDocs.filter(d => d.name.toLowerCase().includes(q)).map(d =>
+      listItem(d.name, d.name,
+        '<span>' + fmtSize(d.content ? d.content.length : 0) + '</span><span>' + fmtDate(d.updated_at) + '</span>',
+        selected && selected.type === 'docs' && selected.name === d.name)
+    ).join('');
+  } else if (mode === 'views') {
+    el.innerHTML = allViews.filter(v => (v.name + ' ' + (v.title || '')).toLowerCase().includes(q)).map(v =>
+      listItem(v.name, v.name,
+        '<span>' + fmtSize(v.content_length || 0) + '</span><span>' + fmtDate(v.updated_at) + '</span>'
+        + (v.title ? '</div><div class="item-meta"><span style="opacity:0.7">' + esc(v.title) + '</span>' : ''),
+        selected && selected.type === 'views' && selected.name === v.name)
+    ).join('');
+  } else if (mode === 'tasks') {
+    el.innerHTML = allTasks.filter(t => (t.title + ' ' + (t.description || '')).toLowerCase().includes(q)).map(t =>
+      listItem(t.name, t.title,
+        '<span>' + fmtSize(t.content ? t.content.length : 0) + '</span><span>' + fmtTimeout(t.timeout_ms) + '</span><span>' + fmtDate(t.updated_at || t.created_at) + '</span>',
+        selected && selected.type === 'tasks' && selected.name === t.name)
+    ).join('');
+  } else if (mode === 'triggers') {
+    el.innerHTML = allTriggers.filter(t => ((t.description || '') + ' ' + (t.task_title || '') + ' ' + t.type + ' ' + (t.config || '')).toLowerCase().includes(q)).map(t => {
+      const label = t.description || (t.type + ' \u2192 ' + (t.task_title || t.task_name));
+      let hint = '';
+      try {
+        const cfg = JSON.parse(t.config || '{}');
+        if (t.type === 'schedule') hint = cfg.expression || '';
+        else if (t.type === 'http') hint = (cfg.method || 'POST') + ' ' + (cfg.path || '');
+        else if (t.type === 'event') hint = cfg.topic || '';
+      } catch (e) {}
+      return listItem(t.name, label,
+        '<span class="st st-' + t.type + '">' + esc(t.type) + '</span>'
+        + '<span class="st ' + (t.enabled ? 'st-on' : 'st-off') + '">' + (t.enabled ? 'on' : 'off') + '</span>'
+        + (hint ? '<span style="opacity:0.6;font-family:var(--font-mono);font-size:10px">' + esc(hint) + '</span>' : ''),
+        selected && selected.type === 'triggers' && selected.name === t.name);
+    }).join('');
+  } else if (mode === 'plugins') {
+    el.innerHTML = allPlugins.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)).map(p =>
+      listItem(p.name, p.name,
+        '<span class="st ' + (p.enabled ? 'st-on' : 'st-off') + '">' + (p.enabled ? 'on' : 'off') + '</span>'
+        + '<span>v' + esc(p.version) + '</span><span>' + fmtDate(p.updated_at) + '</span>',
+        selected && selected.type === 'plugins' && selected.name === p.name)
+    ).join('');
+  } else if (mode === 'config') {
+    el.innerHTML = allConfig.filter(c => c.key.toLowerCase().includes(q) || (c.value || '').toLowerCase().includes(q)).map(c =>
+      listItem(c.key, c.key,
+        '<span style="font-family:var(--font-mono);opacity:0.6">' + esc(String(c.value).substring(0, 40)) + '</span>',
+        selected && selected.type === 'config' && selected.key === c.key)
+    ).join('');
   }
+}
 
-  function selectPlugin(name) {
-    if (dirty && !confirm('Discard unsaved changes?')) return;
-    const item = allPlugins.find(p => p.name === name);
-    if (!item) return;
-    selected = { ...item, type: 'plugins' };
-    editing = false; dirty = false; lastRunOutput = null;
-    showContent(); renderList();
+// ── Content Rendering ──
+
+async function selectItem(type, id) {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  if (type === 'config') { selectConfigItem(id); return; }
+  const sources = { docs: allDocs, views: allViews, tasks: allTasks, triggers: allTriggers, plugins: allPlugins };
+  const item = sources[type].find(i => i.name === id);
+  if (!item) return;
+  selected = { ...item, type };
+  if (type === 'triggers') selected.trigType = item.type;
+  if (type === 'views' && !selected.content) {
+    const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [id] });
+    if (rows[0]) selected.content = rows[0].content;
   }
+  editing = false; dirty = false; lastRun = null;
+  showContent(); renderList();
+}
 
-  function showContent() {
-    if (!selected) { clearContent(); return; }
-    const s = selected;
-    const size = fmtSize(s.content ? s.content.length : 0);
-    const lines = (s.content || '').split('\n').length;
+function showContent() {
+  if (!selected) { clearContent(); return; }
+  if (selected.type === 'triggers') { showTriggerContent(); return; }
+  if (selected.type === 'plugins') { showPluginContent(); return; }
+  if (selected.type === 'config') { showConfigContent(); return; }
 
-    const labelMap = { docs: 'doc-label', views: 'view-label', tasks: 'task-label', triggers: 'trigger-label', plugins: 'plugin-label' };
-    const nameMap = { docs: 'DOC', views: 'VIEW', tasks: 'TASK', triggers: 'TRIGGER', plugins: 'PLUGIN' };
-    const typeLabel = '<span class="type-label ' + labelMap[s.type] + '">' + nameMap[s.type] + '</span>';
+  const s = selected;
+  const badge = typeBadge(s.type);
+  const name = s.title || s.name;
+  const size = fmtSize(s.content ? s.content.length : 0);
+  const lines = (s.content || '').split('\n').length;
+  let info = size + ' \u00b7 ' + lines + ' lines';
+  if (s.type === 'views' && s.title) info = s.name + ' \u00b7 ' + info;
+  if (s.type === 'tasks' && s.timeout_ms) info += ' \u00b7 ' + fmtTimeout(s.timeout_ms);
+  const ts = s.updated_at || s.created_at;
+  if (ts) info += ' \u00b7 ' + fmtDate(ts);
 
-    const displayName = s.title || s.name;
-    let metaInfo = !usesNameKey(s.type) ? 'id: ' + s.id + ' \u00b7 ' : '';
-    metaInfo += size + ' \u00b7 ' + lines + ' lines';
-    if (s.type === 'views' && s.title) metaInfo = s.name + ' \u00b7 ' + metaInfo;
-    if (s.type === 'tasks' && s.timeout_ms) metaInfo += ' \u00b7 timeout: ' + fmtTimeout(s.timeout_ms);
-    const ts = s.updated_at || s.created_at;
-    if (ts) metaInfo += ' \u00b7 ' + fmtDate(ts);
+  if (editing) {
+    const actions = '<button class="btn" onclick="cancelEdit()">' + IC.x + ' Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveItem()">' + IC.save + ' Save</button>';
+    $('content').innerHTML = hdBar(badge, name, '', actions, true)
+      + '<div class="editor-body"><textarea id="editor" spellcheck="false">' + esc(s.content || '') + '</textarea></div>'
+      + runOutputHtml();
+    const ed = $('editor');
+    ed.addEventListener('input', () => { dirty = true; updateDirty(); });
+    ed.addEventListener('keydown', editorKeys);
+    ed.focus(); updateDirty();
+  } else {
+    let actions = '<button class="btn" onclick="startEdit()">' + IC.edit + ' Edit</button>';
+    if (s.type === 'tasks') {
+      actions = '<button class="btn btn-green" onclick="runTask()">' + IC.play + ' Run</button>'
+        + '<button class="btn" onclick="duplicateTask()">' + IC.copy + '</button>'
+        + '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
+    } else if (s.type === 'docs') {
+      actions = '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
+    }
+    let desc = '';
+    if (s.type === 'tasks' && s.description) desc = '<div class="desc-bar">' + esc(s.description) + '</div>';
+    $('content').innerHTML = hdBar(badge, name, info, actions, false) + desc
+      + codeView(s.content || '', detectLang(s)) + runOutputHtml();
+  }
+}
 
-    if (editing && s.type === 'triggers') {
-      let configPretty = s.config || '{}';
-      try { configPretty = JSON.stringify(JSON.parse(configPretty), null, 2); } catch(e) {}
-      const taskOptions = allTasks.map(t => '<option value="' + escHtml(t.name) + '"' + (t.name === s.task_name ? ' selected' : '') + '>' + escHtml(t.title) + '</option>').join('');
-      const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_title || s.task_name));
-      let actionBtns = '<button class="btn btn-default" onclick="cancelEdit()">' + ICO.x + ' Cancel</button>'
-        + '<button class="btn btn-primary" onclick="saveTrigger()">' + ICO.save + ' Save</button>';
-      document.getElementById('contentPane').innerHTML =
-        '<div class="content-header">'
-        + '<div class="left">' + typeLabel
-        + '<span class="title">' + escHtml(triggerTitle) + '</span>'
-        + '<span id="dirtyDot"></span></div>'
-        + '<div class="actions">' + actionBtns + '</div></div>'
-        + '<div class="content-body"><div class="trigger-detail" style="max-width:600px;padding:16px 20px">'
-        + '<div class="detail-row"><div class="detail-label">Task</div><div class="detail-value" style="flex:1"><select id="trigEditTask" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none">' + taskOptions + '</select></div></div>'
-        + '<div class="detail-row"><div class="detail-label">Type</div><div class="detail-value" style="flex:1"><select id="trigEditType" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none"><option value="schedule"' + (s.trigType==='schedule'?' selected':'') + '>schedule</option><option value="http"' + (s.trigType==='http'?' selected':'') + '>http</option><option value="event"' + (s.trigType==='event'?' selected':'') + '>event</option></select></div></div>'
-        + '<div class="detail-row"><div class="detail-label">Description</div><div class="detail-value" style="flex:1"><input type="text" id="trigEditDesc" value="' + escHtml(s.description || '') + '" placeholder="Optional description" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none"></div></div>'
-        + '<div class="detail-row"><div class="detail-label">Config (JSON)</div><div class="detail-value" style="flex:1"><textarea id="trigEditConfig" rows="5" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-mono);outline:none;resize:vertical">' + escHtml(configPretty) + '</textarea></div></div>'
-        + '</div></div>';
-      document.querySelectorAll('#trigEditTask, #trigEditType, #trigEditDesc, #trigEditConfig').forEach(el => {
-        el.addEventListener('input', () => { dirty = true; updateDirty(); });
-        el.addEventListener('change', () => { dirty = true; updateDirty(); });
-      });
-      updateDirty();
-    } else if (editing) {
-      let actionBtns = '<button class="btn btn-default" onclick="cancelEdit()">' + ICO.x + ' Cancel</button>'
-        + '<button class="btn btn-primary" onclick="saveItem()">' + ICO.save + ' Save</button>';
-      document.getElementById('contentPane').innerHTML =
-        '<div class="content-header">'
-        + '<div class="left">' + typeLabel
-        + '<span class="title">' + escHtml(displayName) + '</span>'
-        + '<span id="dirtyDot"></span></div>'
-        + '<div class="actions">' + actionBtns + '</div></div>'
-        + '<div class="content-body editing">'
-        + '<textarea id="editor" spellcheck="false">' + escHtml(s.content || '') + '</textarea>'
-        + '</div>'
-        + renderRunOutput();
-      const editor = document.getElementById('editor');
-      editor.addEventListener('input', () => { dirty = true; updateDirty(); });
-      editor.addEventListener('keydown', handleEditorKeys);
-      editor.focus(); updateDirty();
-    } else {
-      const content = s.content || '';
-      const nums = lineNums(content);
-      const lang = detectLang(s);
-      const highlighted = highlight(content, lang);
-      let actionBtns = '<button class="btn btn-default" onclick="startEdit()">' + ICO.edit + ' Edit</button>';
-      if (s.type === 'tasks') {
-        actionBtns = '<button class="btn btn-green" onclick="runTask()">' + ICO.play + ' Run</button>'
-          + '<button class="btn btn-default" onclick="duplicateTask()">' + ICO.copy + ' Clone</button>'
-          + '<button class="btn btn-danger" onclick="deleteItem()">' + ICO.trash + '</button>'
-          + actionBtns;
-      } else if (s.type === 'docs') {
-        actionBtns = '<button class="btn btn-danger" onclick="deleteItem()">' + ICO.trash + '</button>'
-          + actionBtns;
-      } else if (s.type === 'triggers') {
-        const triggerTitle = s.description || (s.trigType + ' \u2192 ' + (s.task_title || s.task_name));
-        let configPretty = s.config || '{}';
-        try { configPretty = JSON.stringify(JSON.parse(configPretty), null, 2); } catch(e) {}
-        actionBtns = '<button class="btn ' + (s.enabled ? 'btn-default' : 'btn-green') + '" onclick="toggleTrigger()">'
-          + (s.enabled ? ICO.x + ' Disable' : ICO.play + ' Enable') + '</button>'
-          + '<button class="btn btn-default" onclick="startEdit()">' + ICO.edit + ' Edit</button>'
-          + '<button class="btn btn-danger" onclick="deleteItem()">' + ICO.trash + '</button>';
-        document.getElementById('contentPane').innerHTML =
-          '<div class="content-header">'
-          + '<div class="left">' + typeLabel
-          + '<span class="title">' + escHtml(triggerTitle) + '</span>'
-          + '<span class="info">' + metaInfo + '</span></div>'
-          + '<div class="actions">' + actionBtns + '</div></div>'
-          + '<div class="content-body"><div class="trigger-detail" style="padding:16px 20px">'
-          + '<div class="detail-row"><div class="detail-label">Name</div><div class="detail-value">' + escHtml(s.name) + '</div></div>'
-          + '<div class="detail-row"><div class="detail-label">Type</div><div class="detail-value"><span class="badge trigger-' + s.trigType + '">' + escHtml(s.trigType) + '</span></div></div>'
-          + '<div class="detail-row"><div class="detail-label">Status</div><div class="detail-value"><span class="badge ' + (s.enabled ? 'trigger-enabled' : 'trigger-disabled') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span></div></div>'
-          + '<div class="detail-row"><div class="detail-label">Task</div><div class="detail-value">' + escHtml(s.task_title || '(unknown)') + ' <span style="opacity:0.5">(' + escHtml(s.task_name) + ')</span></div></div>'
-          + (s.description ? '<div class="detail-row"><div class="detail-label">Description</div><div class="detail-value">' + escHtml(s.description) + '</div></div>' : '')
-          + '<div class="detail-row"><div class="detail-label">Config</div><div class="detail-value" style="flex:1"><div class="config-block">' + escHtml(configPretty) + '</div></div></div>'
-          + (s.created_at ? '<div class="detail-row"><div class="detail-label">Created</div><div class="detail-value">' + fmtDate(s.created_at) + '</div></div>' : '')
-          + (s.updated_at ? '<div class="detail-row"><div class="detail-label">Updated</div><div class="detail-value">' + fmtDate(s.updated_at) + '</div></div>' : '')
-          + '</div></div>';
-        return;
+function showTriggerContent() {
+  const s = selected;
+  const badge = typeBadge('triggers');
+  const title = s.description || (s.trigType + ' \u2192 ' + (s.task_title || s.task_name));
+
+  if (editing) {
+    let cfgPretty = s.config || '{}';
+    try { cfgPretty = JSON.stringify(JSON.parse(cfgPretty), null, 2); } catch (e) {}
+    const taskOpts = allTasks.map(t => '<option value="' + esc(t.name) + '"' + (t.name === s.task_name ? ' selected' : '') + '>' + esc(t.title) + '</option>').join('');
+    const actions = '<button class="btn" onclick="cancelEdit()">' + IC.x + ' Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveTrigger()">' + IC.save + ' Save</button>';
+    $('content').innerHTML = hdBar(badge, title, '', actions, true)
+      + '<div class="code-body"><div class="detail">'
+      + detailRow('Task', '<select id="trigTask">' + taskOpts + '</select>')
+      + detailRow('Type', '<select id="trigType"><option value="schedule"' + (s.trigType === 'schedule' ? ' selected' : '') + '>schedule</option><option value="http"' + (s.trigType === 'http' ? ' selected' : '') + '>http</option><option value="event"' + (s.trigType === 'event' ? ' selected' : '') + '>event</option></select>')
+      + detailRow('Description', '<input type="text" id="trigDesc" value="' + esc(s.description || '') + '" placeholder="Optional">')
+      + detailRow('Config', '<textarea id="trigConfig" rows="5">' + esc(cfgPretty) + '</textarea>')
+      + '</div></div>';
+    document.querySelectorAll('#trigTask,#trigType,#trigDesc,#trigConfig').forEach(el => {
+      el.addEventListener('input', () => { dirty = true; updateDirty(); });
+      el.addEventListener('change', () => { dirty = true; updateDirty(); });
+    });
+    updateDirty();
+  } else {
+    let cfgPretty = s.config || '{}';
+    try { cfgPretty = JSON.stringify(JSON.parse(cfgPretty), null, 2); } catch (e) {}
+    const info = fmtDate(s.updated_at || s.created_at);
+    const actions = '<button class="btn' + (s.enabled ? '' : ' btn-green') + '" onclick="toggleTrigger()">'
+      + (s.enabled ? IC.x + ' Disable' : IC.play + ' Enable') + '</button>'
+      + '<button class="btn" onclick="startEdit()">' + IC.edit + ' Edit</button>'
+      + '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>';
+    $('content').innerHTML = hdBar(badge, title, info, actions, false)
+      + '<div class="code-body"><div class="detail">'
+      + detailRow('Name', esc(s.name))
+      + detailRow('Type', '<span class="st st-' + s.trigType + '">' + esc(s.trigType) + '</span>')
+      + detailRow('Status', '<span class="st ' + (s.enabled ? 'st-on' : 'st-off') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span>')
+      + detailRow('Task', esc(s.task_title || '(unknown)') + ' <span style="opacity:0.5">(' + esc(s.task_name) + ')</span>')
+      + (s.description ? detailRow('Description', esc(s.description)) : '')
+      + detailRow('Config', '<div class="detail-block">' + esc(cfgPretty) + '</div>')
+      + '</div></div>';
+  }
+}
+
+function showPluginContent() {
+  const s = selected;
+  const badge = typeBadge('plugins');
+  const code = s.code || '';
+  const info = 'v' + esc(s.version) + ' \u00b7 ' + fmtSize(code.length) + ' \u00b7 ' + fmtDate(s.updated_at);
+  const docName = 'plugin.' + s.name;
+  const hasDoc = allDocs.some(d => d.name === docName);
+  let actions = '';
+  if (hasDoc) actions += '<button class="btn" onclick="setMode(\'docs\');setTimeout(()=>selectItem(\'docs\',\'' + esc(docName) + '\'),50)">' + IC.edit + ' Docs</button>';
+  actions += '<button class="btn' + (s.enabled ? '' : ' btn-green') + '" onclick="togglePlugin()">'
+    + (s.enabled ? IC.x + ' Disable' : IC.play + ' Enable') + '</button>';
+  $('content').innerHTML = hdBar(badge, s.name, info, actions, false)
+    + '<div class="plugin-info">'
+    + '<span class="st ' + (s.enabled ? 'st-on' : 'st-off') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span>'
+    + (s.description ? '<span style="font-size:12px;color:var(--color-text2)">' + esc(s.description) + '</span>' : '')
+    + '</div>' + codeView(code, 'js');
+}
+
+// ── Editor Helpers ──
+
+function editorKeys(e) {
+  const ed = $('editor');
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveItem(); }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const s = ed.selectionStart, end = ed.selectionEnd;
+    ed.value = ed.value.substring(0, s) + '  ' + ed.value.substring(end);
+    ed.selectionStart = ed.selectionEnd = s + 2;
+    dirty = true; updateDirty();
+  }
+  if (e.key === 'Escape') cancelEdit();
+}
+
+function updateDirty() {
+  const d = $('dirtyDot');
+  if (d) d.innerHTML = dirty ? '<span class="dirty"></span>' : '';
+}
+function startEdit() { editing = true; dirty = false; showContent(); }
+function cancelEdit() {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  editing = false; dirty = false; showContent();
+}
+function clearContent() {
+  selected = null; editing = false; dirty = false;
+  $('content').innerHTML = '<div class="empty">Select an item to inspect</div>';
+}
+
+// ── Config ──
+
+const CONFIG_REF = [
+  { key: 'backup.interval-hours', type: 'number', def: '24', range: '1\u20138760', desc: 'Auto backup interval (hours)' },
+  { key: 'backup.max-count', type: 'number', def: '5', range: '1\u2013100', desc: 'Max backups to keep' },
+  { key: 'cleanup.session-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old sessions (0=keep forever)' },
+  { key: 'cleanup.task-log-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old task logs (0=keep forever)' },
+  { key: 'http-api.port', type: 'number', def: '9877', range: '1\u201365535', desc: 'HTTP API port (restart required)' },
+];
+
+function selectConfigItem(key) {
+  if (dirty && !confirm('Discard unsaved changes?')) return;
+  const item = allConfig.find(c => c.key === key);
+  if (!item) return;
+  selected = { type: 'config', key: item.key, value: item.value, description: item.description };
+  editing = false; dirty = false;
+  showConfigContent(); renderList();
+}
+
+function showConfigContent() {
+  if (!selected || selected.type !== 'config') { showConfigOverview(); return; }
+  const s = selected;
+  const badge = typeBadge('config');
+  const ref = CONFIG_REF.find(r => r.key === s.key);
+
+  if (editing) {
+    const actions = '<button class="btn" onclick="cancelConfigEdit()">' + IC.x + ' Cancel</button>'
+      + '<button class="btn btn-primary" onclick="saveConfigKey()">' + IC.save + ' Save</button>';
+    const refInfo = ref
+      ? '<div style="margin-top:12px;font-size:11px;color:var(--color-text1)">Type: <code style="font-family:var(--font-mono);font-size:11px;background:var(--color-bg3);padding:1px 5px;border-radius:3px">' + ref.type + '</code> \u00b7 Default: <code style="font-family:var(--font-mono);font-size:11px;background:var(--color-bg3);padding:1px 5px;border-radius:3px">' + ref.def + '</code>' + (ref.range ? ' \u00b7 Range: ' + ref.range : '') + '<br>' + esc(ref.desc) + '</div>'
+      : '';
+    $('content').innerHTML = hdBar(badge, s.key, '', actions, true)
+      + '<div class="code-body"><div class="detail" style="max-width:500px">'
+      + '<label style="font-size:11px;font-weight:600;color:var(--color-text2);margin-bottom:6px;display:block">Value</label>'
+      + '<input type="text" id="cfgValue" class="cfg-edit-input" value="' + esc(s.value || '') + '">'
+      + refInfo + '</div></div>';
+    setTimeout(() => {
+      const inp = $('cfgValue');
+      if (inp) {
+        inp.addEventListener('input', () => { dirty = true; updateDirty(); });
+        inp.focus(); inp.select();
       }
-      if (s.type === 'plugins') {
-        const codeContent = s.code || '';
-        const nums = lineNums(codeContent);
-        const highlighted = highlightJS(codeContent);
-        const enableBtnCls = s.enabled ? 'btn-default' : 'btn-green';
-        const enableBtnLabel = s.enabled ? ICO.x + ' Disable' : ICO.play + ' Enable';
-        const pluginDocName = 'plugin.' + s.name;
-        const hasDoc = allDocs.some(d => d.name === pluginDocName);
-        const docBtn = hasDoc ? '<button class="btn btn-default" onclick="setMode(\'docs\');setTimeout(()=>{const d=allDocs.find(x=>x.name===\'' + pluginDocName + '\');if(d)selectItem(\'docs\',d.name)},50)">' + ICO.edit + ' Docs</button>' : '';
-        document.getElementById('contentPane').innerHTML =
-          '<div class="content-header">'
-          + '<div class="left">' + typeLabel
-          + '<span class="title">' + escHtml(s.name) + '</span>'
-          + '<span class="info">v' + escHtml(s.version) + ' \u00b7 ' + fmtSize(codeContent.length) + ' \u00b7 ' + fmtDate(s.updated_at) + '</span></div>'
-          + '<div class="actions">'
-          + docBtn
-          + '<button class="btn ' + enableBtnCls + '" onclick="togglePlugin()">' + enableBtnLabel + '</button>'
-          + '</div></div>'
-          + '<div class="content-body" style="padding:0">'
-          + '<div style="padding:16px 20px;border-bottom:1px solid var(--color-divider)">'
-          + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
-          + '<span class="badge ' + (s.enabled ? 'plugin-enabled' : 'plugin-disabled') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span>'
-          + '<span class="badge version-badge">v' + escHtml(s.version) + '</span>'
-          + (s.description ? '<span style="font-size:12px;color:var(--color-text2)">' + escHtml(s.description) + '</span>' : '')
-          + '</div></div>'
-          + '<div style="flex:1;overflow:auto;padding:16px 20px">'
-          + '<div class="code-wrap">'
-          + '<pre class="line-nums">' + nums + '</pre>'
-          + '<pre><code>' + (highlighted || '(empty)') + '</code></pre>'
-          + '</div></div></div>';
-        return;
-      }
-      // Show description for tasks
-      let descriptionBlock = '';
-      if (s.type === 'tasks' && s.description) {
-        descriptionBlock = '<div style="padding:10px 20px;border-bottom:1px solid var(--color-divider);font-size:12px;color:var(--color-text2)">' + escHtml(s.description) + '</div>';
-      }
-      document.getElementById('contentPane').innerHTML =
-        '<div class="content-header">'
-        + '<div class="left">' + typeLabel
-        + '<span class="title">' + escHtml(displayName) + '</span>'
-        + '<span class="info">' + metaInfo + '</span></div>'
-        + '<div class="actions">' + actionBtns + '</div></div>'
-        + descriptionBlock
-        + '<div class="content-body">'
-        + '<div class="code-wrap">'
-        + '<pre class="line-nums">' + nums + '</pre>'
-        + '<pre><code>' + (highlighted || '(empty)') + '</code></pre>'
-        + '</div></div>'
-        + renderRunOutput();
-    }
+    }, 50);
+    updateDirty();
+  } else {
+    const actions = '<button class="btn" onclick="editing=true;dirty=false;showConfigContent()">' + IC.edit + ' Edit</button>'
+      + '<button class="btn btn-danger" onclick="deleteConfigKey(\'' + esc(s.key).replace(/'/g, "\\'") + '\')">' + IC.trash + '</button>';
+    $('content').innerHTML = hdBar(badge, s.key, '', actions, false)
+      + '<div class="code-body"><div class="detail" style="max-width:600px">'
+      + '<div style="margin-bottom:16px">'
+      + '<div style="font-size:11px;font-weight:600;color:var(--color-text2);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px">Value</div>'
+      + '<div class="cfg-value-display">' + esc(s.value || '(empty)') + '</div>'
+      + (s.description ? '<div style="margin-top:8px;font-size:12px;color:var(--color-text2)">' + esc(s.description) + '</div>' : '')
+      + '</div>'
+      + (ref ? '<div class="info-box"><strong>' + esc(ref.desc) + '</strong><br>Type: <code>' + ref.type + '</code> \u00b7 Default: <code>' + ref.def + '</code>' + (ref.range ? ' \u00b7 Range: ' + ref.range : '') + '</div>' : '<div class="info-box">Custom config key.</div>')
+      + '</div></div>';
   }
+}
 
-  function handleEditorKeys(e) {
-    const editor = document.getElementById('editor');
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveItem(); }
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = editor.selectionStart, end = editor.selectionEnd;
-      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-      editor.selectionStart = editor.selectionEnd = start + 2;
-      dirty = true; updateDirty();
-    }
-    if (e.key === 'Escape') cancelEdit();
+function showConfigOverview() {
+  const badge = typeBadge('config');
+  let rows = '';
+  if (allConfig.length === 0) {
+    rows = '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--color-text1)">No config keys set. Using defaults.</td></tr>';
+  } else {
+    rows = allConfig.map(c =>
+      '<tr><td class="cfg-key">' + esc(c.key) + '</td><td class="cfg-val">' + esc(c.value) + '</td>'
+      + '<td class="cfg-actions"><button onclick="selectConfigItem(\'' + esc(c.key).replace(/'/g, "\\'") + '\')">' + IC.edit + '</button>'
+      + '<button class="del" onclick="deleteConfigKey(\'' + esc(c.key).replace(/'/g, "\\'") + '\')">' + IC.trash + '</button></td></tr>'
+    ).join('');
   }
+  $('content').innerHTML = hdBar(badge, 'Agent Configuration', '', '', false)
+    + '<div class="code-body" style="padding:16px"><table class="cfg-table"><thead><tr><th>Key</th><th>Value</th><th style="width:70px"></th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
 
-  function renderRunOutput() {
-    if (!lastRunOutput) return '';
-    const r = lastRunOutput;
-    const statusCls = r.status === 'running' ? 'running' : r.status === 'completed' ? 'success' : 'error';
-    const statusText = r.status === 'running' ? '\u25cf Running\u2026' : r.status === 'completed' ? '\u2713 Completed' : '\u2717 ' + (r.status || 'Error');
-    let logHtml = '';
-    if (r.logs && r.logs.length) {
-      logHtml = r.logs.map(l => {
-        const cls = l.level === 'error' ? 'log-error' : l.level === 'warning' ? 'log-warn' : '';
-        return '<div class="log-line ' + cls + '">' + escHtml(l.message) + '</div>';
-      }).join('');
-    }
-    let resultHtml = '';
-    if (r.result !== undefined && r.result !== null) {
-      resultHtml = '<div class="log-line" style="color:var(--color-green-fg);margin-top:4px">\u2192 ' + escHtml(typeof r.result === 'string' ? r.result : JSON.stringify(r.result, null, 2)) + '</div>';
-    }
-    if (r.error) {
-      resultHtml += '<div class="log-line log-error" style="margin-top:4px">Error: ' + escHtml(r.error) + '</div>';
-    }
-    return '<div class="run-output">'
-      + '<div class="run-output-header"><span>Output</span><span class="run-status ' + statusCls + '">' + statusText + '</span></div>'
-      + '<div class="run-output-body">' + (logHtml || resultHtml ? logHtml + resultHtml : '<span style="color:var(--color-text1)">(no output)</span>') + '</div></div>';
-  }
+function cancelConfigEdit() {
+  if (dirty && !confirm('Discard changes?')) return;
+  editing = false; dirty = false; showConfigContent();
+}
 
-  function updateDirty() {
-    const dot = document.getElementById('dirtyDot');
-    if (dot) dot.innerHTML = dirty ? '<span class="dirty-dot"></span>' : '';
-  }
-  function startEdit() { editing = true; dirty = false; showContent(); }
-  function cancelEdit() {
-    if (dirty && !confirm('Discard unsaved changes?')) return;
-    editing = false; dirty = false; showContent();
-  }
+async function saveConfigKey() {
+  const inp = $('cfgValue');
+  if (!inp || !selected) return;
+  const val = inp.value;
+  try {
+    await agy.runSql({ target: "agent", sql: "INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)", params: [selected.key, val], confirmed: true });
+    selected.value = val;
+    const idx = allConfig.findIndex(c => c.key === selected.key);
+    if (idx >= 0) allConfig[idx].value = val;
+    else { allConfig.push({ key: selected.key, value: val }); allConfig.sort((a, b) => a.key.localeCompare(b.key)); }
+    dirty = false; editing = false;
+    showConfigContent(); renderTabs(); renderList(); toast('Saved');
+  } catch (err) { toast('Save failed: ' + err.message, 'error'); }
+}
 
-  function clearContent() {
-    selected = null; editing = false; dirty = false;
-    document.getElementById('contentPane').innerHTML =
-      '<div class="empty-state">'
-      + '<svg class="icon" style="width:32px;height:32px" viewBox="0 0 24 24"><path d="M16 18l2-2v-7l-5-5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8"/><polyline points="13 4 13 9 18 9"/><path d="M18 22l4-4-4-4"/><path d="M22 18h-8"/></svg>'
-      + '<div>Select a doc, view, task, trigger, plugin, or config key to inspect</div></div>';
-  }
+async function deleteConfigKey(key) {
+  if (!confirm('Delete "' + key + '"? Setting will revert to default.')) return;
+  try {
+    await agy.runSql({ target: "agent", sql: "DELETE FROM config WHERE name = ?", params: [key], confirmed: true });
+    allConfig = allConfig.filter(c => c.key !== key);
+    if (selected && selected.type === 'config' && selected.key === key) { selected = null; editing = false; dirty = false; }
+    toast('Deleted'); renderTabs(); renderList();
+    if (mode === 'config' && !selected) showConfigOverview();
+    else if (selected) showConfigContent();
+  } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+}
 
-  /* ========== Create Modal ========== */
-  function showCreateModal() {
-    if (mode === 'config') { showCreateConfigModal(); return; }
-    if (mode === 'triggers') { showCreateTriggerModal(); return; }
-    const isTask = mode === 'tasks';
-    const title = isTask ? 'Create Task' : 'Create Doc';
-    let fields = '<label>Name</label><input type="text" id="createName" placeholder="' + (isTask ? 'my-task' : 'my-doc') + '" autofocus>';
+// ── Modals ──
+
+function closeModal() { $('modal').innerHTML = ''; }
+
+function showCreateModal() {
+  if (mode === 'config') { showCreateConfigModal(); return; }
+  if (mode === 'triggers') { showCreateTriggerModal(); return; }
+  const isTask = mode === 'tasks';
+  let fields = '<label>Name</label><input type="text" id="cName" placeholder="' + (isTask ? 'my-task' : 'my-doc') + '">';
+  if (isTask) {
+    fields += '<label>Title</label><input type="text" id="cTitle" placeholder="My Task">'
+      + '<label>Description</label><input type="text" id="cDesc" placeholder="Optional">'
+      + '<label>Timeout (ms)</label><input type="number" id="cTimeout" value="120000" min="1000" step="1000">';
+  }
+  $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
+    + '<div class="modal"><h3>Create ' + (isTask ? 'Task' : 'Doc') + '</h3>' + fields
+    + '<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="doCreate()">Create</button></div></div></div>';
+  setTimeout(() => $('cName').focus(), 50);
+}
+
+async function doCreate() {
+  const name = $('cName').value.trim();
+  if (!name) { toast('Name required', 'error'); return; }
+  const isTask = mode === 'tasks';
+  try {
     if (isTask) {
-      fields += '<label>Title</label><input type="text" id="createTitle" placeholder="My Task">';
-      fields += '<label>Description</label><input type="text" id="createDesc" placeholder="Optional description">';
-      fields += '<label>Timeout (ms)</label><input type="number" id="createTimeout" value="120000" min="1000" step="1000">';
+      const title = ($('cTitle').value || '').trim() || name;
+      await agy.runSql({ target: "agent",
+        sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
+        params: [name, title, $('cDesc').value.trim(), '', parseInt($('cTimeout').value) || 120000], confirmed: true });
+    } else {
+      await agy.runSql({ target: "agent", sql: "INSERT INTO docs (name, content) VALUES (?, ?)", params: [name, ''], confirmed: true });
     }
-    document.getElementById('modalRoot').innerHTML =
-      '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'
-      + '<div class="modal">'
-      + '<h3>' + title + '</h3>'
-      + fields
-      + '<div class="modal-actions">'
-      + '<button class="btn btn-default" onclick="closeModal()">' + ICO.x + ' Cancel</button>'
-      + '<button class="btn btn-primary" onclick="doCreate()">Create</button>'
-      + '</div></div></div>';
-    setTimeout(() => document.getElementById('createName').focus(), 50);
-  }
+    closeModal(); toast('Created'); await loadAll();
+    const source = isTask ? allTasks : allDocs;
+    const created = source.find(i => i.name === name);
+    if (created) { selected = { type: isTask ? 'tasks' : 'docs', ...created }; editing = true; dirty = false; showContent(); renderList(); }
+  } catch (err) { toast('Create failed: ' + err.message, 'error'); }
+}
 
-  function closeModal() {
-    document.getElementById('modalRoot').innerHTML = '';
-  }
+function showCreateTriggerModal() {
+  const taskOpts = allTasks.map(t => '<option value="' + esc(t.name) + '">' + esc(t.title) + '</option>').join('');
+  $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
+    + '<div class="modal"><h3>Create Trigger</h3>'
+    + '<label>Name</label><input type="text" id="cTrigName" placeholder="my-trigger">'
+    + '<label>Task</label><select id="cTrigTask">' + taskOpts + '</select>'
+    + '<label>Type</label><select id="cTrigType"><option value="schedule">schedule</option><option value="http">http</option><option value="event">event</option></select>'
+    + '<label>Description</label><input type="text" id="cTrigDesc" placeholder="Optional">'
+    + '<label>Config (JSON)</label><textarea id="cTrigConfig" rows="3">{}</textarea>'
+    + '<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="doCreateTrigger()">Create</button></div></div></div>';
+  setTimeout(() => $('cTrigName').focus(), 50);
+}
 
-  async function doCreate() {
-    const name = document.getElementById('createName').value.trim();
-    if (!name) { showToast('Name is required', 'error'); return; }
-    const isTask = mode === 'tasks';
-    try {
-      if (isTask) {
-        const title = (document.getElementById('createTitle').value || '').trim() || name;
-        const desc = document.getElementById('createDesc').value.trim();
-        const timeout = parseInt(document.getElementById('createTimeout').value) || 120000;
-        await agy.runSql({
-          target: "agent",
-          sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
-          params: [name, title, desc, '', timeout],
-          confirmed: true
-        });
-      } else {
-        await agy.runSql({
-          target: "agent",
-          sql: "INSERT INTO docs (name, content) VALUES (?, ?)",
-          params: [name, ''],
-          confirmed: true
-        });
-      }
-      closeModal();
-      showToast((isTask ? 'Task' : 'Doc') + ' created');
-      await loadAll();
-      const source = isTask ? allTasks : allDocs;
-      const created = source.find(i => i.name === name);
-      if (created) {
-        selected = { type: isTask ? 'tasks' : 'docs', ...created };
-        editing = true; dirty = false;
-        showContent(); renderList();
-      }
-    } catch (err) {
-      showToast('Create failed: ' + err.message, 'error');
-    }
-  }
+async function doCreateTrigger() {
+  const name = $('cTrigName').value.trim(), task = $('cTrigTask').value, type = $('cTrigType').value;
+  const desc = $('cTrigDesc').value.trim(), cfg = $('cTrigConfig').value.trim();
+  if (!name) { toast('Name required', 'error'); return; }
+  if (!task) { toast('Select a task', 'error'); return; }
+  try { JSON.parse(cfg); } catch (e) { toast('Invalid JSON', 'error'); return; }
+  try {
+    await agy.runSql({ target: "agent",
+      sql: "INSERT INTO triggers (name, task_name, type, config, description, enabled) VALUES (?, ?, ?, ?, ?, 1)",
+      params: [name, task, type, cfg, desc], confirmed: true });
+    closeModal(); toast('Created'); await loadAll();
+    const created = allTriggers.find(t => t.name === name);
+    if (created) { selected = { type: 'triggers', ...created, trigType: created.type }; showContent(); renderList(); }
+  } catch (err) { toast('Create failed: ' + err.message, 'error'); }
+}
 
-  function showCreateTriggerModal() {
-    const taskOptions = allTasks.map(t => '<option value="' + escHtml(t.name) + '">' + escHtml(t.title) + '</option>').join('');
-    document.getElementById('modalRoot').innerHTML =
-      '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'
-      + '<div class="modal">'
-      + '<h3>Create Trigger</h3>'
-      + '<label>Name</label><input type="text" id="createTrigName" placeholder="my-trigger">'
-      + '<label>Task</label><select id="createTrigTask" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none">' + taskOptions + '</select>'
-      + '<label>Type</label><select id="createTrigType" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none"><option value="schedule">schedule</option><option value="http">http</option><option value="event">event</option></select>'
-      + '<label>Description</label><input type="text" id="createTrigDesc" placeholder="Optional description">'
-      + '<label>Config (JSON)</label><textarea id="createTrigConfig" rows="3" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-mono);outline:none;resize:vertical">{}</textarea>'
-      + '<div class="modal-actions">'
-      + '<button class="btn btn-default" onclick="closeModal()">Cancel</button>'
-      + '<button class="btn btn-primary" onclick="doCreateTrigger()">Create</button>'
-      + '</div></div></div>';
-    setTimeout(() => document.getElementById('createTrigName').focus(), 50);
-  }
+function showCreateConfigModal() {
+  const existing = new Set(allConfig.map(c => c.key));
+  const presetOpts = CONFIG_REF.filter(r => !existing.has(r.key))
+    .map(r => '<option value="' + esc(r.key) + '">' + esc(r.key) + ' \u2014 ' + esc(r.desc) + '</option>').join('');
+  $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
+    + '<div class="modal"><h3>Add Config Key</h3>'
+    + (presetOpts ? '<label>Preset</label><select id="cfgPreset" onchange="applyPreset()">'
+      + '<option value="">Custom\u2026</option>' + presetOpts + '</select>' : '')
+    + '<label>Key</label><input type="text" id="cCfgKey" placeholder="setting.name">'
+    + '<label>Value</label><input type="text" id="cCfgVal" placeholder="value">'
+    + '<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button>'
+    + '<button class="btn btn-primary" onclick="doCreateConfig()">Save</button></div></div></div>';
+  setTimeout(() => $('cCfgKey').focus(), 50);
+}
 
-  async function doCreateTrigger() {
-    const trigName = document.getElementById('createTrigName').value.trim();
-    const taskName = document.getElementById('createTrigTask').value;
-    const type = document.getElementById('createTrigType').value;
-    const desc = document.getElementById('createTrigDesc').value.trim();
-    const configStr = document.getElementById('createTrigConfig').value.trim();
-    if (!trigName) { showToast('Name is required', 'error'); return; }
-    if (!taskName) { showToast('Select a task', 'error'); return; }
-    try { JSON.parse(configStr); } catch(e) { showToast('Invalid JSON in config', 'error'); return; }
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "INSERT INTO triggers (name, task_name, type, config, description, enabled) VALUES (?, ?, ?, ?, ?, 1)",
-        params: [trigName, taskName, type, configStr, desc],
-        confirmed: true
-      });
-      closeModal();
-      showToast('Trigger created');
-      await loadAll();
-      const created = allTriggers[allTriggers.length - 1];
-      if (created) {
-        selected = { type: 'triggers', ...created };
-        showContent(); renderList();
-      }
-    } catch (err) {
-      showToast('Create failed: ' + err.message, 'error');
-    }
-  }
-</script>
-<script id="script-config">
-  const CONFIG_REFERENCE = [
-    { key: 'backup.interval-hours', type: 'number', def: '24', range: '1\u20138760', desc: 'Auto backup interval (hours)' },
-    { key: 'backup.max-count', type: 'number', def: '5', range: '1\u2013100', desc: 'Max backups to keep per agent' },
-    { key: 'cleanup.session-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old sessions (0 = keep forever)' },
-    { key: 'cleanup.task-log-retention-days', type: 'number', def: '30', range: '0\u20133650', desc: 'Delete old task logs (0 = keep forever)' },
-    { key: 'http-api.port', type: 'number', def: '9877', range: '1\u201365535', desc: 'HTTP API port (restart required)' },
-  ];
+function applyPreset() {
+  const val = $('cfgPreset').value;
+  $('cCfgKey').value = val;
+  const ref = CONFIG_REF.find(r => r.key === val);
+  if (ref) $('cCfgVal').value = ref.def;
+  $('cCfgVal').focus();
+}
 
-  function selectConfigItem(key) {
-    if (dirty && !confirm('Discard unsaved changes?')) return;
-    const item = allConfig.find(c => c.key === key);
-    if (!item) return;
-    selected = { type: 'config', key: item.key, value: item.value, description: item.description };
+async function doCreateConfig() {
+  const key = $('cCfgKey').value.trim(), val = $('cCfgVal').value;
+  if (!key) { toast('Key required', 'error'); return; }
+  try {
+    await agy.runSql({ target: "agent", sql: "INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)", params: [key, val], confirmed: true });
+    closeModal(); toast('Added'); await loadAll();
+    selected = { type: 'config', key, value: val };
     editing = false; dirty = false;
     showConfigContent(); renderList();
-  }
+  } catch (err) { toast('Create failed: ' + err.message, 'error'); }
+}
 
-  function showConfigContent() {
-    if (!selected || selected.type !== 'config') { showConfigOverview(); return; }
-    const s = selected;
-    const ref = CONFIG_REFERENCE.find(r => r.key === s.key);
-    const typeLabel = '<span class="type-label" style="background:color-mix(in srgb, var(--color-green-fg) 15%, transparent);color:var(--color-green-fg)">CONFIG</span>';
+// ── Init ──
 
-    if (editing) {
-      document.getElementById('contentPane').innerHTML =
-        '<div class="content-header">'
-        + '<div class="left">' + typeLabel
-        + '<span class="title">' + escHtml(s.key) + '</span>'
-        + '<span id="dirtyDot"></span></div>'
-        + '<div class="actions">'
-        + '<button class="btn btn-default" onclick="cancelConfigEdit()">' + ICO.x + ' Cancel</button>'
-        + '<button class="btn btn-primary" onclick="saveConfigKey()">' + ICO.save + ' Save</button>'
-        + '</div></div>'
-        + '<div class="content-body" style="padding:20px">'
-        + '<div style="max-width:500px">'
-        + '<label style="display:block;font-size:11px;font-weight:600;color:var(--color-text2);margin-bottom:6px">Value</label>'
-        + '<input type="text" id="configEditValue" value="' + escHtml(s.value || '') + '" '
-        + 'style="width:100%;padding:8px 12px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-family:var(--font-mono);font-size:13px;outline:none" '
-        + 'oninput="dirty=true;updateDirty()">'
-        + (ref ? '<div style="margin-top:12px;font-size:11px;color:var(--color-text1)">Type: <code style="font-family:var(--font-mono);font-size:11px;background:var(--color-bg3);padding:1px 5px;border-radius:3px">' + ref.type + '</code> \u00b7 Default: <code style="font-family:var(--font-mono);font-size:11px;background:var(--color-bg3);padding:1px 5px;border-radius:3px">' + ref.def + '</code>' + (ref.range ? ' \u00b7 Range: ' + ref.range : '') + '<br>' + escHtml(ref.desc) + '</div>' : '')
-        + '</div></div>';
-      setTimeout(() => {
-        const inp = document.getElementById('configEditValue');
-        if (inp) { inp.focus(); inp.select(); }
-      }, 50);
-      updateDirty();
-    } else {
-      const descInfo = s.description ? '<div style="margin-top:12px;font-size:12px;color:var(--color-text2)">' + escHtml(s.description) + '</div>' : '';
-      document.getElementById('contentPane').innerHTML =
-        '<div class="content-header">'
-        + '<div class="left">' + typeLabel
-        + '<span class="title">' + escHtml(s.key) + '</span></div>'
-        + '<div class="actions">'
-        + '<button class="btn btn-default" onclick="editing=true;dirty=false;showConfigContent()">' + ICO.edit + ' Edit</button>'
-        + '<button class="btn btn-danger" onclick="deleteConfigKey(\'' + escHtml(s.key).replace(/'/g, "\\'") + '\')">' + ICO.trash + ' Delete</button>'
-        + '</div></div>'
-        + '<div class="content-body" style="padding:20px">'
-        + '<div style="max-width:600px">'
-        + '<div style="margin-bottom:20px">'
-        + '<div style="font-size:11px;font-weight:600;color:var(--color-text2);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:6px">Value</div>'
-        + '<div style="font-family:var(--font-mono);font-size:14px;color:var(--color-text3);padding:12px 16px;background:var(--color-bg2);border:1px solid var(--color-divider);border-radius:var(--radius-md)">' + escHtml(s.value || '(empty)') + '</div>'
-        + descInfo
-        + '</div>'
-        + (ref ? '<div class="config-info-box"><strong>' + escHtml(ref.desc) + '</strong><br>Type: <code>' + ref.type + '</code> \u00b7 Default: <code>' + ref.def + '</code>' + (ref.range ? ' \u00b7 Range: ' + ref.range : '') + '</div>' : '<div class="config-info-box">Custom config key. No reference info available.</div>')
-        + '</div></div>';
-    }
-  }
-
-  function showConfigOverview() {
-    const typeLabel = '<span class="type-label" style="background:color-mix(in srgb, var(--color-green-fg) 15%, transparent);color:var(--color-green-fg)">CONFIG</span>';
-    let tableRows = '';
-    if (allConfig.length === 0) {
-      tableRows = '<tr><td colspan="3" class="config-empty">No config keys set. Using defaults for all settings.</td></tr>';
-    } else {
-      tableRows = allConfig.map(c => {
-        return '<tr>'
-          + '<td class="key-cell">' + escHtml(c.key) + '</td>'
-          + '<td class="val-cell">' + escHtml(c.value) + '</td>'
-          + '<td class="actions-cell">'
-          + '<button onclick="selectConfigItem(\'' + escHtml(c.key).replace(/'/g, "\\'") + '\')" title="View/Edit">' + ICO.edit + '</button>'
-          + '<button class="del" onclick="deleteConfigKey(\'' + escHtml(c.key).replace(/'/g, "\\'") + '\')" title="Delete">' + ICO.trash + '</button>'
-          + '</td></tr>';
-      }).join('');
-    }
-
-    document.getElementById('contentPane').innerHTML =
-      '<div class="content-header">'
-      + '<div class="left">' + typeLabel + '<span class="title">Agent Configuration</span></div>'
-      + '<div class="actions">'
-      + '<button class="btn btn-default" onclick="loadAll()">'
-      + '<svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg> Refresh</button>'
-      + '</div></div>'
-      + '<div class="content-body" style="padding:20px">'
-      + '<table class="config-table"><thead><tr><th>Key</th><th>Value</th><th style="width:80px"></th></tr></thead><tbody>' + tableRows + '</tbody></table>'
-      + '</div>';
-  }
-
-  function cancelConfigEdit() {
-    if (dirty && !confirm('Discard changes?')) return;
-    editing = false; dirty = false;
-    showConfigContent();
-  }
-
-  async function saveConfigKey() {
-    const input = document.getElementById('configEditValue');
-    if (!input || !selected) return;
-    const newValue = input.value;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)",
-        params: [selected.key, newValue],
-        confirmed: true
-      });
-      selected.value = newValue;
-      const idx = allConfig.findIndex(c => c.key === selected.key);
-      if (idx >= 0) allConfig[idx].value = newValue;
-      else allConfig.push({ key: selected.key, value: newValue });
-      allConfig.sort((a, b) => a.key.localeCompare(b.key));
-      document.getElementById('configCount').textContent = allConfig.length;
-      dirty = false; editing = false;
-      showConfigContent(); renderList();
-      showToast('Config saved');
-    } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
-    }
-  }
-
-  async function deleteConfigKey(key) {
-    if (!confirm('Delete config key "' + key + '"? The setting will revert to its default.')) return;
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "DELETE FROM config WHERE name = ?",
-        params: [key],
-        confirmed: true
-      });
-      allConfig = allConfig.filter(c => c.key !== key);
-      document.getElementById('configCount').textContent = allConfig.length;
-      if (selected && selected.type === 'config' && selected.key === key) {
-        selected = null; editing = false; dirty = false;
-      }
-      showToast('Config key deleted');
-      if (mode === 'config' && !selected) showConfigOverview();
-      else if (selected) showConfigContent();
-      renderList();
-    } catch (err) {
-      showToast('Delete failed: ' + err.message, 'error');
-    }
-  }
-
-  function showCreateConfigModal() {
-    const existingKeys = new Set(allConfig.map(c => c.key));
-    const suggestOptions = CONFIG_REFERENCE
-      .filter(r => !existingKeys.has(r.key))
-      .map(r => '<option value="' + escHtml(r.key) + '">' + escHtml(r.key) + ' \u2014 ' + escHtml(r.desc) + '</option>')
-      .join('');
-
-    document.getElementById('modalRoot').innerHTML =
-      '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">'
-      + '<div class="modal">'
-      + '<h3>Add Config Key</h3>'
-      + (suggestOptions ? '<label>Preset (optional)</label><select id="configPreset" onchange="applyConfigPreset()" style="width:100%;padding:7px 10px;border:1px solid var(--color-input-border);border-radius:var(--radius-md);background:var(--color-input-bg);color:var(--color-text3);font-size:12px;font-family:var(--font-family);outline:none"><option value="">Custom key\u2026</option>' + suggestOptions + '</select>' : '')
-      + '<label>Key</label><input type="text" id="createConfigKey" placeholder="setting.name" autofocus>'
-      + '<label>Value</label><input type="text" id="createConfigValue" placeholder="value">'
-      + '<div class="modal-actions">'
-      + '<button class="btn btn-default" onclick="closeModal()">' + ICO.x + ' Cancel</button>'
-      + '<button class="btn btn-primary" onclick="doCreateConfig()">Save</button>'
-      + '</div></div></div>';
-    setTimeout(() => document.getElementById('createConfigKey').focus(), 50);
-  }
-
-  function applyConfigPreset() {
-    const sel = document.getElementById('configPreset');
-    const keyInput = document.getElementById('createConfigKey');
-    const valInput = document.getElementById('createConfigValue');
-    if (sel.value) {
-      keyInput.value = sel.value;
-      const ref = CONFIG_REFERENCE.find(r => r.key === sel.value);
-      if (ref) valInput.value = ref.def;
-      valInput.focus();
-    }
-  }
-
-  async function doCreateConfig() {
-    const key = document.getElementById('createConfigKey').value.trim();
-    const value = document.getElementById('createConfigValue').value;
-    if (!key) { showToast('Key is required', 'error'); return; }
-    try {
-      await agy.runSql({
-        target: "agent",
-        sql: "INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)",
-        params: [key, value],
-        confirmed: true
-      });
-      closeModal();
-      showToast('Config key added');
-      await loadAll();
-      selected = { type: 'config', key, value };
-      editing = false; dirty = false;
-      showConfigContent(); renderList();
-    } catch (err) {
-      showToast('Create failed: ' + err.message, 'error');
-    }
-  }
-</script>
-<script id="script-init">
-  loadAll();
+$('tabs').addEventListener('click', e => {
+  const t = e.target.closest('.tab');
+  if (t) setMode(t.dataset.mode);
+});
+$('list').addEventListener('click', e => {
+  const el = e.target.closest('.item');
+  if (el) selectItem(mode, el.dataset.id);
+});
+loadAll();
 </script>
 </body>
 </html>
