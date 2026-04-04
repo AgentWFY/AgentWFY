@@ -42,15 +42,19 @@ class TestSession {
     yield* this._doStream(input.text.trim().toLowerCase(), executeTool)
   }
 
-  async *retry(executeTool) {
-    // Discard partial assistant state
+  _discardPartial() {
     while (this._messages.length > 0 && this._messages[this._messages.length - 1].role === 'assistant') {
       this._messages.pop()
     }
-    if (this._displayMessages.length > 0 && this._displayMessages[this._displayMessages.length - 1] === this._partial) {
-      this._displayMessages.pop()
+    if (this._partial) {
+      const idx = this._displayMessages.indexOf(this._partial)
+      if (idx !== -1) this._displayMessages.splice(idx, 1)
+      this._partial = null
     }
-    this._partial = null
+  }
+
+  async *retry(executeTool) {
+    this._discardPartial()
 
     // For multi-fail: re-derive command from last user message
     const lastUser = this._messages.findLast(m => m.role === 'user')
@@ -85,6 +89,9 @@ class TestSession {
         throw new ProviderError('Prompt is too long (test)', 'context_overflow')
       case 'tools':
         yield* this._streamWithTools(signal, executeTool)
+        break
+      case 'abort-tools':
+        yield* this._streamAbortTools(signal, executeTool)
         break
       case 'thinking':
         yield* this._streamLongThinking(signal)
@@ -178,6 +185,52 @@ class TestSession {
       timestamp: Date.now(),
     })
     this._partial = null
+    yield { type: 'state_changed' }
+  }
+
+  async *_streamAbortTools(signal, executeTool) {
+    const intro = 'Running a long tool — try pressing stop while it runs.'
+    yield* this._streamText(intro, signal, 15)
+
+    // Simulate an assistant turn with a tool call that sleeps 30s
+    const toolCall = {
+      id: 'abort-test-1',
+      description: 'Long-running tool (30s sleep)',
+      code: 'await new Promise(r => setTimeout(r, 30000)); return "finished"',
+      timeoutMs: 60000,
+    }
+    this._messages.push({ role: 'assistant', content: intro, toolCalls: [toolCall] })
+    const displayMsg = {
+      role: 'assistant',
+      blocks: [
+        { type: 'text', text: intro },
+        { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code },
+      ],
+      timestamp: Date.now(),
+    }
+    this._displayMessages.push(displayMsg)
+    this._partial = displayMsg
+
+    yield { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code }
+    yield { type: 'state_changed' }
+
+    const result = await executeTool(toolCall)
+
+    if (signal.aborted) {
+      this._discardPartial()
+      return
+    }
+
+    // Tool completed normally — add result and continue
+    this._messages.push({ role: 'tool', id: toolCall.id, content: result.content })
+    displayMsg.blocks.push({ type: 'exec_js_result', id: toolCall.id, content: result.content, isError: result.isError })
+    this._partial = null
+    yield { type: 'state_changed' }
+
+    const outro = '\n\nTool completed: ' + result.content.map(c => c.type === 'text' ? c.text : '').join('')
+    yield* this._streamText(outro, signal, 15)
+
+    displayMsg.blocks.push({ type: 'text', text: outro })
     yield { type: 'state_changed' }
   }
 
