@@ -122,7 +122,8 @@ The session object returned by `createSession` / `restoreSession` must implement
 class MySession {
   // Stream a user message. Returns an async iterable of events.
   // executeTool is a callback — call it and await the result when the model requests a tool.
-  async *stream(input, executeTool) {
+  // providerOptions is an optional Record<string, unknown> from spawnSession.
+  async *stream(input, executeTool, providerOptions) {
     // input = { text: string, files?: FileContent[] }
     // executeTool = async ({ id, description, code }) => { content: [...], isError: boolean }
 
@@ -201,7 +202,7 @@ Providers should keep their own fast retry for transient HTTP errors (2-3 attemp
 ### Event flow
 
 ```
-agent calls session.stream({ text: '...' }, executeTool)
+agent calls session.stream({ text: '...' }, executeTool, providerOptions?)
   provider yields 'text_delta'        (repeated)
   provider yields 'exec_js'           (0 or more tool calls)
   provider awaits executeTool(call)    (agent executes, returns result)
@@ -270,7 +271,7 @@ class MySession {
     this.controller = null
   }
 
-  async *stream(input, executeTool) {
+  async *stream(input, executeTool, providerOptions) {
     this.messages.push({ role: 'user', content: input.text })
     this.displayMessages.push({ role: 'user', blocks: [{ type: 'text', text: input.text }], timestamp: Date.now() })
     yield { type: 'state_changed' }
@@ -278,18 +279,18 @@ class MySession {
   }
 
   async *retry(executeTool) {
-    // Remove partial assistant state from failed attempt
     while (this.messages.at(-1)?.role === 'assistant') this.messages.pop()
     yield* this._run(executeTool)
   }
 
   async *_run(executeTool) {
     this.controller = new AbortController()
+    const modelId = this.providerConfig.modelId
     try {
       const res = await fetch(this.providerConfig.apiUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.providerConfig.apiKey}` },
-        body: JSON.stringify({ model: this.providerConfig.modelId, messages: this.messages, stream: true }),
+        body: JSON.stringify({ model: modelId, messages: this.messages, stream: true }),
         signal: this.controller.signal,
       })
       if (!res.ok) {

@@ -12,7 +12,7 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
       throw new Error('spawnSession requires a non-empty prompt string')
     }
     const sessionManager = getSessionManager()
-    return sessionManager.spawnSession(request.prompt, request.providerId)
+    return sessionManager.spawnSession(request.prompt, request.providerId, request.providerOptions)
   })
 
   registry.register('sendToSession', async (params) => {

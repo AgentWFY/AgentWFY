@@ -81,7 +81,7 @@ export class ProviderError extends Error {
 // ── Provider session interface ──
 
 export interface ProviderSession {
-  stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent>
+  stream(input: UserInput, executeTool: ToolExecutor, providerOptions?: Record<string, unknown>): AsyncIterable<StreamEvent>
   retry(executeTool: ToolExecutor): AsyncIterable<StreamEvent>
   abort(): void
   getDisplayMessages(): DisplayMessage[]
