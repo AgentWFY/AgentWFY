@@ -4,7 +4,7 @@ Spawn and interact with sessions.
 
 ## Spawning Sessions
 
-`spawnSession({ prompt, providerId? })` → `{ sessionId }` — spawn a session. It runs independently with its own execJs context and the same host APIs. The `sessionId` is a session file name — the conversation is persisted to disk. Pass `providerId` to use a specific provider instead of the default.
+`spawnSession({ prompt, providerId?, providerOptions? })` → `{ sessionId }` — spawn a session. It runs independently with its own execJs context and the same host APIs. The `sessionId` is a session file name — the conversation is persisted to disk. Pass `providerId` to use a specific provider instead of the default. Pass `providerOptions` to override provider behavior for this session (e.g. `{ model: 'gpt-4o' }` to use a different model).
 
 When a spawned session finishes processing, its last assistant response is auto-published to `session:response:{sessionId}`.
 

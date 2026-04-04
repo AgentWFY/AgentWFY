@@ -368,9 +368,9 @@ const result = await waitFor({ topic: 'data-ready', timeoutMs: 30000 })
 
 ### Sub-Agents
 
-#### `spawnSession({ prompt })`
+#### `spawnSession({ prompt, providerId?, providerOptions? })`
 
-Spawn a session with an initial prompt. Runs independently and publishes response to `session:response:{sessionId}`.
+Spawn a session with an initial prompt. Runs independently and publishes response to `session:response:{sessionId}`. Pass `providerOptions` to override provider behavior (e.g. `{ model: 'gpt-4o' }`). The provider stores relevant options (like model) in the session state, so subsequent `sendToSession` calls use the same settings automatically.
 
 ```js
 const { sessionId } = await spawnSession({ prompt: 'Analyze data/sales.csv and return a JSON summary' })
@@ -379,7 +379,7 @@ const response = await waitFor({ topic: `session:response:${sessionId}`, timeout
 
 #### `sendToSession({ sessionId, message })`
 
-Send a follow-up message to a spawned session.
+Send a follow-up message to a spawned session. Provider options set during `spawnSession` are persisted in the session and reused automatically.
 
 #### `openSessionInChat({ sessionId })`
 
@@ -848,8 +848,8 @@ api.registerProvider({
 
 Sessions are async iterators that drive the full streaming lifecycle. They must implement:
 
-- `async *stream(input, executeTool)` — Stream a user turn. `input` is `{ text, files? }`. `executeTool` is a callback for tool calls. Returns an async iterable of events.
-- `async *retry(executeTool)` — Retry the last failed turn. Discards partial state from the failed attempt and re-calls the API.
+- `async *stream(input, executeTool, providerOptions?)` — Stream a user turn. `input` is `{ text, files? }`. `executeTool` is a callback for tool calls. `providerOptions` is an optional `Record<string, unknown>` passed on the first call (e.g. `{ model: 'gpt-4o' }`). Providers should store relevant options in session state for persistence. Returns an async iterable of events.
+- `async *retry(executeTool)` — Retry the last failed turn. Discards partial state from the failed attempt and re-calls the API. Uses options stored in session state.
 - `abort()` — Cancel the current stream. The iterator should complete normally (not throw).
 - `getDisplayMessages()` — Return display messages for UI (always sync).
 - `getState()` — Return serializable state for session persistence.

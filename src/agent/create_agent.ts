@@ -42,6 +42,7 @@ export interface AgentWFYAgentOptions {
 export interface AgentWFYAgentPromptOptions {
   files?: FileContent[]
   streamingBehavior?: 'followUp'
+  providerOptions?: Record<string, unknown>
 }
 
 export type AgentWFYAgentEvent = AgentEvent | {
@@ -283,7 +284,7 @@ export class AgentWFYAgent {
       return
     }
 
-    await this.agent.prompt(text, options.files)
+    await this.agent.prompt(text, { files: options.files, providerOptions: options.providerOptions })
     await this.persistSession()
   }
 

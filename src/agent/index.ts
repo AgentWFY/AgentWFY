@@ -125,14 +125,14 @@ export class Agent {
     this.followUpQueue = []
   }
 
-  async prompt(text: string, files?: FileContent[]): Promise<void> {
+  async prompt(text: string, options?: { files?: FileContent[]; providerOptions?: Record<string, unknown> }): Promise<void> {
     if (this._state.isStreaming) {
       throw new Error('Agent is already processing a prompt.')
     }
-    await this.runLoop(text, files)
+    await this.runLoop(text, options)
   }
 
-  private async runLoop(text: string, files?: FileContent[]): Promise<void> {
+  private async runLoop(text: string, options?: { files?: FileContent[]; providerOptions?: Record<string, unknown> }): Promise<void> {
     this.runningPrompt = new Promise((resolve) => {
       this.resolveRunningPrompt = resolve
     })
@@ -201,7 +201,8 @@ export class Agent {
       this.emit({ type: 'agent_start' })
 
       let currentText = text
-      let currentFiles = files
+      let currentFiles = options?.files
+      const providerOptions = options?.providerOptions
 
       while (true) {
         // Add user message to local display
@@ -226,7 +227,7 @@ export class Agent {
 
           try {
             const iterable = attempt === 0
-              ? session.stream({ text: currentText, files: currentFiles }, executeTool)
+              ? session.stream({ text: currentText, files: currentFiles }, executeTool, providerOptions)
               : session.retry(executeTool)
 
             streamingBlocks = []

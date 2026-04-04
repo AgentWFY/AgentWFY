@@ -250,7 +250,7 @@ export interface WorkerHostMethodMap {
     result: unknown
   }
   spawnSession: {
-    params: { prompt: string; providerId?: string }
+    params: { prompt: string; providerId?: string; providerOptions?: Record<string, unknown> }
     result: { sessionId: string }
   }
   sendToSession: {

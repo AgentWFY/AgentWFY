@@ -169,15 +169,18 @@ class OpenAICompatibleSession implements ProviderSession {
   private providerConfig: ProviderConfigSnapshot
   private lastInputTokens = 0
   private _partialDisplayMessage: DisplayMessage | null = null
+  private modelOverride: string | null = null
 
   constructor(
     config: ProviderSessionConfig,
     providerConfig: ProviderConfigSnapshot,
     initialMessages?: InternalMessage[],
     initialDisplayMessages?: DisplayMessage[],
+    modelOverride?: string | null,
   ) {
     this.config = config
     this.providerConfig = providerConfig
+    this.modelOverride = modelOverride ?? null
     if (initialMessages) {
       this.messages = [{ role: 'system', content: config.systemPrompt }, ...initialMessages]
       this.repairOrphanedToolCalls()
@@ -189,7 +192,11 @@ class OpenAICompatibleSession implements ProviderSession {
     }
   }
 
-  async *stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
+  async *stream(input: UserInput, executeTool: ToolExecutor, providerOptions?: Record<string, unknown>): AsyncIterable<StreamEvent> {
+    // Store model override on first call (from spawnSession providerOptions)
+    if (typeof providerOptions?.model === 'string' && providerOptions.model) {
+      this.modelOverride = providerOptions.model
+    }
     this.addUserMessage(input.text, input.files)
     yield* this.doStream(executeTool)
   }
@@ -209,7 +216,11 @@ class OpenAICompatibleSession implements ProviderSession {
 
   getState(): unknown {
     // Exclude the system prompt (first message) — it's re-added on restore
-    return { messages: this.messages.slice(1), displayMessages: this.displayMessages.slice() }
+    return {
+      messages: this.messages.slice(1),
+      displayMessages: this.displayMessages.slice(),
+      ...(this.modelOverride ? { modelOverride: this.modelOverride } : {}),
+    }
   }
 
   dispose(): void {
@@ -218,8 +229,12 @@ class OpenAICompatibleSession implements ProviderSession {
 
   // ── Private helpers ──
 
+  private getEffectiveModelId(): string {
+    return this.modelOverride ?? this.providerConfig.modelId
+  }
+
   private buildStatusLine(): string {
-    const parts: string[] = [this.providerConfig.modelId]
+    const parts: string[] = [this.getEffectiveModelId()]
     if (this.providerConfig.reasoning) {
       parts.push(this.providerConfig.reasoning)
     }
@@ -318,7 +333,7 @@ class OpenAICompatibleSession implements ProviderSession {
 
     const apiKey = this.providerConfig.apiKey ?? ''
     const baseUrl = this.providerConfig.baseUrl.replace(/\/v1\/?$/, '')
-    const modelId = this.providerConfig.modelId
+    const modelId = this.getEffectiveModelId()
     const url = `${baseUrl}/v1/chat/completions`
 
     const headers: Record<string, string> = {
@@ -728,10 +743,11 @@ export function createOpenAICompatibleFactory(
     },
 
     restoreSession(config: ProviderSessionConfig, state: unknown): ProviderSession {
-      const stateObj = state as { messages?: InternalMessage[]; displayMessages?: DisplayMessage[] } | null
+      const stateObj = state as { messages?: InternalMessage[]; displayMessages?: DisplayMessage[]; modelOverride?: string } | null
       const apiMessages = stateObj?.messages && Array.isArray(stateObj.messages) ? stateObj.messages : []
       const displayMessages = stateObj?.displayMessages && Array.isArray(stateObj.displayMessages) ? stateObj.displayMessages : []
-      return new OpenAICompatibleSession(config, readProviderConfig(), apiMessages, displayMessages)
+      const modelOverride = typeof stateObj?.modelOverride === 'string' ? stateObj.modelOverride : null
+      return new OpenAICompatibleSession(config, readProviderConfig(), apiMessages, displayMessages, modelOverride)
     },
   }
 }

@@ -257,7 +257,7 @@ export class AgentSessionManager {
     return () => this.listeners.delete(listener)
   }
 
-  async spawnSession(prompt: string, providerId?: string): Promise<{ sessionId: string }> {
+  async spawnSession(prompt: string, providerId?: string, providerOptions?: Record<string, unknown>): Promise<{ sessionId: string }> {
     const agent = await this.createAgentInstance({ providerId })
     const sessionId = agent.sessionId
     this.deps.getJsRuntime().ensureWorker(sessionId)
@@ -266,7 +266,7 @@ export class AgentSessionManager {
     entry.autoPublishResponse = true
     this.notify()
 
-    agent.prompt(prompt).catch((err) => {
+    agent.prompt(prompt, { providerOptions }).catch((err) => {
       console.error('[AgentSessionManager] spawn-prompt failed', err)
     })
 
