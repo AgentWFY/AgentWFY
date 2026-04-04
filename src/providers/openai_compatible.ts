@@ -549,6 +549,11 @@ class OpenAICompatibleSession implements ProviderSession {
         pendingTools.map(pt => executeTool(pt)),
       )
 
+      if (signal.aborted) {
+        this.discardPartialResponse()
+        return
+      }
+
       // Process results
       for (let i = 0; i < pendingTools.length; i++) {
         this.addToolResult(pendingTools[i].id, results[i].content, results[i].isError)

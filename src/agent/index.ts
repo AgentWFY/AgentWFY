@@ -44,6 +44,7 @@ export class Agent {
   private runningPrompt?: Promise<void>
   private resolveRunningPrompt?: () => void
   private retryAbortController: AbortController | null = null
+  private toolAbortController: AbortController | null = null
 
   sessionId?: string
 
@@ -102,6 +103,7 @@ export class Agent {
   abort(): void {
     this.followUpQueue = []
     this.retryAbortController?.abort()
+    this.toolAbortController?.abort()
     this.providerSession.abort()
   }
 
@@ -148,6 +150,9 @@ export class Agent {
     let toolExecutionCount = 0
     let lastEventTime = Date.now()
 
+    this.toolAbortController = new AbortController()
+    const toolSignal = this.toolAbortController.signal
+
     const executeTool = async (call: ToolCall): Promise<ToolResult> => {
       const tool = this._state.tools.find(t => t.name === 'execJs')
       if (!tool) {
@@ -160,7 +165,7 @@ export class Agent {
           code: call.code,
           description: call.description,
           ...(call.timeoutMs !== undefined ? { timeoutMs: call.timeoutMs } : {}),
-        })
+        }, toolSignal)
         const contextContent = result.content.map(c => {
           if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
             return { ...c, text: truncateHead(c.text) }
@@ -356,6 +361,7 @@ export class Agent {
       this._state.streamingMessage = null
       this._state.retryState = null
       this._state.stalledSince = null
+      this.toolAbortController = null
       this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
       this.runningPrompt = undefined
