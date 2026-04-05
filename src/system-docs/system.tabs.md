@@ -11,7 +11,7 @@ The app uses a tab-based UI with three tab types:
   - `params`: optional `Record<string, string>` of custom query parameters appended to the view URL. Views read them via `new URLSearchParams(window.location.search)`. Not supported for URL tabs.
   - `hidden: true` opens the tab in the background without disrupting the user's current view. Hidden tabs are not shown in the tab bar but still load their content, so you can use `captureTab`, `execTabJs`, and `getTabConsoleLogs` on them. The user can expand hidden tabs in the tab bar to inspect them. Use hidden tabs when you need to do background work (e.g. rendering a view, running JS in a page context) without interrupting the user.
 - `closeTab({ tabId })`, `selectTab({ tabId })`, `reloadTab({ tabId })`
-- `captureTab({ tabId })` → screenshot is auto-attached as an image to the tool result
+- `captureTab({ tabId })` → screenshot is auto-attached as an image to the tool result. The raw image data is NOT available to code; returns `{ attached: true, mimeType }`.
 - `getTabConsoleLogs({ tabId, since?, limit? })` → `[{ level, message, timestamp }]`
 - `execTabJs({ tabId, code, timeoutMs? })` → execute JS in a tab's page context (has DOM access)
 

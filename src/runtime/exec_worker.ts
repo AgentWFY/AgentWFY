@@ -266,22 +266,34 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     // Build method bindings from the methods list
     const methodParamNames: string[] = []
     const methodArgValues: Function[] = []
+    const pendingAttachments: Promise<unknown>[] = []
+
+    const makeAttachmentBinding = <T extends { base64: string; mimeType: string }>(
+      methodName: string,
+      toReturnValue: (result: T) => unknown,
+    ) => (params: unknown) => {
+      const p = (async () => {
+        const result = await call(methodName, params) as T
+        capturedFiles.push({ base64: result.base64, mimeType: result.mimeType })
+        return toReturnValue(result)
+      })()
+      pendingAttachments.push(p)
+      return p
+    }
 
     for (const method of methods) {
       methodParamNames.push(method)
 
       if (method === 'captureTab') {
-        methodArgValues.push(async (params: unknown) => {
-          const result = await call('captureTab', params) as WorkerHostMethodMap['captureTab']['result']
-          capturedFiles.push({ base64: result.base64, mimeType: result.mimeType })
-          return { attached: true, mimeType: result.mimeType }
-        })
+        methodArgValues.push(makeAttachmentBinding<WorkerHostMethodMap['captureTab']['result']>(
+          'captureTab',
+          (r) => ({ attached: true, mimeType: r.mimeType }),
+        ))
       } else if (method === 'readBinary') {
-        methodArgValues.push(async (params: unknown) => {
-          const result = await call('readBinary', params) as WorkerHostMethodMap['readBinary']['result']
-          capturedFiles.push({ base64: result.base64, mimeType: result.mimeType })
-          return { attached: true, mimeType: result.mimeType, size: result.size }
-        })
+        methodArgValues.push(makeAttachmentBinding<WorkerHostMethodMap['readBinary']['result']>(
+          'readBinary',
+          (r) => ({ attached: true, mimeType: r.mimeType, size: r.size }),
+        ))
       } else {
         methodArgValues.push((params: unknown) => call(method, params))
       }
@@ -303,6 +315,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       timeoutMs,
       abortController.signal
     )
+
+    await Promise.allSettled(pendingAttachments)
 
     const details: ExecJsDetails = {
       ok: true,

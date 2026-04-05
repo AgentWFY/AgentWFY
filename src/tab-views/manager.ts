@@ -193,9 +193,12 @@ interface TabViewManagerDeps {
   unregisterSender?: (webContentsId: number) => void;
 }
 
+const MOUNT_TIMEOUT_MS = 10_000;
+
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
+  private readonly pendingMounts = new Map<string, { resolve: () => void }>();
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
@@ -206,6 +209,30 @@ export class TabViewManager {
 
   private generateTabId(): string {
     return crypto.randomBytes(8).toString('hex');
+  }
+
+  private waitForMount(tabId: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.pendingMounts.delete(tabId)) {
+          resolve();
+        }
+      }, MOUNT_TIMEOUT_MS);
+      this.pendingMounts.set(tabId, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+      });
+    });
+  }
+
+  private resolvePendingMount(tabId: string): void {
+    const pending = this.pendingMounts.get(tabId);
+    if (pending) {
+      this.pendingMounts.delete(tabId);
+      pending.resolve();
+    }
   }
 
   private pushStateToRenderer(): void {
@@ -403,22 +430,27 @@ export class TabViewManager {
     const visible = Boolean(input.visible);
     const bounds = normalizeTabViewBounds(input.bounds);
     const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
-    const state = this.ensureTabViewState(tabId, viewName, { tabType });
 
-    this.applyTabViewPlacement(state, bounds, visible);
-
-    if (state.currentSrc === src) {
-      return;
-    }
-
-    state.currentSrc = src;
     try {
-      await state.view.webContents.loadURL(src);
-    } catch (error: unknown) {
-      if ((error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3) {
+      const state = this.ensureTabViewState(tabId, viewName, { tabType });
+
+      this.applyTabViewPlacement(state, bounds, visible);
+
+      if (state.currentSrc === src) {
         return;
       }
-      throw error;
+
+      state.currentSrc = src;
+      try {
+        await state.view.webContents.loadURL(src);
+      } catch (error: unknown) {
+        if ((error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3) {
+          return;
+        }
+        throw error;
+      }
+    } finally {
+      this.resolvePendingMount(tabId);
     }
   }
 
@@ -586,7 +618,9 @@ export class TabViewManager {
     if (!isHidden) {
       this.selectedTabId = tabId;
     }
+    const mounted = this.waitForMount(tabId);
     this.pushStateToRenderer();
+    await mounted;
     return { tabId };
   }
 
