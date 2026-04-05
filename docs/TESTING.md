@@ -6,6 +6,36 @@ For CDP tool reference (API signatures, commands, output format), see [CDP.md](C
 
 ## Setup
 
+### Preview mode (recommended)
+
+Runs the app in Docker with VNC — accessible via browser tab. Source is mounted, so code changes are picked up on app restart. Works with any worktree.
+
+```bash
+# Start preview
+./scripts/preview                                    # current directory
+./scripts/preview ~/projects/agentwfy/.claude/worktrees/my-feature
+./scripts/preview <worktree> --agent ~/my-agent      # with existing agent data
+
+# Manage previews
+./scripts/preview --list                             # running previews
+./scripts/preview --stop my-feature                  # stop one (name = directory name)
+./scripts/preview --stop                             # stop all
+```
+
+Opens a noVNC URL in the browser. Interact with the app visually through VNC.
+
+**After code changes:** restart the app. It rebuilds from the mounted source automatically.
+
+```bash
+./scripts/preview --restart my-feature    # name = directory name of the worktree
+```
+
+VNC reconnects in a few seconds after rebuild.
+
+### Local headless mode
+
+Faster startup, no Docker. No visual output.
+
 ```bash
 ./scripts/build
 ./scripts/cdp start              # headless, isolated instance
@@ -187,21 +217,9 @@ Middle-click closes tab (if not pinned). Right-click opens context menu. Draggab
 | Backup info | `#backup-info` |
 | Data dir | `#data-dir` |
 
-### Command Palette (separate CDP target)
+### Command Palette
 
-Not in main page DOM. Opens as a child window.
-
-```js
-await press("Meta+k");
-await sleep(300);
-const t = await targets();
-const p = t.find(t => t.title === "Command Palette");
-await typeTarget(p.id, "query");
-await clickTarget(p.id, ".item:first-child");
-await pressTarget(p.id, "Escape"); // close
-```
-
-Disappears from targets when closed.
+The command palette is a WebContentsView overlay inside the main window. Open with Ctrl+K (Linux) / Cmd+K (macOS).
 
 ## Flows
 
@@ -261,10 +279,12 @@ const isStreaming = await eval('document.querySelector(".stop-btn")?.style.displ
 
 <!-- Add findings here that will make future testing faster or more reliable. -->
 
-### Headless mode limitations
+### Preview mode tips
 
-- Command palette `BrowserWindow` is never shown/hidden visually in headless mode (`AGENTWFY_HEADLESS=1`). `isVisible()` is always false, so `toggle()` always calls `show()`. The blur handler and race conditions between blur/toggle cannot be tested headlessly — use `--visible` for those.
-- The palette target persists in the CDP target list even after closing (window is hidden, not destroyed). Check item count or search input instead of target presence to verify open/close state.
+- The preview runs inside Docker with sway (Wayland compositor) + wayvnc + noVNC. The app runs at the compositor's resolution, scaled to fit the browser tab.
+- Don't use in-app reload shortcuts (Ctrl+Shift+R etc.) — they cause layout issues. Instead close the app to trigger a full rebuild.
+- Source is mounted read-only at `/src`. The container copies it to `/app`, builds, and runs. Each restart picks up the latest code.
+- Agent data is mounted read-write when using `--agent`. Changes persist.
 
 ### Plugin installation without file dialog
 

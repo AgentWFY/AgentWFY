@@ -1,0 +1,164 @@
+#!/usr/bin/env node
+// Launch a browser-accessible preview of the app from any worktree.
+// Source is mounted into the container — code changes are picked up on app reload.
+//
+// Usage:
+//   ./scripts/preview                                  Current directory
+//   ./scripts/preview <worktree-path>                  Specific worktree
+//   ./scripts/preview <worktree> --agent <agent-path>  With existing agent data
+//   ./scripts/preview --restart <name>                  Rebuild and restart app
+//   ./scripts/preview --stop [name]                    Stop a preview (or all)
+//   ./scripts/preview --list                           List running previews
+
+import { execSync } from 'node:child_process';
+import { dirname, join, resolve, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { createServer } from 'node:net';
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const defaultRoot = join(scriptDir, '..');
+const PREFIX = 'agentwfy-preview';
+const IMAGE = 'agentwfy-preview-base';
+
+const args = process.argv.slice(2);
+
+if (args[0] === '--list') {
+  try {
+    execSync(`docker ps --filter "name=${PREFIX}" --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"`, { stdio: 'inherit' });
+  } catch { console.log('No previews running.'); }
+  process.exit(0);
+}
+
+if (args[0] === '--stop') {
+  const name = args[1];
+  if (name) {
+    const container = `${PREFIX}-${name}`;
+    try { execSync(`docker stop ${container} && docker rm ${container}`, { stdio: 'inherit' }); }
+    catch { console.log(`No preview named "${name}".`); }
+  } else {
+    try {
+      const ids = execSync(`docker ps -q --filter "name=${PREFIX}"`, { encoding: 'utf-8' }).trim();
+      if (ids) {
+        execSync(`docker stop ${ids.split('\n').join(' ')}`, { stdio: 'inherit' });
+        execSync(`docker rm ${ids.split('\n').join(' ')}`, { stdio: 'pipe' });
+      } else {
+        console.log('No previews running.');
+      }
+    } catch {}
+  }
+  process.exit(0);
+}
+
+if (args[0] === '--restart') {
+  const name = args[1];
+  if (!name) {
+    console.error('Usage: ./scripts/preview --restart <name>');
+    process.exit(1);
+  }
+  const container = `${PREFIX}-${name}`;
+  try {
+    execSync(`docker exec ${container} bash -c 'kill $(pgrep -f "electron /app" | head -1)'`, { stdio: 'pipe' });
+    console.log(`Restarting app in ${name}...`);
+  } catch {
+    console.log(`No preview named "${name}" or app not running.`);
+  }
+  process.exit(0);
+}
+
+// Parse args
+let appPath = null;
+let agentPath = null;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--agent' && args[i + 1]) {
+    agentPath = resolve(args[i + 1]);
+    i++;
+  } else if (!args[i].startsWith('--')) {
+    appPath = resolve(args[i]);
+  }
+}
+
+appPath = appPath || defaultRoot;
+
+if (!existsSync(join(appPath, 'scripts', 'start'))) {
+  console.error(`Not an agentwfy directory: ${appPath}`);
+  process.exit(1);
+}
+
+if (agentPath && !existsSync(join(agentPath, '.agentwfy', 'agent.db'))) {
+  console.error(`Not an agent directory (no .agentwfy/agent.db): ${agentPath}`);
+  process.exit(1);
+}
+
+const dirName = basename(appPath).replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+const containerName = `${PREFIX}-${dirName}`;
+
+function findFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const port = srv.address().port;
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
+}
+
+async function main() {
+  const port = await findFreePort();
+  const dockerfile = join(scriptDir, 'Dockerfile.preview');
+
+  try { execSync(`docker stop ${containerName} && docker rm ${containerName}`, { stdio: 'pipe' }); } catch {}
+
+  // Build base image once (has all deps, Electron, tsgo cached)
+  // Use any worktree just for the setup scripts — they're the same across worktrees
+  console.log(`[preview] Building base image...`);
+  const hadDockerignore = existsSync(join(appPath, '.dockerignore'));
+  if (!hadDockerignore) {
+    writeFileSync(join(appPath, '.dockerignore'), 'vendor/\ndist/\nnode_modules/\n.git/\ntests/\n');
+  }
+  try {
+    execSync(`docker build -f "${dockerfile}" -t ${IMAGE} .`, {
+      cwd: appPath,
+      stdio: 'inherit',
+    });
+  } finally {
+    if (!hadDockerignore) {
+      try { unlinkSync(join(appPath, '.dockerignore')); } catch {}
+    }
+  }
+
+  // Run with source mounted
+  const dockerArgs = [
+    'run', '-d',
+    '--name', containerName,
+    '--shm-size=256m',
+    '-p', `${port}:6080`,
+    '-v', `${appPath}:/src:ro`,
+  ];
+
+  if (agentPath) {
+    dockerArgs.push('-v', `${agentPath}:/agent`);
+    dockerArgs.push('-e', 'AGENT_PATH=/agent');
+  }
+
+  dockerArgs.push(IMAGE);
+
+  console.log(`[preview] Starting ${containerName} on port ${port}...`);
+  if (agentPath) console.log(`[preview] Agent: ${agentPath}`);
+  console.log(`[preview] Source: ${appPath} (mounted, changes picked up on reload)`);
+  execSync(`docker ${dockerArgs.join(' ')}`, { stdio: 'inherit' });
+
+  const url = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0`;
+  console.log(`\n  ${url}\n`);
+  console.log(`  Restart: ./scripts/preview --restart ${dirName}`);
+  console.log(`  Stop:    ./scripts/preview --stop ${dirName}`);
+  console.log(`  List:    ./scripts/preview --list\n`);
+
+  setTimeout(() => {
+    try { execSync(`open "${url}"`, { stdio: 'pipe' }); } catch {}
+  }, 8000);
+}
+
+main().catch(err => { console.error(err.message); process.exit(1); });
