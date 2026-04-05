@@ -80,6 +80,15 @@ function init(): void {
     unsubSettingChanged()
   })
 
+  // Close palette when it loses focus (user clicks elsewhere)
+  window.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (!document.hasFocus()) {
+        bridge.close()
+      }
+    }, 0)
+  })
+
   // Initial load
   openAtNormal()
 }

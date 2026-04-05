@@ -1,12 +1,10 @@
-import { BaseWindow, BrowserWindow, nativeTheme } from 'electron'
+import { BaseWindow, WebContentsView } from 'electron'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { CONFIRMATION_CHANNEL, type ConfirmationResult } from './types.js'
 
 export interface ConfirmationManagerDeps {
   getMainWindow: () => BaseWindow | null
-  registerSender?: (webContentsId: number) => void
-  unregisterSender?: (webContentsId: number) => void
 }
 
 export interface ConfirmationOptions {
@@ -14,8 +12,11 @@ export interface ConfirmationOptions {
   height?: number
 }
 
+/** Extra padding around the dialog content for the CSS drop-shadow to render. */
+const VIEW_PADDING = 40
+
 export class ConfirmationManager {
-  private window: BrowserWindow | null = null
+  private view: WebContentsView | null = null
   private readonly deps: ConfirmationManagerDeps
   private readonly pendingRequests = new Map<string, { resolve: (result: ConfirmationResult) => void }>()
   private sizeOverride: { width: number; height: number } | null = null
@@ -24,22 +25,41 @@ export class ConfirmationManager {
     this.deps = deps
   }
 
-  private resolveBounds(): Electron.Rectangle {
+  getWebContents(): Electron.WebContents | null {
+    if (!this.view || this.view.webContents.isDestroyed()) return null
+    return this.view.webContents
+  }
+
+  isVisible(): boolean {
+    return !!this.view && !this.view.webContents.isDestroyed() && this.view.getVisible()
+  }
+
+  private resolveContentBounds(): Electron.Rectangle {
     const mainWindow = this.deps.getMainWindow()
     if (!mainWindow || mainWindow.isDestroyed()) {
       return { x: 0, y: 0, width: 420, height: 300 }
     }
-    const bounds = mainWindow.getBounds()
+    const [cw, ch] = mainWindow.getContentSize()
     const width = this.sizeOverride?.width ?? 420
     const height = this.sizeOverride?.height ?? 300
-    const x = bounds.x + Math.floor((bounds.width - width) / 2)
-    const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.25))
+    const x = Math.floor((cw - width) / 2)
+    const y = Math.max(40, Math.floor(ch * 0.25))
     return { x, y, width, height }
   }
 
-  private ensureWindow(): BrowserWindow {
-    if (this.window && !this.window.isDestroyed()) {
-      return this.window
+  private applyBounds(contentBounds: Electron.Rectangle): void {
+    if (!this.view || this.view.webContents.isDestroyed()) return
+    this.view.setBounds({
+      x: contentBounds.x - VIEW_PADDING,
+      y: contentBounds.y - VIEW_PADDING,
+      width: contentBounds.width + VIEW_PADDING * 2,
+      height: contentBounds.height + VIEW_PADDING * 2,
+    })
+  }
+
+  private ensureView(): WebContentsView {
+    if (this.view && !this.view.webContents.isDestroyed()) {
+      return this.view
     }
 
     const mainWindow = this.deps.getMainWindow()
@@ -47,23 +67,7 @@ export class ConfirmationManager {
       throw new Error('Main window is unavailable')
     }
 
-    this.window = new BrowserWindow({
-      parent: mainWindow,
-      show: false,
-      frame: false,
-      transparent: false,
-      hasShadow: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      focusable: true,
-      acceptFirstMouse: true,
-      alwaysOnTop: true,
-      roundedCorners: true,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f0f0f0',
+    this.view = new WebContentsView({
       webPreferences: {
         preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -73,32 +77,17 @@ export class ConfirmationManager {
       },
     })
 
-    if (process.platform === 'darwin') {
-      this.window.setAlwaysOnTop(true, 'floating')
-      this.window.setWindowButtonVisibility(false)
-    }
+    this.view.setBackgroundColor('#00000000')
+    this.view.setVisible(false)
+    mainWindow.contentView.addChildView(this.view)
+    this.applyBounds(this.resolveContentBounds())
 
-    this.window.on('blur', () => {
-      setTimeout(() => {
-        if (!this.window || this.window.isDestroyed() || this.window.isFocused()) return
-        this.hide()
-      }, 0)
-    })
-
-    const wcId = this.window.webContents.id
-    this.deps.registerSender?.(wcId)
-
-    this.window.on('closed', () => {
-      this.deps.unregisterSender?.(wcId)
-      this.window = null
-    })
-
-    void this.window.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'confirmation.html')).toString())
+    void this.view.webContents.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'confirmation.html')).toString())
       .catch((error) => {
         console.error('[confirmation] failed to load confirmation window', error)
       })
 
-    return this.window
+    return this.view
   }
 
   requestConfirmation(screen: string, params: Record<string, unknown>, options?: ConfirmationOptions): Promise<ConfirmationResult> {
@@ -107,23 +96,29 @@ export class ConfirmationManager {
     return new Promise<ConfirmationResult>((resolve) => {
       this.pendingRequests.set(requestId, { resolve })
 
-      const win = this.ensureWindow()
-      win.setBounds(this.resolveBounds())
-      if (!process.env.AGENTWFY_HEADLESS) {
-        win.show()
-        win.moveTop()
-        win.focus()
+      const view = this.ensureView()
+      this.applyBounds(this.resolveContentBounds())
+
+      // Bring view to top of z-order
+      const mainWindow = this.deps.getMainWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.contentView.removeChildView(view) } catch {}
+        mainWindow.contentView.addChildView(view)
       }
-      win.webContents.focus()
+
+      if (!process.env.AGENTWFY_HEADLESS) {
+        view.setVisible(true)
+      }
+      view.webContents.focus()
 
       const notify = () => {
-        if (!win.isDestroyed()) {
-          win.webContents.send(CONFIRMATION_CHANNEL.SHOW, { screen, params, requestId })
+        if (!view.webContents.isDestroyed()) {
+          view.webContents.send(CONFIRMATION_CHANNEL.SHOW, { screen, params, requestId })
         }
       }
 
-      if (win.webContents.isLoadingMainFrame()) {
-        win.webContents.once('did-finish-load', notify)
+      if (view.webContents.isLoadingMainFrame()) {
+        view.webContents.once('did-finish-load', notify)
       } else {
         notify()
       }
@@ -140,22 +135,26 @@ export class ConfirmationManager {
 
   hide(): void {
     this.rejectAllPending()
-    if (this.window && !this.window.isDestroyed() && this.window.isVisible()) {
-      this.window.hide()
+    if (this.view && !this.view.webContents.isDestroyed() && this.view.getVisible()) {
+      this.view.setVisible(false)
     }
   }
 
   destroy(): void {
     this.rejectAllPending()
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.destroy()
+    if (this.view && !this.view.webContents.isDestroyed()) {
+      const mainWindow = this.deps.getMainWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.contentView.removeChildView(this.view) } catch {}
+      }
+      this.view.webContents.close()
     }
-    this.window = null
+    this.view = null
   }
 
   syncBounds(): void {
-    if (!this.window || this.window.isDestroyed() || !this.window.isVisible()) return
-    this.window.setBounds(this.resolveBounds())
+    if (!this.view || this.view.webContents.isDestroyed() || !this.view.getVisible()) return
+    this.applyBounds(this.resolveContentBounds())
   }
 
   private rejectAllPending(): void {

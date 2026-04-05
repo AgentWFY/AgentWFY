@@ -75,6 +75,15 @@ function init(): void {
     }
   })
 
+  // Close confirmation when it loses focus (user clicks elsewhere)
+  window.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (!document.hasFocus()) {
+        respond(false)
+      }
+    }, 0)
+  })
+
   bridge.onShow(show)
 }
 

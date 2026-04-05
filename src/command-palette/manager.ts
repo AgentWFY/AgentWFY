@@ -1,11 +1,11 @@
-import { BaseWindow, BrowserWindow, dialog, nativeTheme, shell } from 'electron';
+import { BaseWindow, WebContentsView, dialog, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { listViews, getViewByName } from '../db/views.js';
 import { listTasks } from '../db/tasks.js';
 import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
-import { installFromPackage, installPackageData, uninstallPlugin, readValidatedPackage } from '../plugins/installer.js';
+import { installPackageData, uninstallPlugin, readValidatedPackage } from '../plugins/installer.js';
 import { storeRemove } from '../ipc/store.js';
 import { setAgentConfig, clearAgentConfig, removeAgentConfig, getGlobalValue } from '../settings/config.js';
 import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
@@ -30,9 +30,6 @@ export interface CommandPaletteManagerDeps {
   getAgentRoot: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
-  getStorePath: () => string;
-  registerSender?: (webContentsId: number) => void;
-  unregisterSender?: (webContentsId: number) => void;
   addAgent: (agentRoot: string) => Promise<void>;
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
@@ -43,34 +40,52 @@ export interface CommandPaletteManagerDeps {
   reloadRenderer: () => void;
 }
 
+/** Extra padding around the palette content for the CSS drop-shadow to render. */
+const VIEW_PADDING = 40;
+
 export class CommandPaletteManager {
-  private commandPaletteWindow: BrowserWindow | null = null;
+  private view: WebContentsView | null = null;
   private readonly deps: CommandPaletteManagerDeps;
 
   constructor(deps: CommandPaletteManagerDeps) {
     this.deps = deps;
   }
 
-  getWindow(): BrowserWindow | null {
-    return this.commandPaletteWindow;
+  getWebContents(): Electron.WebContents | null {
+    if (!this.view || this.view.webContents.isDestroyed()) return null;
+    return this.view.webContents;
   }
 
-  private resolveCommandPaletteBounds(): Electron.Rectangle {
+  isVisible(): boolean {
+    return !!this.view && !this.view.webContents.isDestroyed() && this.view.getVisible();
+  }
+
+  private resolveContentBounds(): Electron.Rectangle {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       return { x: 0, y: 0, width: 720, height: 520 };
     }
 
-    const bounds = mainWindow.getBounds();
-    const width = Math.min(560, Math.max(420, Math.floor(bounds.width * 0.42)));
-    const height = Math.min(380, Math.max(260, Math.floor(bounds.height * 0.38)));
-    const x = bounds.x + Math.floor((bounds.width - width) / 2);
-    const y = bounds.y + Math.max(40, Math.floor((bounds.height - height) * 0.15));
+    const [cw, ch] = mainWindow.getContentSize();
+    const width = Math.min(560, Math.max(420, Math.floor(cw * 0.42)));
+    const height = Math.min(380, Math.max(260, Math.floor(ch * 0.38)));
+    const x = Math.floor((cw - width) / 2);
+    const y = Math.max(40, Math.floor(ch * 0.15));
     return { x, y, width, height };
   }
 
+  private applyBounds(contentBounds: Electron.Rectangle): void {
+    if (!this.view || this.view.webContents.isDestroyed()) return;
+    this.view.setBounds({
+      x: contentBounds.x - VIEW_PADDING,
+      y: contentBounds.y - VIEW_PADDING,
+      width: contentBounds.width + VIEW_PADDING * 2,
+      height: contentBounds.height + VIEW_PADDING * 2,
+    });
+  }
+
   resizeTo(size: { width?: number; height?: number }): void {
-    if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) return;
+    if (!this.view || this.view.webContents.isDestroyed()) return;
 
     // width=0 or height=0 means reset to default palette bounds
     if (!size.width || !size.height) {
@@ -81,47 +96,49 @@ export class CommandPaletteManager {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    const mainBounds = mainWindow.getBounds();
-    const width = Math.min(size.width, mainBounds.width - 40);
-    const height = Math.min(size.height, mainBounds.height - 80);
-    const x = mainBounds.x + Math.floor((mainBounds.width - width) / 2);
-    const y = mainBounds.y + Math.max(40, Math.floor((mainBounds.height - height) * 0.12));
+    const [cw, ch] = mainWindow.getContentSize();
+    const width = Math.min(size.width, cw - 40);
+    const height = Math.min(size.height, ch - 80);
+    const x = Math.floor((cw - width) / 2);
+    const y = Math.max(40, Math.floor(ch * 0.12));
 
-    this.commandPaletteWindow.setBounds({ x, y, width, height });
+    this.applyBounds({ x, y, width, height });
   }
 
   syncBounds(): void {
-    if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) {
-      return;
-    }
-
-    this.commandPaletteWindow.setBounds(this.resolveCommandPaletteBounds());
+    if (!this.view || this.view.webContents.isDestroyed()) return;
+    this.applyBounds(this.resolveContentBounds());
   }
 
   hide(options?: { focusMain?: boolean }): void {
-    if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed() || !this.commandPaletteWindow.isVisible()) {
+    if (!this.view || this.view.webContents.isDestroyed() || !this.view.getVisible()) {
       return;
     }
 
-    this.commandPaletteWindow.hide();
+    this.view.setVisible(false);
     if (options?.focusMain !== false) {
       this.deps.rendererBridge.focusMainRendererWindow();
     }
   }
 
   destroy(): void {
-    if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) {
-      this.commandPaletteWindow = null;
+    if (!this.view || this.view.webContents.isDestroyed()) {
+      this.view = null;
       return;
     }
 
-    this.commandPaletteWindow.destroy();
-    this.commandPaletteWindow = null;
+    const mainWindow = this.deps.getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.contentView.removeChildView(this.view); } catch {}
+    }
+
+    this.view.webContents.close();
+    this.view = null;
   }
 
-  private ensureWindow(): BrowserWindow {
-    if (this.commandPaletteWindow && !this.commandPaletteWindow.isDestroyed()) {
-      return this.commandPaletteWindow;
+  private ensureView(): WebContentsView {
+    if (this.view && !this.view.webContents.isDestroyed()) {
+      return this.view;
     }
 
     const mainWindow = this.deps.getMainWindow();
@@ -129,23 +146,7 @@ export class CommandPaletteManager {
       throw new Error('Main window is unavailable');
     }
 
-    this.commandPaletteWindow = new BrowserWindow({
-      parent: mainWindow,
-      show: false,
-      frame: false,
-      transparent: false,
-      hasShadow: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      focusable: true,
-      acceptFirstMouse: true,
-      alwaysOnTop: true,
-      roundedCorners: true,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? '#2d2d2d' : '#f0f0f0',
+    this.view = new WebContentsView({
       webPreferences: {
         preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -155,14 +156,11 @@ export class CommandPaletteManager {
       },
     });
 
-    if (process.platform === 'darwin') {
-      this.commandPaletteWindow.setAlwaysOnTop(true, 'floating');
-      this.commandPaletteWindow.setWindowButtonVisibility(false);
-    }
+    this.view.setBackgroundColor('#00000000');
 
     // Handle keyboard shortcuts when the palette has focus (e.g. Cmd+K to toggle off)
     // Skip Ctrl+J/K/N/P — those are palette navigation keys handled by the UI
-    this.commandPaletteWindow.webContents.on('before-input-event', (event, input) => {
+    this.view.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       const key = String(input.key || '').toLowerCase();
       if (!key || input.isAutoRepeat) return;
@@ -176,47 +174,37 @@ export class CommandPaletteManager {
       this.deps.handleShortcutAction(action);
     });
 
-    this.commandPaletteWindow.on('blur', () => {
-      setTimeout(() => {
-        if (!this.commandPaletteWindow || this.commandPaletteWindow.isDestroyed()) {
-          return;
-        }
-        if (this.commandPaletteWindow.isFocused()) {
-          return;
-        }
-        this.hide({ focusMain: true });
-      }, 0);
-    });
+    this.view.setVisible(false);
+    mainWindow.contentView.addChildView(this.view);
+    this.applyBounds(this.resolveContentBounds());
 
-    const cpWebContentsId = this.commandPaletteWindow.webContents.id;
-    this.commandPaletteWindow.on('closed', () => {
-      this.deps.unregisterSender?.(cpWebContentsId);
-      this.commandPaletteWindow = null;
-    });
-
-    this.deps.registerSender?.(cpWebContentsId);
-
-    void this.commandPaletteWindow.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'command_palette.html')).toString())
+    void this.view.webContents.loadURL(pathToFileURL(path.join(import.meta.dirname, '..', 'command_palette.html')).toString())
       .catch((error) => {
         console.error('[command-palette] failed to load native command palette window', error);
       });
 
-    return this.commandPaletteWindow;
+    return this.view;
   }
 
   private showAndNotify(channel: string, ...args: unknown[]): void {
-    const paletteWindow = this.ensureWindow();
+    const view = this.ensureView();
     this.syncBounds();
-    if (!process.env.AGENTWFY_HEADLESS) {
-      paletteWindow.show();
-      paletteWindow.moveTop();
-      paletteWindow.focus();
+
+    // Bring view to top of z-order
+    const mainWindow = this.deps.getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { mainWindow.contentView.removeChildView(view); } catch {}
+      mainWindow.contentView.addChildView(view);
     }
-    paletteWindow.webContents.focus();
+
+    if (!process.env.AGENTWFY_HEADLESS) {
+      view.setVisible(true);
+    }
+    view.webContents.focus();
 
     const focusSearchInput = () => {
-      if (paletteWindow.isDestroyed()) return;
-      void paletteWindow.webContents.executeJavaScript(`
+      if (view.webContents.isDestroyed()) return;
+      void view.webContents.executeJavaScript(`
         document.getElementById('searchInput')?.focus();
       `, true).catch(() => {});
     };
@@ -225,13 +213,13 @@ export class CommandPaletteManager {
     setTimeout(focusSearchInput, 80);
 
     const notify = () => {
-      if (!paletteWindow.isDestroyed()) {
-        paletteWindow.webContents.send(channel, ...args);
+      if (!view.webContents.isDestroyed()) {
+        view.webContents.send(channel, ...args);
       }
     };
 
-    if (paletteWindow.webContents.isLoadingMainFrame()) {
-      paletteWindow.webContents.once('did-finish-load', notify);
+    if (view.webContents.isLoadingMainFrame()) {
+      view.webContents.once('did-finish-load', notify);
     } else {
       notify();
     }
@@ -250,8 +238,8 @@ export class CommandPaletteManager {
   }
 
   toggle(): void {
-    const paletteWindow = this.ensureWindow();
-    if (paletteWindow.isVisible()) {
+    this.ensureView();
+    if (this.isVisible()) {
       this.hide({ focusMain: true });
       return;
     }
@@ -512,11 +500,6 @@ export class CommandPaletteManager {
       console.error('[command-palette] getSessionList failed:', err);
       return [];
     }
-  }
-
-  performInstall(packagePath: string): { installed: string[] } {
-    const agentRoot = this.deps.getAgentRoot();
-    return this.finishInstall(agentRoot, installFromPackage(agentRoot, packagePath));
   }
 
   private finishInstall(agentRoot: string, installResult: { installed: string[] }): { installed: string[] } {

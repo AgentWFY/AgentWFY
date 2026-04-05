@@ -17,7 +17,7 @@ import { TaskRunner } from './task-runner/task_runner.js';
 import { getOrCreateRuntime, disposeRuntime } from './ipc/exec-js.js';
 import type { AgentTabTools } from './ipc/tabs.js';
 import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
-import { getStorePath, storeGet, storeSet } from './ipc/store.js';
+import { storeGet, storeSet } from './ipc/store.js';
 import {
   ensureAgentRuntimeBootstrap,
 } from './agent-manager.js';
@@ -167,7 +167,6 @@ class WindowManager {
       getAgentRoot: () => this.activeAgentRoot!,
       rendererBridge: this.rendererBridge,
       getTabViewManager: () => this.getActiveAgentContext()!.tabViewManager,
-      getStorePath,
       addAgent: (root) => this.addAgent(root),
       getPluginRegistry: () => this.getActiveAgentContext()?.pluginRegistry ?? null,
       getConfirmation: () => this.confirmation!,
@@ -225,11 +224,6 @@ class WindowManager {
       this.confirmation = null;
     });
 
-    window.on('move', () => {
-      this.commandPalette?.syncBounds();
-      this.confirmation?.syncBounds();
-    });
-
     window.on('resize', () => {
       syncRendererBounds();
       this.commandPalette?.syncBounds();
@@ -239,9 +233,11 @@ class WindowManager {
     // When the main window regains focus (e.g. Cmd+Tab back to the app),
     // ensure a WebContents has focus so before-input-event handlers fire.
     window.on('focus', () => {
-      // Don't steal focus from child windows (command palette, confirmation dialogs)
-      const cpWindow = this.commandPalette?.getWindow();
-      if (cpWindow && !cpWindow.isDestroyed() && cpWindow.isFocused()) return;
+      // Don't steal focus from overlay views (command palette, confirmation)
+      const cpWc = this.commandPalette?.getWebContents();
+      if (cpWc && !cpWc.isDestroyed() && cpWc.isFocused()) return;
+      const cfWc = this.confirmation?.getWebContents();
+      if (cfWc && !cfWc.isDestroyed() && cfWc.isFocused()) return;
 
       const rwcRef = this.rendererView?.webContents;
       if (rwcRef && !rwcRef.isDestroyed() && !rwcRef.isFocused()) {
@@ -998,9 +994,9 @@ class WindowManager {
   // --- Broadcast ---
 
   broadcastSettingChanged(key: string, value: unknown): void {
-    const cpWindow = this.commandPalette?.getWindow();
-    if (cpWindow && !cpWindow.isDestroyed()) {
-      cpWindow.webContents.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
+    const cpWc = this.commandPalette?.getWebContents();
+    if (cpWc && !cpWc.isDestroyed()) {
+      cpWc.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
     }
   }
 
