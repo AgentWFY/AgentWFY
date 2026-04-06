@@ -1,10 +1,10 @@
-import { dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import type { ConfirmationManager } from './manager.js'
 import { CONFIRMATION_CHANNEL } from './types.js'
 
-export function registerConfirmationHandlers(getManager: (e: IpcMainInvokeEvent) => ConfirmationManager): void {
-  ipcMain.handle(CONFIRMATION_CHANNEL.RESULT, async (event, requestId: string, confirmed: boolean, data?: Record<string, unknown>) => {
-    getManager(event).resolveConfirmation(requestId, confirmed, data)
+export function registerConfirmationHandlers(getManager: () => ConfirmationManager): void {
+  ipcMain.handle(CONFIRMATION_CHANNEL.RESULT, async (_event, requestId: string, confirmed: boolean, data?: Record<string, unknown>) => {
+    getManager().resolveConfirmation(requestId, confirmed, data)
   })
 
   ipcMain.handle(CONFIRMATION_CHANNEL.PICK_DIRECTORY, async () => {

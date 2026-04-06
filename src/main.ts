@@ -137,7 +137,7 @@ registerTabsHandlers(
 );
 registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
-registerCommandPaletteHandlers((e) => windowManager.getContextForSender(e.sender.id).commandPalette);
+registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
@@ -152,9 +152,9 @@ registerRuntimeFunctionHandlers(
 );
 registerAgentHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
-  (e) => windowManager.getContextForSender(e.sender.id).commandPalette,
+  () => windowManager.getCommandPalette(),
 );
-registerConfirmationHandlers((e) => windowManager.getContextForSender(e.sender.id).confirmation);
+registerConfirmationHandlers(() => windowManager.getConfirmation());
 registerProviderHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
 );

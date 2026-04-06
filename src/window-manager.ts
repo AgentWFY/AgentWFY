@@ -37,32 +37,8 @@ import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
 import { Channels } from './ipc/channels.js';
 
-// --- Kept for backward-compat: every IPC handler sees this shape ---
-export interface AppWindowContext {
-  window: BaseWindow;
-  agentRoot: string;
-  eventBus: EventBus;
-  rendererBridge: RendererBridge;
-  tabViewManager: TabViewManager;
-  commandPalette: CommandPaletteManager;
-  confirmation: ConfirmationManager;
-  httpApi: HttpApiServer | null;
-  triggerEngine: TriggerEngine | null;
-  pluginRegistry: PluginRegistry | null;
-  providerRegistry: ProviderRegistry;
-  functionRegistry: FunctionRegistry;
-  sessionManager: AgentSessionManager;
-  taskRunner: TaskRunner;
-  jsRuntime: JsRuntime;
-  shortcutManager: ShortcutManager;
-  agentStateStreamingCleanup: (() => void) | null;
-  dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
-  triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
-  tabTools: AgentTabTools;
-}
-
 /** Per-agent context (everything that is agent-specific). */
-interface AgentContext {
+export interface AgentContext {
   agentRoot: string;
   eventBus: EventBus;
   tabViewManager: TabViewManager;
@@ -659,61 +635,40 @@ class WindowManager {
     return ctx?.httpApi?.port() ?? null;
   }
 
-  // --- IPC routing (backward-compat facade) ---
-
   private getActiveAgentContext(): AgentContext | null {
     if (!this.activeAgentRoot) return null;
     return this.agentContexts.get(this.activeAgentRoot) ?? null;
   }
 
-  /** Build a facade that delegates reads/writes to the underlying AgentContext. */
-  private buildAppWindowContext(agentCtx: AgentContext): AppWindowContext {
-    const wm = this;
-    return new Proxy(agentCtx, {
-      get(target, prop, receiver) {
-        switch (prop) {
-          case 'window': return wm.mainWindow!;
-          case 'rendererBridge': return wm.rendererBridge!;
-          case 'commandPalette': return wm.commandPalette!;
-          case 'confirmation': return wm.confirmation!;
-          default: return Reflect.get(target, prop, receiver);
-        }
-      },
-      set(target, prop, value, receiver) {
-        switch (prop) {
-          case 'window':
-          case 'rendererBridge':
-          case 'commandPalette':
-          case 'confirmation':
-            return false; // shared props are read-only through facade
-          default:
-            return Reflect.set(target, prop, value, receiver);
-        }
-      },
-    }) as unknown as AppWindowContext;
-  }
-
-  getContextForSender(senderId: number): AppWindowContext {
+  getContextForSender(senderId: number): AgentContext {
     // Check tab sender map (tab views map to specific agents)
     const agentRoot = this.tabSenderMap.get(senderId);
     if (agentRoot) {
       const ctx = this.agentContexts.get(agentRoot);
-      if (ctx) return this.buildAppWindowContext(ctx);
+      if (ctx) return ctx;
     }
 
     // Main renderer or command palette → active agent
     const activeCtx = this.getActiveAgentContext();
-    if (activeCtx) return this.buildAppWindowContext(activeCtx);
+    if (activeCtx) return activeCtx;
 
     throw new Error(`No agent context found for sender ${senderId}`);
   }
 
-  tryGetContextForSender(senderId: number): AppWindowContext | null {
+  tryGetContextForSender(senderId: number): AgentContext | null {
     try {
       return this.getContextForSender(senderId);
     } catch {
       return null;
     }
+  }
+
+  getCommandPalette(): CommandPaletteManager {
+    return this.commandPalette!;
+  }
+
+  getConfirmation(): ConfirmationManager {
+    return this.confirmation!;
   }
 
   getAgentRootForEvent(event: IpcMainInvokeEvent): string {
@@ -790,7 +745,7 @@ class WindowManager {
   }
 
   onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
-    // Resolve agent root via sender map, avoiding full AppWindowContext allocation
+    // Resolve agent root via sender map
     const agentRoot = this.tabSenderMap.get(event.sender.id) ?? this.activeAgentRoot;
     if (!agentRoot) return;
 
@@ -884,8 +839,8 @@ class WindowManager {
     this.persistedAgentPaths = [];
   }
 
-  getAllContexts(): AppWindowContext[] {
-    return Array.from(this.agentContexts.values()).map(ctx => this.buildAppWindowContext(ctx));
+  getAllContexts(): AgentContext[] {
+    return Array.from(this.agentContexts.values());
   }
 
   // --- Shortcut action dispatch ---

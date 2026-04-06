@@ -1,57 +1,57 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain } from 'electron';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './manager.js';
 
-export function registerCommandPaletteHandlers(getCommandPalette: (e: IpcMainInvokeEvent) => CommandPaletteManager): void {
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async (event) => {
-    getCommandPalette(event).hide({ focusMain: true });
+export function registerCommandPaletteHandlers(getCommandPalette: () => CommandPaletteManager): void {
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLOSE, async () => {
+    getCommandPalette().hide({ focusMain: true });
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_ITEMS, async (event) => {
-    return getCommandPalette(event).buildItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_ITEMS, async () => {
+    return getCommandPalette().buildItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (event, payload: unknown) => {
-    await getCommandPalette(event).runAction(payload);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RUN_ACTION, async (_event, payload: unknown) => {
+    await getCommandPalette().runAction(payload);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS, async (event) => {
-    return getCommandPalette(event).buildSettingsItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS, async () => {
+    return getCommandPalette().buildSettingsItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (event, key: string, value: unknown, scope?: 'agent' | 'global') => {
-    return getCommandPalette(event).updateSetting(key, value, scope);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.UPDATE_SETTING, async (_event, key: string, value: unknown, scope?: 'agent' | 'global') => {
+    return getCommandPalette().updateSetting(key, value, scope);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_TO_DEFAULT, async (event, key: string) => {
-    getCommandPalette(event).clearToDefault(key);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_TO_DEFAULT, async (_event, key: string) => {
+    getCommandPalette().clearToDefault(key);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async (event) => {
-    getCommandPalette(event).openSettingsFile();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async () => {
+    getCommandPalette().openSettingsFile();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (event, query: string) => {
-    getCommandPalette(event).showFiltered(query);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.SHOW_FILTERED, async (_event, query: string) => {
+    getCommandPalette().showFiltered(query);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, async (event, options: { screen?: string; params?: Record<string, unknown> }) => {
-    getCommandPalette(event).show(options);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, async (_event, options: { screen?: string; params?: Record<string, unknown> }) => {
+    getCommandPalette().show(options);
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async (event) => {
-    return getCommandPalette(event).buildBackupItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_BACKUPS, async () => {
+    return getCommandPalette().buildBackupItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_TASKS, async (event) => {
-    return getCommandPalette(event).buildTaskItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_TASKS, async () => {
+    return getCommandPalette().buildTaskItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS, async (event) => {
-    return getCommandPalette(event).buildSessionItems();
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS, async () => {
+    return getCommandPalette().buildSessionItems();
   });
 
-  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RESIZE, async (event, size: { width?: number; height?: number }) => {
-    getCommandPalette(event).resizeTo(size);
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RESIZE, async (_event, size: { width?: number; height?: number }) => {
+    getCommandPalette().resizeTo(size);
   });
 
 }
