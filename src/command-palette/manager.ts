@@ -253,7 +253,8 @@ export class CommandPaletteManager {
     const rows = await listViews(agentRoot);
 
     const viewItems: CommandPaletteItem[] = rows.map((row) => {
-      let displayTitle = row.title || row.name;
+      const viewTitle = row.title || row.name;
+      let displayTitle = viewTitle;
       let group: CommandPaletteItem['group'];
       if (row.name.startsWith('system.')) {
         group = 'System Views';
@@ -261,7 +262,7 @@ export class CommandPaletteManager {
         group = 'Plugin Views';
         const pluginName = row.name.split('.')[1];
         if (pluginName) {
-          displayTitle = `${pluginName}: ${displayTitle}`;
+          displayTitle = `${pluginName}: ${viewTitle}`;
         }
       } else {
         group = 'Views';
@@ -273,7 +274,7 @@ export class CommandPaletteManager {
         action: {
           type: 'open-view',
           viewName: row.name,
-          title: displayTitle,
+          title: viewTitle,
           viewUpdatedAt: row.updated_at ?? null,
         },
       };
