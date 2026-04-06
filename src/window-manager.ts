@@ -1,5 +1,6 @@
 import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
@@ -20,6 +21,7 @@ import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
 import { storeGet, storeSet } from './ipc/store.js';
 import {
   ensureAgentRuntimeBootstrap,
+  isDefaultAgentPath,
 } from './agent-manager.js';
 import { runCleanup } from './cleanup.js';
 import { scheduleBackup, stopBackupSchedulerForAgent, rescheduleBackupForAgent } from './backup.js';
@@ -583,6 +585,11 @@ class WindowManager {
       this.destroyAgentContext(agentRoot);
     }
     this.persistInstalledAgents();
+
+    // Delete directory on disk for default agents living in userData
+    if (isDefaultAgentPath(agentRoot)) {
+      fs.rm(agentRoot, { recursive: true, force: true }, () => {});
+    }
 
     if (wasActive) {
       // Switch to first available agent

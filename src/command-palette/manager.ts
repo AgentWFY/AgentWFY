@@ -12,6 +12,7 @@ import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalC
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
+  createDefaultAgent,
   initAgent,
 } from '../agent-manager.js';
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
@@ -325,14 +326,9 @@ export class CommandPaletteManager {
       {
         id: 'agent:add',
         title: 'Add Agent',
+        expandable: true,
         group: 'Actions',
-        action: { type: 'add-agent' },
-      },
-      {
-        id: 'agent:import-from-file',
-        title: 'Import Agent from File',
-        group: 'Actions',
-        action: { type: 'import-agent-from-file' },
+        action: { type: 'enter-add-agent' },
       },
       {
         id: 'agent:backup-db',
@@ -778,7 +774,17 @@ export class CommandPaletteManager {
         // Handled entirely in the palette UI
         return;
 
-      case 'add-agent': {
+      case 'enter-add-agent':
+        return;
+
+      case 'add-default-agent': {
+        this.hide({ focusMain: true });
+        const defaultPath = await createDefaultAgent();
+        await this.deps.addAgent(defaultPath);
+        return;
+      }
+
+      case 'add-agent-to-directory': {
         this.hide({ focusMain: true });
         const picked = await showOpenAgentDialog(this.deps.getMainWindow());
         if (picked) await this.deps.addAgent(picked);

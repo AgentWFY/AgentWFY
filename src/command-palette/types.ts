@@ -36,7 +36,13 @@ export type CommandPaletteAction =
     settingLabel: string
   }
   | {
-    type: 'add-agent'
+    type: 'enter-add-agent'
+  }
+  | {
+    type: 'add-default-agent'
+  }
+  | {
+    type: 'add-agent-to-directory'
   }
   | {
     type: 'import-agent-from-file'

@@ -7,6 +7,7 @@ import { RestoreScreen } from './screens/restore.js'
 import { TaskDetailScreen } from './screens/task-detail.js'
 import type { TaskDetailParams } from './screens/task-detail.js'
 import { SessionsScreen } from './screens/sessions.js'
+import { AddAgentScreen } from './screens/add-agent.js'
 
 declare global {
   interface Window {
@@ -20,6 +21,7 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
   'restore': (bridge) => new RestoreScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
   'sessions': (bridge) => new SessionsScreen(bridge),
+  'add-agent': (bridge) => new AddAgentScreen(bridge),
 }
 
 function init(): void {

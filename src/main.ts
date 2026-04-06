@@ -1,4 +1,4 @@
-import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, webContents, type MenuItemConstructorOptions } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, shell, webContents, type MenuItemConstructorOptions } from 'electron';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
@@ -20,7 +20,9 @@ import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
   isAgentDir,
+  isDefaultAgentPath,
   initAgent,
+  createDefaultAgent,
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentRoots } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
@@ -204,6 +206,20 @@ ipcMain.handle('app:getAgentRoot', () => {
   return windowManager.getActiveAgentRoot();
 });
 
+ipcMain.handle('app:openAgentRoot', () => {
+  const root = windowManager.getActiveAgentRoot();
+  if (root) shell.openPath(root);
+});
+
+ipcMain.handle('app:getAgentDisplayPath', () => {
+  const root = windowManager.getActiveAgentRoot();
+  if (!root) return null;
+  if (isDefaultAgentPath(root)) return path.basename(root);
+  const home = app.getPath('home');
+  if (root.startsWith(home)) return '~' + root.slice(home.length);
+  return root;
+});
+
 ipcMain.handle('app:getHttpApiPort', () => {
   try {
     return windowManager.getActiveHttpApiPort();
@@ -305,7 +321,14 @@ function buildAndSetMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Add Agent...',
+          label: 'Add Default Agent',
+          click: async () => {
+            const dirPath = await createDefaultAgent();
+            await windowManager.addAgent(dirPath);
+          },
+        },
+        {
+          label: 'Add Agent to Directory...',
           click: async () => {
             const win = windowManager.getMainWindow();
             const picked = await showOpenAgentDialog(win);
@@ -480,19 +503,10 @@ async function createInitialWindow() {
     return;
   }
 
-  // 3. No persisted agents — show picker
-  // Prevent app from quitting when the welcome window closes (before main window opens)
-  suppressWindowAllClosedQuit = true;
-  const { showAgentPickerDialog } = await import('./agent-manager.js');
-  const picked = await showAgentPickerDialog();
-  suppressWindowAllClosedQuit = false;
-  if (!picked) {
-    app.quit();
-    return;
-  }
-
-  windowManager.addPersistedAgent(picked);
-  await windowManager.createMainWindow(picked);
+  // 3. No persisted agents — create a default agent
+  const defaultAgentPath = await createDefaultAgent();
+  windowManager.addPersistedAgent(defaultAgentPath);
+  await windowManager.createMainWindow(defaultAgentPath);
 }
 
 // --- App lifecycle ---
@@ -560,10 +574,8 @@ app.on('web-contents-created', (_event, webContents) => {
   }
 });
 
-let suppressWindowAllClosedQuit = false;
-
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' && !suppressWindowAllClosedQuit) {
+  if (process.platform !== 'darwin') {
     app.quit();
   }
 });

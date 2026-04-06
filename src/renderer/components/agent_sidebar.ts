@@ -291,7 +291,7 @@ export class TlAgentSidebar extends HTMLElement {
     addBtn.innerHTML = PLUS_ICON
 
     addBtn.addEventListener('click', () => {
-      window.ipc?.agentSidebar.add()
+      window.ipc?.commandPalette?.show({ screen: 'add-agent' })
     })
 
     addWrapper.appendChild(addBtn)
