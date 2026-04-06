@@ -390,9 +390,7 @@ class WindowManager {
       tabTools,
       onDbChange: (change) => {
         if (win.isDestroyed()) return;
-        if (this.activeAgentRoot === agentRoot) {
-          this.sendToRenderer('db:changed', change);
-        }
+        this.onRuntimeDbChange(agentRoot, change);
       },
       getSessionManager: () => agentCtx.sessionManager,
       getTaskRunner: () => agentCtx.taskRunner,
@@ -746,10 +744,9 @@ class WindowManager {
 
   // --- DB change routing ---
 
-  onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
-    // Resolve agent root via sender map, avoiding full AppWindowContext allocation
-    const agentRoot = this.tabSenderMap.get(event.sender.id) ?? this.activeAgentRoot;
-    if (!agentRoot) return;
+  /** Handle DB changes from runtime functions (exec workers, tasks, views).
+   *  Shares the same side-effect logic as onDbChange but doesn't need an IPC event. */
+  private onRuntimeDbChange(agentRoot: string, change: AgentDbChange): void {
     const agentCtx = this.agentContexts.get(agentRoot);
     if (!agentCtx) return;
 
@@ -783,6 +780,14 @@ class WindowManager {
       if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
       this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:backup-changed');
     }, 5000);
+  }
+
+  onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
+    // Resolve agent root via sender map, avoiding full AppWindowContext allocation
+    const agentRoot = this.tabSenderMap.get(event.sender.id) ?? this.activeAgentRoot;
+    if (!agentRoot) return;
+
+    this.onRuntimeDbChange(agentRoot, change);
   }
 
   // --- HTTP server + triggers ---
