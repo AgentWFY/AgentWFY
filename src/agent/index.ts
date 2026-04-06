@@ -161,11 +161,8 @@ export class Agent {
 
       toolExecutionCount++
       try {
-        const result = await tool.execute(call.id, {
-          code: call.code,
-          description: call.description,
-          ...(call.timeoutMs !== undefined ? { timeoutMs: call.timeoutMs } : {}),
-        }, toolSignal)
+        const { id, ...toolParams } = call
+        const result = await tool.execute(id, toolParams, toolSignal)
         const contextContent = result.content.map(c => {
           if (c.type === 'text' && c.text.length > TOOL_RESULT_MAX_CHARS) {
             return { ...c, text: truncateHead(c.text) }

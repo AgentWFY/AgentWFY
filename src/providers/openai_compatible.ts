@@ -145,6 +145,7 @@ interface PendingToolCall {
   name: string
   description: string
   code: string
+  timeoutMs?: number
 }
 
 // ── OpenAI-compatible provider session ──
@@ -511,6 +512,7 @@ class OpenAICompatibleSession implements ProviderSession {
         name: entry.name,
         description: typeof args.description === 'string' ? args.description : 'Executing code',
         code: typeof args.code === 'string' ? args.code : '',
+        ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
       })
     }
 

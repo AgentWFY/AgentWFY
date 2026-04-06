@@ -104,6 +104,14 @@ await runSql({
 
 `reloadTab` after updating view content when presenting the result to the user or when you need to interact with the tab.
 
+## Browser API Limitations
+
+Views run inside Electron WebContentsView, which does **not** support modal browser dialogs:
+
+- **`prompt()`**, **`confirm()`**, **`alert()`** — silently fail (return `undefined` / `null`). Use inline HTML forms and custom UI instead.
+
+These are Electron platform constraints, not bugs. Design views with inline interactions rather than relying on browser dialogs.
+
 ## Debugging Views
 
 **Always use hidden tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS — NEVER open visible tabs. Use `hidden: true`:

@@ -431,26 +431,26 @@ export class TabViewManager {
     const bounds = normalizeTabViewBounds(input.bounds);
     const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
 
+    const state = this.ensureTabViewState(tabId, viewName, { tabType });
+
+    this.applyTabViewPlacement(state, bounds, visible);
+
+    // Resolve the pending mount immediately — the WebContentsView is created and
+    // placed, so openTab() can return.  Content loading continues in the background.
+    this.resolvePendingMount(tabId);
+
+    if (state.currentSrc === src) {
+      return;
+    }
+
+    state.currentSrc = src;
     try {
-      const state = this.ensureTabViewState(tabId, viewName, { tabType });
-
-      this.applyTabViewPlacement(state, bounds, visible);
-
-      if (state.currentSrc === src) {
+      await state.view.webContents.loadURL(src);
+    } catch (error: unknown) {
+      if ((error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3) {
         return;
       }
-
-      state.currentSrc = src;
-      try {
-        await state.view.webContents.loadURL(src);
-      } catch (error: unknown) {
-        if ((error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3) {
-          return;
-        }
-        throw error;
-      }
-    } finally {
-      this.resolvePendingMount(tabId);
+      throw error;
     }
   }
 
@@ -571,6 +571,32 @@ export class TabViewManager {
     return state;
   }
 
+  /** Resolve the tab view state AND wait for the page to finish loading. */
+  private async resolveReadyTabViewState(tabId: string): Promise<TabViewState> {
+    const state = this.resolveTabViewState(tabId);
+    const wc = state.view.webContents;
+
+    if (wc.isLoading()) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          wc.removeListener('did-stop-loading', done);
+          wc.removeListener('destroyed', done);
+          resolve();
+        };
+        const timer = setTimeout(done, VIEW_EXEC_MAX_TIMEOUT_MS);
+        wc.once('did-stop-loading', done);
+        wc.once('destroyed', done);
+      });
+
+      if (wc.isDestroyed()) {
+        throw new Error(`Tab "${tabId}" webContents was destroyed while waiting for load`);
+      }
+    }
+
+    return state;
+  }
+
   // --- Tab handlers ---
 
   async getTabsHandler(): Promise<{ tabs: Array<Record<string, unknown>> }> {
@@ -655,7 +681,7 @@ export class TabViewManager {
   }
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
-    const state = this.resolveTabViewState(request.tabId);
+    const state = await this.resolveReadyTabViewState(request.tabId);
 
     // Non-selected views have setVisible(false) to save compositor resources.
     // Temporarily enable compositing behind all other views for the capture.
@@ -712,7 +738,7 @@ export class TabViewManager {
     code: string
     timeoutMs?: number
   }): Promise<unknown> {
-    const state = this.resolveTabViewState(request.tabId);
+    const state = await this.resolveReadyTabViewState(request.tabId);
     if (typeof request.code !== 'string') {
       throw new Error('execTabJs requires code as a string');
     }
@@ -722,7 +748,9 @@ export class TabViewManager {
       : VIEW_EXEC_DEFAULT_TIMEOUT_MS;
     const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
-    return withTimeout(state.view.webContents.executeJavaScript(request.code, true), timeoutMs);
+    // Wrap in async IIFE so return statements work (matching execJs behavior).
+    const wrappedCode = `(async () => {\n${request.code}\n})()`;
+    return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs);
   }
 
   // --- Webview tracking ---
