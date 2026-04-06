@@ -303,6 +303,23 @@ export class TlTabs extends HTMLElement {
     }
 
     const activeIds = new Set(this.tabs.map((tab) => tab.id))
+
+    // Clean up panels/views for removed tabs BEFORE reordering, so stale
+    // DOM children don't cause unnecessary insertBefore moves that trigger
+    // awfy-tab-view disconnect/connect lifecycle (which reloads the view).
+    for (const [id, panel] of this.panelMap) {
+      if (!activeIds.has(id)) {
+        panel.remove()
+        this.panelMap.delete(id)
+      }
+    }
+    for (const [id, el] of this.viewMap) {
+      if (!activeIds.has(id)) {
+        el.remove()
+        this.viewMap.delete(id)
+      }
+    }
+
     this.tabs.forEach((tab, index) => {
       let panel = this.panelMap.get(tab.id)
       if (!panel) {
@@ -369,20 +386,6 @@ export class TlTabs extends HTMLElement {
       }
     })
 
-    for (const [id, panel] of this.panelMap) {
-      if (!activeIds.has(id)) {
-        panel.remove()
-        this.panelMap.delete(id)
-      }
-    }
-
-    // Clean up view elements for removed tabs
-    for (const [id, el] of this.viewMap) {
-      if (!activeIds.has(id)) {
-        el.remove()
-        this.viewMap.delete(id)
-      }
-    }
   }
 
   private async showTabContextMenu(e: MouseEvent, tab: TabData) {
