@@ -284,8 +284,8 @@
     const [pluginRow] = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title, description, version, code, author, repository, license, enabled FROM plugins WHERE name = '" + pluginName.replace(/'/g, "''") + "'" });
     if (!pluginRow) throw new Error('Plugin not found');
     const docs = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, content FROM docs WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + "%'" });
-    const views = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'" });
-    return { source: 'installed', name: pluginRow.name, plugin: { name: pluginRow.name, title: pluginRow.title || '', description: pluginRow.description || '', version: pluginRow.version || '', author: pluginRow.author || '', repository: pluginRow.repository || '', license: pluginRow.license || '', enabled: !!pluginRow.enabled }, code: pluginRow.code || '', docs: docs || [], views: (views || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
+    const views = await window.agentwfy.runSql({ target: 'agent', sql: "SELECT name, title, content FROM views WHERE name LIKE 'plugin." + pluginName.replace(/'/g, "''") + ".%'" });
+    return { source: 'installed', name: pluginRow.name, plugin: { name: pluginRow.name, title: pluginRow.title || '', description: pluginRow.description || '', version: pluginRow.version || '', author: pluginRow.author || '', repository: pluginRow.repository || '', license: pluginRow.license || '', enabled: !!pluginRow.enabled }, code: pluginRow.code || '', docs: docs || [], views: (views || []).map(v => ({ name: v.name, title: v.title || v.name, content: v.content || '' })), activeTab: 'overview', expandedDoc: null, expandedView: null };
   }
 
   async function loadRegistryPluginDetail(registryPlugin) {
@@ -298,10 +298,10 @@
     catch { try { pkgPlugins = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code, author, repository, license FROM plugins' }); pkgPlugins = pkgPlugins.map(p => ({ ...p, title: '' })); }
     catch { try { const basic = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, description, version, code FROM plugins' }); pkgPlugins = basic.map(p => ({ ...p, title: '', author: null, repository: null, license: null })); } catch {} } }
     let pkgDocs = []; try { pkgDocs = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, content FROM docs' }); } catch {}
-    let pkgViews = []; try { pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title FROM views' }); } catch {}
+    let pkgViews = []; try { pkgViews = await window.agentwfy.runSql({ ...sqlOpts, sql: 'SELECT name, title, content FROM views' }); } catch {}
     const mainPlugin = pkgPlugins.find(p => p.name === registryPlugin.name) || pkgPlugins[0];
     if (!mainPlugin) throw new Error('No plugins found in package');
-    const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, title: mainPlugin.title || '', description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name })), activeTab: 'overview', expandedDoc: null };
+    const detail = { source: 'registry', name: mainPlugin.name, downloadUrl: registryPlugin.download_url, plugin: { name: registryPlugin.name || mainPlugin.name, title: mainPlugin.title || '', description: registryPlugin.description || mainPlugin.description || '', version: registryPlugin.version || mainPlugin.version || '', author: registryPlugin.author || mainPlugin.author || '', repository: registryPlugin.repository || mainPlugin.repository || '', license: registryPlugin.license || mainPlugin.license || '', downloads: registryPlugin.downloads }, code: mainPlugin.code || '', docs: pkgDocs || [], views: (pkgViews || []).map(v => ({ name: v.name, title: v.title || v.name, content: v.content || '' })), activeTab: 'overview', expandedDoc: null, expandedView: null };
     registryDetailCache.set(registryPlugin.name, detail);
     return detail;
   }
@@ -501,12 +501,15 @@
     if (d.source === 'registry' && isPluginInstalled(d.name)) h += '<span class="badge-installed">installed</span>';
     h += '</div>';
     const docCount = d.docs.length;
+    const viewCount = d.views.length;
     h += '<div class="tab-bar">';
     h += '<button class="tab-btn' + (d.activeTab === 'overview' ? ' active' : '') + '" data-action="detail-tab" data-tab="overview">Overview</button>';
+    h += '<button class="tab-btn' + (d.activeTab === 'views' ? ' active' : '') + '" data-action="detail-tab" data-tab="views">Views'; if (viewCount > 0) h += '<span class="tab-count">' + viewCount + '</span>'; h += '</button>';
     h += '<button class="tab-btn' + (d.activeTab === 'docs' ? ' active' : '') + '" data-action="detail-tab" data-tab="docs">Docs'; if (docCount > 0) h += '<span class="tab-count">' + docCount + '</span>'; h += '</button>';
     h += '<button class="tab-btn' + (d.activeTab === 'source' ? ' active' : '') + '" data-action="detail-tab" data-tab="source">Source</button>';
     h += '</div>';
     if (d.activeTab === 'overview') h += renderDetailOverview(d);
+    else if (d.activeTab === 'views') h += renderDetailViews(d);
     else if (d.activeTab === 'docs') h += renderDetailDocs(d);
     else if (d.activeTab === 'source') h += renderDetailSource(d);
     container.innerHTML = h;
@@ -522,7 +525,22 @@
     if (d.plugin.repository) h += '<span class="detail-meta-label">Repository</span><span class="detail-meta-value"><a href="' + esc(d.plugin.repository) + '" target="_blank">' + esc(d.plugin.repository) + '</a></span>';
     if (typeof d.plugin.downloads === 'number') h += '<span class="detail-meta-label">Downloads</span><span class="detail-meta-value">' + d.plugin.downloads + '</span>';
     h += '</div></div>';
-    if (d.views.length > 0) { h += '<div class="detail-section"><div class="detail-section-title">Views</div><div class="detail-items-list">'; for (const v of d.views) h += '<div class="detail-item-row"><div class="detail-item-name">' + esc(v.title || v.name) + '</div><div class="detail-item-desc">' + esc(v.name) + '</div></div>'; h += '</div></div>'; }
+    return h;
+  }
+
+  function renderDetailViews(d) {
+    if (d.views.length === 0) return '<div class="no-items">No views included with this plugin.</div>';
+    let h = '<div class="detail-items-list">';
+    for (let i = 0; i < d.views.length; i++) {
+      const v = d.views[i]; const isExpanded = d.expandedView === i;
+      const displayName = v.name.replace(/^plugin\.[^.]+\.?/, '') || v.name;
+      h += '<div class="detail-item-row"><div class="doc-item" data-action="toggle-view" data-index="' + i + '"><div class="detail-item-name">';
+      h += '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 4px; transition: transform 0.15s;' + (isExpanded ? ' transform: rotate(90deg);' : '') + '"><polyline points="9 18 15 12 9 6"/></svg>';
+      h += esc(v.title || displayName) + '</div></div>';
+      if (isExpanded && v.content) h += '<div class="code-block">' + esc(v.content) + '</div>';
+      h += '</div>';
+    }
+    h += '</div>';
     return h;
   }
 
@@ -568,7 +586,9 @@
       const tagChip = e.target.closest('[data-action="filter-tag"]');
       if (tagChip) { activeTagFilter = activeTagFilter === tagChip.dataset.tag ? null : tagChip.dataset.tag; render(); return; }
       const detailTabBtn = e.target.closest('[data-action="detail-tab"]');
-      if (detailTabBtn && detailView) { detailView.activeTab = detailTabBtn.dataset.tab; detailView.expandedDoc = null; renderDetail(); return; }
+      if (detailTabBtn && detailView) { detailView.activeTab = detailTabBtn.dataset.tab; detailView.expandedDoc = null; detailView.expandedView = null; renderDetail(); return; }
+      const viewToggle = e.target.closest('[data-action="toggle-view"]');
+      if (viewToggle && detailView) { const idx = parseInt(viewToggle.dataset.index, 10); detailView.expandedView = detailView.expandedView === idx ? null : idx; renderDetail(); return; }
       const docToggle = e.target.closest('[data-action="toggle-doc"]');
       if (docToggle && detailView) { const idx = parseInt(docToggle.dataset.index, 10); detailView.expandedDoc = detailView.expandedDoc === idx ? null : idx; renderDetail(); return; }
       const openBtn = e.target.closest('[data-action="open-detail"]');
