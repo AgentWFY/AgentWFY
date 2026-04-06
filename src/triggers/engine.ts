@@ -5,6 +5,8 @@ import { runAgentDbSql } from '../db/sqlite.js';
 import { resolveInsideRoot } from '../security/path-policy.js';
 import { parseExpression, nextMatch } from './scheduler.js';
 import type { HttpApiServer, HttpRequestData } from '../http-api/server.js';
+import { startHttpApi } from '../http-api/server.js';
+import { writeLockfile, removeLockfile, cleanStaleLockfile } from '../http-api/lockfile.js';
 
 interface TriggerRow {
   name: string;
@@ -37,9 +39,9 @@ type TriggerOrigin = Extract<TaskOrigin, { type: 'trigger' }>;
 
 interface TriggerEngineDeps {
   getAgentRoot: () => string;
+  getPreferredPort: () => number;
   startTask: (taskName: string, input?: unknown, origin?: TriggerOrigin) => Promise<{ runId: string }>;
   waitFor: (topic: string, timeoutMs?: number) => Promise<unknown>;
-  httpApi: HttpApiServer;
   busSubscribe: (topic: string, fn: (data: unknown) => void) => () => void;
   busPublish: (topic: string, data: unknown) => void;
 }
@@ -62,6 +64,8 @@ export class TriggerEngine {
   private readonly deps: TriggerEngineDeps;
   private activeTriggers: ActiveTrigger[] = [];
   private fileWatchers = new Map<string, FileWatcherEntry>();
+  private httpApi: HttpApiServer | null = null;
+  private reloadPromise: Promise<void> | null = null;
   private started = false;
 
   constructor(deps: TriggerEngineDeps) {
@@ -76,20 +80,30 @@ export class TriggerEngine {
   stop(): void {
     this.started = false;
     this.teardownAll();
+    this.stopHttpServer();
+  }
+
+  getHttpApiPort(): number | null {
+    return this.httpApi?.port() ?? null;
   }
 
   async reload(): Promise<void> {
+    // Serialize reloads to prevent concurrent startHttpServer calls
+    const prev = this.reloadPromise;
+    const p = (async () => {
+      if (prev) await prev.catch(() => {});
+      await this.doReload();
+    })();
+    this.reloadPromise = p;
+    await p;
+  }
+
+  private async doReload(): Promise<void> {
     if (!this.started) return;
 
     this.teardownAll();
 
-    let agentRoot: string;
-    try {
-      agentRoot = this.deps.getAgentRoot();
-    } catch {
-      // No agent open yet — nothing to load
-      return;
-    }
+    const agentRoot = this.deps.getAgentRoot();
 
     let rows: TriggerRow[];
     try {
@@ -100,6 +114,14 @@ export class TriggerEngine {
     } catch (err) {
       console.error('[triggers] Failed to load triggers:', err);
       return;
+    }
+
+    const hasHttpTriggers = rows.some(r => r.type === 'http');
+
+    if (hasHttpTriggers && !this.httpApi) {
+      await this.startHttpServer();
+    } else if (!hasHttpTriggers && this.httpApi) {
+      this.stopHttpServer();
     }
 
     for (const row of rows) {
@@ -114,6 +136,20 @@ export class TriggerEngine {
     }
 
     console.log(`[triggers] Loaded ${this.activeTriggers.length} active triggers`);
+  }
+
+  private async startHttpServer(): Promise<void> {
+    const agentRoot = this.deps.getAgentRoot();
+    cleanStaleLockfile(agentRoot);
+    this.httpApi = await startHttpApi({ getAgentRoot: this.deps.getAgentRoot, preferredPort: this.deps.getPreferredPort() });
+    writeLockfile(agentRoot, this.httpApi.port());
+  }
+
+  private stopHttpServer(): void {
+    if (!this.httpApi) return;
+    this.httpApi.close().catch(err => console.error('[http-api] Close error:', err));
+    this.httpApi = null;
+    removeLockfile(this.deps.getAgentRoot());
   }
 
   private teardownAll(): void {
@@ -228,12 +264,12 @@ export class TriggerEngine {
       }
     };
 
-    this.deps.httpApi.registerRoute(routePath, method, handler);
+    this.httpApi!.registerRoute(routePath, method, handler);
 
     return {
       name: triggerName,
       cleanup: () => {
-        this.deps.httpApi.unregisterRoute(routePath, method);
+        this.httpApi?.unregisterRoute(routePath, method);
       },
     };
   }
