@@ -1,12 +1,13 @@
-import { dialog, type BaseWindow } from 'electron';
+import { app, dialog, type BaseWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { mkdir } from 'fs/promises';
 import { ensureViewsSchema } from './db/views.js';
 import { seedDefaultAgent } from './default-agent.js';
-import { showWelcomeWindow } from './welcome.js';
 
 const AGENT_DIR_NAME = '.agentwfy';
+const DEFAULT_AGENTS_DIR = 'agents';
+const DEFAULT_AGENT_BASE_NAME = 'Default Agent';
 
 // --- Agent dir helpers ---
 
@@ -147,15 +148,43 @@ export async function showInstallAgentFromFileDialog(parentWindow: BaseWindow | 
   return dirPath;
 }
 
+// --- Default agent helpers ---
+
+let _defaultAgentsDir: string | undefined;
+function getDefaultAgentsDir(): string {
+  if (!_defaultAgentsDir) {
+    _defaultAgentsDir = path.join(app.getPath('userData'), DEFAULT_AGENTS_DIR);
+  }
+  return _defaultAgentsDir;
+}
+
+export function isDefaultAgentPath(agentRoot: string): boolean {
+  return agentRoot.startsWith(getDefaultAgentsDir() + path.sep);
+}
+
 /**
- * First-launch: show welcome window to pick/create an agent directory.
+ * Create a default agent in the userData/agents/ directory.
+ * Names: "Default Agent", "Default Agent 2", "Default Agent 3", etc.
  */
-export async function showAgentPickerDialog(): Promise<string | null> {
-  const dirPath = await showWelcomeWindow();
-  if (!dirPath) return null;
+export async function createDefaultAgent(): Promise<string> {
+  const baseDir = getDefaultAgentsDir();
+  fs.mkdirSync(baseDir, { recursive: true });
 
-  if (isAgentDir(dirPath)) return dirPath;
+  const existing = new Set<string>();
+  try {
+    for (const name of fs.readdirSync(baseDir)) {
+      existing.add(name);
+    }
+  } catch { /* empty dir */ }
 
+  let name = DEFAULT_AGENT_BASE_NAME;
+  let i = 2;
+  while (existing.has(name)) {
+    name = `${DEFAULT_AGENT_BASE_NAME} ${i}`;
+    i++;
+  }
+
+  const dirPath = path.join(baseDir, name);
   await initAgent(dirPath);
   return dirPath;
 }

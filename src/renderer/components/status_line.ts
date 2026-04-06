@@ -132,6 +132,12 @@ const STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
     padding: 0 4px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .data-dir:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text3);
   }
   .backup-info {
     font-size: 11px;
@@ -210,6 +216,9 @@ export class TlStatusLine extends HTMLElement {
     this.render()
     this.bindBackupClick()
     this.bindIndicatorClicks()
+    this.shadow.querySelector('#data-dir')?.addEventListener('click', () => {
+      window.ipc?.openAgentRoot()
+    })
     this.subscribeToSnapshots()
     this.loadPortInfo()
     this.loadDataDir()
@@ -308,10 +317,13 @@ export class TlStatusLine extends HTMLElement {
     const dirEl = this.shadow.querySelector('#data-dir') as HTMLSpanElement | null
     if (!dirEl) return
     try {
-      const agentRoot = await window.ipc?.getAgentRoot()
-      if (agentRoot) {
-        dirEl.textContent = this.shortenPath(agentRoot)
-        dirEl.setAttribute('title', agentRoot)
+      const [agentRoot, displayPath] = await Promise.all([
+        window.ipc?.getAgentRoot(),
+        window.ipc?.getAgentDisplayPath(),
+      ])
+      if (displayPath) {
+        dirEl.textContent = displayPath
+        dirEl.setAttribute('title', agentRoot ?? displayPath)
       } else {
         dirEl.textContent = ''
         dirEl.removeAttribute('title')
@@ -379,20 +391,6 @@ export class TlStatusLine extends HTMLElement {
       this.notificationTimeout = null
       el.classList.remove('visible')
     }, 3000)
-  }
-
-  private shortenPath(fullPath: string): string {
-    const home = this.getHomePath(fullPath)
-    if (home && fullPath.startsWith(home)) {
-      return '~' + fullPath.slice(home.length)
-    }
-    return fullPath
-  }
-
-  private getHomePath(fullPath: string): string | null {
-    // Try to detect home dir from path pattern
-    const match = fullPath.match(/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Z]:\\Users\\[^\\]+)/)
-    return match ? match[1] : null
   }
 
 }

@@ -264,6 +264,12 @@ if (isApp) {
     getAgentRoot(): Promise<string | null> {
       return ipcRenderer.invoke('app:getAgentRoot');
     },
+    openAgentRoot(): Promise<void> {
+      return ipcRenderer.invoke('app:openAgentRoot');
+    },
+    getAgentDisplayPath(): Promise<string | null> {
+      return ipcRenderer.invoke('app:getAgentDisplayPath');
+    },
     getHttpApiPort(): Promise<number | null> {
       return ipcRenderer.invoke('app:getHttpApiPort');
     },
