@@ -5,12 +5,9 @@ import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
-import { startHttpApi } from './http-api/server.js';
-import type { HttpApiServer } from './http-api/server.js';
 import { getConfigValue, getGlobalValue, setAgentConfig } from './settings/config.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
-import { writeLockfile, removeLockfile, cleanStaleLockfile } from './http-api/lockfile.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { EventBus } from './event-bus.js';
 import { AgentSessionManager } from './agent/session_manager.js';
@@ -42,8 +39,7 @@ export interface AgentContext {
   agentRoot: string;
   eventBus: EventBus;
   tabViewManager: TabViewManager;
-  httpApi: HttpApiServer | null;
-  triggerEngine: TriggerEngine | null;
+  triggerEngine: TriggerEngine;
   pluginRegistry: PluginRegistry | null;
   providerRegistry: ProviderRegistry;
   functionRegistry: FunctionRegistry;
@@ -281,7 +277,7 @@ class WindowManager {
     rwc.once('did-finish-load', () => {
       const ctx = this.getActiveAgentContext();
       if (ctx) {
-        ctx.triggerEngine?.start().catch(err => console.error('[triggers] Initial start failed:', err));
+        ctx.triggerEngine.start().catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
       }
     });
@@ -406,12 +402,23 @@ class WindowManager {
 
     const shortcutManager = new ShortcutManager(agentRoot);
 
+    const triggerEngine = new TriggerEngine({
+      getAgentRoot: () => agentRoot,
+      getPreferredPort: () => Number(getConfigValue(agentRoot, 'system.http-api.port', '9877')),
+      startTask: async (taskName, input?, origin?) => {
+        const runId = await taskRunner.startTask(taskName, input, origin as any);
+        return { runId };
+      },
+      waitFor: (topic, timeoutMs?) => eventBus.waitFor(topic, timeoutMs),
+      busSubscribe: (topic, fn) => eventBus.subscribe(topic, fn),
+      busPublish: (topic, data) => eventBus.publish(topic, data),
+    });
+
     const agentCtx: AgentContext = {
       agentRoot,
       eventBus,
       tabViewManager,
-      httpApi: null,
-      triggerEngine: null,
+      triggerEngine,
       pluginRegistry,
       providerRegistry,
       functionRegistry,
@@ -432,9 +439,6 @@ class WindowManager {
       sessionManager, this.rendererView!.webContents, () => this.activeAgentRoot === agentRoot
     );
     sessionManager.resetActive();
-
-    // Start HTTP API + triggers
-    await this.startHttpServerForAgentContext(agentCtx);
 
     // Schedule backup
     scheduleBackup(agentRoot).then(() => {
@@ -469,7 +473,7 @@ class WindowManager {
     ctx.pluginRegistry?.deactivateAll();
     ctx.tabViewManager.destroyAllTabViews();
     ctx.tabViewManager.clearTrackedViewWebContents();
-    this.stopHttpServerForAgentContext(ctx);
+    this.stopTriggersForAgentContext(ctx);
     stopBackupSchedulerForAgent(agentRoot);
     disposeRuntime(agentRoot);
 
@@ -523,7 +527,7 @@ class WindowManager {
         console.error(`[agent] Failed to initialize agent ${agentRoot}:`, err);
         return;
       }
-      ctx.triggerEngine?.start().catch(err => console.error('[triggers] Start failed:', err));
+      ctx.triggerEngine.start().catch(err => console.error('[triggers] Start failed:', err));
       this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
     }
 
@@ -632,7 +636,7 @@ class WindowManager {
 
   getActiveHttpApiPort(): number | null {
     const ctx = this.getActiveAgentContext();
-    return ctx?.httpApi?.port() ?? null;
+    return ctx?.triggerEngine.getHttpApiPort() ?? null;
   }
 
   private getActiveAgentContext(): AgentContext | null {
@@ -728,10 +732,10 @@ class WindowManager {
       if (this.activeAgentRoot === agentRoot) this.applyTheme();
     }
 
-    if (change.table === 'triggers' && agentCtx.triggerEngine) {
+    if (change.table === 'triggers') {
       if (agentCtx.triggerReloadDebounceTimer) clearTimeout(agentCtx.triggerReloadDebounceTimer);
       agentCtx.triggerReloadDebounceTimer = setTimeout(() => {
-        agentCtx.triggerEngine?.reload().catch(err => {
+        agentCtx.triggerEngine.reload().catch(err => {
           console.error('[triggers] Reload failed:', err);
         });
       }, 500);
@@ -752,46 +756,14 @@ class WindowManager {
     this.onRuntimeDbChange(agentRoot, change);
   }
 
-  // --- HTTP server + triggers ---
+  // --- Triggers ---
 
-  private async startHttpServerForAgentContext(ctx: AgentContext): Promise<void> {
-    const { agentRoot } = ctx;
-    cleanStaleLockfile(agentRoot);
-    const preferredPort = Number(getConfigValue(agentRoot, 'system.http-api.port', '9877'));
-
-    try {
-      ctx.httpApi = await startHttpApi({ getAgentRoot: () => agentRoot, preferredPort });
-      writeLockfile(agentRoot, ctx.httpApi.port());
-      ctx.triggerEngine = new TriggerEngine({
-        getAgentRoot: () => agentRoot,
-        startTask: async (taskName, input?, origin?) => {
-          const runId = await ctx.taskRunner.startTask(taskName, input, origin as any);
-          return { runId };
-        },
-        waitFor: (topic, timeoutMs?) => ctx.eventBus.waitFor(topic, timeoutMs),
-        busSubscribe: (topic, fn) => ctx.eventBus.subscribe(topic, fn),
-        busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
-        httpApi: ctx.httpApi,
-      });
-    } catch (err) {
-      console.error('[http-api] Failed to start HTTP server:', err);
+  private stopTriggersForAgentContext(ctx: AgentContext): void {
+    if (ctx.triggerReloadDebounceTimer) {
+      clearTimeout(ctx.triggerReloadDebounceTimer);
+      ctx.triggerReloadDebounceTimer = null;
     }
-  }
-
-  private stopHttpServerForAgentContext(ctx: AgentContext): void {
-    if (ctx.triggerEngine) {
-      if (ctx.triggerReloadDebounceTimer) {
-        clearTimeout(ctx.triggerReloadDebounceTimer);
-        ctx.triggerReloadDebounceTimer = null;
-      }
-      ctx.triggerEngine.stop();
-      ctx.triggerEngine = null;
-    }
-    if (ctx.httpApi) {
-      ctx.httpApi.close().catch(err => console.error('[http-api] Close error:', err));
-      ctx.httpApi = null;
-    }
-    removeLockfile(ctx.agentRoot);
+    ctx.triggerEngine.stop();
   }
 
   // --- Lifecycle ---
