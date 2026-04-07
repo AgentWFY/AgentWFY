@@ -692,15 +692,27 @@ export class TabViewManager {
         mainWindow.contentView.addChildView(state.view, 0);
       }
       state.view.setVisible(true);
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
     }
 
     try {
-      const image = await state.view.webContents.capturePage();
-      return {
-        base64: image.toPNG().toString('base64'),
-        mimeType: 'image/png',
-      };
+      // Retry capturePage when the compositor hasn't produced a frame yet
+      // (Chromium rejects with "UnknownVizError" before the first composite).
+      const maxAttempts = 10;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const image = await state.view.webContents.capturePage();
+          return {
+            base64: image.toPNG().toString('base64'),
+            mimeType: 'image/png',
+          };
+        } catch (err) {
+          if (attempt === maxAttempts || !String(err).includes('UnknownVizError')) {
+            throw err;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        }
+      }
+      throw new Error('captureTab: failed after retries');
     } finally {
       if (needsCompositing) {
         state.view.setVisible(false);
