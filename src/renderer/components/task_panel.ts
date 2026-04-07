@@ -446,9 +446,21 @@ export class TlTaskPanel extends HTMLElement {
     this.loadLogHistory()
     this.loadRunningTasks()
 
-    this.runFinishedUnsub = window.ipc?.tasks.onRunFinished(() => {
-      this.loadRunningTasks()
-      this.loadLogHistory()
+    this.runFinishedUnsub = window.ipc?.tasks.onRunFinished((payload: any) => {
+      if (payload?.runId) {
+        this.activeRuns = this.activeRuns.filter(r => r.runId !== payload.runId)
+      }
+      if (payload?.logFile) {
+        this.logHistory.unshift({
+          file: payload.logFile,
+          updatedAt: payload.finishedAt ?? Date.now(),
+          taskName: payload.title || payload.taskName || 'Unknown',
+          status: payload.status ?? 'unknown',
+          origin: payload.origin,
+        })
+        if (this.logHistory.length > 50) this.logHistory.length = 50
+      }
+      this.updateContent()
     }) ?? null
 
     this.runStartedUnsub = window.ipc?.tasks.onRunStarted((payload: any) => {

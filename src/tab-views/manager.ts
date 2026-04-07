@@ -191,7 +191,6 @@ interface TabViewManagerDeps {
   getMainWindow: () => BaseWindow | null;
   sendToRenderer: (channel: string, ...args: unknown[]) => void;
   focusMainRendererWindow: () => void;
-  dispatchRendererCustomEvent: (name: string, detail?: unknown) => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;
   agentHash?: string;
@@ -276,7 +275,6 @@ export class TabViewManager {
     });
 
     viewWebContents.on('did-start-loading', () => {
-      this.deps.dispatchRendererCustomEvent('__tab-view-event', undefined);
       this.deps.sendToRenderer('tabs:viewEvent', { tabId, type: 'did-start-loading' });
     });
 

@@ -336,7 +336,6 @@ class WindowManager {
       getMainWindow: () => this.mainWindow!,
       sendToRenderer: (channel, ...args) => this.sendToRenderer(channel, ...args),
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
-      dispatchRendererCustomEvent: (name, detail) => this.rendererBridge?.dispatchRendererCustomEvent(name, detail),
       matchShortcut: (key, meta, ctrl, shift, alt) => {
         const ctx = this.agentContexts.get(agentRoot);
         return ctx?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;

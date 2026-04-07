@@ -153,11 +153,12 @@ export class TaskRunner {
         run.error = err instanceof Error ? err.message : String(err)
       }
     } finally {
+      let logFile: string | null = null
       const alreadyFinished = !!run.finishedAt
       if (!alreadyFinished) {
         run.finishedAt = Date.now()
         runtime.terminateWorker(run.runId)
-        await this.persistLog(run)
+        logFile = await this.persistLog(run)
       }
       this.removeFinishedRun(run.runId)
 
@@ -165,6 +166,7 @@ export class TaskRunner {
         runId: run.runId, taskName: run.taskName, title: run.title,
         status: run.status, origin: run.origin, startedAt: run.startedAt,
         finishedAt: run.finishedAt, result: run.result, error: run.error, logs: run.logs,
+        logFile,
       }
       this.deps.busPublish(`task:run:${run.runId}`, payload)
       this.deps.onRunFinished?.(payload)
@@ -178,7 +180,7 @@ export class TaskRunner {
     }
   }
 
-  private async persistLog(run: TaskRun): Promise<void> {
+  private async persistLog(run: TaskRun): Promise<string | null> {
     try {
       const taskLogsDir = path.join(this.deps.agentRoot, '.agentwfy', 'task_logs')
       await fs.mkdir(taskLogsDir, { recursive: true })
@@ -199,8 +201,10 @@ export class TaskRunner {
 
       const logPath = path.join(taskLogsDir, logFileName)
       await fs.writeFile(logPath, JSON.stringify(logData, null, 2), 'utf-8')
+      return logFileName
     } catch (err) {
       console.error('[TaskRunner] failed to persist log', err)
+      return null
     }
   }
 }
