@@ -96,23 +96,94 @@ function extractFilesFromResult(result: unknown): { files: Array<{ data: string;
   return { files, filteredResult: filtered }
 }
 
-function renderFile(file: { data: string; mimeType: string }): string {
-  if (file.mimeType.startsWith('image/')) {
-    return `<img src="data:${escapeHtml(file.mimeType)};base64,${file.data}">`
-  }
-  return `<span class="file-badge">${escapeHtml(file.mimeType)}</span>`
+interface ParsedResult {
+  value?: string
+  error?: { name: string; message: string }
+  logs: Array<{ level: string; message: string }>
+  files: Array<{ data: string; mimeType: string }>
 }
 
-function formatToolResult(result: unknown): { text: string; files: Array<{ data: string; mimeType: string }> } {
+function parseToolResult(result: unknown): ParsedResult {
   const { files, filteredResult } = extractFilesFromResult(result)
-  if (!Array.isArray(filteredResult)) {
-    return { text: typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2), files }
+
+  // Extract text from content array
+  let text = ''
+  if (Array.isArray(filteredResult)) {
+    const textParts = filteredResult
+      .filter((item: Record<string, unknown>) => item?.type === 'text')
+      .map((item: Record<string, unknown>) => item.text as string)
+    text = textParts.length > 0 ? textParts.join('\n') : JSON.stringify(filteredResult, null, 2)
+  } else {
+    text = typeof filteredResult === 'string' ? filteredResult : JSON.stringify(filteredResult, null, 2)
   }
-  const textParts = filteredResult
-    .filter((item: Record<string, unknown>) => item?.type === 'text')
-    .map((item: Record<string, unknown>) => item.text as string)
-  const text = textParts.length > 0 ? textParts.join('\n') : JSON.stringify(filteredResult, null, 2)
-  return { text, files }
+
+  // Try to parse as ExecJsDetails JSON
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && typeof parsed === 'object' && ('ok' in parsed || 'value' in parsed || 'error' in parsed)) {
+      const logs: ParsedResult['logs'] = []
+      if (Array.isArray(parsed.logs)) {
+        for (const entry of parsed.logs) {
+          if (entry && typeof entry.message === 'string') {
+            logs.push({ level: entry.level || 'log', message: entry.message })
+          }
+        }
+      }
+      const out: ParsedResult = { logs, files }
+      if (parsed.error && typeof parsed.error === 'object') {
+        out.error = { name: parsed.error.name || 'Error', message: parsed.error.message || String(parsed.error) }
+      } else if ('value' in parsed) {
+        const val = parsed.value
+        out.value = typeof val === 'string' ? val : JSON.stringify(val, null, 2)
+      }
+      return out
+    }
+  } catch { /* not JSON or not ExecJsDetails — fall through */ }
+
+  // Fallback: treat entire text as the value
+  return { value: text, logs: [], files }
+}
+
+const LOG_LEVELS: Record<string, { cls: string; label: string }> = {
+  warn: { cls: 'l-warn', label: 'warn' },
+  error: { cls: 'l-error', label: 'error' },
+  info: { cls: 'l-info', label: 'info' },
+}
+const LOG_DEFAULT = { cls: 'l-log', label: 'log' }
+
+function renderLogEntry(log: { level: string; message: string }): string {
+  const { cls, label } = LOG_LEVELS[log.level] || LOG_DEFAULT
+  return `<div class="log-entry"><span class="log-level ${cls}">${label}</span><span class="log-msg">${escapeHtml(log.message)}</span></div>`
+}
+
+function renderResultBody(parsed: ParsedResult): string {
+  let html = ''
+
+  // Error section
+  if (parsed.error) {
+    html += '<div class="result-section">'
+    html += '<div class="rs-label"><span class="rs-dot dot-error"></span> Error</div>'
+    html += `<div class="error-block"><div class="error-name">${escapeHtml(parsed.error.name)}</div><div class="error-msg">${escapeHtml(parsed.error.message)}</div></div>`
+    html += '</div>'
+  }
+  // Value section
+  else if (parsed.value !== undefined) {
+    html += '<div class="result-section">'
+    html += '<div class="rs-label"><span class="rs-dot dot-value"></span> Return value</div>'
+    html += `<pre>${escapeHtml(parsed.value)}</pre>`
+    html += '</div>'
+  }
+
+  // Console logs section
+  if (parsed.logs.length > 0) {
+    html += '<div class="result-section">'
+    html += `<div class="rs-label"><span class="rs-dot dot-log"></span> Console <span class="rs-meta">${parsed.logs.length} message${parsed.logs.length !== 1 ? 's' : ''}</span></div>`
+    html += '<div class="log-list">'
+    html += parsed.logs.map(renderLogEntry).join('')
+    html += '</div></div>'
+  }
+
+  return html
 }
 
 function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
@@ -121,13 +192,44 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
   if (!isOpen) return headerHtml
-  const { text: resultText, files } = formatToolResult(tool.result)
-  let bodyHtml = '<div class="tool-body">'
-  if (tool.code) bodyHtml += `<pre>${escapeHtml(tool.code)}</pre>`
-  if (resultText) bodyHtml += `<pre class="${tool.isError ? 'tool-result-error' : ''}">${escapeHtml(resultText)}</pre>`
-  if (files.length > 0) bodyHtml += files.map(f => renderFile(f)).join('')
-  bodyHtml += '</div>'
-  return `<div class="tool-card">${headerHtml}${bodyHtml}</div>`
+
+  const parsed = parseToolResult(tool.result)
+  const hasError = tool.isError || !!parsed.error
+  const imageFiles = parsed.files.filter(f => f.mimeType.startsWith('image/'))
+  const nonImageFiles = parsed.files.filter(f => !f.mimeType.startsWith('image/'))
+  const toolEid = escapeHtml(tool.id)
+
+  // Build tabs — show Result/Error tab first when error
+  const codeActive = !hasError
+  let tabsHtml = '<div class="tb-tabs">'
+  tabsHtml += `<div class="tb-tab${codeActive ? ' active' : ''}" data-tool-tab="${toolEid}" data-pane="code">Code</div>`
+  const resultTabClass = hasError ? 'tb-tab tab-error' : 'tb-tab'
+  tabsHtml += `<div class="${resultTabClass}${!codeActive ? ' active' : ''}" data-tool-tab="${toolEid}" data-pane="result">${hasError ? 'Error' : 'Result'}</div>`
+  if (imageFiles.length > 0) {
+    tabsHtml += `<div class="tb-tab" data-tool-tab="${toolEid}" data-pane="images">Image${imageFiles.length !== 1 ? 's' : ''} <span class="tb-badge">${imageFiles.length}</span></div>`
+  }
+  tabsHtml += '</div>'
+
+  // Code pane
+  const codePaneHtml = `<div class="tb-pane${codeActive ? ' active' : ''}" data-tool-pane="${toolEid}" data-pane="code">${tool.code ? `<pre>${escapeHtml(tool.code)}</pre>` : ''}</div>`
+
+  // Result pane
+  const resultContent = renderResultBody(parsed)
+  const resultPaneHtml = `<div class="tb-pane${!codeActive ? ' active' : ''}" data-tool-pane="${toolEid}" data-pane="result">${resultContent || '<pre class="tool-result-empty">No output</pre>'}</div>`
+
+  // Images pane
+  let imagesPaneHtml = ''
+  if (imageFiles.length > 0) {
+    const imagesContent = imageFiles.map(f => {
+      const ext = f.mimeType.split('/')[1]?.toUpperCase() || 'IMG'
+      return `<div class="tb-img-wrap"><img src="data:${escapeHtml(f.mimeType)};base64,${f.data}"><div class="tb-img-meta"><span class="pill">${escapeHtml(ext)}</span></div></div>`
+    }).join('')
+    imagesPaneHtml = `<div class="tb-pane" data-tool-pane="${toolEid}" data-pane="images">${imagesContent}</div>`
+  }
+
+  const nonImageHtml = nonImageFiles.map(f => `<span class="file-badge">${escapeHtml(f.mimeType)}</span>`).join('')
+
+  return `<div class="tool-card">${headerHtml}${tabsHtml}<div class="tool-body">${codePaneHtml}${resultPaneHtml}${imagesPaneHtml}</div>${nonImageHtml}</div>`
 }
 
 // --- Incremental DOM rendering ---

@@ -176,11 +176,13 @@ const STYLES = `
   .tools-group {
     margin-top: 2px;
   }
+  /* ── Tool card: V1 Flush Fill ── */
   .tool-card {
-    border: 1px solid var(--color-border);
+    background: var(--color-bg2);
     border-radius: var(--radius-md);
-    padding: 6px 10px;
-    margin: 4px 0;
+    margin: 4px -10px;
+    padding: 0;
+    overflow: hidden;
   }
   .tool-header {
     display: flex;
@@ -192,6 +194,9 @@ const STYLES = `
     font-size: 12px;
     color: var(--color-text2);
   }
+  .tool-card .tool-header {
+    padding: 6px 10px;
+  }
   .tool-header:hover { color: var(--color-text3); }
   .tool-description {
     flex: 1;
@@ -202,30 +207,190 @@ const STYLES = `
     color: var(--color-red-fg);
     flex-shrink: 0;
   }
+  /* ── Tabs ── */
+  .tb-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .tb-tab {
+    padding: 4px 10px 5px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--color-text2);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--transition-fast);
+    user-select: none;
+  }
+  .tb-tab:hover { color: var(--color-text3); }
+  .tb-tab.active {
+    color: var(--color-text4);
+    border-bottom-color: var(--color-accent);
+  }
+  .tb-tab.tab-error {
+    color: var(--color-red-fg);
+  }
+  .tb-tab.tab-error.active {
+    border-bottom-color: var(--color-red-fg);
+  }
+  .tb-badge {
+    display: inline-block;
+    background: var(--color-accent);
+    color: #fff;
+    font-size: 8px;
+    padding: 0 4px;
+    border-radius: 6px;
+    margin-left: 3px;
+    line-height: 14px;
+    vertical-align: middle;
+  }
+  /* ── Panes ── */
   .tool-body {
-    padding: 4px 0 0 0;
     font-size: 11px;
+  }
+  .tb-pane {
+    display: none;
+    padding: 8px 10px;
+  }
+  .tb-pane.active {
+    display: block;
   }
   .tool-body pre {
     margin: 0;
-    padding: 4px 8px;
+    padding: 6px 8px;
     font-family: var(--font-mono);
     font-size: 11px;
-    line-height: 1.4;
+    line-height: 1.45;
     white-space: pre-wrap;
-    word-break: break-all;
+    word-break: break-word;
     max-height: 200px;
     overflow: auto;
     background: var(--color-bg3);
     border-radius: var(--radius-sm);
     color: var(--color-text3);
   }
-  .tool-body pre + pre { margin-top: 4px; }
-  .tool-body pre.tool-result-error { color: var(--color-red-fg); }
-  .tool-body img {
-    max-width: 100%;
+  .tool-body pre.tool-result-empty {
+    color: var(--color-text2);
+    font-style: italic;
+  }
+  /* ── R1 Sectioned result ── */
+  .result-section { margin-bottom: 6px; }
+  .result-section:last-child { margin-bottom: 0; }
+  .rs-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--color-text2);
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rs-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-value { background: var(--color-green-fg); }
+  .dot-log { background: var(--color-accent); }
+  .dot-error { background: var(--color-red-fg); }
+  .rs-meta {
+    font-weight: 400;
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  /* Console log list */
+  .log-list {
+    background: var(--color-bg3);
     border-radius: var(--radius-sm);
-    margin-top: 4px;
+    padding: 4px 0;
+    max-height: 120px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .log-entry {
+    padding: 0 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .log-entry:hover { background: var(--color-item-hover); }
+  .log-level {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    width: 32px;
+    text-align: right;
+    padding-top: 1px;
+  }
+  .l-log { color: var(--color-text2); }
+  .l-info { color: var(--color-accent); }
+  .l-warn { color: var(--color-yellow-fg); }
+  .l-error { color: var(--color-red-fg); }
+  .log-msg {
+    color: var(--color-text3);
+    word-break: break-word;
+    min-width: 0;
+  }
+  /* Error block */
+  .error-block {
+    padding: 6px 8px;
+    background: var(--color-red-bg);
+    color: var(--color-red-fg);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    line-height: 1.45;
+  }
+  .error-name { font-weight: 700; margin-bottom: 2px; }
+  .error-msg { word-break: break-word; }
+  /* ── Image pane ── */
+  .tb-img-wrap {
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+  }
+  .tb-img-wrap + .tb-img-wrap { margin-top: 6px; }
+  .tb-img-wrap img {
+    display: block;
+    max-width: 100%;
+  }
+  .tb-img-meta {
+    padding: 4px 8px;
+    font-size: 10px;
+    color: var(--color-text2);
+    background: var(--color-bg3);
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    gap: 6px;
+  }
+  .tb-img-meta .pill {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    background: var(--color-bg1);
+    color: var(--color-text2);
+  }
+  .file-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    margin: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text2);
+    background: var(--color-bg3);
+    border-radius: var(--radius-sm);
   }
   .block-custom {
     font-size: 12px;
@@ -1575,6 +1740,25 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.addEventListener('scroll', this.handleMessagesScroll)
     this.messagesEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
+
+      // Tab switching within tool cards
+      const tab = target.closest('.tb-tab[data-tool-tab]') as HTMLElement | null
+      if (tab) {
+        e.preventDefault()
+        const toolId = tab.dataset.toolTab!
+        const pane = tab.dataset.pane!
+        const card = tab.closest('.tool-card') as HTMLElement | null
+        if (card) {
+          card.querySelectorAll<HTMLElement>(`.tb-tab[data-tool-tab="${toolId}"]`).forEach(t => t.classList.remove('active'))
+          card.querySelectorAll<HTMLElement>(`.tb-pane[data-tool-pane="${toolId}"]`).forEach(p => p.classList.remove('active'))
+          tab.classList.add('active')
+          const targetPane = card.querySelector<HTMLElement>(`.tb-pane[data-tool-pane="${toolId}"][data-pane="${pane}"]`)
+          if (targetPane) targetPane.classList.add('active')
+        }
+        return
+      }
+
+      // Tool header collapse/expand toggle
       const toolHeader = target.closest('.tool-header[data-tool-id]') as HTMLElement | null
       if (toolHeader) {
         e.preventDefault()
