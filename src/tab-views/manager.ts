@@ -48,6 +48,8 @@ interface TabViewState {
   currentSrc: string | null
   view: WebContentsView
   logs: ViewConsoleLogEntry[]
+  /** Set by openTabHandler to prevent mountTabView from reloading the same content. */
+  skipNextLoad?: boolean
 }
 
 type TabType = TabDataType
@@ -100,6 +102,10 @@ const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   error: 'error',
 };
 
+
+function isAbortedLoadError(error: unknown): boolean {
+  return (error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3;
+}
 
 // --- Input validation helpers ---
 
@@ -193,12 +199,9 @@ interface TabViewManagerDeps {
   unregisterSender?: (webContentsId: number) => void;
 }
 
-const MOUNT_TIMEOUT_MS = 10_000;
-
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
-  private readonly pendingMounts = new Map<string, { resolve: () => void }>();
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
@@ -209,30 +212,6 @@ export class TabViewManager {
 
   private generateTabId(): string {
     return crypto.randomBytes(8).toString('hex');
-  }
-
-  private waitForMount(tabId: string): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (this.pendingMounts.delete(tabId)) {
-          resolve();
-        }
-      }, MOUNT_TIMEOUT_MS);
-      this.pendingMounts.set(tabId, {
-        resolve: () => {
-          clearTimeout(timer);
-          resolve();
-        },
-      });
-    });
-  }
-
-  private resolvePendingMount(tabId: string): void {
-    const pending = this.pendingMounts.get(tabId);
-    if (pending) {
-      this.pendingMounts.delete(tabId);
-      pending.resolve();
-    }
   }
 
   private pushStateToRenderer(): void {
@@ -406,6 +385,25 @@ export class TabViewManager {
     state.view.setVisible(visible);
   }
 
+  private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
+    if (type === 'url') return target;
+
+    const encodedTabId = encodeURIComponent(tabId);
+    const rev = Date.now();
+    let url: string;
+    if (type === 'file') {
+      url = `agentview://view/${encodeURIComponent(target)}?source=file&rev=${rev}&tabId=${encodedTabId}`;
+    } else {
+      url = `agentview://view/${encodeURIComponent(target)}?rev=${rev}&tabId=${encodedTabId}`;
+    }
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+      }
+    }
+    return this.rewriteAgentViewUrl(url);
+  }
+
   private rewriteAgentViewUrl(src: string): string {
     const hash = this.deps.agentHash;
     if (!hash) return src;
@@ -435,9 +433,11 @@ export class TabViewManager {
 
     this.applyTabViewPlacement(state, bounds, visible);
 
-    // Resolve the pending mount immediately — the WebContentsView is created and
-    // placed, so openTab() can return.  Content loading continues in the background.
-    this.resolvePendingMount(tabId);
+    // If the view was pre-loaded by openTabHandler, skip reloading — just apply bounds.
+    if (state.skipNextLoad) {
+      state.skipNextLoad = false;
+      return;
+    }
 
     if (state.currentSrc === src) {
       return;
@@ -447,9 +447,7 @@ export class TabViewManager {
     try {
       await state.view.webContents.loadURL(src);
     } catch (error: unknown) {
-      if ((error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3) {
-        return;
-      }
+      if (isAbortedLoadError(error)) return;
       throw error;
     }
   }
@@ -543,6 +541,7 @@ export class TabViewManager {
     }
 
     state.currentSrc = null;
+    state.skipNextLoad = false;
     if (!state.view.webContents.isDestroyed()) {
       state.view.webContents.reload();
     }
@@ -644,9 +643,27 @@ export class TabViewManager {
     if (!isHidden) {
       this.selectedTabId = tabId;
     }
-    const mounted = this.waitForMount(tabId);
+
+    // Create the WebContentsView and start loading immediately instead of
+    // waiting for a renderer round-trip (which is gated by requestAnimationFrame
+    // and gets severely throttled when the window is in the background).
+    const state = this.ensureTabViewState(tabId, target, { tabType: type });
+    const mainWindow = this.deps.getMainWindow();
+    const [w, h] = mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.getContentSize()
+      : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
+    this.applyTabViewPlacement(state, { x: 0, y: 0, width: w, height: h }, !isHidden);
+
+    const src = this.buildTabSrc(type, target, tabId, request.params);
+    state.currentSrc = src;
+    state.skipNextLoad = true;
+    state.view.webContents.loadURL(src).catch((error: unknown) => {
+      if (!isAbortedLoadError(error)) {
+        console.error('[tabs] openTab loadURL failed:', error);
+      }
+    });
+
     this.pushStateToRenderer();
-    await mounted;
     return { tabId };
   }
 
