@@ -1,7 +1,7 @@
 {
   "name": "agentwfy-app",
   "productName": "AgentWFY",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "AI agent desktop app with local SQLite database",
   "type": "module",
   "main": "dist/main.js",
