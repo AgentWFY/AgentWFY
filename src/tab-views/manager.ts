@@ -68,8 +68,6 @@ interface TabViewSetBoundsPayload {
 interface TabContextMenuPayload {
   x: number
   y: number
-  pinned: boolean
-  viewChanged?: boolean
   tabId?: string
 }
 
@@ -115,8 +113,6 @@ function normalizeTabContextMenuPayload(raw: unknown): TabContextMenuPayload {
   return {
     x: normalizeContextMenuCoordinate(input.x),
     y: normalizeContextMenuCoordinate(input.y),
-    pinned: Boolean(input.pinned),
-    viewChanged: Boolean(input.viewChanged),
     tabId: typeof input.tabId === 'string' ? input.tabId : undefined,
   };
 }
@@ -939,7 +935,10 @@ export class TabViewManager {
       return Promise.resolve(null);
     }
 
-    const { x, y, pinned, viewChanged, tabId } = normalizeTabContextMenuPayload(payload);
+    const { x, y, tabId } = normalizeTabContextMenuPayload(payload);
+    const tab = tabId ? this.tabs.find(t => t.id === tabId) : undefined;
+    const pinned = tab?.pinned ?? false;
+    const viewChanged = tab?.viewChanged ?? false;
     let selectedAction: TabContextMenuAction = null;
 
     const template: MenuItemConstructorOptions[] = [];

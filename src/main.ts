@@ -155,35 +155,39 @@ registerAgentHandlers(
   () => windowManager.getCommandPalette(),
 );
 registerConfirmationHandlers(() => windowManager.getConfirmation());
+const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
+  const ctx = windowManager.getContextForSender(e.sender.id);
+  // Dispose old streaming and session manager
+  ctx.agentStateStreamingCleanup?.();
+  await ctx.sessionManager.disposeAll();
+  // Create new session manager
+  const { AgentSessionManager } = await import('./agent/session_manager.js');
+  const agentRootForReconnect = ctx.agentRoot;
+  const newMgr = new AgentSessionManager({
+    agentRoot: agentRootForReconnect,
+    providerRegistry: ctx.providerRegistry,
+    getJsRuntime: () => ctx.jsRuntime,
+    busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
+  });
+  ctx.sessionManager = newMgr;
+  const rwc = windowManager.getRendererWebContents();
+  if (rwc) {
+    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
+      newMgr, rwc, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
+    );
+  }
+  newMgr.resetActive();
+  return newMgr;
+};
 registerProviderHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
+  (e) => windowManager.getAgentRootForEvent(e),
+  () => windowManager.getRendererWebContents() ?? undefined,
+  reconnectSessionManager,
 );
 registerAgentSessionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
-  async (e) => {
-    const ctx = windowManager.getContextForSender(e.sender.id);
-    // Dispose old streaming and session manager
-    ctx.agentStateStreamingCleanup?.();
-    await ctx.sessionManager.disposeAll();
-    // Create new session manager
-    const { AgentSessionManager } = await import('./agent/session_manager.js');
-    const agentRootForReconnect = ctx.agentRoot;
-    const newMgr = new AgentSessionManager({
-      agentRoot: agentRootForReconnect,
-      providerRegistry: ctx.providerRegistry,
-      getJsRuntime: () => ctx.jsRuntime,
-      busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
-    });
-    ctx.sessionManager = newMgr;
-    const rwc = windowManager.getRendererWebContents();
-    if (rwc) {
-      ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
-        newMgr, rwc, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
-      );
-    }
-    newMgr.resetActive();
-    return newMgr;
-  },
+  reconnectSessionManager,
 );
 
 ipcMain.handle('app:restart', async () => {
@@ -204,6 +208,10 @@ ipcMain.handle('app:reloadRenderer', async () => {
 
 ipcMain.handle('app:getAgentRoot', () => {
   return windowManager.getActiveAgentRoot();
+});
+
+ipcMain.on('app:getAgentRoot', (event) => {
+  event.returnValue = windowManager.getActiveAgentRoot();
 });
 
 ipcMain.handle('app:openAgentRoot', () => {
@@ -283,8 +291,8 @@ ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentRoot: string) =
   await windowManager.removeAgent(agentRoot);
 });
 
-ipcMain.handle(Channels.agentSidebar.reorder, async (_event, agentPaths: string[]) => {
-  windowManager.reorderAgents(agentPaths);
+ipcMain.handle(Channels.agentSidebar.reorder, async (_event, fromIndex: number, toIndex: number) => {
+  windowManager.reorderAgents(fromIndex, toIndex);
 });
 
 ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: string) => {
@@ -309,8 +317,12 @@ ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: 
 
 // --- Zen mode sync ---
 
-ipcMain.on(Channels.zenMode.changed, (_event, isZen: boolean) => {
-  windowManager.setZenMode(!!isZen);
+ipcMain.handle(Channels.zenMode.toggle, () => {
+  windowManager.toggleZenMode();
+});
+
+ipcMain.handle(Channels.zenMode.set, (_event, value: boolean) => {
+  windowManager.setZenMode(!!value);
 });
 
 // --- Menu ---

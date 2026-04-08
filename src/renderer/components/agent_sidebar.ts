@@ -244,13 +244,7 @@ export class TlAgentSidebar extends HTMLElement {
         wrapper.classList.remove('dragging')
         this.clearDropIndicators()
         if (this.dropTargetIndex !== -1 && this.dropTargetIndex !== this.dragSourceIndex) {
-          const newOrder = [...this.agents]
-          const [moved] = newOrder.splice(this.dragSourceIndex, 1)
-          const insertAt = this.dropTargetIndex > this.dragSourceIndex
-            ? this.dropTargetIndex - 1
-            : this.dropTargetIndex
-          newOrder.splice(insertAt, 0, moved)
-          window.ipc?.agentSidebar.reorder(newOrder.map(a => a.path))
+          window.ipc?.agentSidebar.reorder(this.dragSourceIndex, this.dropTargetIndex)
         }
         this.dragSourceIndex = -1
         this.dropTargetIndex = -1

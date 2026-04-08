@@ -16,9 +16,7 @@ export type TabContextMenuAction = 'toggle-pin' | 'reload' | null
 export interface TabContextMenuRequest {
   x: number
   y: number
-  pinned: boolean
-  viewChanged?: boolean
-  tabId?: string
+  tabId: string
 }
 
 export interface TabViewEvent {

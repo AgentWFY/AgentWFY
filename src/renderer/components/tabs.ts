@@ -396,8 +396,6 @@ export class TlTabs extends HTMLElement {
     await ipc.tabs.showContextMenu({
       x: e.clientX,
       y: e.clientY,
-      pinned: Boolean(tab.pinned),
-      viewChanged: Boolean(tab.viewChanged),
       tabId: tab.id,
     }).catch(() => null)
   }

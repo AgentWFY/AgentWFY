@@ -49,6 +49,9 @@ const Channels = {
   providers: {
     list: 'provider:list',
     getStatusLine: 'provider:get-status-line',
+    switchProvider: 'provider:switch-provider',
+    setDefault: 'provider:set-default',
+    stateChanged: 'provider:state-changed',
   },
   agent: {
     createSession: 'agent:createSession',
@@ -77,6 +80,11 @@ const Channels = {
   },
   views: {
     fetch: 'views:fetch',
+  },
+  zenMode: {
+    toggle: 'zenMode:toggle',
+    set: 'zenMode:set',
+    changed: 'zenMode:changed',
   },
   agentSidebar: {
     getInstalled: 'agent-sidebar:getInstalled',
@@ -146,8 +154,16 @@ const isApp = window.location.protocol === 'app:';
 if (isApp) {
   const sql = buildSqlApi();
 
+  let agentRootSync: string | null = null;
+  try {
+    agentRootSync = ipcRenderer.sendSync('app:getAgentRoot') ?? null;
+  } catch {
+    // Silently continue — sendSync may fail if context is not yet ready.
+  }
+
   contextBridge.exposeInMainWorld('ipc', {
     sql,
+    agentRoot: agentRootSync,
     tabs: {
       openTab(request: unknown): Promise<{ tabId: string }> {
         return ipcRenderer.invoke(Channels.tabs.openTab, request);
@@ -311,6 +327,17 @@ if (isApp) {
       getStatusLine(providerId: string): Promise<string> {
         return ipcRenderer.invoke(Channels.providers.getStatusLine, providerId);
       },
+      switchProvider(providerId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.providers.switchProvider, providerId);
+      },
+      setDefault(providerId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.providers.setDefault, providerId);
+      },
+      onStateChanged(callback: (state: unknown) => void): () => void {
+        const handler = (_event: unknown, state: unknown) => callback(state);
+        ipcRenderer.on(Channels.providers.stateChanged, handler);
+        return () => ipcRenderer.removeListener(Channels.providers.stateChanged, handler);
+      },
     },
     agent: {
       createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string> {
@@ -361,8 +388,16 @@ if (isApp) {
       },
     },
     zenMode: {
-      changed(isZen: boolean): void {
-        ipcRenderer.send('zenMode:changed', isZen);
+      toggle(): Promise<void> {
+        return ipcRenderer.invoke(Channels.zenMode.toggle);
+      },
+      set(value: boolean): Promise<void> {
+        return ipcRenderer.invoke(Channels.zenMode.set, value);
+      },
+      onChanged(callback: (isZen: boolean) => void): () => void {
+        const handler = (_event: unknown, isZen: boolean) => callback(isZen);
+        ipcRenderer.on(Channels.zenMode.changed, handler);
+        return () => ipcRenderer.removeListener(Channels.zenMode.changed, handler);
       },
     },
     agentSidebar: {
@@ -384,8 +419,8 @@ if (isApp) {
       showContextMenu(agentRoot: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentRoot);
       },
-      reorder(agentPaths: string[]): Promise<void> {
-        return ipcRenderer.invoke(Channels.agentSidebar.reorder, agentPaths);
+      reorder(fromIndex: number, toIndex: number): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.reorder, fromIndex, toIndex);
       },
       onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => void): () => void {
         const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => callback(data);

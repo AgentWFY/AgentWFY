@@ -28,6 +28,7 @@ import { getViewByName } from './db/views.js';
 import { loadPlugins } from './plugins/loader.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
+import { buildProviderState, pushProviderState } from './ipc/providers.js';
 import { ConfirmationManager } from './confirmation/manager.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
@@ -279,6 +280,7 @@ class WindowManager {
       if (ctx) {
         ctx.triggerEngine.start().catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+        pushProviderState(rwc, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
       }
     });
 
@@ -549,6 +551,10 @@ class WindowManager {
     // Push fresh snapshot so renderer shows current agent state
     const snapshot = ctx.sessionManager.getSnapshot();
     this.sendToRenderer(Channels.agent.snapshot, snapshot);
+
+    // Push provider state for the new agent
+    const rwc = this.rendererView?.webContents;
+    if (rwc) pushProviderState(rwc, buildProviderState(agentRoot, ctx.providerRegistry));
   }
 
   async removeAgent(agentRoot: string): Promise<void> {
@@ -582,10 +588,15 @@ class WindowManager {
     }
   }
 
-  reorderAgents(newOrder: string[]): void {
-    const currentSet = new Set(this.persistedAgentPaths);
-    if (newOrder.length !== currentSet.size || !newOrder.every(p => currentSet.has(p))) return;
-    this.persistedAgentPaths = [...newOrder];
+  reorderAgents(fromIndex: number, toIndex: number): void {
+    if (fromIndex < 0 || fromIndex >= this.persistedAgentPaths.length) return;
+    if (toIndex < 0 || toIndex >= this.persistedAgentPaths.length) return;
+    if (fromIndex === toIndex) return;
+    const newOrder = [...this.persistedAgentPaths];
+    const [moved] = newOrder.splice(fromIndex, 1);
+    const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
+    newOrder.splice(insertAt, 0, moved);
+    this.persistedAgentPaths = newOrder;
     this.persistInstalledAgents();
     this.broadcastSidebarState();
   }
@@ -630,7 +641,13 @@ class WindowManager {
   }
 
   setZenMode(value: boolean): void {
+    if (this.isZenMode === value) return;
     this.isZenMode = value;
+    this.sendToRenderer(Channels.zenMode.changed, this.isZenMode);
+  }
+
+  toggleZenMode(): void {
+    this.setZenMode(!this.isZenMode);
   }
 
   getActiveHttpApiPort(): number | null {
@@ -831,8 +848,7 @@ class WindowManager {
         this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
         break;
       case 'toggle-zen-mode':
-        this.isZenMode = !this.isZenMode;
-        this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-zen-mode');
+        this.toggleZenMode();
         break;
       case 'close-current-tab':
         if (this.isZenMode) {

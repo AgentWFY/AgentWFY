@@ -19,9 +19,18 @@ export interface CommandPaletteApi {
   showFiltered(query: string): Promise<void>
 }
 
+export interface ProviderStateUpdate {
+  providerList: Array<{ id: string; name: string; settingsView?: string }>
+  defaultProviderId: string
+  providerStatusLines: Array<[string, string]>
+}
+
 export interface ProvidersApi {
   list(): Promise<Array<{ id: string; name: string; settingsView?: string }>>
   getStatusLine(providerId: string): Promise<string>
+  switchProvider(providerId: string): Promise<void>
+  setDefault(providerId: string): Promise<void>
+  onStateChanged(callback: (state: ProviderStateUpdate) => void): () => void
 }
 
 export interface AgentApi {
@@ -49,7 +58,9 @@ export interface InstalledAgent {
 }
 
 export interface ZenModeApi {
-  changed(isZen: boolean): void
+  toggle(): Promise<void>
+  set(value: boolean): Promise<void>
+  onChanged(callback: (isZen: boolean) => void): () => void
 }
 
 export interface AgentSidebarApi {
@@ -59,12 +70,13 @@ export interface AgentSidebarApi {
   addFromFile(): Promise<string | null>
   remove(agentRoot: string): Promise<void>
   showContextMenu(agentRoot: string): Promise<void>
-  reorder(agentPaths: string[]): Promise<void>
+  reorder(fromIndex: number, toIndex: number): Promise<void>
   onSwitched(callback: (data: { agentRoot: string; agents: InstalledAgent[] }) => void): () => void
 }
 
 export interface AppIpc {
   sql: SqlApi
+  agentRoot: string | null
   tabs: TabsApi
   sessions: SessionsApi
   store: StoreApi

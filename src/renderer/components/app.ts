@@ -19,6 +19,7 @@ export class TlApp extends HTMLElement {
   private taskPanelEl!: HTMLElement
   private tabsEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
+  private unlistenZenMode: (() => void) | null = null
   private rootEl!: HTMLDivElement
   private sidebarWidth = 380
   private isResizing = false
@@ -65,8 +66,11 @@ export class TlApp extends HTMLElement {
     if (!this.activeSidebarPanel) {
       this.activeSidebarPanel = 'agent-chat'
     }
-    this.isZenMode = !this.isZenMode
-    window.ipc?.zenMode?.changed(this.isZenMode)
+    window.ipc?.zenMode?.toggle()
+  }
+
+  private onZenModeChanged = (isZen: boolean) => {
+    this.isZenMode = isZen
     this.updateSidebar()
   }
 
@@ -413,6 +417,7 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
+    this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
 
@@ -426,6 +431,8 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
     window.removeEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
+    this.unlistenZenMode?.()
+    this.unlistenZenMode = null
     window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
@@ -438,8 +445,8 @@ export class TlApp extends HTMLElement {
 
     // Exit zen mode when sidebar is closed
     if (!isOpen && this.isZenMode) {
-      this.isZenMode = false
-      window.ipc?.zenMode?.changed(false)
+      window.ipc?.zenMode?.set(false)
+      return  // updateSidebar will be called again from onZenModeChanged
     }
 
     // Zen mode + sidebar open/close

@@ -1109,6 +1109,7 @@ export class TlAgentChat extends HTMLElement {
   private _sessionListEl: HTMLElement | null = null
   private _sessionCountEl: HTMLElement | null = null
   private _isZenMode = false
+  private _unlistenZenMode: (() => void) | null = null
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -1143,6 +1144,8 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     window.removeEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
+    this._unlistenZenMode?.()
+    this._unlistenZenMode = null
     window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
@@ -1158,11 +1161,11 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private onPluginChanged = () => {
-    agentSessionStore.loadProviders().then(() => this.render())
+    this.render()
   }
 
   private onConfigDbChanged = () => {
-    agentSessionStore.loadProviders().then(() => this.render())
+    this.render()
   }
 
   private onOpenSessionInChat = (e: Event) => {
@@ -1266,6 +1269,10 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     window.addEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
+    this._unlistenZenMode = window.ipc?.zenMode?.onChanged((isZen) => {
+      this._isZenMode = isZen
+      this.updateOpenDots()
+    }) ?? null
     window.addEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.addEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.addEventListener('agentwfy:cycle-session', this.onCycleSession)

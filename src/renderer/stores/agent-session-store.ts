@@ -66,6 +66,7 @@ class AgentSessionStore {
   private _subscriptions: Subscription[] = []
   private _snapshotUnsub: (() => void) | null = null
   private _streamingUnsub: (() => void) | null = null
+  private _providerStateUnsub: (() => void) | null = null
   private _stateCache = new Map<string, AgentSessionState>()
   private _currentAgentRoot: string | null = null
 
@@ -123,13 +124,11 @@ class AgentSessionStore {
       console.warn('[AgentSessionStore] initial snapshot failed:', err)
     })
 
-    this.loadProviders()
+    this._providerStateUnsub = ipc.providers?.onStateChanged((state: unknown) => {
+      this.applyProviderState(state)
+    }) ?? null
 
-    window.ipc?.getAgentRoot().then(root => {
-      this._currentAgentRoot = root
-    }).catch((err: unknown) => {
-      console.warn('[AgentSessionStore] getAgentRoot failed:', err)
-    })
+    this._currentAgentRoot = window.ipc?.agentRoot ?? null
 
     window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
@@ -163,7 +162,6 @@ class AgentSessionStore {
 
     this._currentAgentRoot = newAgentRoot
     this.notify()
-    this.loadProviders()
   }
 
   destroy(): void {
@@ -171,6 +169,8 @@ class AgentSessionStore {
     this._snapshotUnsub = null
     this._streamingUnsub?.()
     this._streamingUnsub = null
+    this._providerStateUnsub?.()
+    this._providerStateUnsub = null
     this._subscriptions.length = 0
     window.removeEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
@@ -198,7 +198,6 @@ class AgentSessionStore {
   async createSession(): Promise<void> {
     this.setState({ selectedProviderId: this._state.defaultProviderId })
     await window.ipc?.agent.createSession()
-    await this.loadProviders()
   }
 
   async loadSession(file: string): Promise<void> {
@@ -258,42 +257,19 @@ class AgentSessionStore {
 
   // ── Providers ──
 
-  async loadProviders(): Promise<void> {
-    const ipc = window.ipc
-    if (!ipc?.providers) return
-
-    let defaultId = 'openai-compatible'
-    try {
-      const rows = await ipc.sql.run({
-        target: 'agent',
-        sql: "SELECT value FROM config WHERE name = 'system.provider'",
-      }) as Array<{ value: string }>
-      if (rows[0]?.value) defaultId = rows[0].value
-    } catch { /* use fallback */ }
-
-    let providerList: ProviderInfo[] = []
-    let providerStatusLines = new Map<string, string>()
-    try {
-      providerList = await ipc.providers.list()
-      const statusEntries = await Promise.all(
-        providerList.map(async (p) => {
-          try {
-            return [p.id, await ipc.providers.getStatusLine(p.id)] as const
-          } catch {
-            return [p.id, ''] as const
-          }
-        })
-      )
-      providerStatusLines = new Map(statusEntries)
-    } catch { /* empty list */ }
-
+  private applyProviderState(raw: unknown): void {
+    const state = raw as { providerList?: ProviderInfo[]; defaultProviderId?: string; providerStatusLines?: Array<[string, string]> }
+    if (!state) return
+    const providerList = state.providerList ?? []
+    const defaultProviderId = state.defaultProviderId ?? 'openai-compatible'
+    const providerStatusLines = new Map(state.providerStatusLines ?? [])
     const selectedStillValid = providerList.some(p => p.id === this._state.selectedProviderId)
-    const activeId = this._state.providerId || defaultId
+    const activeId = this._state.providerId || defaultProviderId
     this.setState({
       providerList,
       providerStatusLines,
-      defaultProviderId: defaultId,
-      selectedProviderId: selectedStillValid ? this._state.selectedProviderId : defaultId,
+      defaultProviderId,
+      selectedProviderId: selectedStillValid ? this._state.selectedProviderId : defaultProviderId,
       configStatusLine: providerStatusLines.get(activeId) || '',
     })
   }
@@ -303,33 +279,12 @@ class AgentSessionStore {
   }
 
   async setDefaultProvider(id: string): Promise<void> {
-    const ipc = window.ipc
-    if (!ipc) return
-
-    await ipc.sql.run({
-      target: 'agent',
-      sql: 'UPDATE config SET value = ? WHERE name = ?',
-      params: [id, 'system.provider'],
-      description: 'Set default provider',
-    })
-    this.setState({ defaultProviderId: id })
+    await window.ipc?.providers?.setDefault(id)
   }
 
   async switchProvider(id: string): Promise<void> {
-    const ipc = window.ipc
-    if (!ipc) return
-
-    await ipc.sql.run({
-      target: 'agent',
-      sql: 'UPDATE config SET value = ? WHERE name = ?',
-      params: [id, 'system.provider'],
-      description: 'Set active provider',
-    })
-    this.setState({
-      providerId: id,
-      defaultProviderId: id,
-    })
-    await this.reconnect()
+    this.setState({ providerId: id, defaultProviderId: id })
+    await window.ipc?.providers?.switchProvider(id)
   }
 
   // ── Internal ──

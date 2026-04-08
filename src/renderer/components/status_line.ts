@@ -317,10 +317,8 @@ export class TlStatusLine extends HTMLElement {
     const dirEl = this.shadow.querySelector('#data-dir') as HTMLSpanElement | null
     if (!dirEl) return
     try {
-      const [agentRoot, displayPath] = await Promise.all([
-        window.ipc?.getAgentRoot(),
-        window.ipc?.getAgentDisplayPath(),
-      ])
+      const agentRoot = window.ipc?.agentRoot
+      const displayPath = await window.ipc?.getAgentDisplayPath()
       if (displayPath) {
         dirEl.textContent = displayPath
         dirEl.setAttribute('title', agentRoot ?? displayPath)
