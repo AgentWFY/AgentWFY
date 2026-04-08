@@ -57,15 +57,16 @@ if (process.env.AGENTWFY_HEADLESS && process.platform === 'darwin') {
 // Write main process logs to .dev.log when not packaged (readable via scripts/cdp logs)
 if (!app.isPackaged) {
   const devLogStream = fs.createWriteStream(path.join(import.meta.dirname, '..', '.dev.log'), { flags: 'w' });
+  devLogStream.on('error', () => {}); // ignore log file write failures
   const origStdoutWrite = process.stdout.write.bind(process.stdout);
   const origStderrWrite = process.stderr.write.bind(process.stderr);
   process.stdout.write = (chunk: any, ...args: any[]) => {
     devLogStream.write(chunk);
-    return origStdoutWrite(chunk, ...args);
+    try { return origStdoutWrite(chunk, ...args); } catch { return false; }
   };
   process.stderr.write = (chunk: any, ...args: any[]) => {
     devLogStream.write(chunk);
-    return origStderrWrite(chunk, ...args);
+    try { return origStderrWrite(chunk, ...args); } catch { return false; }
   };
 }
 
