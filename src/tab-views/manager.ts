@@ -45,11 +45,8 @@ interface ViewRuntimeEntry {
 interface TabViewState {
   tabId: string
   viewName: string
-  currentSrc: string | null
   view: WebContentsView
   logs: ViewConsoleLogEntry[]
-  /** Set by openTabHandler to prevent mountTabView from reloading the same content. */
-  skipNextLoad?: boolean
 }
 
 type TabType = TabDataType
@@ -61,24 +58,12 @@ interface TabViewBoundsPayload {
   height: number
 }
 
-interface TabViewMountPayload {
-  tabId: string
-  viewName: string
-  src: string
-  bounds: TabViewBoundsPayload
-  visible: boolean
-  tabType?: TabType
-}
-
 interface TabViewSetBoundsPayload {
   tabId: string
   bounds: TabViewBoundsPayload
   visible: boolean
 }
 
-export interface TabViewDestroyPayload {
-  tabId: string
-}
 
 interface TabContextMenuPayload {
   x: number
@@ -248,7 +233,6 @@ export class TabViewManager {
     const state: TabViewState = {
       tabId,
       viewName,
-      currentSrc: null,
       view,
       logs: [],
     };
@@ -417,41 +401,6 @@ export class TabViewManager {
     return src;
   }
 
-  async mountTabView(payload: unknown): Promise<void> {
-    const input = payload && typeof payload === 'object' ? payload as Partial<TabViewMountPayload> : {};
-    const tabId = toNonEmptyString(input.tabId);
-    const viewName = toNonEmptyString(input.viewName);
-    const rawSrc = toNonEmptyString(input.src);
-    const src = this.rewriteAgentViewUrl(rawSrc);
-    const visible = Boolean(input.visible);
-    const bounds = normalizeTabViewBounds(input.bounds);
-    const tabType = (input.tabType === 'view' || input.tabType === 'file' || input.tabType === 'url') ? input.tabType : undefined;
-
-    const state = this.ensureTabViewState(tabId, viewName, { tabType });
-
-    this.applyTabViewPlacement(state, bounds, visible);
-
-    // If the view was pre-loaded by openTabHandler or is being restored after an
-    // agent switch, skip reloading — just apply bounds.  The flag stays set so that
-    // repeated renderer mount calls (e.g. from resize/visibility observers) are all
-    // skipped.  It is cleared only by explicit reloads (reloadTabView).
-    if (state.skipNextLoad) {
-      return;
-    }
-
-    if (state.currentSrc === src) {
-      return;
-    }
-
-    state.currentSrc = src;
-    try {
-      await state.view.webContents.loadURL(src);
-    } catch (error: unknown) {
-      if (isAbortedLoadError(error)) return;
-      throw error;
-    }
-  }
-
   setTabViewBounds(payload: unknown): void {
     const input = payload && typeof payload === 'object' ? payload as Partial<TabViewSetBoundsPayload> : {};
     const tabId = toNonEmptyString(input.tabId);
@@ -512,15 +461,6 @@ export class TabViewManager {
 
   /** Restore tab views for the active agent and push state to the renderer. */
   showAllViews(): void {
-    for (const state of this.tabViewsByTabId.values()) {
-      // Views are already loaded — skip reload when the renderer re-mounts them
-      // (new <awfy-tab-view> elements generate a fresh src URL with a different
-      // timestamp, which would otherwise cause mountTabView to call loadURL again).
-      if (state.currentSrc) {
-        state.skipNextLoad = true;
-      }
-    }
-    // Push current state to renderer so it re-mounts views with correct bounds
     this.pushStateToRenderer();
   }
 
@@ -530,8 +470,6 @@ export class TabViewManager {
       return;
     }
 
-    state.currentSrc = null;
-    state.skipNextLoad = false;
     if (!state.view.webContents.isDestroyed()) {
       state.view.webContents.reload();
     }
@@ -645,8 +583,6 @@ export class TabViewManager {
     this.applyTabViewPlacement(state, { x: 0, y: 0, width: w, height: h }, !isHidden);
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
-    state.currentSrc = src;
-    state.skipNextLoad = true;
     state.view.webContents.loadURL(src).catch((error: unknown) => {
       if (!isAbortedLoadError(error)) {
         console.error('[tabs] openTab loadURL failed:', error);

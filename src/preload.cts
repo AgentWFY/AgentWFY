@@ -8,9 +8,7 @@ const Channels = {
     openTab: 'tabs:openTab',
     closeTab: 'tabs:closeTab',
     selectTab: 'tabs:selectTab',
-    mountView: 'tabs:mountView',
     updateViewBounds: 'tabs:updateViewBounds',
-    destroyView: 'tabs:destroyView',
     showContextMenu: 'tabs:showContextMenu',
     viewEvent: 'tabs:viewEvent',
     stateChanged: 'tabs:stateChanged',
@@ -160,14 +158,8 @@ if (isApp) {
       selectTab(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.selectTab, request);
       },
-      mountView(request: unknown): Promise<void> {
-        return ipcRenderer.invoke(Channels.tabs.mountView, request);
-      },
       updateViewBounds(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.updateViewBounds, request);
-      },
-      destroyView(request: unknown): Promise<void> {
-        return ipcRenderer.invoke(Channels.tabs.destroyView, request);
       },
       showContextMenu(request: unknown): Promise<unknown> {
         return ipcRenderer.invoke(Channels.tabs.showContextMenu, request);

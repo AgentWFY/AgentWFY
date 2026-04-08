@@ -1,30 +1,19 @@
 import type {
   TabViewBounds,
   TabViewEvent,
-  MountTabViewRequest,
 } from '../ipc-types/index.js'
-
-type TabType = 'view' | 'file' | 'url'
 
 export class TlTabView extends HTMLElement {
   private _tabId = ''
-  private _tabType: TabType = 'view'
   private _source = ''  // viewName for view, filePath for file, url for url
-  private _viewUpdatedAt: number | null = null
   private _viewChanged = false
   private _hiddenTab = false
-  private _viewParams: Record<string, string> | null = null
-  private loadRequestId = 0
   private loading = false
   private error: string | null = null
   private wrapperEl: HTMLDivElement | null = null
   private loadingEl: HTMLDivElement | null = null
   private errorEl: HTMLDivElement | null = null
   private containerEl: HTMLDivElement | null = null
-  private viewRevision = 0
-  private mounted = false
-  private pendingLoadSource: string | null = null
-  private pendingLoadAnimationFrame: number | null = null
   private pendingBoundsAnimationFrame: number | null = null
   private wrapperResizeObserver: ResizeObserver | null = null
   private parentVisibilityObserver: MutationObserver | null = null
@@ -33,10 +22,6 @@ export class TlTabView extends HTMLElement {
   private onWindowOrVisibilityChanged = () => {
     if (!this._hiddenTab) {
       this.scheduleBoundsSync()
-    }
-
-    if (!this.mounted && this._source) {
-      this.scheduleLoad(this._source)
     }
   }
 
@@ -47,45 +32,20 @@ export class TlTabView extends HTMLElement {
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
     const nextValue = value || ''
     if (name === 'tab-id') this._tabId = nextValue
-    if (name === 'tab-type') this._tabType = (nextValue as TabType) || 'view'
     if (name === 'view-name') this._source = nextValue
     if (name === 'view-path' && !this.hasAttribute('view-name')) this._source = nextValue
     if (name === 'view-url' && !this.hasAttribute('view-name') && !this.hasAttribute('view-path')) this._source = nextValue
-    if (name === 'view-updated-at') this._viewUpdatedAt = parseOptionalNumber(value)
     if (name === 'hidden-tab') this._hiddenTab = value !== null
-    if (name === 'view-params') this._viewParams = TlTabView.parseJsonParams(value)
 
     if (!this.isConnected || oldValue === nextValue) return
 
     if (name === 'view-name' || name === 'view-path' || name === 'view-url' || name === 'view-updated-at') {
-      this._viewChanged = false
-      this.mounted = false
-
-      if (this._source) {
-        this.scheduleLoad(this._source)
-        this.scheduleBoundsSync()
-      } else {
-        this.loadRequestId += 1
-        this.loading = false
-        this.error = null
-        this.pendingLoadSource = null
-        if (this.pendingLoadAnimationFrame !== null) {
-          cancelAnimationFrame(this.pendingLoadAnimationFrame)
-          this.pendingLoadAnimationFrame = null
-        }
-        this.destroyTabViewHost()
-        this.render()
-      }
+      this.scheduleBoundsSync()
     }
   }
 
   get tabId() { return this._tabId }
   get viewName() { return this._source }
-
-  private static parseJsonParams(value: string | null): Record<string, string> | null {
-    if (!value) return null
-    try { return JSON.parse(value) } catch { return null }
-  }
 
   get viewChanged() { return this._viewChanged }
   set viewChanged(value: boolean) {
@@ -95,11 +55,8 @@ export class TlTabView extends HTMLElement {
 
   connectedCallback() {
     this._tabId = this.getAttribute('tab-id') || ''
-    this._tabType = (this.getAttribute('tab-type') as TabType) || 'view'
     this._source = this.getAttribute('view-name') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
-    this._viewUpdatedAt = parseOptionalNumber(this.getAttribute('view-updated-at'))
     this._hiddenTab = this.hasAttribute('hidden-tab')
-    this._viewParams = TlTabView.parseJsonParams(this.getAttribute('view-params'))
 
     this.style.display = 'block'
     this.style.width = '100%'
@@ -124,21 +81,11 @@ export class TlTabView extends HTMLElement {
     this.render()
 
     if (this._source) {
-      this.scheduleLoad(this._source)
       this.scheduleBoundsSync()
     }
   }
 
   disconnectedCallback() {
-    this.loadRequestId += 1
-    this.loading = false
-    this.pendingLoadSource = null
-
-    if (this.pendingLoadAnimationFrame !== null) {
-      cancelAnimationFrame(this.pendingLoadAnimationFrame)
-      this.pendingLoadAnimationFrame = null
-    }
-
     if (this.pendingBoundsAnimationFrame !== null) {
       cancelAnimationFrame(this.pendingBoundsAnimationFrame)
       this.pendingBoundsAnimationFrame = null
@@ -161,8 +108,6 @@ export class TlTabView extends HTMLElement {
 
     window.removeEventListener('resize', this.onWindowOrVisibilityChanged)
     document.removeEventListener('visibilitychange', this.onWindowOrVisibilityChanged)
-
-    this.destroyTabViewHost()
   }
 
   private initializeUi() {
@@ -195,10 +140,6 @@ export class TlTabView extends HTMLElement {
       if (!this._hiddenTab) {
         this.scheduleBoundsSync()
       }
-
-      if (!this.mounted && this._source) {
-        this.scheduleLoad(this._source)
-      }
     })
     this.wrapperResizeObserver.observe(this.wrapperEl)
   }
@@ -217,10 +158,6 @@ export class TlTabView extends HTMLElement {
     this.parentVisibilityObserver = new MutationObserver(() => {
       if (!this._hiddenTab) {
         this.scheduleBoundsSync()
-      }
-
-      if (!this.mounted && this._source) {
-        this.scheduleLoad(this._source)
       }
     })
 
@@ -256,7 +193,6 @@ export class TlTabView extends HTMLElement {
       if (detail.type === 'did-stop-loading') {
         this.loading = false
         this.error = null
-        this.mounted = true
         this.render()
         this.scheduleBoundsSync()
         return
@@ -268,7 +204,6 @@ export class TlTabView extends HTMLElement {
         }
 
         this.loading = false
-        this.mounted = false
         const description = detail.errorDescription ? String(detail.errorDescription) : 'Unknown external view load error'
         this.error = `Failed to load view "${this._source}": ${description}`
         this.render()
@@ -303,13 +238,9 @@ export class TlTabView extends HTMLElement {
   }
 
   private isViewVisible(bounds?: TabViewBounds): boolean {
-    // Hidden tabs are never visually visible but should still load
     if (this._hiddenTab) return false
 
     const nextBounds = bounds || this.getWrapperBounds()
-    // Require a minimum useful size — views smaller than this are treated as
-    // not visible so the main process assigns full-window bounds (needed for
-    // capturePage to produce a meaningful screenshot).
     const MIN_VISIBLE_SIZE = 40
     return (
       document.visibilityState === 'visible' &&
@@ -317,25 +248,6 @@ export class TlTabView extends HTMLElement {
       nextBounds.width >= MIN_VISIBLE_SIZE &&
       nextBounds.height >= MIN_VISIBLE_SIZE
     )
-  }
-
-  /** Whether this tab's view should be loaded (visible tabs or hidden tabs). */
-  private shouldLoad(): boolean {
-    return this._hiddenTab || this.isViewVisible()
-  }
-
-  private destroyTabViewHost() {
-    const ipc = window.ipc
-    const tabId = this.getExternalTabId()
-    if (!ipc || !tabId) {
-      this.mounted = false
-      return
-    }
-
-    void ipc.tabs.destroyView({ tabId }).catch(() => {
-      // Ignore teardown failures while switching tabs/views.
-    })
-    this.mounted = false
   }
 
   private scheduleBoundsSync() {
@@ -372,130 +284,6 @@ export class TlTabView extends HTMLElement {
     })
   }
 
-  private buildSrc(source: string): string {
-    this.viewRevision += 1
-    const encodedTabId = encodeURIComponent(this.getExternalTabId())
-
-    if (this._tabType === 'url') {
-      // URL tabs load the URL directly
-      return source
-    }
-
-    let url: string
-    if (this._tabType === 'file') {
-      // File tabs use agentview://view/ with source=file param
-      const encodedPath = encodeURIComponent(source)
-      const revision = Date.now()
-      url = `agentview://view/${encodedPath}?source=file&rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
-    } else {
-      // Default: view
-      const encodedViewName = encodeURIComponent(source)
-      const revision = this._viewUpdatedAt ?? Date.now()
-      url = `agentview://view/${encodedViewName}?rev=${encodeURIComponent(String(revision))}&t=${this.viewRevision}&tabId=${encodedTabId}`
-    }
-
-    // Append custom params
-    if (this._viewParams) {
-      for (const [key, value] of Object.entries(this._viewParams)) {
-        url += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-      }
-    }
-
-    return url
-  }
-
-  private async loadView(source: string) {
-    const requestId = ++this.loadRequestId
-    this.error = null
-    this.loading = true
-    this.render()
-
-    const ipc = window.ipc
-    if (!ipc) {
-      if (requestId === this.loadRequestId) {
-        this.loading = false
-        this.error = 'window.ipc is unavailable'
-        this.render()
-      }
-      return
-    }
-
-    const tabId = this.getExternalTabId()
-    if (!tabId) {
-      if (requestId === this.loadRequestId) {
-        this.loading = false
-        this.error = 'Missing tab id for external view host'
-        this.render()
-      }
-      return
-    }
-
-    const bounds = this._hiddenTab
-      ? { x: 0, y: 0, width: 0, height: 0 }
-      : this.getWrapperBounds()
-    const visible = this._hiddenTab ? false : this.isViewVisible(bounds)
-    const request: MountTabViewRequest = {
-      tabId,
-      viewName: source,
-      src: this.buildSrc(source),
-      bounds,
-      visible,
-      tabType: this._tabType,
-    }
-
-    try {
-      await ipc.tabs.mountView(request)
-      if (requestId !== this.loadRequestId || !this.isConnected) {
-        return
-      }
-
-      this.loading = false
-      this.error = null
-      this.mounted = true
-      this.render()
-      this.scheduleBoundsSync()
-    } catch (error) {
-      if (requestId !== this.loadRequestId || !this.isConnected) {
-        return
-      }
-
-      this.loading = false
-      this.mounted = false
-      const message = error instanceof Error ? error.message : String(error)
-      this.error = `Failed to load view "${source}": ${message}`
-      this.render()
-    }
-  }
-
-  private scheduleLoad(source: string) {
-    this.pendingLoadSource = source
-    if (this.pendingLoadAnimationFrame !== null) {
-      return
-    }
-
-    const tryLoad = () => {
-      this.pendingLoadAnimationFrame = null
-      if (!this.isConnected) {
-        return
-      }
-
-      const pendingSource = this.pendingLoadSource
-      if (!pendingSource) {
-        return
-      }
-
-      if (!this.shouldLoad()) {
-        this.pendingLoadAnimationFrame = requestAnimationFrame(tryLoad)
-        return
-      }
-
-      this.pendingLoadSource = null
-      void this.loadView(pendingSource)
-    }
-
-    this.pendingLoadAnimationFrame = requestAnimationFrame(tryLoad)
-  }
-
   private render() {
     if (!this.containerEl || !this.wrapperEl || !this.loadingEl || !this.errorEl) return
 
@@ -503,13 +291,4 @@ export class TlTabView extends HTMLElement {
     this.errorEl.style.display = this.error ? 'block' : 'none'
     this.errorEl.textContent = this.error || ''
   }
-}
-
-function parseOptionalNumber(value: string | null): number | null {
-  if (!value || value.trim().length === 0) {
-    return null
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
 }
