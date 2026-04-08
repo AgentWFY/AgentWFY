@@ -431,9 +431,11 @@ export class TabViewManager {
 
     this.applyTabViewPlacement(state, bounds, visible);
 
-    // If the view was pre-loaded by openTabHandler, skip reloading — just apply bounds.
+    // If the view was pre-loaded by openTabHandler or is being restored after an
+    // agent switch, skip reloading — just apply bounds.  The flag stays set so that
+    // repeated renderer mount calls (e.g. from resize/visibility observers) are all
+    // skipped.  It is cleared only by explicit reloads (reloadTabView).
     if (state.skipNextLoad) {
-      state.skipNextLoad = false;
       return;
     }
 
@@ -500,32 +502,22 @@ export class TabViewManager {
     this.selectedTabId = null;
   }
 
-  /** Detach all tab views from the window without destroying them (used when switching agents). */
+  /** Hide all tab views without detaching them from the window (used when switching agents).
+   *  Views stay as children of contentView to avoid page reloads that detach/re-attach can trigger. */
   hideAllViews(): void {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) return;
     for (const state of this.tabViewsByTabId.values()) {
-      if (state.view.webContents.isLoading()) {
-        state.view.webContents.stop();
-      }
       state.view.setVisible(false);
-      try {
-        mainWindow.contentView.removeChildView(state.view);
-      } catch {
-        // Already detached
-      }
     }
   }
 
-  /** Re-attach tab views to the window and restore visibility for the selected tab. */
+  /** Restore tab views for the active agent and push state to the renderer. */
   showAllViews(): void {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) return;
     for (const state of this.tabViewsByTabId.values()) {
-      try {
-        mainWindow.contentView.addChildView(state.view);
-      } catch {
-        // Already attached
+      // Views are already loaded — skip reload when the renderer re-mounts them
+      // (new <awfy-tab-view> elements generate a fresh src URL with a different
+      // timestamp, which would otherwise cause mountTabView to call loadURL again).
+      if (state.currentSrc) {
+        state.skipNextLoad = true;
       }
     }
     // Push current state to renderer so it re-mounts views with correct bounds
