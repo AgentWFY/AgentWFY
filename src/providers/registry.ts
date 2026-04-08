@@ -29,6 +29,16 @@ export class ProviderRegistry {
     }))
   }
 
+  listWithStatusLines(): { providers: ProviderInfo[]; statusLines: Array<[string, string]> } {
+    const providers: ProviderInfo[] = []
+    const statusLines: Array<[string, string]> = []
+    for (const { factory: f } of this.factories.values()) {
+      providers.push({ id: f.id, name: f.name, ...(f.settingsView ? { settingsView: f.settingsView } : {}) })
+      statusLines.push([f.id, f.getStatusLine?.() ?? ''])
+    }
+    return { providers, statusLines }
+  }
+
   has(id: string): boolean {
     return this.factories.has(id)
   }

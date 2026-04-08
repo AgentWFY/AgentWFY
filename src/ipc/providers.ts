@@ -12,12 +12,8 @@ export interface ProviderState {
 
 export function buildProviderState(agentRoot: string, registry: ProviderRegistry): ProviderState {
   const defaultId = (getConfigValue(agentRoot, 'system.provider', 'openai-compatible') as string) || 'openai-compatible'
-  const providerList = registry.list()
-  const statusLines: Array<[string, string]> = providerList.map(p => {
-    const factory = registry.get(p.id)
-    return [p.id, factory?.getStatusLine?.() ?? '']
-  })
-  return { providerList, defaultProviderId: defaultId, providerStatusLines: statusLines }
+  const { providers, statusLines } = registry.listWithStatusLines()
+  return { providerList: providers, defaultProviderId: defaultId, providerStatusLines: statusLines }
 }
 
 export function pushProviderState(wc: WebContents, state: ProviderState): void {
@@ -42,20 +38,20 @@ export function registerProviderHandlers(
     return factory.getStatusLine()
   })
 
-  ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
+  const setAndPush = async (event: Electron.IpcMainInvokeEvent, providerId: string, reconnect: boolean) => {
     const agentRoot = getAgentRoot(event)
     setAgentConfig(agentRoot, 'system.provider', providerId)
+    if (reconnect) await onReconnect(event)
     const state = buildProviderState(agentRoot, getRegistry(event))
     const wc = getRendererWebContents()
     if (wc) pushProviderState(wc, state)
+  }
+
+  ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
+    await setAndPush(event, providerId, false)
   })
 
   ipcMain.handle(Channels.providers.switchProvider, async (event, providerId: string) => {
-    const agentRoot = getAgentRoot(event)
-    setAgentConfig(agentRoot, 'system.provider', providerId)
-    await onReconnect(event)
-    const state = buildProviderState(agentRoot, getRegistry(event))
-    const wc = getRendererWebContents()
-    if (wc) pushProviderState(wc, state)
+    await setAndPush(event, providerId, true)
   })
 }

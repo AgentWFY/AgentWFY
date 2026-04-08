@@ -1143,7 +1143,6 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:load-session', this.onLoadSession)
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
-    window.removeEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
     this._unlistenZenMode?.()
     this._unlistenZenMode = null
     window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
@@ -1153,11 +1152,6 @@ export class TlAgentChat extends HTMLElement {
     this._storeUnsub = null
     this.clearChatRefs()
     this._renderMode = null
-  }
-
-  private onZenModeToggle = () => {
-    this._isZenMode = !this._isZenMode
-    this.updateOpenDots()
   }
 
   private onPluginChanged = () => {
@@ -1268,7 +1262,6 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:load-session', this.onLoadSession)
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
-    window.addEventListener('agentwfy:toggle-zen-mode', this.onZenModeToggle)
     this._unlistenZenMode = window.ipc?.zenMode?.onChanged((isZen) => {
       this._isZenMode = isZen
       this.updateOpenDots()

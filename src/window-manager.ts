@@ -28,7 +28,7 @@ import { getViewByName } from './db/views.js';
 import { loadPlugins } from './plugins/loader.js';
 import type { PluginRegistry } from './plugins/registry.js';
 import { ProviderRegistry } from './providers/registry.js';
-import { buildProviderState, pushProviderState } from './ipc/providers.js';
+import { buildProviderState } from './ipc/providers.js';
 import { ConfirmationManager } from './confirmation/manager.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
@@ -280,7 +280,7 @@ class WindowManager {
       if (ctx) {
         ctx.triggerEngine.start().catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
-        pushProviderState(rwc, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
+        this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
       }
     });
 
@@ -552,9 +552,7 @@ class WindowManager {
     const snapshot = ctx.sessionManager.getSnapshot();
     this.sendToRenderer(Channels.agent.snapshot, snapshot);
 
-    // Push provider state for the new agent
-    const rwc = this.rendererView?.webContents;
-    if (rwc) pushProviderState(rwc, buildProviderState(agentRoot, ctx.providerRegistry));
+    this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(agentRoot, ctx.providerRegistry));
   }
 
   async removeAgent(agentRoot: string): Promise<void> {

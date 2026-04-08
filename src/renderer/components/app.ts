@@ -62,14 +62,10 @@ export class TlApp extends HTMLElement {
     this.openPanel((e as CustomEvent<{ panel: string }>).detail.panel)
   }
 
-  private onToggleZenMode = () => {
-    if (!this.activeSidebarPanel) {
+  private onZenModeChanged = (isZen: boolean) => {
+    if (isZen && !this.activeSidebarPanel) {
       this.activeSidebarPanel = 'agent-chat'
     }
-    window.ipc?.zenMode?.toggle()
-  }
-
-  private onZenModeChanged = (isZen: boolean) => {
     this.isZenMode = isZen
     this.updateSidebar()
   }
@@ -416,7 +412,6 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.addEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
@@ -430,7 +425,6 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.removeEventListener('agentwfy:toggle-zen-mode', this.onToggleZenMode)
     this.unlistenZenMode?.()
     this.unlistenZenMode = null
     window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
