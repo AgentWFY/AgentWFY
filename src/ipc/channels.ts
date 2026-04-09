@@ -1,28 +1,11 @@
 export const Channels = {
-  files: {
-    read: 'files:read',
-    write: 'files:write',
-    writeBinary: 'files:writeBinary',
-    readBinary: 'files:readBinary',
-    edit: 'files:edit',
-    ls: 'files:ls',
-    mkdir: 'files:mkdir',
-    remove: 'files:remove',
-    find: 'files:find',
-    grep: 'files:grep',
-  },
   sql: {
     run: 'sql:run',
   },
   tabs: {
-    getTabs: 'tabs:getTabs',
     openTab: 'tabs:openTab',
     closeTab: 'tabs:closeTab',
     selectTab: 'tabs:selectTab',
-    reloadTab: 'tabs:reloadTab',
-    captureTab: 'tabs:captureTab',
-    getConsoleLogs: 'tabs:getConsoleLogs',
-    execJs: 'tabs:execJs',
     updateViewBounds: 'tabs:updateViewBounds',
     showContextMenu: 'tabs:showContextMenu',
     viewEvent: 'tabs:viewEvent',
@@ -60,11 +43,6 @@ export const Channels = {
     writeLog: 'tasks:writeLog',
     runFinished: 'tasks:runFinished',
     runStarted: 'tasks:runStarted',
-  },
-  plugins: {
-    call: 'plugin:call',
-    methods: 'plugin:methods',
-    uninstall: 'plugin:uninstall',
   },
   providers: {
     list: 'provider:list',

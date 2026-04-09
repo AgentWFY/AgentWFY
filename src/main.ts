@@ -2,14 +2,12 @@ import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, pro
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
-import { registerFilesHandlers } from './ipc/files.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
-import { registerPluginHandlers } from './ipc/plugins.js';
 import { registerAgentHandlers } from './ipc/agents.js';
 import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
@@ -127,7 +125,6 @@ const handleConfigChange = (key: string, newValue: unknown) => {
 onAnyChange(handleConfigChange);
 onGlobalConfigChange(handleConfigChange);
 
-registerFilesHandlers((e) => windowManager.getAgentRootForEvent(e));
 registerSqlHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (event, change) => windowManager.onDbChange(event, change),
@@ -142,11 +139,6 @@ registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
-);
-registerPluginHandlers(
-  (e) => windowManager.getAgentRootForEvent(e),
-  (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
-  (e) => windowManager.getContextForSender(e.sender.id).pluginRegistry,
 );
 registerRuntimeFunctionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,

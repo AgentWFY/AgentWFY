@@ -1,23 +1,100 @@
 import path from 'path'
 import fs from 'fs/promises'
 import { assertPathAllowed, isAgentPrivatePath } from '../../security/path-policy.js'
-import {
-  truncateText,
-  truncateLine,
-  walkDir,
-  matchesGlob,
-  mimeFromPath,
-  GREP_MAX_LINE_LENGTH,
-  DEFAULT_GREP_LIMIT,
-  DEFAULT_FIND_LIMIT,
-  DEFAULT_LS_LIMIT,
-} from '../../ipc/files.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 
 const MAX_READ_LINES = 2000
 const MAX_READ_BYTES = 50 * 1024
 const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
+const GREP_MAX_LINE_LENGTH = 500
+const DEFAULT_GREP_LIMIT = 100
+const DEFAULT_FIND_LIMIT = 1000
+const DEFAULT_LS_LIMIT = 500
+
+function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
+  const lines = text.split('\n')
+  const totalLines = lines.length
+
+  let byteCount = 0
+  let lineCount = 0
+  for (let i = 0; i < lines.length && i < maxLines; i++) {
+    const lineBytes = Buffer.byteLength(lines[i], 'utf-8') + 1
+    if (byteCount + lineBytes > maxBytes && i > 0) break
+    byteCount += lineBytes
+    lineCount++
+  }
+
+  if (lineCount >= totalLines) {
+    return { content: text, truncated: false, totalLines, shownLines: totalLines }
+  }
+
+  return {
+    content: lines.slice(0, lineCount).join('\n'),
+    truncated: true,
+    totalLines,
+    shownLines: lineCount,
+  }
+}
+
+function truncateLine(line: string, maxLen: number): string {
+  if (line.length <= maxLen) return line
+  return line.slice(0, maxLen) + '…'
+}
+
+async function walkDir(dir: string, root: string): Promise<string[]> {
+  const results: string[] = []
+  let entries
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true })
+  } catch {
+    return results
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    if (isAgentPrivatePath(root, full)) continue
+    const rel = path.relative(root, full)
+    if (entry.isDirectory()) {
+      results.push(rel + '/')
+      results.push(...await walkDir(full, root))
+    } else {
+      results.push(rel)
+    }
+  }
+  return results
+}
+
+function matchesGlob(filename: string, pattern: string): boolean {
+  const regex = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\0')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\0/g, '.*')
+    .replace(/\?/g, '.')
+  return new RegExp(`^${regex}$`).test(filename)
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+}
+
+function mimeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
 
 export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: string }): void {
   const { agentRoot } = deps

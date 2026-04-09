@@ -62,27 +62,10 @@ function parseTabId(value: unknown): string {
   throw new Error('tabId must be a non-empty string');
 }
 
-function parseOptionalNumber(value: unknown, label: string): number | undefined {
-  if (typeof value === 'undefined' || value === null) {
-    return undefined;
-  }
-
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error(`${label} must be a finite number when provided`);
-  }
-
-  return value;
-}
-
 export function registerTabsHandlers(
   getTabTools: (e: IpcMainInvokeEvent) => AgentTabTools,
   getAgentRoot: (e: IpcMainInvokeEvent) => string,
 ) {
-  // getTabs() → { tabs: [...] }
-  ipcMain.handle(Channels.tabs.getTabs, async (event) => {
-    return getTabTools(event).getTabs();
-  });
-
   // openTab({ viewName?, filePath?, url?, title? }) — exactly one of viewName, filePath, url required
   ipcMain.handle(Channels.tabs.openTab, async (event, payload: unknown) => {
     const input = payload as OpenTabRequest | undefined;
@@ -144,54 +127,4 @@ export function registerTabsHandlers(
     return getTabTools(event).selectTab({ tabId });
   });
 
-  // reloadTab({ tabId })
-  ipcMain.handle(Channels.tabs.reloadTab, async (event, payload: unknown) => {
-    const input = payload as ReloadTabRequest | undefined;
-    const tabId = parseTabId(input?.tabId);
-    return getTabTools(event).reloadTab({ tabId });
-  });
-
-  // captureTab({ tabId }) → { base64, mimeType }
-  ipcMain.handle(Channels.tabs.captureTab, async (event, payload: unknown) => {
-    const input = payload as CaptureTabRequest | undefined;
-    const tabId = parseTabId(input?.tabId);
-    return getTabTools(event).captureTab({ tabId });
-  });
-
-  // getConsoleLogs({ tabId, since?, limit? }) → logs[]
-  ipcMain.handle(Channels.tabs.getConsoleLogs, async (event, payload: unknown) => {
-    const input = payload as GetTabConsoleLogsRequest | undefined;
-    const tabId = parseTabId(input?.tabId);
-    const since = parseOptionalNumber(input?.since, 'since');
-    const limit = parseOptionalNumber(input?.limit, 'limit');
-    if (typeof limit === 'number' && limit < 1) {
-      throw new Error('limit must be >= 1 when provided');
-    }
-
-    return getTabTools(event).getTabConsoleLogs({
-      tabId,
-      since,
-      limit,
-    });
-  });
-
-  // execJs({ tabId, code, timeoutMs? }) → execution result
-  ipcMain.handle(Channels.tabs.execJs, async (event, payload: unknown) => {
-    const input = payload as ExecTabJsRequest | undefined;
-    const tabId = parseTabId(input?.tabId);
-    if (!input || typeof input.code !== 'string') {
-      throw new Error('execTabJs requires code as a string');
-    }
-
-    const timeoutMs = parseOptionalNumber(input.timeoutMs, 'timeoutMs');
-    if (typeof timeoutMs === 'number' && timeoutMs < 1) {
-      throw new Error('timeoutMs must be >= 1 when provided');
-    }
-
-    return getTabTools(event).execTabJs({
-      tabId,
-      code: input.code,
-      timeoutMs,
-    });
-  });
 }
