@@ -1,10 +1,10 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import { WRITE_RE, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, OnDbChange } from './sqlite.js';
 
-const DDL_RE = /^\s*(CREATE|ALTER|DROP)\s+(TABLE|INDEX|TRIGGER|VIEW)\b/i;
+const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins']);
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
@@ -158,24 +158,6 @@ BEGIN
 END;
 `;
 
-// Block agent from writing to plugins table
-const PLUGINS_TABLE_GUARD_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_insert BEFORE INSERT ON plugins
-BEGIN
-  SELECT RAISE(ABORT, 'plugins table is read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_update BEFORE UPDATE ON plugins
-BEGIN
-  SELECT RAISE(ABORT, 'plugins table is read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_guard_delete BEFORE DELETE ON plugins
-BEGIN
-  SELECT RAISE(ABORT, 'plugins table is read-only');
-END;
-`;
-
 // Block agent from writing to system.* and plugin.* views
 const SYSTEM_VIEWS_GUARD_SQL = `
 CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_insert BEFORE INSERT ON views
@@ -282,9 +264,6 @@ END;
 `;
 
 const DROP_GUARDS_SQL = `
-DROP TRIGGER IF EXISTS plugins_guard_insert;
-DROP TRIGGER IF EXISTS plugins_guard_update;
-DROP TRIGGER IF EXISTS plugins_guard_delete;
 DROP TRIGGER IF EXISTS _docs_system_guard_insert;
 DROP TRIGGER IF EXISTS _docs_system_guard_update;
 DROP TRIGGER IF EXISTS _docs_system_guard_delete;
@@ -319,7 +298,6 @@ const ALL_GUARD_SQL = [
   SYSTEM_TASKS_GUARD_SQL,
   SYSTEM_TRIGGERS_GUARD_SQL,
   SYSTEM_CONFIG_GUARD_SQL,
-  PLUGINS_TABLE_GUARD_SQL,
   VIEW_NAME_FORMAT_SQL,
   DOC_NAME_FORMAT_SQL,
   CONFIG_NAME_FORMAT_SQL,
@@ -401,6 +379,75 @@ class AgentDb {
 
     this.db.exec(CHANGE_TRACKING_SQL);
     for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
+    this.installAuthorizer();
+  }
+
+  private installAuthorizer(): void {
+    const {
+      SQLITE_OK, SQLITE_DENY,
+      SQLITE_CREATE_TABLE, SQLITE_DROP_TABLE, SQLITE_ALTER_TABLE,
+      SQLITE_CREATE_INDEX, SQLITE_DROP_INDEX,
+      SQLITE_CREATE_TRIGGER, SQLITE_DROP_TRIGGER,
+      SQLITE_CREATE_TEMP_TABLE, SQLITE_DROP_TEMP_TABLE,
+      SQLITE_CREATE_TEMP_INDEX, SQLITE_DROP_TEMP_INDEX,
+      SQLITE_CREATE_TEMP_TRIGGER, SQLITE_DROP_TEMP_TRIGGER,
+      SQLITE_CREATE_VIEW, SQLITE_DROP_VIEW,
+      SQLITE_CREATE_TEMP_VIEW, SQLITE_DROP_TEMP_VIEW,
+      SQLITE_INSERT, SQLITE_UPDATE, SQLITE_DELETE,
+      SQLITE_ATTACH, SQLITE_DETACH,
+    } = constants;
+
+    this.db.setAuthorizer((actionCode, arg1, arg2) => {
+      switch (actionCode) {
+        // Table DDL — arg1 = table name
+        case SQLITE_CREATE_TABLE:
+        case SQLITE_DROP_TABLE:
+          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
+
+        // ALTER TABLE — arg1 = db name, arg2 = table name
+        case SQLITE_ALTER_TABLE:
+          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
+
+        // Index/trigger DDL — arg2 = target table
+        case SQLITE_CREATE_INDEX:
+        case SQLITE_DROP_INDEX:
+        case SQLITE_CREATE_TRIGGER:
+        case SQLITE_DROP_TRIGGER:
+          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
+
+        // Temp objects on protected tables
+        case SQLITE_CREATE_TEMP_TABLE:
+        case SQLITE_DROP_TEMP_TABLE:
+          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
+
+        case SQLITE_CREATE_TEMP_INDEX:
+        case SQLITE_DROP_TEMP_INDEX:
+        case SQLITE_CREATE_TEMP_TRIGGER:
+        case SQLITE_DROP_TEMP_TRIGGER:
+          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
+
+        // SQLite views share namespace with tables
+        case SQLITE_CREATE_VIEW:
+        case SQLITE_DROP_VIEW:
+        case SQLITE_CREATE_TEMP_VIEW:
+        case SQLITE_DROP_TEMP_VIEW:
+          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
+
+        // Plugins table is entirely read-only
+        case SQLITE_INSERT:
+        case SQLITE_UPDATE:
+        case SQLITE_DELETE:
+          return arg1 === 'plugins' ? SQLITE_DENY : SQLITE_OK;
+
+        // Block database attachment
+        case SQLITE_ATTACH:
+        case SQLITE_DETACH:
+          return SQLITE_DENY;
+
+        default:
+          return SQLITE_OK;
+      }
+    });
   }
 
   getEnabledPlugins(): Array<{ name: string; title: string; description: string; version: string; code: string }> {
@@ -510,19 +557,17 @@ class AgentDb {
   }
 
   private adminWrite(fn: () => void): void {
+    this.db.setAuthorizer(null);
     this.db.exec(DROP_GUARDS_SQL);
     try {
       fn();
     } finally {
       for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
+      this.installAuthorizer();
     }
   }
 
   run(request: SqlExecutionRequest, onDbChange?: OnDbChange): unknown[] {
-    if (DDL_RE.test(request.sql)) {
-      throw new Error('Schema modifications (CREATE/ALTER/DROP TABLE/INDEX/TRIGGER/VIEW) are not allowed on the agent database');
-    }
-
     const params = normalizeParams(request.params);
     const trackChanges = onDbChange && WRITE_RE.test(request.sql);
 
