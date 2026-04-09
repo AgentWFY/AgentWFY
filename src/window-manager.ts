@@ -1,7 +1,6 @@
-import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
+import { BaseWindow, WebContentsView, dialog, nativeTheme, session, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import crypto from 'crypto';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
@@ -34,6 +33,7 @@ import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
 import { Channels } from './ipc/channels.js';
+import { createViewProtocolHandler } from './protocol/view-handler.js';
 
 /** Per-agent context (everything that is agent-specific). */
 export interface AgentContext {
@@ -80,8 +80,10 @@ class WindowManager {
   // IPC routing: webContents.id → agentRoot (for tab views / child webcontents)
   private tabSenderMap = new Map<number, string>();
 
-  // Protocol support
-  private agentHashes = new Map<string, string>(); // hash → agentRoot
+  // Per-agent sessions for protocol isolation
+  private agentSessions = new Map<string, Electron.Session>(); // agentRoot → Session
+
+  private readonly clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 
   private forceClose = false;
   private isZenMode = false;
@@ -325,7 +327,7 @@ class WindowManager {
 
     const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry);
 
-    const agentHash = this.getHashForAgentRoot(agentRoot);
+    const agentSession = this.getOrCreateAgentSession(agentRoot);
 
     const registerSender = (webContentsId: number) => {
       this.tabSenderMap.set(webContentsId, agentRoot);
@@ -343,7 +345,7 @@ class WindowManager {
         return ctx?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;
       },
       handleAction: (action) => this.handleShortcutAction(action),
-      agentHash,
+      session: agentSession,
       registerSender,
       unregisterSender,
     });
@@ -486,11 +488,11 @@ class WindowManager {
     }
 
     closeAgentDb(agentRoot);
-    for (const [hash, root] of this.agentHashes) {
-      if (root === agentRoot) {
-        this.agentHashes.delete(hash);
-        break;
-      }
+
+    const agentSession = this.agentSessions.get(agentRoot);
+    if (agentSession) {
+      agentSession.protocol.unhandle('agentview');
+      this.agentSessions.delete(agentRoot);
     }
 
     this.agentContexts.delete(agentRoot);
@@ -694,32 +696,22 @@ class WindowManager {
   }
 
 
-  // --- Protocol support ---
+  // --- Per-agent session management ---
 
-  getAgentRootForHash(hash: string): string | null {
-    return this.agentHashes.get(hash) ?? null;
-  }
+  private getOrCreateAgentSession(agentRoot: string): Electron.Session {
+    let agentSession = this.agentSessions.get(agentRoot);
+    if (agentSession) return agentSession;
 
-  getHashForAgentRoot(agentRoot: string): string {
-    for (const [hash, root] of this.agentHashes) {
-      if (root === agentRoot) return hash;
-    }
+    agentSession = session.fromPartition(`agent:${agentRoot}`);
 
-    const fullHex = crypto.createHash('sha256').update(agentRoot).digest('hex');
-    let len = 10;
-    let hash = fullHex.slice(0, len);
+    const handler = createViewProtocolHandler({
+      agentRoot,
+      clientPath: this.clientPath,
+    });
+    agentSession.protocol.handle('agentview', handler);
 
-    while (this.agentHashes.has(hash) && this.agentHashes.get(hash) !== agentRoot) {
-      len += 4;
-      if (len >= fullHex.length) {
-        hash = fullHex;
-        break;
-      }
-      hash = fullHex.slice(0, len);
-    }
-
-    this.agentHashes.set(hash, agentRoot);
-    return hash;
+    this.agentSessions.set(agentRoot, agentSession);
+    return agentSession;
   }
 
   // --- DB change routing ---

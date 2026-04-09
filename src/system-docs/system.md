@@ -26,6 +26,7 @@ Targets:
 Agent DB schema:
 ```
 views (name PK, title, content, created_at, updated_at)
+modules (name PK, type ['js'|'css'], content, created_at, updated_at)
 docs (name PK, content, created_at, updated_at)
 tasks (name PK, title, description, content, timeout_ms, created_at, updated_at)
 triggers (name PK, task_name FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
@@ -35,13 +36,13 @@ plugins (name PK, title, description, version, code, author, repository, license
 
 `created_at` and `updated_at` are Unix epoch seconds, managed automatically. `created_at` is set on INSERT, `updated_at` is set on INSERT and auto-bumped on every UPDATE by a trigger. Do not set them manually.
 
-Name format (enforced by the database): `views.name`, `docs.name`, `config.name`, `tasks.name`, `triggers.name` must match `[a-z0-9._-]+`.
+Name format (enforced by the database): `views.name`, `modules.name`, `docs.name`, `config.name`, `tasks.name`, `triggers.name` must match `[a-z0-9._-]+`.
 
 Returns an array of row objects. Use parameterized queries with `params` array.
 
 Restrictions:
 - **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
-- **`system.*` and `plugin.*` namespaces are read-only** in `docs`, `views`, `tasks`, and `triggers` tables (inserts, updates, and deletes are rejected).
+- **`system.*` and `plugin.*` namespaces are read-only** in `docs`, `views`, `modules`, `tasks`, and `triggers` tables (inserts, updates, and deletes are rejected).
 - **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
 - **`plugins` table is entirely read-only.**
 

@@ -144,20 +144,15 @@ function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
 }
 
 export function isViewHostname(hostname: string): boolean {
-  return hostname === 'view' || (hostname.startsWith('a') && hostname.endsWith('.view') && hostname.indexOf('.') > 0);
+  return hostname === 'view';
 }
 
 export function isFileHostname(hostname: string): boolean {
-  return hostname === 'file' || (hostname.startsWith('a') && hostname.endsWith('.file') && hostname.indexOf('.') > 0);
+  return hostname === 'file';
 }
 
-export function parseAgentHash(hostname: string): string | null {
-  const dotIndex = hostname.indexOf('.');
-  if (dotIndex > 0 && hostname.startsWith('a')) {
-    const hash = hostname.slice(1, dotIndex);
-    return hash.length > 0 ? hash : null;
-  }
-  return null;
+export function isModuleHostname(hostname: string): boolean {
+  return hostname === 'module';
 }
 
 export function parseViewName(url: URL): string {

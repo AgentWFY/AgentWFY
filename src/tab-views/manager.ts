@@ -174,7 +174,7 @@ interface TabViewManagerDeps {
   focusMainRendererWindow: () => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;
-  agentHash?: string;
+  session: Electron.Session;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
 }
@@ -222,6 +222,7 @@ export class TabViewManager {
         nodeIntegration: false,
         webSecurity: isUrlTab,
         backgroundThrottling: false,
+        session: this.deps.session,
       },
     });
     view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#ffffff');
@@ -379,22 +380,7 @@ export class TabViewManager {
         url += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
       }
     }
-    return this.rewriteAgentViewUrl(url);
-  }
-
-  private rewriteAgentViewUrl(src: string): string {
-    const hash = this.deps.agentHash;
-    if (!hash) return src;
-
-    // Rewrite agentview://view/... → agentview://a{hash}.view/...
-    // Rewrite agentview://file/... → agentview://a{hash}.file/...
-    if (src.startsWith('agentview://view/')) {
-      return src.replace('agentview://view/', `agentview://a${hash}.view/`);
-    }
-    if (src.startsWith('agentview://file/')) {
-      return src.replace('agentview://file/', `agentview://a${hash}.file/`);
-    }
-    return src;
+    return url;
   }
 
   setTabViewBounds(payload: unknown): void {
@@ -718,7 +704,6 @@ export class TabViewManager {
       return null;
     }
 
-    // isViewDocumentRequest checks hostname — works with both 'view' and 'a{hash}.view'
     if (!isViewDocumentRequest(parsedUrl)) {
       return null;
     }

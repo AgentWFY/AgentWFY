@@ -32,6 +32,7 @@ For an overview and quick start, see the [README](../README.md). For testing and
 - [Database System](#database-system)
   - [Docs Table](#docs-table)
   - [Views Table](#views-table)
+  - [Modules Table](#modules-table)
   - [Tasks Table](#tasks-table)
   - [Triggers Table](#triggers-table)
   - [Config Table](#config-table)
@@ -41,6 +42,7 @@ For an overview and quick start, see the [README](../README.md). For testing and
   - [View Runtime API](#view-runtime-api)
   - [CSS Design Tokens](#css-design-tokens)
   - [View Parameters](#view-parameters)
+  - [Modules](#modules)
   - [Hidden Tabs for Automation](#hidden-tabs-for-automation)
   - [Tab Features](#tab-features)
 - [Tasks & Automation](#tasks--automation)
@@ -457,6 +459,23 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables. A
 
 **4 Built-in System Views:** `system.docs`, `system.plugins`, `system.source-explorer`, `system.openai-compatible-provider.settings-view`
 
+### Modules Table
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `name` | TEXT (PK) | Module identifier |
+| `type` | TEXT | `'js'` or `'css'` |
+| `content` | TEXT | Module source code |
+| `created_at` | INTEGER | Unix epoch seconds |
+| `updated_at` | INTEGER | Unix epoch seconds |
+
+Modules are reusable JS/CSS stored in the database and served via `agentview://module/<name>`. See [Modules](#modules) for details.
+
+- **`system.*`** — Read-only system modules
+- **`plugin.*`** — Read-only plugin modules
+- **No prefix** — User-created, fully editable
+- **View-owned** — Modules named `<view_name>.*` are auto-deleted when the view is deleted
+
 ### Tasks Table
 
 | Column | Type | Description |
@@ -590,6 +609,67 @@ await openTab({ viewName: 'invoice-viewer', params: { invoiceId: '42' } })
 const params = new URLSearchParams(window.location.search)
 const invoiceId = params.get('invoiceId')
 ```
+
+### Modules
+
+Modules are reusable JS and CSS stored in the `modules` table and served via `agentview://module/<name>`. They let you split large views into independent, editable pieces and share code across views.
+
+**Loading in views:**
+
+```html
+<script src="agentview://module/my-chart-utils"></script>
+<script type="module" src="agentview://module/my-component"></script>
+<link rel="stylesheet" href="agentview://module/my-styles">
+```
+
+**Naming & Ownership:**
+
+- Module names follow the same format as view names: `[a-z0-9._-]+`
+- Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g., `dashboard.filters` is deleted when view `dashboard` is deleted)
+- Shared modules (e.g., `ui.data-table`, `lib.chart-utils`) are not owned by any view
+
+**Web Component Pattern:**
+
+Store each component as a JS module defining a custom element:
+
+```js
+// Module: dashboard.filters (type: js)
+class DashboardFilters extends HTMLElement {
+  connectedCallback() {
+    this.innerHTML = `
+      <style>.filters { display: flex; gap: 8px; }</style>
+      <div class="filters">
+        <select id="period"><option>Last 7 days</option><option>Last 30 days</option></select>
+      </div>
+    `
+  }
+}
+customElements.define('dashboard-filters', DashboardFilters)
+```
+
+The view becomes a thin shell:
+
+```html
+<!-- View: dashboard -->
+<script src="agentview://module/dashboard.filters"></script>
+<script src="agentview://module/dashboard.chart-panel"></script>
+<link rel="stylesheet" href="agentview://module/dashboard.layout">
+
+<dashboard-filters></dashboard-filters>
+<dashboard-chart-panel metric="revenue"></dashboard-chart-panel>
+```
+
+**Creating modules:**
+
+```js
+await runSql({
+  sql: `INSERT OR REPLACE INTO modules (name, type, content) VALUES (?, ?, ?)`,
+  params: ['dashboard.filters', 'js', `class DashboardFilters extends HTMLElement { ... }
+customElements.define('dashboard-filters', DashboardFilters)`]
+})
+```
+
+Reload the tab after updating any module.
 
 ### Hidden Tabs for Automation
 

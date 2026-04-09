@@ -4,8 +4,9 @@ import { pathToFileURL } from 'url';
 import { readFile } from 'fs/promises';
 import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
 import { serveFile } from './file-server.js';
-import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, parseAgentHash } from './view-document.js';
+import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from './view-document.js';
 import { getViewContent } from '../db/views.js';
+import { getModuleContent } from '../db/modules.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
@@ -60,17 +61,16 @@ function toHtmlResponse(status: number, html: string): Response {
 }
 
 export interface ViewProtocolHandlerOptions {
-  getAgentRoot: (hash: string | null) => string | null;
+  agentRoot: string;
   clientPath: string;
 }
 
 export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request) => Promise<Response> {
-  const { getAgentRoot, clientPath } = options;
+  const { agentRoot, clientPath } = options;
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     const { hostname } = url;
-    const hash = parseAgentHash(hostname);
 
     if (hostname === 'asset') {
       const assetPath = resolveViewAssetPath(decodeURIComponent(url.pathname || ''), clientPath);
@@ -86,11 +86,40 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       return net.fetch(pathToFileURL(assetPath).toString());
     }
 
-    const agentRoot = getAgentRoot(hash);
-    if (!agentRoot) {
-      return new Response('Agent not found', {
-        status: 404,
-        headers: { 'Cache-Control': 'no-store' },
+    if (isModuleHostname(hostname)) {
+      const moduleName = normalizeViewPathname(url.pathname);
+      if (!moduleName) {
+        return new Response('Missing module name', {
+          status: 400,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+
+      let record;
+      try {
+        record = await getModuleContent(agentRoot, moduleName);
+      } catch (error: unknown) {
+        console.error('[agentview] failed to read module from agent DB', error);
+        return new Response((error as Error)?.message || 'Failed to load module', {
+          status: 500,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+
+      if (!record) {
+        return new Response(`Module not found: ${moduleName}`, {
+          status: 404,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+
+      const contentType = record.type === 'css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8';
+      return new Response(record.content, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store',
+        },
       });
     }
 

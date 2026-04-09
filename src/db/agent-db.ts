@@ -4,7 +4,7 @@ import fs from 'fs';
 import { WRITE_RE, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, OnDbChange } from './sqlite.js';
 
-const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins']);
+const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules']);
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
@@ -65,12 +65,27 @@ CREATE TABLE IF NOT EXISTS plugins (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins'].map(t => `
+CREATE TABLE IF NOT EXISTS modules (
+  name TEXT NOT NULL PRIMARY KEY,
+  type TEXT NOT NULL CHECK(type IN ('js', 'css')),
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
+);
+
+CREATE TRIGGER IF NOT EXISTS modules_cleanup_on_view_delete AFTER DELETE ON views
+BEGIN
+  DELETE FROM modules WHERE name GLOB OLD.name || '.*';
+END;
+
+${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'].map(t => `
 CREATE TRIGGER IF NOT EXISTS ${t}_auto_updated_at AFTER UPDATE ON ${t}
 BEGIN
   UPDATE ${t} SET updated_at = unixepoch() WHERE rowid = NEW.rowid;
 END;`).join('\n')}
 `;
+
+const CHANGE_TRACKED_TABLES = ['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'];
 
 const CHANGE_TRACKING_SQL = `
 CREATE TEMP TABLE IF NOT EXISTS _changes (
@@ -79,106 +94,44 @@ CREATE TEMP TABLE IF NOT EXISTS _changes (
   op TEXT NOT NULL
 );
 
-CREATE TEMP TRIGGER IF NOT EXISTS _views_insert AFTER INSERT ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.name, 'insert');
+${CHANGE_TRACKED_TABLES.map(t => `
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_insert AFTER INSERT ON ${t} BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', NEW.name, 'insert');
 END;
-CREATE TEMP TRIGGER IF NOT EXISTS _views_update AFTER UPDATE ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', NEW.name, 'update');
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_update AFTER UPDATE ON ${t} BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', NEW.name, 'update');
 END;
-CREATE TEMP TRIGGER IF NOT EXISTS _views_delete AFTER DELETE ON views BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('views', OLD.name, 'delete');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_insert AFTER INSERT ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.name, 'insert');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_update AFTER UPDATE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', NEW.name, 'update');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_delete AFTER DELETE ON docs BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('docs', OLD.name, 'delete');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_insert AFTER INSERT ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.name, 'insert');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_update AFTER UPDATE ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', NEW.name, 'update');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_delete AFTER DELETE ON tasks BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('tasks', OLD.name, 'delete');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_insert AFTER INSERT ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.name, 'insert');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_update AFTER UPDATE ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', NEW.name, 'update');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_delete AFTER DELETE ON triggers BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('triggers', OLD.name, 'delete');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _config_insert AFTER INSERT ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.name, 'insert');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _config_update AFTER UPDATE ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', NEW.name, 'update');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS _config_delete AFTER DELETE ON config BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('config', OLD.name, 'delete');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_insert AFTER INSERT ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.name, 'insert');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_update AFTER UPDATE ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', NEW.name, 'update');
-END;
-CREATE TEMP TRIGGER IF NOT EXISTS plugins_delete AFTER DELETE ON plugins BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('plugins', OLD.name, 'delete');
-END;
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_delete AFTER DELETE ON ${t} BEGIN
+  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', OLD.name, 'delete');
+END;`).join('\n')}
 `;
 
-// Block agent from writing to system.* and plugin.* docs (created as TEMP so
+// Block agent from writing to system.* and plugin.* rows (created as TEMP so
 // they don't interfere with our own upserts on next launch)
-const SYSTEM_DOCS_GUARD_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_insert BEFORE INSERT ON docs
+function makeNamespaceGuardSql(table: string): string {
+  return `
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_insert BEFORE INSERT ON ${table}
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
 END;
 
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_update BEFORE UPDATE ON docs
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_update BEFORE UPDATE ON ${table}
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
   OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
 END;
 
-CREATE TEMP TRIGGER IF NOT EXISTS _docs_system_guard_delete BEFORE DELETE ON docs
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_delete BEFORE DELETE ON ${table}
 WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* docs are read-only');
+  SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
 END;
 `;
+}
 
-// Block agent from writing to system.* and plugin.* views
-const SYSTEM_VIEWS_GUARD_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_insert BEFORE INSERT ON views
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_update BEFORE UPDATE ON views
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
-  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _views_system_guard_delete BEFORE DELETE ON views
-WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* views are read-only');
-END;
-`;
+const NAMESPACE_GUARDED_TABLES = ['docs', 'views', 'modules', 'tasks', 'triggers'];
 
 function makeNameFormatSql(table: string, glob: string, message: string): string {
   return `
@@ -196,57 +149,9 @@ END;
 `;
 }
 
-const VIEW_NAME_FORMAT_SQL = makeNameFormatSql('views', '*[^a-z0-9._-]*', 'view name must contain only lowercase letters, digits, dots, hyphens, and underscores');
-const DOC_NAME_FORMAT_SQL = makeNameFormatSql('docs', '*[^a-z0-9._-]*', 'doc name must contain only lowercase letters, digits, dots, hyphens, and underscores');
-const CONFIG_NAME_FORMAT_SQL = makeNameFormatSql('config', '*[^a-z0-9._-]*', 'config name must contain only lowercase letters, digits, dots, hyphens, and underscores');
-const TASK_NAME_FORMAT_SQL = makeNameFormatSql('tasks', '*[^a-z0-9._-]*', 'task name must contain only lowercase letters, digits, dots, hyphens, and underscores');
-const TRIGGER_NAME_FORMAT_SQL = makeNameFormatSql('triggers', '*[^a-z0-9._-]*', 'trigger name must contain only lowercase letters, digits, dots, hyphens, and underscores');
+const NAME_FORMAT_TABLES = ['views', 'docs', 'modules', 'config', 'tasks', 'triggers'];
 // Plugin names: no dots (dots are namespace separators in plugin.* prefixes)
 const PLUGIN_NAME_FORMAT_SQL = makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens');
-
-// Block agent from writing to system.* and plugin.* tasks
-const SYSTEM_TASKS_GUARD_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_insert BEFORE INSERT ON tasks
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_update BEFORE UPDATE ON tasks
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
-  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _tasks_system_guard_delete BEFORE DELETE ON tasks
-WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* tasks are read-only');
-END;
-`;
-
-// Block agent from writing to system.* and plugin.* triggers
-const SYSTEM_TRIGGERS_GUARD_SQL = `
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_insert BEFORE INSERT ON triggers
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_update BEFORE UPDATE ON triggers
-WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
-  OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
-END;
-
-CREATE TEMP TRIGGER IF NOT EXISTS _triggers_system_guard_delete BEFORE DELETE ON triggers
-WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
-BEGIN
-  SELECT RAISE(ABORT, 'system.* and plugin.* triggers are read-only');
-END;
-`;
 
 // Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
 const SYSTEM_CONFIG_GUARD_SQL = `
@@ -263,46 +168,24 @@ BEGIN
 END;
 `;
 
-const DROP_GUARDS_SQL = `
-DROP TRIGGER IF EXISTS _docs_system_guard_insert;
-DROP TRIGGER IF EXISTS _docs_system_guard_update;
-DROP TRIGGER IF EXISTS _docs_system_guard_delete;
-DROP TRIGGER IF EXISTS _views_system_guard_insert;
-DROP TRIGGER IF EXISTS _views_system_guard_update;
-DROP TRIGGER IF EXISTS _views_system_guard_delete;
-DROP TRIGGER IF EXISTS _views_name_format_insert;
-DROP TRIGGER IF EXISTS _views_name_format_update;
-DROP TRIGGER IF EXISTS _docs_name_format_insert;
-DROP TRIGGER IF EXISTS _docs_name_format_update;
-DROP TRIGGER IF EXISTS _config_name_format_insert;
-DROP TRIGGER IF EXISTS _config_name_format_update;
-DROP TRIGGER IF EXISTS _tasks_system_guard_insert;
-DROP TRIGGER IF EXISTS _tasks_system_guard_update;
-DROP TRIGGER IF EXISTS _tasks_system_guard_delete;
-DROP TRIGGER IF EXISTS _triggers_system_guard_insert;
-DROP TRIGGER IF EXISTS _triggers_system_guard_update;
-DROP TRIGGER IF EXISTS _triggers_system_guard_delete;
-DROP TRIGGER IF EXISTS _tasks_name_format_insert;
-DROP TRIGGER IF EXISTS _tasks_name_format_update;
-DROP TRIGGER IF EXISTS _triggers_name_format_insert;
-DROP TRIGGER IF EXISTS _triggers_name_format_update;
-DROP TRIGGER IF EXISTS _plugins_name_format_insert;
-DROP TRIGGER IF EXISTS _plugins_name_format_update;
-DROP TRIGGER IF EXISTS _config_system_guard_insert;
-DROP TRIGGER IF EXISTS _config_system_guard_delete;
-`;
+const DROP_GUARDS_SQL = [
+  ...NAMESPACE_GUARDED_TABLES.flatMap(t => [
+    `DROP TRIGGER IF EXISTS _${t}_system_guard_insert;`,
+    `DROP TRIGGER IF EXISTS _${t}_system_guard_update;`,
+    `DROP TRIGGER IF EXISTS _${t}_system_guard_delete;`,
+  ]),
+  'DROP TRIGGER IF EXISTS _config_system_guard_insert;',
+  'DROP TRIGGER IF EXISTS _config_system_guard_delete;',
+  ...[...NAME_FORMAT_TABLES, 'plugins'].flatMap(t => [
+    `DROP TRIGGER IF EXISTS _${t}_name_format_insert;`,
+    `DROP TRIGGER IF EXISTS _${t}_name_format_update;`,
+  ]),
+].join('\n');
 
 const ALL_GUARD_SQL = [
-  SYSTEM_DOCS_GUARD_SQL,
-  SYSTEM_VIEWS_GUARD_SQL,
-  SYSTEM_TASKS_GUARD_SQL,
-  SYSTEM_TRIGGERS_GUARD_SQL,
+  ...NAMESPACE_GUARDED_TABLES.map(t => makeNamespaceGuardSql(t)),
   SYSTEM_CONFIG_GUARD_SQL,
-  VIEW_NAME_FORMAT_SQL,
-  DOC_NAME_FORMAT_SQL,
-  CONFIG_NAME_FORMAT_SQL,
-  TASK_NAME_FORMAT_SQL,
-  TRIGGER_NAME_FORMAT_SQL,
+  ...NAME_FORMAT_TABLES.map(t => makeNameFormatSql(t, '*[^a-z0-9._-]*', `${t.replace(/s$/, '')} name must contain only lowercase letters, digits, dots, hyphens, and underscores`)),
   PLUGIN_NAME_FORMAT_SQL,
 ];
 
@@ -488,6 +371,7 @@ class AgentDb {
     docs: Array<{ name: string; content: string }>,
     views: Array<{ name: string; title: string; content: string }>,
     config: Array<{ name: string; value: string | null; description: string }>,
+    modules?: Array<{ name: string; type: string; content: string }>,
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
@@ -515,6 +399,13 @@ class AgentDb {
             title = excluded.title,
             content = excluded.content
       `);
+      const upsertModule = this.db.prepare(`
+        INSERT INTO modules (name, type, content)
+          VALUES (?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            type = excluded.type,
+            content = excluded.content
+      `);
       const upsertConfig = this.db.prepare(`
         INSERT INTO config (name, value, description)
           VALUES (?, ?, ?)
@@ -532,6 +423,11 @@ class AgentDb {
       for (const v of views) {
         upsertView.run(v.name, v.title, v.content);
       }
+      if (modules) {
+        for (const m of modules) {
+          upsertModule.run(m.name, m.type, m.content);
+        }
+      }
       for (const c of config) {
         upsertConfig.run(c.name, c.value, c.description);
       }
@@ -548,6 +444,9 @@ class AgentDb {
       ).run(`plugin.${name}`, `plugin.${name}.%`);
       this.db.prepare(
         "DELETE FROM views WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.prepare(
+        "DELETE FROM modules WHERE name = ? OR name LIKE ?"
       ).run(`plugin.${name}`, `plugin.${name}.%`);
       this.db.prepare(
         "DELETE FROM config WHERE name = ? OR name LIKE ?"

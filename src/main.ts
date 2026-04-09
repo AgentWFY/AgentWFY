@@ -13,7 +13,6 @@ import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
-import { createViewProtocolHandler } from './protocol/view-handler.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -533,21 +532,6 @@ app.on('ready', async () => {
     const clientDir = path.dirname(clientPath);
     const absolutePath = path.join(clientDir, p === '/' ? 'index.html' : p);
     return net.fetch(pathToFileURL(absolutePath).toString());
-  });
-
-  const handleViewRequest = createViewProtocolHandler({
-    getAgentRoot: (hash) => {
-      if (hash) {
-        return windowManager.getAgentRootForHash(hash);
-      }
-      const contexts = windowManager.getAllContexts();
-      if (contexts.length === 1) return contexts[0].agentRoot;
-      return null;
-    },
-    clientPath,
-  });
-  protocol.handle('agentview', (request) => {
-    return handleViewRequest(request);
   });
 
   startAutoUpdater();

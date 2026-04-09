@@ -15,7 +15,7 @@ Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<meth
 
 ## View Naming Convention
 
-View names must contain only **lowercase letters, digits, dots, hyphens, and underscores** (e.g. `my_dashboard`, `sales.overview`). This is enforced by the database — inserts/updates with invalid names will be rejected.
+View names must contain only **lowercase letters, digits, dots, hyphens, and underscores** (e.g. `my-dashboard`, `sales.overview`). This is enforced by the database — inserts/updates with invalid names will be rejected.
 
 DB views follow a naming convention with prefixes:
 
@@ -68,33 +68,36 @@ const result = await window.agentwfy.fetch({
 // result: { status: 200, body: '...' }
 ```
 
-## Working with Large Views
+## Modules
 
-For small views (under ~40000 characters), read/write the full content normally. For large views, use targeted reads and surgical edits instead of loading everything.
+Modules store reusable JS/CSS in the `modules` table, served via `agentview://module/<name>`. Use them to split large views into components and share code across views.
 
-**Structure views with sections** — use `<style id="...">` and `<script id="...">` tags to create named sections. Add a SECTIONS comment at the top of `<head>` listing all IDs with one-line descriptions. Split CSS by concern (layout, components, page-specific) and JS by concern (state, API, rendering, init). This lets you read just the TOC (~500 chars) to understand the view, then load only the section you need.
-
-**Reading a section** — use `INSTR()` to find a section, `SUBSTR()` to read it:
-```js
-// Read the TOC
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, 1, 500) as head FROM views WHERE name = ?', params: [viewName] })
-
-// Read a specific section
-const [{start}] = await runSql({
-  target: 'agent',
-  sql: `SELECT INSTR(content, '<script id="script-chart">') as start FROM views WHERE name = ?`,
-  params: [viewName]
-})
-const [{end}] = await runSql({
-  target: 'agent',
-  sql: `SELECT INSTR(SUBSTR(content, ?), '</script>') + ? - 1 + 9 as end FROM views WHERE name = ?`,
-  params: [start, start, viewName]
-})
-await runSql({ target: 'agent', sql: 'SELECT SUBSTR(content, ?, ?) as s FROM views WHERE name = ?', params: [start, end - start, viewName] })
+```
+modules (name PK, type ['js'|'css'], content, created_at, updated_at)
 ```
 
-**Surgical edits** — use `REPLACE()` with enough context in `oldText` to match uniquely (`REPLACE()` replaces all occurrences):
+**Loading in views:** `<script src="agentview://module/name">` for JS, `<link rel="stylesheet" href="agentview://module/name">` for CSS. `type="module"` also works.
+
+**Naming:** same format as views (`[a-z0-9._-]+`). `system.*` and `plugin.*` are read-only. Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g. `dashboard.filters` is deleted with view `dashboard`). Shared modules (e.g. `ui.data-table`) are not tied to any view.
+
+**CRUD:**
 ```js
+// Create/update
+await runSql({ target: 'agent', sql: `INSERT OR REPLACE INTO modules (name, type, content) VALUES (?, ?, ?)`, params: ['dashboard.filters', 'js', jsCode] })
+// Edit one module independently
+await runSql({ target: 'agent', sql: `UPDATE modules SET content = ? WHERE name = ?`, params: [newCode, 'dashboard.filters'] })
+```
+
+`reloadTab` after updating any module.
+
+**Recommended pattern — Web Components:** store each UI piece as a JS module defining a custom element. The view becomes a thin shell of `<script src>` tags and custom element tags. Each component is independently editable without touching the view or other components.
+
+## Working with Large Views
+
+For large views, prefer splitting into modules. If editing inline content directly, use targeted reads and surgical edits:
+
+```js
+// Surgical edit via REPLACE()
 await runSql({
   target: 'agent',
   sql: 'UPDATE views SET content = REPLACE(content, ?, ?) WHERE name = ?',
@@ -102,7 +105,7 @@ await runSql({
 })
 ```
 
-`reloadTab` after updating view content when presenting the result to the user or when you need to interact with the tab.
+`reloadTab` after updating view content.
 
 ## Browser API Limitations
 
