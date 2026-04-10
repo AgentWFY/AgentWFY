@@ -139,6 +139,9 @@ class AgentSessionStore {
     const newAgentRoot: string | null = detail?.agentRoot ?? null
     const agents: Array<{ path: string }> | undefined = detail?.agents
 
+    // Skip if the agent hasn't actually changed (e.g. broadcastSidebarState after trigger start)
+    if (newAgentRoot === this._currentAgentRoot) return
+
     // Save current state for the previous agent
     if (this._currentAgentRoot) {
       this._stateCache.set(this._currentAgentRoot, { ...this._state })
