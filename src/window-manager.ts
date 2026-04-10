@@ -284,6 +284,7 @@ class WindowManager {
           this.broadcastSidebarState();
         }).catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+        this.sendToRenderer(Channels.agent.snapshot, ctx.sessionManager.getSnapshot());
         this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
       }
     });
