@@ -21,9 +21,11 @@ export class TlApp extends HTMLElement {
   private unlistenAgentDbChanged: (() => void) | null = null
   private unlistenZenMode: (() => void) | null = null
   private rootEl!: HTMLDivElement
+  private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
   private isResizing = false
   private isZenMode = false
+  private isAgentSidebarVisible = true
 
   private openPanel(panel: string) {
     if (this.activeSidebarPanel !== panel) {
@@ -68,6 +70,15 @@ export class TlApp extends HTMLElement {
     }
     this.isZenMode = isZen
     this.updateSidebar()
+  }
+
+  private onToggleAgentSidebar = () => {
+    this.isAgentSidebarVisible = !this.isAgentSidebarVisible
+    this.agentSidebarEl.style.display = this.isAgentSidebarVisible ? '' : 'none'
+    if (navigator.platform.includes('Mac')) {
+      this.rootEl.classList.toggle('agent-sidebar-hidden', !this.isAgentSidebarVisible)
+    }
+    window.dispatchEvent(new Event('resize'))
   }
 
   private onFocusChatInput = () => {
@@ -292,6 +303,13 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
         display: none !important;
       }
+      /* macOS traffic light padding when agent sidebar is hidden */
+      .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
+        padding-left: 78px;
+      }
+      .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-main-column > .awfy-app-header {
+        padding-left: 74px;
+      }
       /* Agent sidebar border when chat panel is closed */
       awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {
         border-right: 1px solid var(--color-border);
@@ -313,8 +331,8 @@ export class TlApp extends HTMLElement {
     body.className = 'awfy-app-body'
 
     // Agent sidebar (Discord-style)
-    const agentSidebar = document.createElement('awfy-agent-sidebar')
-    body.appendChild(agentSidebar)
+    this.agentSidebarEl = document.createElement('awfy-agent-sidebar')
+    body.appendChild(this.agentSidebarEl)
 
     // ── Sidebar (full-height: own top bar + chat/tasks) ──
     this.sidebarEl = document.createElement('div')
@@ -412,6 +430,7 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    window.addEventListener('agentwfy:toggle-agent-sidebar', this.onToggleAgentSidebar)
     this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
@@ -425,6 +444,7 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    window.removeEventListener('agentwfy:toggle-agent-sidebar', this.onToggleAgentSidebar)
     this.unlistenZenMode?.()
     this.unlistenZenMode = null
     window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)

@@ -845,6 +845,9 @@ class WindowManager {
       case 'toggle-task-panel':
         this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-task-panel');
         break;
+      case 'toggle-agent-sidebar':
+        this.rendererBridge?.dispatchRendererWindowEvent('agentwfy:toggle-agent-sidebar');
+        break;
       case 'toggle-zen-mode':
         this.toggleZenMode();
         break;
