@@ -176,6 +176,7 @@ registerProviderHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   () => windowManager.getRendererWebContents() ?? undefined,
   reconnectSessionManager,
+  (agentRoot, change) => windowManager.notifyDbChange(agentRoot, change),
 );
 registerAgentSessionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).sessionManager,

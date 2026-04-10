@@ -7,7 +7,7 @@ import { listConfig } from '../db/config.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { installPackageData, uninstallPlugin, readValidatedPackage } from '../plugins/installer.js';
 import { storeRemove } from '../ipc/store.js';
-import { setAgentConfig, clearAgentConfig, removeAgentConfig, getGlobalValue } from '../settings/config.js';
+import { getGlobalValue } from '../settings/config.js';
 import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
 import {
   showOpenAgentDialog,
@@ -39,6 +39,9 @@ export interface CommandPaletteManagerDeps {
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleShortcutAction: (action: string) => void;
   reloadRenderer: () => void;
+  setAgentConfig: (name: string, value: unknown) => void;
+  clearAgentConfig: (name: string) => void;
+  removeAgentConfig: (name: string) => void;
 }
 
 /** Extra padding around the palette content for the CSS drop-shadow to render. */
@@ -411,7 +414,7 @@ export class CommandPaletteManager {
 
   updateSetting(name: string, rawValue: unknown, scope?: 'agent' | 'global'): { success: boolean; error?: string } {
     if (scope === 'agent') {
-      setAgentConfig(this.deps.getAgentRoot(), name, rawValue);
+      this.deps.setAgentConfig(name, rawValue);
     } else {
       globalConfigSet(name, rawValue);
     }
@@ -421,9 +424,9 @@ export class CommandPaletteManager {
   private clearAgentOverride(name: string): void {
     // system.* and plugin.* rows can't be deleted — set value to NULL instead
     if (name.startsWith('system.') || name.startsWith('plugin.')) {
-      clearAgentConfig(this.deps.getAgentRoot(), name);
+      this.deps.clearAgentConfig(name);
     } else {
-      removeAgentConfig(this.deps.getAgentRoot(), name);
+      this.deps.removeAgentConfig(name);
     }
   }
 

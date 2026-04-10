@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import { createRequire } from 'node:module'
 import { getConfigValue, setAgentConfig, clearAgentConfig } from '../settings/config.js'
+import type { OnDbChange } from '../db/sqlite.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderFactory } from '../agent/provider_types.js'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
@@ -34,17 +35,20 @@ export class PluginRegistry {
   private readonly publish: (topic: string, data: unknown) => void
   private readonly providerRegistry: ProviderRegistry | undefined
   private readonly functionRegistry: FunctionRegistry | undefined
+  private readonly onDbChange: OnDbChange | undefined
 
   constructor(opts: {
     agentRoot: string
     publish: (topic: string, data: unknown) => void
     providerRegistry?: ProviderRegistry
     functionRegistry?: FunctionRegistry
+    onDbChange?: OnDbChange
   }) {
     this.agentRoot = opts.agentRoot
     this.publish = opts.publish
     this.providerRegistry = opts.providerRegistry
     this.functionRegistry = opts.functionRegistry
+    this.onDbChange = opts.onDbChange
   }
 
   loadPlugin(row: { name: string; title: string; description: string; version: string; code: string }): void {
@@ -83,7 +87,7 @@ export class PluginRegistry {
           return getConfigValue(this.agentRoot, name, fallback)
         },
         setConfig: (name: string, value: unknown): void => {
-          setAgentConfig(this.agentRoot, name, value)
+          setAgentConfig(this.agentRoot, name, value, this.onDbChange)
         },
         registerProvider: (factory: Parameters<PluginApi['registerProvider']>[0]) => {
           if (!this.providerRegistry) {
@@ -128,7 +132,7 @@ export class PluginRegistry {
 
     this.functionRegistry?.unregisterBySource(name)
     const removedProviders = this.providerRegistry?.unregisterBySource(name) ?? []
-    handleProviderFallback(this.agentRoot, removedProviders)
+    handleProviderFallback(this.agentRoot, removedProviders, this.onDbChange)
 
     this.plugins.delete(name)
   }
@@ -146,10 +150,10 @@ export class PluginRegistry {
   }
 }
 
-function handleProviderFallback(agentRoot: string, removedProviders: string[]): void {
+function handleProviderFallback(agentRoot: string, removedProviders: string[], onDbChange?: OnDbChange): void {
   if (removedProviders.length === 0) return
   const currentProvider = getConfigValue(agentRoot, 'system.provider') as string | undefined
   if (currentProvider && removedProviders.includes(currentProvider)) {
-    clearAgentConfig(agentRoot, 'system.provider')
+    clearAgentConfig(agentRoot, 'system.provider', onDbChange)
   }
 }

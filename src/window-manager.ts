@@ -4,7 +4,7 @@ import fs from 'fs';
 import { RendererBridge } from './renderer-bridge.js';
 import { TabViewManager } from './tab-views/manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
-import { getConfigValue, getGlobalValue, setAgentConfig } from './settings/config.js';
+import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from './settings/config.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { TriggerEngine } from './triggers/engine.js';
@@ -154,6 +154,18 @@ class WindowManager {
       reloadRenderer: () => {
         const wc = this.rendererView?.webContents;
         if (wc && !wc.isDestroyed()) wc.reload();
+      },
+      setAgentConfig: (name, value) => {
+        const agentRoot = this.activeAgentRoot!;
+        setAgentConfig(agentRoot, name, value, (change) => this.onRuntimeDbChange(agentRoot, change));
+      },
+      clearAgentConfig: (name) => {
+        const agentRoot = this.activeAgentRoot!;
+        clearAgentConfig(agentRoot, name, (change) => this.onRuntimeDbChange(agentRoot, change));
+      },
+      removeAgentConfig: (name) => {
+        const agentRoot = this.activeAgentRoot!;
+        removeAgentConfig(agentRoot, name, (change) => this.onRuntimeDbChange(agentRoot, change));
       },
     });
 
@@ -320,7 +332,7 @@ class WindowManager {
     const providerRegistry = new ProviderRegistry();
     providerRegistry.register(createOpenAICompatibleFactory({
       getConfig: (key, fallback) => getConfigValue(agentRoot, key, fallback),
-      setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
+      setConfig: (key, value) => setAgentConfig(agentRoot, key, value, (change) => this.onRuntimeDbChange(agentRoot, change)),
     }));
 
     const functionRegistry = new FunctionRegistry();
@@ -328,7 +340,8 @@ class WindowManager {
     const eventBus = new EventBus();
     const busPublish = (topic: string, data: unknown) => eventBus.publish(topic, data);
 
-    const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry);
+    const notifyDbChange = (change: AgentDbChange) => this.onRuntimeDbChange(agentRoot, change);
+    const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry, notifyDbChange);
 
     const agentSession = this.getOrCreateAgentSession(agentRoot);
 
@@ -718,6 +731,10 @@ class WindowManager {
   }
 
   // --- DB change routing ---
+
+  notifyDbChange(agentRoot: string, change: AgentDbChange): void {
+    this.onRuntimeDbChange(agentRoot, change);
+  }
 
   /** Handle DB changes from runtime functions (exec workers, tasks, views).
    *  Shares the same side-effect logic as onDbChange but doesn't need an IPC event. */

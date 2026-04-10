@@ -1,6 +1,7 @@
 import { storeGet } from '../ipc/store.js';
 import { getOrCreateAgentDb } from '../db/agent-db.js';
 import { globalConfigExists, globalConfigGet } from './global-config.js';
+import type { OnDbChange } from '../db/sqlite.js';
 
 function readAgentConfigValue(agentRoot: string, name: string): string | undefined {
   try {
@@ -32,36 +33,36 @@ export function getConfigValue(agentRoot: string, name: string, fallback?: unkno
   return fallback;
 }
 
-export function setAgentConfig(agentRoot: string, name: string, value: unknown): void {
+export function setAgentConfig(agentRoot: string, name: string, value: unknown, onDbChange?: OnDbChange): void {
   const db = getOrCreateAgentDb(agentRoot);
   const strValue = String(value);
   // UPDATE first — works for all existing rows (including guarded system/plugin rows)
-  db.run({ sql: 'UPDATE config SET value = ? WHERE name = ?', params: [strValue, name] });
+  db.run({ sql: 'UPDATE config SET value = ? WHERE name = ?', params: [strValue, name] }, onDbChange);
   // INSERT for new user rows — guard blocks this for system/plugin, but those already exist from sync
   try {
-    db.run({ sql: 'INSERT INTO config (name, value) VALUES (?, ?)', params: [name, strValue] });
+    db.run({ sql: 'INSERT INTO config (name, value) VALUES (?, ?)', params: [name, strValue] }, onDbChange);
   } catch {
     // Row already exists (UPDATE handled it) or guard blocked system/plugin INSERT
   }
 }
 
-export function clearAgentConfig(agentRoot: string, name: string): void {
+export function clearAgentConfig(agentRoot: string, name: string, onDbChange?: OnDbChange): void {
   try {
     getOrCreateAgentDb(agentRoot).run({
       sql: 'UPDATE config SET value = NULL WHERE name = ?',
       params: [name],
-    });
+    }, onDbChange);
   } catch {
     // DB not ready
   }
 }
 
-export function removeAgentConfig(agentRoot: string, name: string): void {
+export function removeAgentConfig(agentRoot: string, name: string, onDbChange?: OnDbChange): void {
   try {
     getOrCreateAgentDb(agentRoot).run({
       sql: 'DELETE FROM config WHERE name = ?',
       params: [name],
-    });
+    }, onDbChange);
   } catch {
     // DB not ready or guard blocked
   }
