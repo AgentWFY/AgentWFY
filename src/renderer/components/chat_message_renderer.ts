@@ -45,6 +45,10 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
           }
           current.textParts.push(block.text)
         } else if (block.type === 'thinking') {
+          if (current.tools.length > 0) {
+            segments.push(current)
+            current = { textParts: [], thinkingParts: [], tools: [], errorText: '' }
+          }
           current.thinkingParts.push(block.text)
         } else if (block.type === 'error') {
           current.errorText = block.text
