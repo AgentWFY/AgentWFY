@@ -11,6 +11,7 @@ export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'reload-current-tab':    { label: 'Reload Current Tab', defaultKey: 'mod+r' },
   'reload-window':         { label: 'Reload Window',      defaultKey: 'mod+shift+r' },
   'add-agent':             { label: 'Add Agent',          defaultKey: 'mod+o' },
+  'toggle-agent-sidebar':  { label: 'Toggle Agent Sidebar', defaultKey: 'mod+b' },
   'toggle-zen-mode':       { label: 'Zen Mode',           defaultKey: 'mod+.' },
   'new-session':           { label: 'New Session',        defaultKey: 'mod+t' },
   'switch-to-tab-1':       { label: 'Switch to Tab 1',    defaultKey: 'mod+1' },
