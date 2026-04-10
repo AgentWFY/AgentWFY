@@ -280,7 +280,9 @@ class WindowManager {
     rwc.once('did-finish-load', () => {
       const ctx = this.getActiveAgentContext();
       if (ctx) {
-        ctx.triggerEngine.start().catch(err => console.error('[triggers] Initial start failed:', err));
+        ctx.triggerEngine.start().then(() => {
+          this.broadcastSidebarState();
+        }).catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
         this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
       }
