@@ -40,7 +40,7 @@ export class Agent {
 
   private listeners = new Set<(e: AgentEvent) => void>()
   providerSession: ProviderSession
-  private followUpQueue: string[] = []
+  private followUpQueue: Array<{ text: string; files?: FileContent[] }> = []
   private runningPrompt?: Promise<void>
   private resolveRunningPrompt?: () => void
   private retryAbortController: AbortController | null = null
@@ -95,9 +95,11 @@ export class Agent {
     this._state.messages = []
   }
 
-  followUp(text: string): void {
-    if (!text || !text.trim()) return
-    this.followUpQueue.push(text)
+  followUp(text: string, files?: FileContent[]): void {
+    const hasText = !!(text && text.trim())
+    const hasFiles = !!(files && files.length > 0)
+    if (!hasText && !hasFiles) return
+    this.followUpQueue.push({ text, files })
   }
 
   abort(): void {
@@ -348,8 +350,8 @@ export class Agent {
         // Check for queued follow-up messages
         const nextFollowUp = this.followUpQueue.shift()
         if (!nextFollowUp) break
-        currentText = nextFollowUp
-        currentFiles = undefined
+        currentText = nextFollowUp.text
+        currentFiles = nextFollowUp.files
       }
     } catch (err) {
       this._state.error = (err as Error)?.message || String(err)

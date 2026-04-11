@@ -2,7 +2,7 @@ import { Notification, nativeImage, app } from 'electron'
 import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
-import type { RetryState } from './types.js'
+import type { RetryState, FileContent } from './types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
@@ -122,7 +122,7 @@ export class AgentSessionManager {
     return count
   }
 
-  async createSession(opts: { label?: string; prompt: string; providerId?: string }): Promise<string> {
+  async createSession(opts: { label?: string; prompt: string; providerId?: string; files?: FileContent[] }): Promise<string> {
     await this.newSession(opts.providerId)
 
     if (opts.label) {
@@ -132,7 +132,7 @@ export class AgentSessionManager {
     }
 
     const agent = this.activeAgent!
-    agent.prompt(opts.prompt).catch((err) => {
+    agent.prompt(opts.prompt, { files: opts.files }).catch((err) => {
       console.error('[AgentSessionManager] auto-prompt failed', err)
     })
 
@@ -149,12 +149,12 @@ export class AgentSessionManager {
     this.notify()
   }
 
-  async sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
+  async sendMessage(text: string, options?: { streamingBehavior?: 'followUp'; files?: FileContent[] }): Promise<void> {
     // If the active session has an agent in memory, send directly
     const activeAgent = this.activeAgent
     if (activeAgent) {
       const behavior = options?.streamingBehavior ?? (activeAgent.isStreaming ? 'followUp' : undefined)
-      await activeAgent.prompt(text, { streamingBehavior: behavior })
+      await activeAgent.prompt(text, { streamingBehavior: behavior, files: options?.files })
       return
     }
 
@@ -180,7 +180,7 @@ export class AgentSessionManager {
 
     this.notify()
 
-    await agent.prompt(text)
+    await agent.prompt(text, { files: options?.files })
   }
 
   async abortActive(): Promise<void> {

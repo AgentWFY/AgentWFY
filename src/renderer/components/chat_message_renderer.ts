@@ -1,6 +1,6 @@
 import { renderMarkdown } from '../markdown.js'
 import type { DisplayMessage, Block } from '../../agent/provider_types.js'
-import { escapeHtml } from './chat_utils.js'
+import { escapeHtml, imageDataUrl } from './chat_utils.js'
 
 interface ToolPair {
   id: string
@@ -10,12 +10,18 @@ interface ToolPair {
   isError: boolean
 }
 
+interface RenderFile {
+  mimeType: string
+  data: string
+}
+
 interface RenderBlock {
   type: 'user' | 'assistant'
   text: string
   thinking: string
   error: string
   tools: ToolPair[]
+  files: RenderFile[]
   ref: DisplayMessage
 }
 
@@ -28,7 +34,13 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
         .filter(b => b.type === 'text')
         .map(b => (b as { type: 'text'; text: string }).text)
         .join('')
-      blocks.push({ type: 'user', text, thinking: '', error: '', tools: [], ref: msg })
+      const files: RenderFile[] = msg.blocks
+        .filter(b => b.type === 'file')
+        .map(b => {
+          const f = b as { type: 'file'; mimeType: string; data: string }
+          return { mimeType: f.mimeType, data: f.data }
+        })
+      blocks.push({ type: 'user', text, thinking: '', error: '', tools: [], files, ref: msg })
     } else if (msg.role === 'assistant') {
       // Split into segments at tool call boundaries to preserve interleaved order.
       // Each segment before a tool group gets its own render block, so text after
@@ -76,6 +88,7 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
           thinking: seg.thinkingParts.join(''),
           error: seg.errorText,
           tools: seg.tools,
+          files: [],
           ref: msg,
         })
       }
@@ -226,7 +239,7 @@ function renderToolHtml(tool: ToolPair, isOpen: boolean): string {
   if (imageFiles.length > 0) {
     const imagesContent = imageFiles.map(f => {
       const ext = f.mimeType.split('/')[1]?.toUpperCase() || 'IMG'
-      return `<div class="tb-img-wrap"><img src="data:${escapeHtml(f.mimeType)};base64,${f.data}"><div class="tb-img-meta"><span class="pill">${escapeHtml(ext)}</span></div></div>`
+      return `<div class="tb-img-wrap"><img src="${imageDataUrl(f.mimeType, f.data)}"><div class="tb-img-meta"><span class="pill">${escapeHtml(ext)}</span></div></div>`
     }).join('')
     imagesPaneHtml = `<div class="tb-pane" data-tool-pane="${toolEid}" data-pane="images">${imagesContent}</div>`
   }
@@ -245,6 +258,7 @@ interface BlockCacheEntry {
   toolCount: number
   toolResultCount: number
   toolOpenState: string
+  fileCount: number
 }
 
 const _blockCache = new WeakMap<HTMLElement, BlockCacheEntry>()
@@ -259,7 +273,8 @@ function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCac
     toolResultCount: block.tools.reduce((n, t) => n + (t.result !== null ? 1 : 0), 0),
     toolOpenState: block.tools.length > 0
       ? block.tools.map(t => openToolSet.has(t.id) ? '1' : '0').join('')
-      : ''
+      : '',
+    fileCount: block.files.length,
   }
 }
 
@@ -270,11 +285,24 @@ function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
     && a.toolCount === b.toolCount
     && a.toolResultCount === b.toolResultCount
     && a.toolOpenState === b.toolOpenState
+    && a.fileCount === b.fileCount
+}
+
+function renderUserFilesHtml(files: RenderFile[]): string {
+  if (files.length === 0) return ''
+  const parts = files.map(f => {
+    if (f.mimeType.startsWith('image/')) {
+      return `<img class="user-file-image" src="${imageDataUrl(f.mimeType, f.data)}" alt="attachment">`
+    }
+    return `<span class="file-badge">${escapeHtml(f.mimeType)}</span>`
+  })
+  return `<div class="user-files">${parts.join('')}</div>`
 }
 
 function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>): string {
   if (block.type === 'user') {
-    return `<div class="block block-user">${renderMarkdown(block.text)}</div>`
+    const textHtml = block.text ? renderMarkdown(block.text) : ''
+    return `<div class="block block-user">${textHtml}${renderUserFilesHtml(block.files)}</div>`
   }
   if (block.type === 'assistant') {
     if (!block.text.trim() && !block.thinking.trim() && !block.error && block.tools.length === 0) return ''

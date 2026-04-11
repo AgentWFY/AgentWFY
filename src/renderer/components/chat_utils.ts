@@ -45,3 +45,7 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
+export function imageDataUrl(mimeType: string, base64Data: string): string {
+  return `data:${escapeHtml(mimeType)};base64,${base64Data}`
+}
+
