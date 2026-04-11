@@ -116,6 +116,7 @@ svg.ic {
 .bt-triggers { background: color-mix(in srgb, #61afef 15%, transparent); color: #61afef; }
 .bt-plugins { background: color-mix(in srgb, #c678dd 15%, transparent); color: #c678dd; }
 .bt-config { background: color-mix(in srgb, var(--color-green-fg) 15%, transparent); color: var(--color-green-fg); }
+.bt-modules { background: color-mix(in srgb, #e5c07b 15%, transparent); color: #e5c07b; }
 
 /* Status badges */
 .st { font-size: 9px; padding: 1px 5px; border-radius: 6px; font-weight: 600; }
@@ -539,7 +540,6 @@ const agy = window.agentwfy;
 const $ = id => document.getElementById(id);
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-let allDocs = [], allViews = [], allTasks = [], allTriggers = [], allPlugins = [], allConfig = [];
 let mode = 'docs', selected = null, editing = false, dirty = false, lastRun = null;
 
 const IC = {
@@ -564,6 +564,7 @@ function lineNums(c) { const n = (c || '').split('\n').length; return Array.from
 function detectLang(item) {
   if (item.type === 'views') return 'html';
   if (item.type === 'tasks' || item.type === 'plugins') return 'js';
+  if (item.type === 'modules') return item.subType === 'css' ? 'css' : 'js';
   const name = (item.name || '').toLowerCase();
   if (name.endsWith('.html') || name.endsWith('.htm')) return 'html';
   if (name.endsWith('.css')) return 'css';
@@ -576,8 +577,7 @@ function detectLang(item) {
 // ── UI Building Blocks ──
 
 function typeBadge(type) {
-  const labels = { docs: 'DOC', views: 'VIEW', tasks: 'TASK', triggers: 'TRIGGER', plugins: 'PLUGIN', config: 'CONFIG' };
-  return '<span class="bt bt-' + type + '">' + labels[type] + '</span>';
+  return '<span class="bt bt-' + type + '">' + MODE_CONFIG[type].singular.toUpperCase() + '</span>';
 }
 
 function hdBar(badge, title, info, actions, showDirty) {
@@ -628,56 +628,120 @@ function toast(msg, type) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+// ── Mode Config ──
+// Modes with `hasSubType: true` have a row-level `type` column (e.g. triggers.type, modules.type)
+// that collides with the UI's mode-type. We preserve the row's type as `selected.subType`.
+
+const MODE_CONFIG = {
+  docs: {
+    label: 'Docs', singular: 'doc', table: 'docs', creatable: true,
+    loadSql: "SELECT name, content, updated_at FROM docs ORDER BY name",
+    create: {
+      title: 'Create Doc',
+      fields: '<label>Name</label><input type="text" id="cName" placeholder="my-doc">',
+      buildInsert: (name) => ({
+        sql: "INSERT INTO docs (name, content) VALUES (?, ?)",
+        params: [name, ''],
+      }),
+    },
+  },
+  views: {
+    label: 'Views', singular: 'view', table: 'views', creatable: false,
+    loadSql: "SELECT name, title, LENGTH(content) as content_length, created_at, updated_at FROM views ORDER BY name",
+    lazyContent: true,
+  },
+  modules: {
+    label: 'Modules', singular: 'module', table: 'modules', creatable: true,
+    loadSql: "SELECT name, type, LENGTH(content) as content_length, created_at, updated_at FROM modules ORDER BY name",
+    lazyContent: true, hasSubType: true,
+    create: {
+      title: 'Create Module',
+      fields: '<label>Name</label><input type="text" id="cName" placeholder="my-module">'
+        + '<label>Type</label><select id="cModType"><option value="js">js</option><option value="css">css</option></select>',
+      buildInsert: (name) => ({
+        sql: "INSERT INTO modules (name, type, content) VALUES (?, ?, ?)",
+        params: [name, $('cModType').value, ''],
+      }),
+    },
+  },
+  tasks: {
+    label: 'Tasks', singular: 'task', table: 'tasks', creatable: true,
+    loadSql: "SELECT name, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title",
+    create: {
+      title: 'Create Task',
+      fields: '<label>Name</label><input type="text" id="cName" placeholder="my-task">'
+        + '<label>Title</label><input type="text" id="cTitle" placeholder="My Task">'
+        + '<label>Description</label><input type="text" id="cDesc" placeholder="Optional">'
+        + '<label>Timeout (ms)</label><input type="number" id="cTimeout" value="120000" min="1000" step="1000">',
+      buildInsert: (name) => ({
+        sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
+        params: [name, ($('cTitle').value || '').trim() || name, $('cDesc').value.trim(), '', parseInt($('cTimeout').value) || 120000],
+      }),
+    },
+  },
+  triggers: {
+    label: 'Triggers', singular: 'trigger', table: 'triggers', creatable: true,
+    loadSql: "SELECT t.name, t.task_name, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_name = k.name ORDER BY t.name",
+    hasSubType: true,
+  },
+  plugins: {
+    label: 'Plugins', singular: 'plugin', table: 'plugins', creatable: false,
+    loadSql: "SELECT name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name",
+  },
+  config: {
+    label: 'Config', singular: 'config', table: 'config', creatable: true,
+    loadSql: "SELECT name AS key, value, description FROM config ORDER BY name",
+  },
+};
+
+const MODES = Object.keys(MODE_CONFIG);
+const DATA = Object.fromEntries(MODES.map(m => [m, []]));
+
 // ── Data Loading & CRUD ──
 
 async function loadAll() {
-  const [docs, views, tasks, triggers, plugins, config] = await Promise.all([
-    agy.runSql({ target: "agent", sql: "SELECT name, content, updated_at FROM docs ORDER BY name" }),
-    agy.runSql({ target: "agent", sql: "SELECT name, title, LENGTH(content) as content_length, created_at, updated_at FROM views ORDER BY name" }),
-    agy.runSql({ target: "agent", sql: "SELECT name, title, description, content, timeout_ms, created_at, updated_at FROM tasks ORDER BY title" }),
-    agy.runSql({ target: "agent", sql: "SELECT t.name, t.task_name, t.type, t.config, t.description, t.enabled, t.created_at, t.updated_at, k.title as task_title FROM triggers t LEFT JOIN tasks k ON t.task_name = k.name ORDER BY t.name" }),
-    agy.runSql({ target: "agent", sql: "SELECT name, description, version, code, enabled, created_at, updated_at FROM plugins ORDER BY name" }),
-    agy.runSql({ target: "agent", sql: "SELECT name AS key, value, description FROM config ORDER BY name" }),
-  ]);
-  allDocs = docs || []; allViews = views || []; allTasks = tasks || [];
-  allTriggers = triggers || []; allPlugins = plugins || []; allConfig = config || [];
+  const results = await Promise.all(MODES.map(m => agy.runSql({ target: "agent", sql: MODE_CONFIG[m].loadSql })));
+  MODES.forEach((m, i) => { DATA[m] = results[i] || []; });
   renderTabs(); updateCreateBtn(); renderList(); refreshSelected();
 }
 
 function updateCreateBtn() {
-  $('createBtn').style.display = (mode === 'tasks' || mode === 'docs' || mode === 'triggers' || mode === 'config') ? '' : 'none';
+  $('createBtn').style.display = MODE_CONFIG[mode].creatable ? '' : 'none';
+}
+
+async function fetchLazyContent(type, name) {
+  const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM " + MODE_CONFIG[type].table + " WHERE name = ?", params: [name] });
+  return rows[0] ? rows[0].content : null;
 }
 
 async function refreshSelected() {
-  if (!selected) return;
-  const sources = { docs: allDocs, views: allViews, tasks: allTasks, triggers: allTriggers, plugins: allPlugins };
-  const source = sources[selected.type];
-  if (!source) return;
-  const fresh = source.find(i => i.name === selected.name);
-  if (fresh) {
-    const t = selected.type;
-    selected = { ...selected, ...fresh, type: t };
-    if (t === 'triggers') selected.trigType = fresh.type;
-    if (t === 'views' && !selected.content) {
-      const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [selected.name] });
-      if (rows[0]) selected.content = rows[0].content;
-    }
-    if (!editing) showContent();
-  } else clearContent();
+  if (!selected || selected.type === 'config') return;
+  const cfg = MODE_CONFIG[selected.type];
+  if (!cfg) return;
+  const row = DATA[selected.type].find(i => i.name === selected.name);
+  if (!row) { clearContent(); return; }
+  const t = selected.type;
+  selected = { ...selected, ...row, type: t };
+  if (cfg.hasSubType) selected.subType = row.type;
+  if (cfg.lazyContent && selected.content == null) {
+    const c = await fetchLazyContent(t, selected.name);
+    if (c != null) selected.content = c;
+  }
+  if (!editing) showContent();
 }
 
 async function saveItem() {
   const editor = $('editor');
   if (!editor || !selected) return;
   const content = editor.value;
-  const table = { docs: 'docs', views: 'views', tasks: 'tasks' }[selected.type];
+  const cfg = MODE_CONFIG[selected.type];
+  if (!cfg) return;
   try {
-    await agy.runSql({ target: "agent", sql: "UPDATE " + table + " SET content = ? WHERE name = ?", params: [content, selected.name], confirmed: true });
+    await agy.runSql({ target: "agent", sql: "UPDATE " + cfg.table + " SET content = ? WHERE name = ?", params: [content, selected.name], confirmed: true });
     selected.content = content;
     selected.updated_at = Math.floor(Date.now() / 1000);
-    const source = { docs: allDocs, views: allViews, tasks: allTasks }[selected.type];
-    const idx = source.findIndex(i => i.name === selected.name);
-    if (idx >= 0) Object.assign(source[idx], { content, updated_at: selected.updated_at });
+    const idx = DATA[selected.type].findIndex(i => i.name === selected.name);
+    if (idx >= 0) Object.assign(DATA[selected.type][idx], { content, content_length: content.length, updated_at: selected.updated_at });
     dirty = false; editing = false;
     showContent(); renderList(); toast('Saved');
   } catch (err) { toast('Save failed: ' + err.message, 'error'); }
@@ -685,11 +749,11 @@ async function saveItem() {
 
 async function deleteItem() {
   if (!selected) return;
-  const label = { tasks: 'task', triggers: 'trigger', docs: 'doc' }[selected.type] || 'item';
-  if (!confirm('Delete this ' + label + ' "' + (selected.title || selected.name) + '"?')) return;
-  const table = { tasks: 'tasks', triggers: 'triggers', docs: 'docs' }[selected.type];
+  const cfg = MODE_CONFIG[selected.type];
+  if (!cfg) return;
+  if (!confirm('Delete this ' + cfg.singular + ' "' + (selected.title || selected.name) + '"?')) return;
   try {
-    await agy.runSql({ target: "agent", sql: "DELETE FROM " + table + " WHERE name = ?", params: [selected.name], confirmed: true });
+    await agy.runSql({ target: "agent", sql: "DELETE FROM " + cfg.table + " WHERE name = ?", params: [selected.name], confirmed: true });
     toast('Deleted'); selected = null; editing = false; dirty = false;
     clearContent(); await loadAll();
   } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
@@ -724,8 +788,6 @@ async function toggleTrigger() {
   try {
     await agy.runSql({ target: "agent", sql: "UPDATE triggers SET enabled = ? WHERE name = ?", params: [on, selected.name], confirmed: true });
     toast(on ? 'Enabled' : 'Disabled'); await loadAll();
-    const fresh = allTriggers.find(t => t.name === selected.name);
-    if (fresh) { selected = { type: 'triggers', ...fresh, trigType: fresh.type }; showContent(); renderList(); }
   } catch (err) { toast('Toggle failed: ' + err.message, 'error'); }
 }
 
@@ -738,8 +800,6 @@ async function saveTrigger() {
     await agy.runSql({ target: "agent", sql: "UPDATE triggers SET task_name=?,type=?,description=?,config=? WHERE name=?",
       params: [taskName, type, desc, cfg, selected.name], confirmed: true });
     toast('Saved'); editing = false; dirty = false; await loadAll();
-    const fresh = allTriggers.find(t => t.name === selected.name);
-    if (fresh) { selected = { type: 'triggers', ...fresh, trigType: fresh.type }; showContent(); renderList(); }
   } catch (err) { toast('Save failed: ' + err.message, 'error'); }
 }
 
@@ -749,22 +809,17 @@ async function togglePlugin() {
   try {
     await agy.runSql({ target: "agent", sql: "UPDATE plugins SET enabled = ? WHERE name = ?", params: [on, selected.name], confirmed: true });
     toast(on ? 'Enabled' : 'Disabled'); await loadAll();
-    const fresh = allPlugins.find(p => p.name === selected.name);
-    if (fresh) { selected = { type: 'plugins', ...fresh }; showContent(); renderList(); }
   } catch (err) { toast('Toggle failed: ' + err.message, 'error'); }
 }
 
 // ── Tabs & List Rendering ──
 
-const MODES = ['docs', 'views', 'tasks', 'triggers', 'plugins', 'config'];
-const MODE_LABELS = { docs: 'Docs', views: 'Views', tasks: 'Tasks', triggers: 'Triggers', plugins: 'Plugins', config: 'Config' };
-
 function renderTabs() {
-  const counts = { docs: allDocs.length, views: allViews.length, tasks: allTasks.length, triggers: allTriggers.length, plugins: allPlugins.length, config: allConfig.length };
-  $('tabs').innerHTML = MODES.map(m =>
-    '<button class="tab' + (mode === m ? ' active' : '') + '" data-mode="' + m + '">'
-    + MODE_LABELS[m] + ' <span class="cnt">' + counts[m] + '</span></button>'
-  ).join('');
+  $('tabs').innerHTML = MODES.map(m => {
+    const cfg = MODE_CONFIG[m];
+    return '<button class="tab' + (mode === m ? ' active' : '') + '" data-mode="' + m + '">'
+      + cfg.label + ' <span class="cnt">' + DATA[m].length + '</span></button>';
+  }).join('');
 }
 
 function setMode(m) {
@@ -780,26 +835,26 @@ function renderList() {
   const el = $('list');
 
   if (mode === 'docs') {
-    el.innerHTML = allDocs.filter(d => d.name.toLowerCase().includes(q)).map(d =>
+    el.innerHTML = DATA.docs.filter(d => d.name.toLowerCase().includes(q)).map(d =>
       listItem(d.name, d.name,
         '<span>' + fmtSize(d.content ? d.content.length : 0) + '</span><span>' + fmtDate(d.updated_at) + '</span>',
         selected && selected.type === 'docs' && selected.name === d.name)
     ).join('');
   } else if (mode === 'views') {
-    el.innerHTML = allViews.filter(v => (v.name + ' ' + (v.title || '')).toLowerCase().includes(q)).map(v =>
+    el.innerHTML = DATA.views.filter(v => (v.name + ' ' + (v.title || '')).toLowerCase().includes(q)).map(v =>
       listItem(v.name, v.name,
         '<span>' + fmtSize(v.content_length || 0) + '</span><span>' + fmtDate(v.updated_at) + '</span>'
         + (v.title ? '</div><div class="item-meta"><span style="opacity:0.7">' + esc(v.title) + '</span>' : ''),
         selected && selected.type === 'views' && selected.name === v.name)
     ).join('');
   } else if (mode === 'tasks') {
-    el.innerHTML = allTasks.filter(t => (t.title + ' ' + (t.description || '')).toLowerCase().includes(q)).map(t =>
+    el.innerHTML = DATA.tasks.filter(t => (t.title + ' ' + (t.description || '')).toLowerCase().includes(q)).map(t =>
       listItem(t.name, t.title,
         '<span>' + fmtSize(t.content ? t.content.length : 0) + '</span><span>' + fmtTimeout(t.timeout_ms) + '</span><span>' + fmtDate(t.updated_at || t.created_at) + '</span>',
         selected && selected.type === 'tasks' && selected.name === t.name)
     ).join('');
   } else if (mode === 'triggers') {
-    el.innerHTML = allTriggers.filter(t => ((t.description || '') + ' ' + (t.task_title || '') + ' ' + t.type + ' ' + (t.config || '')).toLowerCase().includes(q)).map(t => {
+    el.innerHTML = DATA.triggers.filter(t => ((t.description || '') + ' ' + (t.task_title || '') + ' ' + t.type + ' ' + (t.config || '')).toLowerCase().includes(q)).map(t => {
       const label = t.description || (t.type + ' \u2192 ' + (t.task_title || t.task_name));
       let hint = '';
       try {
@@ -814,15 +869,23 @@ function renderList() {
         + (hint ? '<span style="opacity:0.6;font-family:var(--font-mono);font-size:10px">' + esc(hint) + '</span>' : ''),
         selected && selected.type === 'triggers' && selected.name === t.name);
     }).join('');
+  } else if (mode === 'modules') {
+    el.innerHTML = DATA.modules.filter(m => m.name.toLowerCase().includes(q)).map(m =>
+      listItem(m.name, m.name,
+        '<span style="text-transform:uppercase;opacity:0.7">' + esc(m.type) + '</span>'
+        + '<span>' + fmtSize(m.content_length || 0) + '</span>'
+        + '<span>' + fmtDate(m.updated_at) + '</span>',
+        selected && selected.type === 'modules' && selected.name === m.name)
+    ).join('');
   } else if (mode === 'plugins') {
-    el.innerHTML = allPlugins.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)).map(p =>
+    el.innerHTML = DATA.plugins.filter(p => p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)).map(p =>
       listItem(p.name, p.name,
         '<span class="st ' + (p.enabled ? 'st-on' : 'st-off') + '">' + (p.enabled ? 'on' : 'off') + '</span>'
         + '<span>v' + esc(p.version) + '</span><span>' + fmtDate(p.updated_at) + '</span>',
         selected && selected.type === 'plugins' && selected.name === p.name)
     ).join('');
   } else if (mode === 'config') {
-    el.innerHTML = allConfig.filter(c => c.key.toLowerCase().includes(q) || (c.value || '').toLowerCase().includes(q)).map(c =>
+    el.innerHTML = DATA.config.filter(c => c.key.toLowerCase().includes(q) || (c.value || '').toLowerCase().includes(q)).map(c =>
       listItem(c.key, c.key,
         '<span style="font-family:var(--font-mono);opacity:0.6">' + esc(String(c.value).substring(0, 40)) + '</span>',
         selected && selected.type === 'config' && selected.key === c.key)
@@ -835,14 +898,15 @@ function renderList() {
 async function selectItem(type, id) {
   if (dirty && !confirm('Discard unsaved changes?')) return;
   if (type === 'config') { selectConfigItem(id); return; }
-  const sources = { docs: allDocs, views: allViews, tasks: allTasks, triggers: allTriggers, plugins: allPlugins };
-  const item = sources[type].find(i => i.name === id);
+  const cfg = MODE_CONFIG[type];
+  if (!cfg) return;
+  const item = DATA[type].find(i => i.name === id);
   if (!item) return;
   selected = { ...item, type };
-  if (type === 'triggers') selected.trigType = item.type;
-  if (type === 'views' && !selected.content) {
-    const rows = await agy.runSql({ target: "agent", sql: "SELECT content FROM views WHERE name = ?", params: [id] });
-    if (rows[0]) selected.content = rows[0].content;
+  if (cfg.hasSubType) selected.subType = item.type;
+  if (cfg.lazyContent && selected.content == null) {
+    const c = await fetchLazyContent(type, id);
+    if (c != null) selected.content = c;
   }
   editing = false; dirty = false; lastRun = null;
   showContent(); renderList();
@@ -862,6 +926,7 @@ function showContent() {
   let info = size + ' \u00b7 ' + lines + ' lines';
   if (s.type === 'views' && s.title) info = s.name + ' \u00b7 ' + info;
   if (s.type === 'tasks' && s.timeout_ms) info += ' \u00b7 ' + fmtTimeout(s.timeout_ms);
+  if (s.type === 'modules') info = (s.subType || '').toUpperCase() + ' \u00b7 ' + info;
   const ts = s.updated_at || s.created_at;
   if (ts) info += ' \u00b7 ' + fmtDate(ts);
 
@@ -881,7 +946,7 @@ function showContent() {
       actions = '<button class="btn btn-green" onclick="runTask()">' + IC.play + ' Run</button>'
         + '<button class="btn" onclick="duplicateTask()">' + IC.copy + '</button>'
         + '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
-    } else if (s.type === 'docs') {
+    } else if (s.type === 'docs' || s.type === 'modules') {
       actions = '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
     }
     let desc = '';
@@ -894,18 +959,18 @@ function showContent() {
 function showTriggerContent() {
   const s = selected;
   const badge = typeBadge('triggers');
-  const title = s.description || (s.trigType + ' \u2192 ' + (s.task_title || s.task_name));
+  const title = s.description || (s.subType + ' \u2192 ' + (s.task_title || s.task_name));
 
   if (editing) {
     let cfgPretty = s.config || '{}';
     try { cfgPretty = JSON.stringify(JSON.parse(cfgPretty), null, 2); } catch (e) {}
-    const taskOpts = allTasks.map(t => '<option value="' + esc(t.name) + '"' + (t.name === s.task_name ? ' selected' : '') + '>' + esc(t.title) + '</option>').join('');
+    const taskOpts = DATA.tasks.map(t => '<option value="' + esc(t.name) + '"' + (t.name === s.task_name ? ' selected' : '') + '>' + esc(t.title) + '</option>').join('');
     const actions = '<button class="btn" onclick="cancelEdit()">' + IC.x + ' Cancel</button>'
       + '<button class="btn btn-primary" onclick="saveTrigger()">' + IC.save + ' Save</button>';
     $('content').innerHTML = hdBar(badge, title, '', actions, true)
       + '<div class="code-body"><div class="detail">'
       + detailRow('Task', '<select id="trigTask">' + taskOpts + '</select>')
-      + detailRow('Type', '<select id="trigType"><option value="schedule"' + (s.trigType === 'schedule' ? ' selected' : '') + '>schedule</option><option value="http"' + (s.trigType === 'http' ? ' selected' : '') + '>http</option><option value="event"' + (s.trigType === 'event' ? ' selected' : '') + '>event</option></select>')
+      + detailRow('Type', '<select id="trigType"><option value="schedule"' + (s.subType === 'schedule' ? ' selected' : '') + '>schedule</option><option value="http"' + (s.subType === 'http' ? ' selected' : '') + '>http</option><option value="event"' + (s.subType === 'event' ? ' selected' : '') + '>event</option></select>')
       + detailRow('Description', '<input type="text" id="trigDesc" value="' + esc(s.description || '') + '" placeholder="Optional">')
       + detailRow('Config', '<textarea id="trigConfig" rows="5">' + esc(cfgPretty) + '</textarea>')
       + '</div></div>';
@@ -925,7 +990,7 @@ function showTriggerContent() {
     $('content').innerHTML = hdBar(badge, title, info, actions, false)
       + '<div class="code-body"><div class="detail">'
       + detailRow('Name', esc(s.name))
-      + detailRow('Type', '<span class="st st-' + s.trigType + '">' + esc(s.trigType) + '</span>')
+      + detailRow('Type', '<span class="st st-' + s.subType + '">' + esc(s.subType) + '</span>')
       + detailRow('Status', '<span class="st ' + (s.enabled ? 'st-on' : 'st-off') + '">' + (s.enabled ? 'Enabled' : 'Disabled') + '</span>')
       + detailRow('Task', esc(s.task_title || '(unknown)') + ' <span style="opacity:0.5">(' + esc(s.task_name) + ')</span>')
       + (s.description ? detailRow('Description', esc(s.description)) : '')
@@ -940,7 +1005,7 @@ function showPluginContent() {
   const code = s.code || '';
   const info = 'v' + esc(s.version) + ' \u00b7 ' + fmtSize(code.length) + ' \u00b7 ' + fmtDate(s.updated_at);
   const docName = 'plugin.' + s.name;
-  const hasDoc = allDocs.some(d => d.name === docName);
+  const hasDoc = DATA.docs.some(d => d.name === docName);
   let actions = '';
   if (hasDoc) actions += '<button class="btn" onclick="setMode(\'docs\');setTimeout(()=>selectItem(\'docs\',\'' + esc(docName) + '\'),50)">' + IC.edit + ' Docs</button>';
   actions += '<button class="btn' + (s.enabled ? '' : ' btn-green') + '" onclick="togglePlugin()">'
@@ -993,7 +1058,7 @@ const CONFIG_REF = [
 
 function selectConfigItem(key) {
   if (dirty && !confirm('Discard unsaved changes?')) return;
-  const item = allConfig.find(c => c.key === key);
+  const item = DATA.config.find(c => c.key === key);
   if (!item) return;
   selected = { type: 'config', key: item.key, value: item.value, description: item.description };
   editing = false; dirty = false;
@@ -1043,10 +1108,10 @@ function showConfigContent() {
 function showConfigOverview() {
   const badge = typeBadge('config');
   let rows = '';
-  if (allConfig.length === 0) {
+  if (DATA.config.length === 0) {
     rows = '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--color-text1)">No config keys set. Using defaults.</td></tr>';
   } else {
-    rows = allConfig.map(c =>
+    rows = DATA.config.map(c =>
       '<tr><td class="cfg-key">' + esc(c.key) + '</td><td class="cfg-val">' + esc(c.value) + '</td>'
       + '<td class="cfg-actions"><button onclick="selectConfigItem(\'' + esc(c.key).replace(/'/g, "\\'") + '\')">' + IC.edit + '</button>'
       + '<button class="del" onclick="deleteConfigKey(\'' + esc(c.key).replace(/'/g, "\\'") + '\')">' + IC.trash + '</button></td></tr>'
@@ -1068,9 +1133,9 @@ async function saveConfigKey() {
   try {
     await agy.runSql({ target: "agent", sql: "INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)", params: [selected.key, val], confirmed: true });
     selected.value = val;
-    const idx = allConfig.findIndex(c => c.key === selected.key);
-    if (idx >= 0) allConfig[idx].value = val;
-    else { allConfig.push({ key: selected.key, value: val }); allConfig.sort((a, b) => a.key.localeCompare(b.key)); }
+    const idx = DATA.config.findIndex(c => c.key === selected.key);
+    if (idx >= 0) DATA.config[idx].value = val;
+    else { DATA.config.push({ key: selected.key, value: val }); DATA.config.sort((a, b) => a.key.localeCompare(b.key)); }
     dirty = false; editing = false;
     showConfigContent(); renderTabs(); renderList(); toast('Saved');
   } catch (err) { toast('Save failed: ' + err.message, 'error'); }
@@ -1080,7 +1145,7 @@ async function deleteConfigKey(key) {
   if (!confirm('Delete "' + key + '"? Setting will revert to default.')) return;
   try {
     await agy.runSql({ target: "agent", sql: "DELETE FROM config WHERE name = ?", params: [key], confirmed: true });
-    allConfig = allConfig.filter(c => c.key !== key);
+    DATA.config = DATA.config.filter(c => c.key !== key);
     if (selected && selected.type === 'config' && selected.key === key) { selected = null; editing = false; dirty = false; }
     toast('Deleted'); renderTabs(); renderList();
     if (mode === 'config' && !selected) showConfigOverview();
@@ -1095,15 +1160,10 @@ function closeModal() { $('modal').innerHTML = ''; }
 function showCreateModal() {
   if (mode === 'config') { showCreateConfigModal(); return; }
   if (mode === 'triggers') { showCreateTriggerModal(); return; }
-  const isTask = mode === 'tasks';
-  let fields = '<label>Name</label><input type="text" id="cName" placeholder="' + (isTask ? 'my-task' : 'my-doc') + '">';
-  if (isTask) {
-    fields += '<label>Title</label><input type="text" id="cTitle" placeholder="My Task">'
-      + '<label>Description</label><input type="text" id="cDesc" placeholder="Optional">'
-      + '<label>Timeout (ms)</label><input type="number" id="cTimeout" value="120000" min="1000" step="1000">';
-  }
+  const create = MODE_CONFIG[mode].create;
+  if (!create) return;
   $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
-    + '<div class="modal"><h3>Create ' + (isTask ? 'Task' : 'Doc') + '</h3>' + fields
+    + '<div class="modal"><h3>' + create.title + '</h3>' + create.fields
     + '<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button>'
     + '<button class="btn btn-primary" onclick="doCreate()">Create</button></div></div></div>';
   setTimeout(() => $('cName').focus(), 50);
@@ -1112,25 +1172,24 @@ function showCreateModal() {
 async function doCreate() {
   const name = $('cName').value.trim();
   if (!name) { toast('Name required', 'error'); return; }
-  const isTask = mode === 'tasks';
+  const cfg = MODE_CONFIG[mode];
+  const create = cfg && cfg.create;
+  if (!create) return;
   try {
-    if (isTask) {
-      const title = ($('cTitle').value || '').trim() || name;
-      await agy.runSql({ target: "agent",
-        sql: "INSERT INTO tasks (name, title, description, content, timeout_ms) VALUES (?, ?, ?, ?, ?)",
-        params: [name, title, $('cDesc').value.trim(), '', parseInt($('cTimeout').value) || 120000], confirmed: true });
-    } else {
-      await agy.runSql({ target: "agent", sql: "INSERT INTO docs (name, content) VALUES (?, ?)", params: [name, ''], confirmed: true });
-    }
+    const ins = create.buildInsert(name);
+    await agy.runSql({ target: "agent", sql: ins.sql, params: ins.params, confirmed: true });
     closeModal(); toast('Created'); await loadAll();
-    const source = isTask ? allTasks : allDocs;
-    const created = source.find(i => i.name === name);
-    if (created) { selected = { type: isTask ? 'tasks' : 'docs', ...created }; editing = true; dirty = false; showContent(); renderList(); }
+    const created = DATA[mode].find(i => i.name === name);
+    if (created) {
+      selected = { ...created, type: mode };
+      if (cfg.hasSubType) selected.subType = created.type;
+      editing = true; dirty = false; showContent(); renderList();
+    }
   } catch (err) { toast('Create failed: ' + err.message, 'error'); }
 }
 
 function showCreateTriggerModal() {
-  const taskOpts = allTasks.map(t => '<option value="' + esc(t.name) + '">' + esc(t.title) + '</option>').join('');
+  const taskOpts = DATA.tasks.map(t => '<option value="' + esc(t.name) + '">' + esc(t.title) + '</option>').join('');
   $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
     + '<div class="modal"><h3>Create Trigger</h3>'
     + '<label>Name</label><input type="text" id="cTrigName" placeholder="my-trigger">'
@@ -1154,13 +1213,13 @@ async function doCreateTrigger() {
       sql: "INSERT INTO triggers (name, task_name, type, config, description, enabled) VALUES (?, ?, ?, ?, ?, 1)",
       params: [name, task, type, cfg, desc], confirmed: true });
     closeModal(); toast('Created'); await loadAll();
-    const created = allTriggers.find(t => t.name === name);
-    if (created) { selected = { type: 'triggers', ...created, trigType: created.type }; showContent(); renderList(); }
+    const created = DATA.triggers.find(t => t.name === name);
+    if (created) { selected = { ...created, type: 'triggers', subType: created.type }; showContent(); renderList(); }
   } catch (err) { toast('Create failed: ' + err.message, 'error'); }
 }
 
 function showCreateConfigModal() {
-  const existing = new Set(allConfig.map(c => c.key));
+  const existing = new Set(DATA.config.map(c => c.key));
   const presetOpts = CONFIG_REF.filter(r => !existing.has(r.key))
     .map(r => '<option value="' + esc(r.key) + '">' + esc(r.key) + ' \u2014 ' + esc(r.desc) + '</option>').join('');
   $('modal').innerHTML = '<div class="overlay" onclick="if(event.target===this)closeModal()">'
