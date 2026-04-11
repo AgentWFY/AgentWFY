@@ -1,4 +1,4 @@
-import { Notification, nativeImage } from 'electron'
+import { Notification, nativeImage, app } from 'electron'
 import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
@@ -524,6 +524,10 @@ export class AgentSessionManager {
         new Notification({ title: 'Agent finished', body: entry.label, icon }).show()
       } catch {
         // Notifications may not be supported
+      }
+      // Dock bounce works reliably on macOS even for unsigned/dev apps
+      if (process.platform === 'darwin') {
+        app.dock?.bounce('informational')
       }
     }
 
