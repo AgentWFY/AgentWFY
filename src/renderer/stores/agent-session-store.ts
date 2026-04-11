@@ -5,6 +5,7 @@ import type {
   AgentSnapshot,
   RetryState,
 } from './types.js'
+import type { FileContent } from '../../agent/types.js'
 
 export interface AgentSessionState {
   // From IPC snapshots
@@ -180,7 +181,7 @@ class AgentSessionStore {
 
   // ── Session actions ──
 
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string, files?: FileContent[]): Promise<void> {
     const ipc = window.ipc?.agent
     if (!ipc) return
 
@@ -188,13 +189,12 @@ class AgentSessionStore {
     const isFirstMessage = messages.length === 0 && !isStreaming
 
     if (isStreaming) {
-      await ipc.sendMessage(text, { streamingBehavior: 'followUp' })
-    } else if (isFirstMessage && selectedProviderId) {
-      await ipc.createSession({ providerId: selectedProviderId, prompt: text })
+      await ipc.sendMessage(text, { streamingBehavior: 'followUp', files })
     } else if (isFirstMessage) {
-      await ipc.createSession({ prompt: text })
+      const providerId = selectedProviderId || undefined
+      await ipc.createSession({ prompt: text, providerId, files })
     } else {
-      await ipc.sendMessage(text)
+      await ipc.sendMessage(text, { files })
     }
   }
 

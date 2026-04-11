@@ -340,10 +340,10 @@ if (isApp) {
       },
     },
     agent: {
-      createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string> {
+      createSession(opts?: { label?: string; prompt?: string; providerId?: string; files?: Array<{ type: 'file'; data: string; mimeType: string }> }): Promise<string> {
         return ipcRenderer.invoke(Channels.agent.createSession, opts);
       },
-      sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void> {
+      sendMessage(text: string, options?: { streamingBehavior?: 'followUp'; files?: Array<{ type: 'file'; data: string; mimeType: string }> }): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.sendMessage, text, options);
       },
       abort(): Promise<void> {

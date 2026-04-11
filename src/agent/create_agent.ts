@@ -271,20 +271,26 @@ export class AgentWFYAgent {
   }
 
   async prompt(text: string, options: AgentWFYAgentPromptOptions = {}): Promise<void> {
-    if (!text || !text.trim()) {
+    const hasText = !!(text && text.trim())
+    const hasFiles = !!(options.files && options.files.length > 0)
+    if (!hasText && !hasFiles) {
       throw new Error('Prompt cannot be empty')
     }
+
+    // Providers require a non-empty text block alongside file content,
+    // so fall back to a single space when only files are provided.
+    const promptText = hasText ? text : ' '
 
     if (this.isStreaming) {
       if (!options.streamingBehavior) {
         throw new Error("Agent is already processing. Specify streamingBehavior: 'followUp' to queue the message.")
       }
 
-      this.agent.followUp(text)
+      this.agent.followUp(promptText, options.files)
       return
     }
 
-    await this.agent.prompt(text, { files: options.files, providerOptions: options.providerOptions })
+    await this.agent.prompt(promptText, { files: options.files, providerOptions: options.providerOptions })
     await this.persistSession()
   }
 

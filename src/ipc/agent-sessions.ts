@@ -1,20 +1,21 @@
 import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '../agent/session_manager.js'
+import type { FileContent } from '../agent/types.js'
 import { Channels } from './channels.js'
 
 export function registerAgentSessionHandlers(
   getManager: (e: IpcMainInvokeEvent) => AgentSessionManager,
   onReconnect: (e: IpcMainInvokeEvent) => Promise<AgentSessionManager>,
 ): void {
-  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string }) => {
+  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string; files?: FileContent[] }) => {
     if (!opts?.prompt) {
       getManager(event).resetActive()
       return null
     }
-    return getManager(event).createSession(opts as { prompt: string; label?: string; providerId?: string })
+    return getManager(event).createSession(opts as { prompt: string; label?: string; providerId?: string; files?: FileContent[] })
   })
 
-  ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'followUp' }) => {
+  ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'followUp'; files?: FileContent[] }) => {
     await getManager(event).sendMessage(text, options)
   })
 

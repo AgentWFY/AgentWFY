@@ -2,8 +2,11 @@ import {
   buildRenderBlocks,
   updateMessagesEl
 } from './chat_message_renderer.js'
-import { escapeHtml, parseTabLink } from './chat_utils.js'
+import { escapeHtml, parseTabLink, imageDataUrl } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
+import type { FileContent } from '../../agent/types.js'
+
+type PendingAttachment = FileContent & { name: string }
 
 const STYLES = `
   awfy-agent-chat {
@@ -162,6 +165,25 @@ const STYLES = `
   }
   @media (prefers-color-scheme: dark) {
     .block-user { background: #3a3a3a; }
+  }
+  .block-user .user-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .block-user .user-files:first-child {
+    margin-top: 0;
+  }
+  .block-user .user-file-image {
+    max-width: 240px;
+    max-height: 200px;
+    margin: 0;
+    border-radius: var(--radius-sm);
+    display: block;
+  }
+  .awfy-app-root.zen-mode .block-user .user-file-image {
+    cursor: zoom-in;
   }
   .assistant-text { padding: 2px 0; }
   .thinking-text {
@@ -365,6 +387,34 @@ const STYLES = `
     display: block;
     max-width: 100%;
   }
+  .awfy-app-root.zen-mode .tb-img-wrap img {
+    cursor: zoom-in;
+  }
+  .image-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: zoom-out;
+    padding: 24px;
+    box-sizing: border-box;
+    animation: lightbox-fade 120ms ease-out;
+  }
+  .image-lightbox-overlay img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  }
+  @keyframes lightbox-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
   .tb-img-meta {
     padding: 4px 8px;
     font-size: 10px;
@@ -500,6 +550,55 @@ const STYLES = `
     word-break: break-all;
     max-height: 150px;
     overflow-y: auto;
+  }
+  .attachment-strip {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px 0;
+  }
+  .attachment-strip.has-items {
+    display: flex;
+  }
+  .attachment-item {
+    position: relative;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg3);
+    flex-shrink: 0;
+  }
+  .attachment-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .attachment-item-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+  .attachment-item-remove:hover {
+    background: var(--color-red-fg);
+  }
+  .input-container.drag-over {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-input-bg));
   }
   .stop-btn {
     position: absolute;
@@ -1105,6 +1204,10 @@ export class TlAgentChat extends HTMLElement {
   private _pasteAttachmentEl: HTMLElement | null = null
   private _pasteLabelEl: HTMLElement | null = null
   private _pastePreviewEl: HTMLElement | null = null
+  private _pendingAttachments: PendingAttachment[] = []
+  private _attachmentStripEl: HTMLElement | null = null
+  private _fileInputEl: HTMLInputElement | null = null
+  private _closeLightbox: (() => void) | null = null
   private _openBox: HTMLElement | null = null
   private _sessionListEl: HTMLElement | null = null
   private _sessionCountEl: HTMLElement | null = null
@@ -1148,6 +1251,7 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
+    this._closeLightbox?.()
     this._storeUnsub?.()
     this._storeUnsub = null
     this.clearChatRefs()
@@ -1456,7 +1560,8 @@ export class TlAgentChat extends HTMLElement {
   private async sendMessage() {
     const typed = this.inputValue.trim()
     const pasted = this._pastedText
-    if (!typed && !pasted) return
+    const attachments = this._pendingAttachments
+    if (!typed && !pasted && attachments.length === 0) return
 
     let text: string
     if (pasted && typed) {
@@ -1467,20 +1572,26 @@ export class TlAgentChat extends HTMLElement {
       text = typed
     }
 
+    const files: FileContent[] | undefined = attachments.length > 0
+      ? attachments.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
+      : undefined
+
     this.inputValue = ''
     this._pastedText = null
     this._pastedLineCount = 0
     this._pasteExpanded = false
+    this._pendingAttachments = []
     if (this._textarea) {
       this._textarea.value = ''
       this._textarea.style.height = 'auto'
     }
     this.renderPasteAttachment()
+    this.renderAttachmentStrip()
     this.userScrolledUp = false
     this.render()
 
     try {
-      await agentSessionStore.sendMessage(text)
+      await agentSessionStore.sendMessage(text, files)
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.render()
@@ -1510,6 +1621,23 @@ export class TlAgentChat extends HTMLElement {
   private static PASTE_THRESHOLD = 500
 
   private handlePaste(e: ClipboardEvent) {
+    const items = e.clipboardData?.items
+    if (items) {
+      const imageFiles: File[] = []
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile()
+          if (file) imageFiles.push(file)
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault()
+        void this.addImageFiles(imageFiles)
+        return
+      }
+    }
+
     const text = e.clipboardData?.getData('text/plain')
     if (!text || text.length < TlAgentChat.PASTE_THRESHOLD) return
 
@@ -1521,6 +1649,97 @@ export class TlAgentChat extends HTMLElement {
     }
     this._pasteExpanded = false
     this.renderPasteAttachment()
+  }
+
+  private async addImageFiles(files: File[] | FileList): Promise<void> {
+    const images = Array.from(files).filter(f => f.type.startsWith('image/'))
+    if (images.length === 0) return
+    const results = await Promise.all(images.map(async (file) => {
+      try {
+        const data = await this.readFileAsBase64(file)
+        return { type: 'file' as const, data, mimeType: file.type, name: file.name || 'image' }
+      } catch (err) {
+        console.warn('[agent-chat] failed to read attachment', err)
+        return null
+      }
+    }))
+    const added = results.filter((a): a is PendingAttachment => a !== null)
+    if (added.length === 0) return
+    this._pendingAttachments = [...this._pendingAttachments, ...added]
+    this.renderAttachmentStrip()
+  }
+
+  private readFileAsBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result !== 'string') {
+          reject(new Error('FileReader result was not a string'))
+          return
+        }
+        const comma = result.indexOf(',')
+        resolve(comma >= 0 ? result.slice(comma + 1) : result)
+      }
+      reader.onerror = () => reject(reader.error ?? new Error('FileReader error'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  private openImageLightbox(src: string): void {
+    // Tab WebContentsViews render above the DOM, so a DOM overlay would be
+    // hidden behind them outside zen mode.
+    if (!this._isZenMode) return
+
+    this._closeLightbox?.()
+
+    const overlay = document.createElement('div')
+    overlay.className = 'image-lightbox-overlay'
+    const img = document.createElement('img')
+    img.src = src
+    overlay.appendChild(img)
+
+    const close = () => {
+      overlay.remove()
+      document.removeEventListener('keydown', onKey)
+      this._closeLightbox = null
+    }
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault()
+        close()
+      }
+    }
+    overlay.addEventListener('click', close)
+    document.addEventListener('keydown', onKey)
+    document.body.appendChild(overlay)
+    this._closeLightbox = close
+  }
+
+  private removeAttachment(index: number): void {
+    if (index < 0 || index >= this._pendingAttachments.length) return
+    this._pendingAttachments.splice(index, 1)
+    this.renderAttachmentStrip()
+  }
+
+  private renderAttachmentStrip(): void {
+    if (!this._attachmentStripEl) return
+    const items = this._pendingAttachments
+    if (items.length === 0) {
+      this._attachmentStripEl.classList.remove('has-items')
+      this._attachmentStripEl.innerHTML = ''
+      return
+    }
+    this._attachmentStripEl.classList.add('has-items')
+    this._attachmentStripEl.innerHTML = items.map((att, i) => {
+      const name = escapeHtml(att.name)
+      return `<div class="attachment-item" data-idx="${i}" title="${name}">
+        <img src="${imageDataUrl(att.mimeType, att.data)}" alt="${name}">
+        <button class="attachment-item-remove" data-remove-idx="${i}" title="Remove">
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+        </button>
+      </div>`
+    }).join('')
   }
 
   private removePasteAttachment() {
@@ -1618,6 +1837,8 @@ export class TlAgentChat extends HTMLElement {
     this._pasteAttachmentEl = null
     this._pasteLabelEl = null
     this._pastePreviewEl = null
+    this._attachmentStripEl = null
+    this._fileInputEl = null
     this._openBox = null
     this._sessionListEl = null
     this._sessionCountEl = null
@@ -1774,7 +1995,18 @@ export class TlAgentChat extends HTMLElement {
       }
     })
     this.messagesEl.addEventListener('click', (e) => {
-      const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
+      const target = e.target as HTMLElement
+
+      if (target.tagName === 'IMG') {
+        const img = target as HTMLImageElement
+        if (img.matches('.user-file-image') || img.closest('.tb-img-wrap')) {
+          e.preventDefault()
+          this.openImageLightbox(img.src)
+          return
+        }
+      }
+
+      const anchor = target.closest('a[href]') as HTMLAnchorElement | null
       if (!anchor) return
       e.preventDefault()
       const href = anchor.getAttribute('href')
@@ -1849,6 +2081,45 @@ export class TlAgentChat extends HTMLElement {
 
     const inputContainer = document.createElement('div')
     inputContainer.className = 'input-container'
+
+    // dragDepth counter avoids flicker when dragging over nested children.
+    let dragDepth = 0
+    inputContainer.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return
+      e.preventDefault()
+      dragDepth++
+      inputContainer.classList.add('drag-over')
+    })
+    inputContainer.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    })
+    inputContainer.addEventListener('dragleave', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return
+      dragDepth = Math.max(0, dragDepth - 1)
+      if (dragDepth === 0) inputContainer.classList.remove('drag-over')
+    })
+    inputContainer.addEventListener('drop', (e) => {
+      if (!e.dataTransfer?.files.length) return
+      e.preventDefault()
+      dragDepth = 0
+      inputContainer.classList.remove('drag-over')
+      void this.addImageFiles(e.dataTransfer.files)
+    })
+
+    this._attachmentStripEl = document.createElement('div')
+    this._attachmentStripEl.className = 'attachment-strip'
+    this._attachmentStripEl.addEventListener('mousedown', (ev) => {
+      const removeBtn = (ev.target as HTMLElement).closest('.attachment-item-remove') as HTMLElement | null
+      if (!removeBtn) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      const idx = parseInt(removeBtn.dataset.removeIdx ?? '-1', 10)
+      this.removeAttachment(idx)
+      this._textarea?.focus()
+    })
+    inputContainer.appendChild(this._attachmentStripEl)
 
     this._pasteAttachmentEl = document.createElement('div')
     this._pasteAttachmentEl.className = 'paste-attachment'
@@ -1934,6 +2205,30 @@ export class TlAgentChat extends HTMLElement {
       this.handleNewSession()
     })
     actionsDiv.appendChild(this._newSessionBtn)
+
+    this._fileInputEl = document.createElement('input')
+    this._fileInputEl.type = 'file'
+    this._fileInputEl.accept = 'image/*'
+    this._fileInputEl.multiple = true
+    this._fileInputEl.style.display = 'none'
+    this._fileInputEl.addEventListener('change', () => {
+      const files = this._fileInputEl?.files
+      if (files && files.length > 0) {
+        void this.addImageFiles(files)
+      }
+      if (this._fileInputEl) this._fileInputEl.value = ''
+    })
+    actionsDiv.appendChild(this._fileInputEl)
+
+    const attachBtn = document.createElement('button')
+    attachBtn.className = 'gear-btn'
+    attachBtn.title = 'Attach image'
+    attachBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6.5 7.5 12a3 3 0 0 1-4.24-4.24l6-6a2 2 0 1 1 2.83 2.83l-6 6a1 1 0 0 1-1.42-1.42L9.5 4.5"/></svg>'
+    attachBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this._fileInputEl?.click()
+    })
+    actionsDiv.appendChild(attachBtn)
 
     // Notify button
     this._notifyBtn = document.createElement('button')

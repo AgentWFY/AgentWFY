@@ -13,6 +13,7 @@ import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
+import type { FileContent } from '../../agent/types.js'
 
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
@@ -34,8 +35,8 @@ export interface ProvidersApi {
 }
 
 export interface AgentApi {
-  createSession(opts?: { label?: string; prompt?: string; providerId?: string }): Promise<string>
-  sendMessage(text: string, options?: { streamingBehavior?: 'followUp' }): Promise<void>
+  createSession(opts?: { label?: string; prompt?: string; providerId?: string; files?: FileContent[] }): Promise<string>
+  sendMessage(text: string, options?: { streamingBehavior?: 'followUp'; files?: FileContent[] }): Promise<void>
   abort(): Promise<void>
   closeSession(): Promise<void>
   loadSession(file: string): Promise<void>
