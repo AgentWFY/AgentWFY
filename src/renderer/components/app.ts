@@ -307,7 +307,7 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
         padding-left: 78px;
       }
-      .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-main-column > .awfy-app-header {
+      .awfy-app-root.agent-sidebar-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
         padding-left: 74px;
       }
       /* Agent sidebar border when chat panel is closed */
