@@ -292,16 +292,15 @@ class WindowManager {
     rwc.loadURL('app://index.html');
     if (!process.env.AGENTWFY_HEADLESS) window.show();
 
-    // After renderer loads: start triggers and open default view for active agent
+    // After renderer loads: push all state and start triggers for active agent
     rwc.once('did-finish-load', () => {
       const ctx = this.getActiveAgentContext();
       if (ctx) {
+        this.pushFullState(ctx);
         ctx.triggerEngine.start().then(() => {
-          this.broadcastSidebarState();
+          this.broadcastSidebarState(); // refresh HTTP port in status line
         }).catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
-        this.sendToRenderer(Channels.agent.snapshot, ctx.sessionManager.getSnapshot());
-        this.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
       }
     });
 
@@ -550,7 +549,9 @@ class WindowManager {
         console.error(`[agent] Failed to initialize agent ${agentRoot}:`, err);
         return;
       }
-      ctx.triggerEngine.start().catch(err => console.error('[triggers] Start failed:', err));
+      ctx.triggerEngine.start().then(() => {
+        this.broadcastSidebarState(); // refresh HTTP port in status line
+      }).catch(err => console.error('[triggers] Start failed:', err));
       this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
     }
 
@@ -567,14 +568,7 @@ class WindowManager {
 
     ctx.tabViewManager.showAllViews();
 
-    // Notify renderer (triggers state reset in stores/components)
-    this.broadcastSidebarState();
-
-    // Push fresh snapshot so renderer shows current agent state
-    const snapshot = ctx.sessionManager.getSnapshot();
-    this.sendToRenderer(Channels.agent.snapshot, snapshot);
-
-    this.pushProviderState(agentRoot, ctx.providerRegistry);
+    this.pushFullState(ctx);
   }
 
   async removeAgent(agentRoot: string): Promise<void> {
@@ -662,6 +656,24 @@ class WindowManager {
 
   private pushProviderState(agentRoot: string, providerRegistry: ProviderRegistry): void {
     this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(agentRoot, providerRegistry));
+  }
+
+  /**
+   * Push all renderer-visible state for an agent context.
+   * Called from did-finish-load and switchAgent — adding a new piece of
+   * renderer state means adding one line here.
+   *
+   * Order matters:
+   *  1. Sidebar broadcast triggers agent-switched in the renderer, which
+   *     resets stores with ready=false.
+   *  2. Snapshot sets ready=true in the session store.
+   *  3. Provider state and zen mode can follow in any order.
+   */
+  private pushFullState(ctx: AgentContext): void {
+    this.broadcastSidebarState();
+    this.sendToRenderer(Channels.agent.snapshot, ctx.sessionManager.getSnapshot());
+    this.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
+    this.sendToRenderer(Channels.zenMode.changed, this.isZenMode);
   }
 
   setZenMode(value: boolean): void {
