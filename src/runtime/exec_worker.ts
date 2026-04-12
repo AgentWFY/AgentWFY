@@ -290,10 +290,17 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
           (r) => ({ attached: true, mimeType: r.mimeType }),
         ))
       } else if (method === 'readBinary') {
-        methodArgValues.push(makeAttachmentBinding<WorkerHostMethodMap['readBinary']['result']>(
+        const attachBinary = makeAttachmentBinding<WorkerHostMethodMap['readBinary']['result']>(
           'readBinary',
           (r) => ({ attached: true, mimeType: r.mimeType, size: r.size }),
-        ))
+        )
+        methodArgValues.push((params: unknown) => {
+          const req = params as WorkerHostMethodMap['readBinary']['params']
+          if (req && req.asBase64) {
+            return call('readBinary', params)
+          }
+          return attachBinary(params)
+        })
       } else {
         methodArgValues.push((params: unknown) => call(method, params))
       }

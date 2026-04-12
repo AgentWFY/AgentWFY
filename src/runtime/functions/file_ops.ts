@@ -280,6 +280,22 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     return undefined
   })
 
+  registry.register('rename', async (params) => {
+    const request = params as WorkerHostMethodMap['rename']['params']
+    if (!request || typeof request.oldPath !== 'string' || request.oldPath.trim().length === 0) {
+      throw new Error('rename requires a non-empty oldPath string')
+    }
+    if (typeof request.newPath !== 'string' || request.newPath.trim().length === 0) {
+      throw new Error('rename requires a non-empty newPath string')
+    }
+
+    const srcPath = await assertPathAllowed(agentRoot, request.oldPath)
+    const destPath = await assertPathAllowed(agentRoot, request.newPath, { allowMissing: true })
+    await fs.mkdir(path.dirname(destPath), { recursive: true })
+    await fs.rename(srcPath, destPath)
+    return `Renamed ${request.oldPath} → ${request.newPath}`
+  })
+
   registry.register('find', async (params) => {
     const request = params as WorkerHostMethodMap['find']['params']
     if (!request || typeof request.pattern !== 'string' || request.pattern.trim().length === 0) {

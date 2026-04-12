@@ -71,6 +71,11 @@ interface WorkerRemoveRequest {
   recursive?: boolean
 }
 
+interface WorkerRenameRequest {
+  oldPath: string
+  newPath: string
+}
+
 interface WorkerFindRequest {
   pattern: string
   path?: string
@@ -156,6 +161,7 @@ interface WorkerCaptureTabResult {
 
 interface WorkerReadBinaryRequest {
   path: string
+  asBase64?: boolean
 }
 
 interface WorkerReadBinaryResult {
@@ -196,6 +202,10 @@ export interface WorkerHostMethodMap {
   remove: {
     params: WorkerRemoveRequest
     result: void
+  }
+  rename: {
+    params: WorkerRenameRequest
+    result: string
   }
   find: {
     params: WorkerFindRequest

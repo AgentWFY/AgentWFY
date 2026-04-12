@@ -444,7 +444,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables. A
 - `plugin.*`: Plugin documentation, **read-only**
 - Other dotted names: Available on demand but not preloaded
 
-**12 Built-in System Docs:** `system`, `system.views`, `system.config`, `system.plugins`, `system.plugins.dev`, `system.plugins.guide`, `system.tasks`, `system.triggers`, `system.files`, `system.tabs`, `system.eventbus`, `system.sessions`
+**11 Built-in System Docs:** `system`, `system.views`, `system.config`, `system.plugins`, `system.plugins.dev`, `system.plugins.guide`, `system.tasks`, `system.triggers`, `system.tabs`, `system.eventbus`, `system.sessions`
 
 ### Views Table
 
