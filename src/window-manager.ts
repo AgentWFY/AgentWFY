@@ -167,6 +167,10 @@ class WindowManager {
         const agentRoot = this.activeAgentRoot!;
         removeAgentConfig(agentRoot, name, (change) => this.onRuntimeDbChange(agentRoot, change));
       },
+      pushProviderState: () => {
+        const ctx = this.getActiveAgentContext();
+        if (ctx) this.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
+      },
     });
 
     this.confirmation = new ConfirmationManager({
@@ -297,7 +301,7 @@ class WindowManager {
         }).catch(err => console.error('[triggers] Initial start failed:', err));
         this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
         this.sendToRenderer(Channels.agent.snapshot, ctx.sessionManager.getSnapshot());
-        this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(ctx.agentRoot, ctx.providerRegistry));
+        this.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
       }
     });
 
@@ -570,7 +574,7 @@ class WindowManager {
     const snapshot = ctx.sessionManager.getSnapshot();
     this.sendToRenderer(Channels.agent.snapshot, snapshot);
 
-    this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(agentRoot, ctx.providerRegistry));
+    this.pushProviderState(agentRoot, ctx.providerRegistry);
   }
 
   async removeAgent(agentRoot: string): Promise<void> {
@@ -654,6 +658,10 @@ class WindowManager {
     if (wc && !wc.isDestroyed()) {
       wc.send(channel, ...args);
     }
+  }
+
+  private pushProviderState(agentRoot: string, providerRegistry: ProviderRegistry): void {
+    this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(agentRoot, providerRegistry));
   }
 
   setZenMode(value: boolean): void {
@@ -755,7 +763,13 @@ class WindowManager {
     if (change.table === 'config') {
       rescheduleBackupForAgent(agentRoot);
       agentCtx.shortcutManager.reload(agentRoot);
-      if (this.activeAgentRoot === agentRoot) this.applyTheme();
+      if (this.activeAgentRoot === agentRoot) {
+        this.applyTheme();
+        const key = change.rowId as string;
+        if (key.startsWith('plugin.') || key === 'system.provider') {
+          this.pushProviderState(agentRoot, agentCtx.providerRegistry);
+        }
+      }
     }
 
     if (change.table === 'triggers') {

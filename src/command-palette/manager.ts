@@ -42,6 +42,7 @@ export interface CommandPaletteManagerDeps {
   setAgentConfig: (name: string, value: unknown) => void;
   clearAgentConfig: (name: string) => void;
   removeAgentConfig: (name: string) => void;
+  pushProviderState: () => void;
 }
 
 /** Extra padding around the palette content for the CSS drop-shadow to render. */
@@ -517,6 +518,7 @@ export class CommandPaletteManager {
       this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
         message: `Installed ${names}`,
       });
+      this.deps.pushProviderState();
     }
 
     // Open welcome views (convention: plugin.<name>.welcome)
@@ -567,6 +569,7 @@ export class CommandPaletteManager {
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `Uninstalled ${pluginName}`,
     });
+    this.deps.pushProviderState();
   }
 
   togglePluginEnabled(pluginName: string, enabled: boolean): void {
@@ -587,6 +590,7 @@ export class CommandPaletteManager {
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `${enabled ? 'Enabled' : 'Disabled'} ${pluginName}`,
     });
+    this.deps.pushProviderState();
   }
 
   async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
