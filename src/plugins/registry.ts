@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import { createRequire } from 'node:module'
 import { getConfigValue, setAgentConfig, clearAgentConfig } from '../settings/config.js'
+import { PluginResourceTracker } from './resource-tracker.js'
 import type { OnDbChange } from '../db/sqlite.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderFactory } from '../agent/provider_types.js'
@@ -31,6 +32,7 @@ export interface PluginApi {
 export class PluginRegistry {
   readonly plugins = new Map<string, PluginManifest>()
   private readonly deactivators = new Map<string, () => void>()
+  private readonly trackers = new Map<string, PluginResourceTracker>()
   private readonly agentRoot: string
   private readonly publish: (topic: string, data: unknown) => void
   private readonly providerRegistry: ProviderRegistry | undefined
@@ -58,8 +60,16 @@ export class PluginRegistry {
     try {
       const mod: Record<string, unknown> = { exports: {} }
       const modExports = mod.exports as Record<string, unknown>
-      const fn = new Function('module', 'exports', 'require', row.code)
-      fn(mod, modExports, nodeRequire)
+      const tracker = new PluginResourceTracker()
+      const fn = new Function(
+        'module', 'exports', 'require',
+        'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+        row.code,
+      )
+      fn(
+        mod, modExports, nodeRequire,
+        tracker.setTimeout, tracker.setInterval, tracker.clearTimeout, tracker.clearInterval,
+      )
 
       const activate = (modExports.activate ?? (mod.exports as Record<string, unknown>).activate) as
         ((api: PluginApi) => { deactivate?: () => void } | void) | undefined
@@ -107,6 +117,7 @@ export class PluginRegistry {
       if (result && typeof result.deactivate === 'function') {
         this.deactivators.set(row.name, result.deactivate)
       }
+      this.trackers.set(row.name, tracker)
       this.plugins.set(row.name, { name: row.name, title: row.title, description: row.description, version: row.version })
     } catch (err) {
       console.warn(`[plugins] Skipping ${row.name}: failed to load — ${err instanceof Error ? err.message : String(err)}`)
@@ -130,6 +141,15 @@ export class PluginRegistry {
       this.deactivators.delete(name)
     }
 
+    const tracker = this.trackers.get(name)
+    if (tracker) {
+      const counts = tracker.disposeAll()
+      if (counts.timeouts > 0 || counts.intervals > 0) {
+        console.log(`[plugins] ${name}: force-cleaned ${counts.timeouts} timeout(s), ${counts.intervals} interval(s)`)
+      }
+      this.trackers.delete(name)
+    }
+
     this.functionRegistry?.unregisterBySource(name)
     const removedProviders = this.providerRegistry?.unregisterBySource(name) ?? []
     handleProviderFallback(this.agentRoot, removedProviders, this.onDbChange)
@@ -146,6 +166,8 @@ export class PluginRegistry {
       }
     }
     this.deactivators.clear()
+    for (const tracker of this.trackers.values()) tracker.disposeAll()
+    this.trackers.clear()
     this.plugins.clear()
   }
 }
