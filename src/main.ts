@@ -27,7 +27,7 @@ import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updat
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
 import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from './settings/global-config.js';
-import { Channels } from './ipc/channels.js';
+import { Channels } from './ipc/channels.cjs';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -183,36 +183,36 @@ registerAgentSessionHandlers(
   reconnectSessionManager,
 );
 
-ipcMain.handle('app:restart', async () => {
+ipcMain.handle(Channels.app.restart, async () => {
   await devRebuild();
   app.exit(100); // exit 100 = start.mjs respawns
 });
 
-ipcMain.handle('app:stop', () => {
+ipcMain.handle(Channels.app.stop, () => {
   app.exit(0);
 });
 
-ipcMain.handle('app:reloadRenderer', async () => {
+ipcMain.handle(Channels.app.reloadRenderer, async () => {
   await devRebuild();
   for (const wc of webContents.getAllWebContents()) {
     wc.reloadIgnoringCache();
   }
 });
 
-ipcMain.handle('app:getAgentRoot', () => {
+ipcMain.handle(Channels.app.getAgentRoot, () => {
   return windowManager.getActiveAgentRoot();
 });
 
-ipcMain.on('app:getAgentRoot', (event) => {
+ipcMain.on(Channels.app.getAgentRoot, (event) => {
   event.returnValue = windowManager.getActiveAgentRoot();
 });
 
-ipcMain.handle('app:openAgentRoot', () => {
+ipcMain.handle(Channels.app.openAgentRoot, () => {
   const root = windowManager.getActiveAgentRoot();
   if (root) shell.openPath(root);
 });
 
-ipcMain.handle('app:getAgentDisplayPath', () => {
+ipcMain.handle(Channels.app.getAgentDisplayPath, () => {
   const root = windowManager.getActiveAgentRoot();
   if (!root) return null;
   if (isDefaultAgentPath(root)) return path.basename(root);
@@ -221,7 +221,7 @@ ipcMain.handle('app:getAgentDisplayPath', () => {
   return root;
 });
 
-ipcMain.handle('app:getHttpApiPort', () => {
+ipcMain.handle(Channels.app.getHttpApiPort, () => {
   try {
     return windowManager.getActiveHttpApiPort();
   } catch {
@@ -229,7 +229,7 @@ ipcMain.handle('app:getHttpApiPort', () => {
   }
 });
 
-ipcMain.handle('app:getDefaultView', async () => {
+ipcMain.handle(Channels.app.getDefaultView, async () => {
   try {
     const root = windowManager.getActiveAgentRoot();
     if (!root) return null;
@@ -244,7 +244,7 @@ ipcMain.handle('app:getDefaultView', async () => {
   }
 });
 
-ipcMain.handle('app:getBackupStatus', () => {
+ipcMain.handle(Channels.app.getBackupStatus, () => {
   try {
     const root = windowManager.getActiveAgentRoot();
     if (!root) return null;

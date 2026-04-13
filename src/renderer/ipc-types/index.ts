@@ -14,16 +14,14 @@ import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 import type { FileContent } from '../../agent/types.js'
+import type { ProviderState } from '../../ipc/providers.js'
+import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
+
+export type { ProviderState, AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
 
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
   showFiltered(query: string): Promise<void>
-}
-
-export interface ProviderStateUpdate {
-  providerList: Array<{ id: string; name: string; settingsView?: string }>
-  defaultProviderId: string
-  providerStatusLines: Array<[string, string]>
 }
 
 export interface ProvidersApi {
@@ -31,7 +29,7 @@ export interface ProvidersApi {
   getStatusLine(providerId: string): Promise<string>
   switchProvider(providerId: string): Promise<void>
   setDefault(providerId: string): Promise<void>
-  onStateChanged(callback: (state: ProviderStateUpdate) => void): () => void
+  onStateChanged(callback: (state: ProviderState) => void): () => void
 }
 
 export interface AgentApi {
@@ -44,18 +42,11 @@ export interface AgentApi {
   getSessionList(): Promise<unknown[]>
   setNotifyOnFinish(value: boolean): Promise<void>
   reconnect(): Promise<void>
-  getSnapshot(): Promise<unknown>
-  onSnapshot(callback: (snapshot: unknown) => void): () => void
-  onStreaming(callback: (data: unknown) => void): () => void
+  getSnapshot(): Promise<AgentSnapshot>
+  onSnapshot(callback: (snapshot: AgentSnapshot) => void): () => void
+  onStreaming(callback: (data: AgentStreamingUpdate) => void): () => void
   disposeSession(file: string): Promise<void>
   retryNow(): Promise<void>
-}
-
-export interface InstalledAgent {
-  path: string
-  name: string
-  active: boolean
-  initialized: boolean
 }
 
 export interface ZenModeApi {
@@ -72,7 +63,7 @@ export interface AgentSidebarApi {
   remove(agentRoot: string): Promise<void>
   showContextMenu(agentRoot: string): Promise<void>
   reorder(fromIndex: number, toIndex: number): Promise<void>
-  onSwitched(callback: (data: { agentRoot: string; agents: InstalledAgent[] }) => void): () => void
+  onSwitched(callback: (data: SidebarSwitchedPayload) => void): () => void
 }
 
 export interface AppIpc {
@@ -89,6 +80,9 @@ export interface AppIpc {
   agent: AgentApi
   zenMode: ZenModeApi
   agentSidebar: AgentSidebarApi
+  restart(): Promise<void>
+  stop(): Promise<void>
+  reloadRenderer(): Promise<void>
   getAgentRoot(): Promise<string | null>
   openAgentRoot(): Promise<void>
   getAgentDisplayPath(): Promise<string | null>

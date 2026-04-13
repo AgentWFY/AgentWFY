@@ -1,104 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
-const Channels = {
-  sql: {
-    run: 'sql:run',
-  },
-  tabs: {
-    openTab: 'tabs:openTab',
-    closeTab: 'tabs:closeTab',
-    selectTab: 'tabs:selectTab',
-    updateViewBounds: 'tabs:updateViewBounds',
-    showContextMenu: 'tabs:showContextMenu',
-    viewEvent: 'tabs:viewEvent',
-    stateChanged: 'tabs:stateChanged',
-    getState: 'tabs:getState',
-    reorderTabs: 'tabs:reorderTabs',
-    togglePin: 'tabs:togglePin',
-    revealTab: 'tabs:revealTab',
-    toggleDevTools: 'tabs:toggleDevTools',
-  },
-  sessions: {
-    list: 'sessions:list',
-    read: 'sessions:read',
-    write: 'sessions:write',
-  },
-  store: {
-    get: 'store:get',
-    set: 'store:set',
-    remove: 'store:remove',
-  },
-  dialog: {
-    open: 'dialog:open',
-    openExternal: 'dialog:openExternal',
-  },
-  db: {
-    changed: 'db:changed',
-  },
-  tasks: {
-    start: 'tasks:start',
-    stop: 'tasks:stop',
-    listRunning: 'tasks:listRunning',
-    listLogHistory: 'tasks:listLogHistory',
-    listLogs: 'tasks:listLogs',
-    readLog: 'tasks:readLog',
-    writeLog: 'tasks:writeLog',
-    runFinished: 'tasks:runFinished',
-    runStarted: 'tasks:runStarted',
-  },
-  providers: {
-    list: 'provider:list',
-    getStatusLine: 'provider:get-status-line',
-    switchProvider: 'provider:switch-provider',
-    setDefault: 'provider:set-default',
-    stateChanged: 'provider:state-changed',
-  },
-  agent: {
-    createSession: 'agent:createSession',
-    sendMessage: 'agent:sendMessage',
-    abort: 'agent:abort',
-    closeSession: 'agent:closeSession',
-    loadSession: 'agent:loadSession',
-    switchTo: 'agent:switchTo',
-    getSessionList: 'agent:getSessionList',
-    setNotifyOnFinish: 'agent:setNotifyOnFinish',
-    reconnect: 'agent:reconnect',
-    getSnapshot: 'agent:getSnapshot',
-    snapshot: 'agent:snapshot',
-    streaming: 'agent:streaming',
-    spawnSession: 'agent:spawnSession',
-    sendToSession: 'agent:sendToSession',
-    disposeSession: 'agent:disposeSession',
-    retryNow: 'agent:retryNow',
-  },
-  runtimeFunctions: {
-    methods: 'runtime-functions:methods',
-    call: 'runtime-functions:call',
-  },
-  agents: {
-    requestInstall: 'agents:requestInstall',
-  },
-  views: {
-    fetch: 'views:fetch',
-  },
-  zenMode: {
-    toggle: 'zenMode:toggle',
-    set: 'zenMode:set',
-    changed: 'zenMode:changed',
-  },
-  agentSidebar: {
-    getInstalled: 'agent-sidebar:getInstalled',
-    switch: 'agent-sidebar:switch',
-    add: 'agent-sidebar:add',
-    addFromFile: 'agent-sidebar:addFromFile',
-    remove: 'agent-sidebar:remove',
-    switched: 'agent-sidebar:switched',
-    showContextMenu: 'agent-sidebar:showContextMenu',
-    reorder: 'agent-sidebar:reorder',
-  },
-} as const;
+import { Channels } from './ipc/channels.cjs';
+import type { PushMap, PushChannel } from './ipc/schema.js';
+import type { AppIpc } from './renderer/ipc-types/index.js';
 
 // --- Helpers ---
+
+/** Typed listener for main→renderer push channels. */
+function typedOn<C extends PushChannel>(channel: C, callback: (data: PushMap[C]) => void): () => void {
+  const handler = (_event: unknown, data: PushMap[C]) => callback(data);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
 
 interface RunSqlRequest {
   target?: 'agent' | 'sqlite-file';
@@ -156,12 +68,12 @@ if (isApp) {
 
   let agentRootSync: string | null = null;
   try {
-    agentRootSync = ipcRenderer.sendSync('app:getAgentRoot') ?? null;
+    agentRootSync = ipcRenderer.sendSync(Channels.app.getAgentRoot) ?? null;
   } catch {
     // Silently continue — sendSync may fail if context is not yet ready.
   }
 
-  contextBridge.exposeInMainWorld('ipc', {
+  const api = {
     sql,
     agentRoot: agentRootSync,
     tabs: {
@@ -177,20 +89,16 @@ if (isApp) {
       updateViewBounds(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.updateViewBounds, request);
       },
-      showContextMenu(request: unknown): Promise<unknown> {
+      showContextMenu(request: unknown): Promise<'toggle-pin' | 'reload' | null> {
         return ipcRenderer.invoke(Channels.tabs.showContextMenu, request);
       },
-      onViewEvent(callback: (detail: unknown) => void): () => void {
-        const handler = (_event: unknown, detail: unknown) => callback(detail);
-        ipcRenderer.on(Channels.tabs.viewEvent, handler);
-        return () => ipcRenderer.removeListener(Channels.tabs.viewEvent, handler);
+      onViewEvent(callback: (detail: PushMap['tabs:viewEvent']) => void): () => void {
+        return typedOn(Channels.tabs.viewEvent, callback);
       },
-      onStateChanged(callback: (state: unknown) => void): () => void {
-        const handler = (_event: unknown, state: unknown) => callback(state);
-        ipcRenderer.on(Channels.tabs.stateChanged, handler);
-        return () => ipcRenderer.removeListener(Channels.tabs.stateChanged, handler);
+      onStateChanged(callback: (state: PushMap['tabs:stateChanged']) => void): () => void {
+        return typedOn(Channels.tabs.stateChanged, callback);
       },
-      getTabState(): Promise<unknown> {
+      getTabState(): Promise<PushMap['tabs:stateChanged']> {
         return ipcRenderer.invoke(Channels.tabs.getState);
       },
       reorderTabs(fromIndex: number, toIndex: number): Promise<void> {
@@ -218,8 +126,8 @@ if (isApp) {
       },
     },
     store: {
-      get(key: string): Promise<unknown> {
-        return ipcRenderer.invoke(Channels.store.get, key);
+      get<T = unknown>(key: string): Promise<T> {
+        return ipcRenderer.invoke(Channels.store.get, key) as Promise<T>;
       },
       set(key: string, value: unknown): Promise<void> {
         setTimeout(() => {
@@ -243,10 +151,8 @@ if (isApp) {
       },
     },
     db: {
-      onDbChanged(callback: (detail: { table: string; rowId: string | number; op: 'insert' | 'update' | 'delete' }) => void): () => void {
-        const handler = (_event: unknown, detail: { table: string; rowId: string | number; op: 'insert' | 'update' | 'delete' }) => callback(detail);
-        ipcRenderer.on(Channels.db.changed, handler);
-        return () => ipcRenderer.removeListener(Channels.db.changed, handler);
+      onDbChanged(callback: (detail: PushMap['db:changed']) => void): () => void {
+        return typedOn(Channels.db.changed, callback);
       },
     },
     commandPalette: {
@@ -261,31 +167,31 @@ if (isApp) {
       },
     },
     restart(): Promise<void> {
-      return ipcRenderer.invoke('app:restart');
+      return ipcRenderer.invoke(Channels.app.restart);
     },
     stop(): Promise<void> {
-      return ipcRenderer.invoke('app:stop');
+      return ipcRenderer.invoke(Channels.app.stop);
     },
     reloadRenderer(): Promise<void> {
-      return ipcRenderer.invoke('app:reloadRenderer');
+      return ipcRenderer.invoke(Channels.app.reloadRenderer);
     },
     getAgentRoot(): Promise<string | null> {
-      return ipcRenderer.invoke('app:getAgentRoot');
+      return ipcRenderer.invoke(Channels.app.getAgentRoot);
     },
     openAgentRoot(): Promise<void> {
-      return ipcRenderer.invoke('app:openAgentRoot');
+      return ipcRenderer.invoke(Channels.app.openAgentRoot);
     },
     getAgentDisplayPath(): Promise<string | null> {
-      return ipcRenderer.invoke('app:getAgentDisplayPath');
+      return ipcRenderer.invoke(Channels.app.getAgentDisplayPath);
     },
     getHttpApiPort(): Promise<number | null> {
-      return ipcRenderer.invoke('app:getHttpApiPort');
+      return ipcRenderer.invoke(Channels.app.getHttpApiPort);
     },
     getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null> {
-      return ipcRenderer.invoke('app:getBackupStatus');
+      return ipcRenderer.invoke(Channels.app.getBackupStatus);
     },
     getDefaultView(): Promise<{ viewName: string; title: string; viewUpdatedAt: number } | null> {
-      return ipcRenderer.invoke('app:getDefaultView');
+      return ipcRenderer.invoke(Channels.app.getDefaultView);
     },
     tasks: {
       start(taskName: string, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
@@ -309,15 +215,11 @@ if (isApp) {
       writeLog(logFileName: string, content: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
       },
-      onRunFinished(callback: (payload: unknown) => void): () => void {
-        const handler = (_event: unknown, payload: unknown) => callback(payload);
-        ipcRenderer.on(Channels.tasks.runFinished, handler);
-        return () => ipcRenderer.removeListener(Channels.tasks.runFinished, handler);
+      onRunFinished(callback: (payload: PushMap['tasks:runFinished']) => void): () => void {
+        return typedOn(Channels.tasks.runFinished, callback);
       },
-      onRunStarted(callback: (payload: unknown) => void): () => void {
-        const handler = (_event: unknown, payload: unknown) => callback(payload);
-        ipcRenderer.on(Channels.tasks.runStarted, handler);
-        return () => ipcRenderer.removeListener(Channels.tasks.runStarted, handler);
+      onRunStarted(callback: (payload: PushMap['tasks:runStarted']) => void): () => void {
+        return typedOn(Channels.tasks.runStarted, callback);
       },
     },
     providers: {
@@ -333,10 +235,8 @@ if (isApp) {
       setDefault(providerId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.providers.setDefault, providerId);
       },
-      onStateChanged(callback: (state: unknown) => void): () => void {
-        const handler = (_event: unknown, state: unknown) => callback(state);
-        ipcRenderer.on(Channels.providers.stateChanged, handler);
-        return () => ipcRenderer.removeListener(Channels.providers.stateChanged, handler);
+      onStateChanged(callback: (state: PushMap['provider:state-changed']) => void): () => void {
+        return typedOn(Channels.providers.stateChanged, callback);
       },
     },
     agent: {
@@ -367,18 +267,14 @@ if (isApp) {
       reconnect(): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.reconnect);
       },
-      getSnapshot(): Promise<unknown> {
+      getSnapshot(): Promise<PushMap['agent:snapshot']> {
         return ipcRenderer.invoke(Channels.agent.getSnapshot);
       },
-      onSnapshot(callback: (snapshot: unknown) => void): () => void {
-        const handler = (_event: unknown, snapshot: unknown) => callback(snapshot);
-        ipcRenderer.on(Channels.agent.snapshot, handler);
-        return () => ipcRenderer.removeListener(Channels.agent.snapshot, handler);
+      onSnapshot(callback: (snapshot: PushMap['agent:snapshot']) => void): () => void {
+        return typedOn(Channels.agent.snapshot, callback);
       },
-      onStreaming(callback: (data: unknown) => void): () => void {
-        const handler = (_event: unknown, data: unknown) => callback(data);
-        ipcRenderer.on(Channels.agent.streaming, handler);
-        return () => ipcRenderer.removeListener(Channels.agent.streaming, handler);
+      onStreaming(callback: (data: PushMap['agent:streaming']) => void): () => void {
+        return typedOn(Channels.agent.streaming, callback);
       },
       disposeSession(file: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.disposeSession, file);
@@ -394,10 +290,8 @@ if (isApp) {
       set(value: boolean): Promise<void> {
         return ipcRenderer.invoke(Channels.zenMode.set, value);
       },
-      onChanged(callback: (isZen: boolean) => void): () => void {
-        const handler = (_event: unknown, isZen: boolean) => callback(isZen);
-        ipcRenderer.on(Channels.zenMode.changed, handler);
-        return () => ipcRenderer.removeListener(Channels.zenMode.changed, handler);
+      onChanged(callback: (isZen: PushMap['zenMode:changed']) => void): () => void {
+        return typedOn(Channels.zenMode.changed, callback);
       },
     },
     agentSidebar: {
@@ -422,13 +316,13 @@ if (isApp) {
       reorder(fromIndex: number, toIndex: number): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.reorder, fromIndex, toIndex);
       },
-      onSwitched(callback: (data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => void): () => void {
-        const handler = (_event: unknown, data: { agentRoot: string; agents: Array<{ path: string; name: string; active: boolean; initialized: boolean }> }) => callback(data);
-        ipcRenderer.on(Channels.agentSidebar.switched, handler);
-        return () => ipcRenderer.removeListener(Channels.agentSidebar.switched, handler);
+      onSwitched(callback: (data: PushMap['agent-sidebar:switched']) => void): () => void {
+        return typedOn(Channels.agentSidebar.switched, callback);
       },
     },
-  });
+  } satisfies AppIpc;
+
+  contextBridge.exposeInMainWorld('ipc', api);
 }
 
 // --- agentview:// — expose window.agentwfy (flat API, agent tools subset only) ---

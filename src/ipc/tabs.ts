@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { Channels } from './channels.js';
+import { Channels } from './channels.cjs';
 import { getViewByName } from '../db/views.js';
 
 interface CaptureTabRequest {

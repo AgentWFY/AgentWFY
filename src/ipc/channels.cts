@@ -94,4 +94,15 @@ export const Channels = {
     showContextMenu: 'agent-sidebar:showContextMenu',
     reorder: 'agent-sidebar:reorder',
   },
+  app: {
+    restart: 'app:restart',
+    stop: 'app:stop',
+    reloadRenderer: 'app:reloadRenderer',
+    getAgentRoot: 'app:getAgentRoot',
+    openAgentRoot: 'app:openAgentRoot',
+    getAgentDisplayPath: 'app:getAgentDisplayPath',
+    getHttpApiPort: 'app:getHttpApiPort',
+    getBackupStatus: 'app:getBackupStatus',
+    getDefaultView: 'app:getDefaultView',
+  },
 } as const;

@@ -2,7 +2,8 @@ import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsV
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
-import { Channels } from '../ipc/channels.js';
+import { Channels } from '../ipc/channels.cjs';
+import type { PushMap } from '../ipc/schema.js';
 
 // --- Types & Constants ---
 
@@ -23,6 +24,13 @@ export interface TabData {
 export interface TabState {
   tabs: TabData[]
   selectedTabId: string | null
+}
+
+export interface TabViewEvent {
+  tabId: string
+  type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'
+  errorCode?: number
+  errorDescription?: string
 }
 
 interface ViewConsoleLogEntry {
@@ -170,7 +178,7 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 
 interface TabViewManagerDeps {
   getMainWindow: () => BaseWindow | null;
-  sendToRenderer: (channel: string, ...args: unknown[]) => void;
+  sendToRenderer: <C extends keyof PushMap>(channel: C, data: PushMap[C]) => void;
   focusMainRendererWindow: () => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;
@@ -256,11 +264,11 @@ export class TabViewManager {
     });
 
     viewWebContents.on('did-start-loading', () => {
-      this.deps.sendToRenderer('tabs:viewEvent', { tabId, type: 'did-start-loading' });
+      this.deps.sendToRenderer(Channels.tabs.viewEvent, { tabId, type: 'did-start-loading' });
     });
 
     viewWebContents.on('did-stop-loading', () => {
-      this.deps.sendToRenderer('tabs:viewEvent', { tabId, type: 'did-stop-loading' });
+      this.deps.sendToRenderer(Channels.tabs.viewEvent, { tabId, type: 'did-stop-loading' });
     });
 
     viewWebContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
@@ -268,7 +276,7 @@ export class TabViewManager {
         return;
       }
 
-      this.deps.sendToRenderer('tabs:viewEvent', {
+      this.deps.sendToRenderer(Channels.tabs.viewEvent, {
         tabId,
         type: 'did-fail-load',
         errorCode,

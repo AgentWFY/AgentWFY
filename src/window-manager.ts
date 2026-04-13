@@ -32,7 +32,8 @@ import { ConfirmationManager } from './confirmation/manager.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import type { JsRuntime } from './runtime/js_runtime.js';
-import { Channels } from './ipc/channels.js';
+import { Channels } from './ipc/channels.cjs';
+import type { PushMap, InstalledAgent } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 
 /** Per-agent context (everything that is agent-specific). */
@@ -632,7 +633,7 @@ class WindowManager {
     storeSet('installedAgents', this.persistedAgentPaths);
   }
 
-  getInstalledAgentsList(): Array<{ path: string; name: string; active: boolean; initialized: boolean }> {
+  getInstalledAgentsList(): InstalledAgent[] {
     return this.persistedAgentPaths.map(root => ({
       path: root,
       name: path.basename(root),
@@ -653,10 +654,10 @@ class WindowManager {
     return this.rendererView?.webContents ?? null;
   }
 
-  private sendToRenderer(channel: string, ...args: unknown[]): void {
+  private sendToRenderer<C extends keyof PushMap>(channel: C, data: PushMap[C]): void {
     const wc = this.rendererView?.webContents;
     if (wc && !wc.isDestroyed()) {
-      wc.send(channel, ...args);
+      wc.send(channel, data);
     }
   }
 

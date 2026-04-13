@@ -1,6 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { TabViewManager, toNonEmptyString } from './manager.js';
-import { Channels } from '../ipc/channels.js';
+import { Channels } from '../ipc/channels.cjs';
 
 export function registerTabViewHandlers(getTabViewManager: (e: IpcMainInvokeEvent) => TabViewManager): void {
   ipcMain.handle(Channels.tabs.updateViewBounds, async (event, payload: unknown) => {

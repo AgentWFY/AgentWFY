@@ -2,7 +2,8 @@ import { Notification, nativeImage, app } from 'electron'
 import path from 'path'
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
-import type { RetryState, FileContent } from './types.js'
+import type { FileContent } from './types.js'
+import type { AgentSnapshot } from '../ipc/schema.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
@@ -394,20 +395,7 @@ export class AgentSessionManager {
 
   // --- Snapshot for IPC ---
 
-  getSnapshot(): {
-    messages: DisplayMessage[]
-    isStreaming: boolean
-    label: string
-    streamingSessionsCount: number
-    notifyOnFinish: boolean
-    streamingMessage: DisplayMessage | null
-    statusLine: string | undefined
-    providerId: string
-    activeSessionFile: string | null
-    streamingFiles: string[]
-    retryState: RetryState | null
-    stalledSince: number | null
-  } {
+  getSnapshot(): AgentSnapshot {
     const agent = this.activeAgent
     const streamingFiles: string[] = []
     for (const [, entry] of this.sessions) {

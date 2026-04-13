@@ -5,6 +5,8 @@ import type {
   AgentSnapshot,
   RetryState,
 } from './types.js'
+import type { AgentStreamingUpdate } from '../../ipc/schema.js'
+import type { ProviderState } from '../../ipc/providers.js'
 import type { FileContent } from '../../agent/types.js'
 
 export interface AgentSessionState {
@@ -104,12 +106,11 @@ class AgentSessionStore {
     const ipc = window.ipc
     if (!ipc?.agent) return
 
-    this._snapshotUnsub = ipc.agent.onSnapshot((raw: unknown) => {
-      this.applySnapshot(raw as AgentSnapshot)
+    this._snapshotUnsub = ipc.agent.onSnapshot((snapshot) => {
+      this.applySnapshot(snapshot)
     })
 
-    this._streamingUnsub = ipc.agent.onStreaming((raw: unknown) => {
-      const d = raw as { message: DisplayMessage | null; statusLine?: string; isStreaming?: boolean; retryState?: RetryState | null; stalledSince?: number | null }
+    this._streamingUnsub = ipc.agent.onStreaming((d: AgentStreamingUpdate) => {
       const patch: Partial<AgentSessionState> = { streamingMessage: d.message }
       if (d.statusLine) patch.statusLine = d.statusLine
       if (d.isStreaming !== undefined) patch.isStreaming = d.isStreaming
@@ -119,13 +120,13 @@ class AgentSessionStore {
     })
 
     // Initial snapshot
-    ipc.agent.getSnapshot().then((raw: unknown) => {
-      if (raw) this.applySnapshot(raw as AgentSnapshot)
+    ipc.agent.getSnapshot().then((snapshot) => {
+      if (snapshot) this.applySnapshot(snapshot)
     }).catch((err: unknown) => {
       console.warn('[AgentSessionStore] initial snapshot failed:', err)
     })
 
-    this._providerStateUnsub = ipc.providers?.onStateChanged((state: unknown) => {
+    this._providerStateUnsub = ipc.providers?.onStateChanged((state: ProviderState) => {
       this.applyProviderState(state)
     }) ?? null
 
@@ -260,9 +261,7 @@ class AgentSessionStore {
 
   // ── Providers ──
 
-  private applyProviderState(raw: unknown): void {
-    const state = raw as { providerList?: ProviderInfo[]; defaultProviderId?: string; providerStatusLines?: Array<[string, string]> }
-    if (!state) return
+  private applyProviderState(state: ProviderState): void {
     const providerList = state.providerList ?? []
     const defaultProviderId = state.defaultProviderId ?? 'openai-compatible'
     const providerStatusLines = new Map(state.providerStatusLines ?? [])

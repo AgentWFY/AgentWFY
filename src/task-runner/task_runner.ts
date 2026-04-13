@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import type { ExecJsLogEntry, ExecJsDetails } from '../runtime/types.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
+import type { TaskRunFinishedPayload, TaskRunStartedPayload } from '../ipc/schema.js'
 
 export type TaskOrigin =
   | { type: 'command-palette' }
@@ -40,8 +41,8 @@ interface TaskRunnerDeps {
   agentRoot: string
   getJsRuntime: () => JsRuntime
   busPublish: (topic: string, data: unknown) => void
-  onRunFinished?: (payload: unknown) => void
-  onRunStarted?: (payload: unknown) => void
+  onRunFinished?: (payload: TaskRunFinishedPayload) => void
+  onRunStarted?: (payload: TaskRunStartedPayload) => void
 }
 
 export class TaskRunner {

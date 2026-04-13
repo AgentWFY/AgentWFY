@@ -1,6 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
-import { Channels } from './channels.js'
+import { Channels } from './channels.cjs'
 
 export function registerRuntimeFunctionHandlers(
   getFunctionRegistry: (e: IpcMainInvokeEvent) => FunctionRegistry,

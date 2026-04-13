@@ -1,7 +1,7 @@
 import { ipcMain, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Channels } from './channels.js';
+import { Channels } from './channels.cjs';
 
 // Lazy-initialized: storePath depends on app.name which is set after ESM imports resolve.
 let storePath = '';

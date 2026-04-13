@@ -1,7 +1,7 @@
 import { ipcMain, type WebContents } from 'electron'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
-import { Channels } from './channels.js'
+import { Channels } from './channels.cjs'
 import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import type { AgentDbChange } from '../db/sqlite.js'
 

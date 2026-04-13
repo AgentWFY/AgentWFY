@@ -1,5 +1,5 @@
 import { BaseWindow, BrowserWindow, dialog, ipcMain, OpenDialogOptions, shell } from 'electron';
-import { Channels } from './channels.js';
+import { Channels } from './channels.cjs';
 
 export const registerDialogSubscribers = () => {
   ipcMain.handle(Channels.dialog.open, async (event, options: OpenDialogOptions) => {
