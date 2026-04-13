@@ -13,11 +13,11 @@ import { runCleanup } from './cleanup.js';
 import { getConfigValue } from './settings/config.js';
 import { getViewByName } from './db/views.js';
 import { Channels } from './ipc/channels.cjs';
-import type { PushMap } from './ipc/schema.js';
+import type { SendToRenderer } from './ipc/schema.js';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;
-  sendToRenderer: <C extends keyof PushMap>(channel: C, data: PushMap[C]) => void;
+  sendToRenderer: SendToRenderer;
   getRendererWebContents: () => Electron.WebContents | null;
   isWindowAvailable: () => boolean;
   applyTheme: () => void;

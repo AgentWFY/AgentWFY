@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
 import { Channels } from '../ipc/channels.cjs';
-import type { PushMap } from '../ipc/schema.js';
+import type { SendToRenderer } from '../ipc/schema.js';
 
 // --- Types & Constants ---
 
@@ -178,7 +178,7 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
 
 interface TabViewManagerDeps {
   getMainWindow: () => BaseWindow | null;
-  sendToRenderer: <C extends keyof PushMap>(channel: C, data: PushMap[C]) => void;
+  sendToRenderer: SendToRenderer;
   focusMainRendererWindow: () => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;

@@ -19,7 +19,7 @@ import { ProviderRegistry } from './providers/registry.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import { Channels } from './ipc/channels.cjs';
-import type { PushMap } from './ipc/schema.js';
+import type { SendToRenderer } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import type { AgentContext } from './agent-context.js';
 import type { CommandPaletteManager } from './command-palette/manager.js';
@@ -27,7 +27,7 @@ import type { CommandPaletteManager } from './command-palette/manager.js';
 export interface AgentContextFactoryDeps {
   getMainWindow: () => BaseWindow | null;
   getRendererWebContents: () => Electron.WebContents | null;
-  sendToRenderer: <C extends keyof PushMap>(channel: C, data: PushMap[C]) => void;
+  sendToRenderer: SendToRenderer;
   focusMainRendererWindow: () => void;
   getCommandPalette: () => CommandPaletteManager;
   handleShortcutAction: (action: string) => void;
