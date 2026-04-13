@@ -12,7 +12,7 @@ import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
 import { runCleanup } from './cleanup.js';
 import { getConfigValue } from './settings/config.js';
 import { getViewByName } from './db/views.js';
-import { Channels } from './ipc/channels.js';
+import { Channels } from './ipc/channels.cjs';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;

@@ -2,7 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { assertPathAllowed } from '../security/path-policy.js';
-import { Channels } from '../ipc/channels.js';
+import { Channels } from '../ipc/channels.cjs';
 import type { TaskRunner, TaskOrigin } from './task_runner.js';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;

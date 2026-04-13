@@ -2,7 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { assertPathAllowed } from '../security/path-policy.js';
-import { Channels } from './channels.js';
+import { Channels } from './channels.cjs';
 
 const DEFAULT_SESSION_LIST_LIMIT = 200;
 const MAX_SESSION_LIST_LIMIT = 1000;

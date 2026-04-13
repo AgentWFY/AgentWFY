@@ -1,3 +1,6 @@
+export type { TabDataType, TabData, TabState, TabViewEvent } from '../../tab-views/manager.js'
+import type { TabState, TabViewEvent } from '../../tab-views/manager.js'
+
 export interface TabViewBounds {
   x: number
   y: number
@@ -19,32 +22,6 @@ export interface TabContextMenuRequest {
   tabId: string
 }
 
-export interface TabViewEvent {
-  tabId: string
-  type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'
-  errorCode?: number
-  errorDescription?: string
-}
-
-export type TabDataType = 'view' | 'file' | 'url'
-
-export interface TabData {
-  id: string
-  type: TabDataType
-  title: string
-  target: string
-  viewUpdatedAt?: number | null
-  viewChanged: boolean
-  pinned: boolean
-  hidden: boolean
-  params?: Record<string, string>
-}
-
-export interface TabState {
-  tabs: TabData[]
-  selectedTabId: string | null
-}
-
 export interface TabsApi {
   openTab(request: unknown): Promise<{ tabId: string }>
   closeTab(request: unknown): Promise<void>
@@ -52,10 +29,10 @@ export interface TabsApi {
   updateViewBounds(request: UpdateTabViewBoundsRequest): Promise<void>
   showContextMenu(request: TabContextMenuRequest): Promise<TabContextMenuAction>
   onViewEvent(callback: (detail: TabViewEvent) => void): () => void
-  // Tab state sync (main → renderer)
   onStateChanged(callback: (state: TabState) => void): () => void
   getTabState(): Promise<TabState>
   reorderTabs(fromIndex: number, toIndex: number): Promise<void>
   togglePin(tabId: string): Promise<void>
   revealTab(tabId: string): Promise<void>
+  toggleDevTools(tabId: string): Promise<void>
 }

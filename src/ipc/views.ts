@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { Channels } from './channels.js'
+import { Channels } from './channels.cjs'
 
 interface ViewFetchParams {
   url: string

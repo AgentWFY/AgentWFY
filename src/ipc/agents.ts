@@ -1,7 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import path from 'path'
 import type { CommandPaletteManager } from '../command-palette/manager.js'
-import { Channels } from './channels.js'
+import { Channels } from './channels.cjs'
 
 export function registerAgentHandlers(
   getRoot: (e: IpcMainInvokeEvent) => string,

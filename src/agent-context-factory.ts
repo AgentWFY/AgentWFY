@@ -18,7 +18,7 @@ import { loadPlugins } from './plugins/loader.js';
 import { ProviderRegistry } from './providers/registry.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
-import { Channels } from './ipc/channels.js';
+import { Channels } from './ipc/channels.cjs';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import type { AgentContext } from './agent-context.js';
 import type { CommandPaletteManager } from './command-palette/manager.js';

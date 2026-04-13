@@ -6,7 +6,7 @@ import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, remov
 import { ConfirmationManager } from './confirmation/manager.js';
 import { buildProviderState } from './ipc/providers.js';
 import { storeGet } from './ipc/store.js';
-import { Channels } from './ipc/channels.js';
+import { Channels } from './ipc/channels.cjs';
 import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { ActionDispatcher } from './action-dispatcher.js';

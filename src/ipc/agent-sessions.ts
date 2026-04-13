@@ -1,7 +1,8 @@
 import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '../agent/session_manager.js'
 import type { FileContent } from '../agent/types.js'
-import { Channels } from './channels.js'
+import { Channels } from './channels.cjs'
+import type { PushMap } from './schema.js'
 
 export function registerAgentSessionHandlers(
   getManager: (e: IpcMainInvokeEvent) => AgentSessionManager,
@@ -102,13 +103,17 @@ export function setupAgentStateStreaming(
   let prevMessages: unknown = null
   let prevNotifyOnFinish = false
 
+  const send = <C extends keyof PushMap>(channel: C, data: PushMap[C]) => {
+    if (!wc.isDestroyed()) wc.send(channel, data)
+  }
+
   const sendFullSnapshot = () => {
     if (wc.isDestroyed()) return
     if (!heartbeatDirty) return
     if (isActive && !isActive()) return
     heartbeatDirty = false
     const snapshot = manager.getSnapshot()
-    wc.send(Channels.agent.snapshot, snapshot)
+    send(Channels.agent.snapshot, snapshot)
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
@@ -141,7 +146,7 @@ export function setupAgentStateStreaming(
           if (wc.isDestroyed()) return
           if (isActive && !isActive()) return
           const current = manager.getSnapshot()
-          wc.send(Channels.agent.streaming, {
+          send(Channels.agent.streaming, {
             message: current.streamingMessage,
             statusLine: current.statusLine,
             isStreaming: current.isStreaming,
@@ -152,10 +157,10 @@ export function setupAgentStateStreaming(
       }
 
       if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
-        wc.send(Channels.agent.snapshot, snapshot)
+        send(Channels.agent.snapshot, snapshot)
       }
     } else {
-      wc.send(Channels.agent.snapshot, snapshot)
+      send(Channels.agent.snapshot, snapshot)
     }
 
     prevIsStreaming = snapshot.isStreaming
