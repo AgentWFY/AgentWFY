@@ -2,11 +2,8 @@ import {
   buildRenderBlocks,
   updateMessagesEl
 } from './chat_message_renderer.js'
-import { escapeHtml, parseTabLink, imageDataUrl } from './chat_utils.js'
+import { escapeHtml, parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
-import type { FileContent } from '../../agent/types.js'
-
-type PendingAttachment = FileContent & { name: string }
 
 const STYLES = `
   awfy-agent-chat {
@@ -198,7 +195,7 @@ const STYLES = `
   .tools-group {
     margin-top: 2px;
   }
-  /* ── Tool card: V1 Flush Fill ── */
+  /* ── Tool card ── */
   .tool-card {
     background: var(--color-bg2);
     border-radius: var(--radius-md);
@@ -229,7 +226,6 @@ const STYLES = `
     color: var(--color-red-fg);
     flex-shrink: 0;
   }
-  /* ── Tabs ── */
   .tb-tabs {
     display: flex;
     gap: 0;
@@ -271,7 +267,6 @@ const STYLES = `
     line-height: 14px;
     vertical-align: middle;
   }
-  /* ── Panes ── */
   .tool-body {
     font-size: 11px;
   }
@@ -300,7 +295,6 @@ const STYLES = `
     color: var(--color-text2);
     font-style: italic;
   }
-  /* ── R1 Sectioned result ── */
   .result-section { margin-bottom: 6px; }
   .result-section:last-child { margin-bottom: 0; }
   .rs-label {
@@ -329,7 +323,6 @@ const STYLES = `
     text-transform: none;
     letter-spacing: 0;
   }
-  /* Console log list */
   .log-list {
     background: var(--color-bg3);
     border-radius: var(--radius-sm);
@@ -364,7 +357,6 @@ const STYLES = `
     word-break: break-word;
     min-width: 0;
   }
-  /* Error block */
   .error-block {
     padding: 6px 8px;
     background: var(--color-red-bg);
@@ -376,7 +368,6 @@ const STYLES = `
   }
   .error-name { font-weight: 700; margin-bottom: 2px; }
   .error-msg { word-break: break-word; }
-  /* ── Image pane ── */
   .tb-img-wrap {
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -470,155 +461,6 @@ const STYLES = `
     margin-top: 10px;
     flex-shrink: 0;
     position: relative;
-  }
-  .input-container {
-    position: relative;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-md);
-    background: var(--color-input-bg);
-    transition: border-color var(--transition-fast);
-  }
-  .input-container:focus-within {
-    border-color: var(--color-focus-border);
-  }
-  .input-container textarea {
-    display: block;
-    width: 100%;
-    resize: none;
-    min-height: 36px;
-    max-height: 120px;
-    line-height: 1.4;
-    overflow-y: auto;
-    border: none;
-    background: transparent;
-    padding: 8px 40px 8px 10px;
-    outline: none;
-    box-sizing: border-box;
-  }
-  .paste-attachment {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 6px 8px 0;
-    padding: 4px 8px;
-    background: var(--color-bg3);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
-    color: var(--color-text3);
-    cursor: pointer;
-    user-select: none;
-  }
-  .paste-attachment:hover {
-    background: var(--color-item-hover);
-  }
-  .paste-attachment-icon {
-    flex-shrink: 0;
-    color: var(--color-text2);
-  }
-  .paste-attachment-label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .paste-attachment-remove {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0 2px;
-    color: var(--color-text2);
-    font-size: 14px;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-  }
-  .paste-attachment-remove:hover {
-    color: var(--color-red-fg);
-  }
-  .paste-attachment-preview {
-    margin: 0 8px 6px;
-    padding: 6px 8px;
-    background: var(--color-bg3);
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--color-text2);
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 150px;
-    overflow-y: auto;
-  }
-  .attachment-strip {
-    display: none;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 8px 0;
-  }
-  .attachment-strip.has-items {
-    display: flex;
-  }
-  .attachment-item {
-    position: relative;
-    width: 52px;
-    height: 52px;
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg3);
-    flex-shrink: 0;
-  }
-  .attachment-item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .attachment-item-remove {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    background: rgba(0, 0, 0, 0.65);
-    color: #fff;
-    border: none;
-    border-radius: 50%;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 0;
-  }
-  .attachment-item-remove:hover {
-    background: var(--color-red-fg);
-  }
-  .input-container.drag-over {
-    border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-input-bg));
-  }
-  .stop-btn {
-    position: absolute;
-    right: 6px;
-    bottom: 6px;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-text3);
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    color: var(--color-bg1);
-    padding: 0;
-    transition: background var(--transition-fast);
-  }
-  .stop-btn:hover {
-    background: var(--color-red-fg);
   }
   .tools-row {
     margin-top: 6px;
@@ -788,18 +630,6 @@ const STYLES = `
   }
   .gear-btn.active { color: var(--color-accent); }
   .gear-btn.active svg { fill: currentColor; }
-  .session-running-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4caf50;
-    flex-shrink: 0;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
   .provider-panel-item {
     display: flex;
     align-items: center;
@@ -844,121 +674,6 @@ const STYLES = `
     color: var(--color-text4);
     background: var(--color-item-hover);
   }
-  .provider-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-bottom: 16px;
-    flex: 1;
-    justify-content: flex-start;
-    overflow-y: auto;
-    min-height: 0;
-  }
-  .provider-card {
-    display: flex;
-    flex-direction: column;
-    padding: 12px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: border-color var(--transition-fast), background var(--transition-fast);
-  }
-  .provider-card:hover {
-    background: var(--color-item-hover);
-  }
-  .provider-card.selected {
-    border-color: var(--color-accent);
-  }
-  .provider-card-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-text4);
-  }
-  .provider-card-status {
-    font-size: 11px;
-    color: var(--color-text2);
-    margin-top: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .provider-card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 10px;
-    min-height: 22px;
-  }
-  .provider-card-settings-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 3px 6px;
-    margin: -3px -6px;
-    color: var(--color-text2);
-    font-size: 11px;
-    line-height: 1;
-    border-radius: 3px;
-  }
-  .provider-card-settings-btn:hover {
-    color: var(--color-text4);
-    background: var(--color-bg3);
-  }
-  .provider-card-settings-btn svg {
-    flex-shrink: 0;
-  }
-  .default-badge {
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    color: var(--color-accent);
-    padding: 2px 6px;
-    border-radius: 3px;
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-    margin-left: auto;
-  }
-  .set-default-btn {
-    font-size: 10px;
-    color: var(--color-text2);
-    background: none;
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
-    cursor: pointer;
-    padding: 2px 8px;
-    margin-left: auto;
-    opacity: 0;
-    transition: opacity var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-  }
-  .provider-card:hover .set-default-btn {
-    opacity: 1;
-  }
-  .set-default-btn:hover {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-  .browse-providers-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 12px;
-    border: 1px dashed var(--color-border);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    background: none;
-    font-family: inherit;
-    font-size: 12px;
-    color: var(--color-text2);
-    transition: border-color var(--transition-fast), color var(--transition-fast);
-  }
-  .browse-providers-link:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
   .provider-info {
     font-size: 11px;
     color: var(--color-text2);
@@ -972,203 +687,11 @@ const STYLES = `
     font-weight: 600;
     color: var(--color-text3);
   }
-  .session-panel-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--color-text3);
-  }
-  .session-panel-item:hover { background: var(--color-item-hover); }
-  .session-panel-item.active {
-    background: var(--color-item-hover);
-    font-weight: 600;
-  }
-  .session-panel-item-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-  }
-  .session-panel-item-date {
-    font-size: 11px;
-    color: var(--color-text2);
-    flex-shrink: 0;
-  }
-  /* Open sessions area */
-  .open-sessions-box {
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 4px;
-    margin-bottom: 4px;
-  }
-  .session-list-header {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 8px;
-    cursor: pointer;
-    user-select: none;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--color-text2);
-  }
-  .session-list-header:hover {
-    color: var(--color-text3);
-  }
-  .session-list-header svg {
-    transition: transform 0.15s;
-    flex-shrink: 0;
-  }
-  .session-list-header.collapsed svg {
-    transform: rotate(-90deg);
-  }
-  .session-list {
-    display: flex;
-    flex-direction: column;
-  }
-  .session-list.collapsed {
-    display: none;
-  }
-  .session-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-  }
-  .session-item:hover {
-    background: var(--color-item-hover);
-  }
-  .session-item.active {
-    background: var(--color-item-hover);
-  }
-  .session-item-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-text2);
-    opacity: 0.5;
-    flex-shrink: 0;
-  }
-  .session-item.active .session-item-dot {
-    background: var(--color-text3);
-    opacity: 1;
-  }
-  .session-item.streaming .session-item-dot {
-    background: var(--color-green-fg);
-    opacity: 1;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-  .session-item-label {
-    font-size: 12px;
-    color: var(--color-text3);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1;
-  }
-  .session-item.active .session-item-label {
-    font-weight: 600;
-    color: var(--color-text4);
-  }
-  .session-item-close {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    border-radius: 3px;
-    padding: 0;
-    color: var(--color-text2);
-  }
-  .session-item-close:hover {
-    background: var(--color-item-active);
-    color: var(--color-text4);
-  }
-  .session-item:hover .session-item-close {
-    display: flex;
-  }
-  /* ── Zen mode: horizontal session tabs ── */
-  .awfy-app-root.zen-mode .open-sessions-box {
-    border-bottom: none;
-    padding-bottom: 0;
-    margin-bottom: 0;
-  }
-  .awfy-app-root.zen-mode .session-list-header {
-    display: none;
-  }
-  .awfy-app-root.zen-mode .session-list,
-  .awfy-app-root.zen-mode .session-list.collapsed {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    gap: 4px;
-    padding: 4px 4px 4px 72px; /* macOS traffic light buttons */
-  }
-  .awfy-app-root.zen-mode .session-item {
-    padding: 0 10px;
-    height: 28px;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--color-text2);
-    font-size: 12px;
-    flex-shrink: 0;
-    max-width: 200px;
-    transition: color var(--transition-fast), background var(--transition-fast);
-  }
-  .awfy-app-root.zen-mode .session-item:hover {
-    color: var(--color-text3);
-    background: var(--color-item-hover);
-  }
-  .awfy-app-root.zen-mode .session-item.active {
-    color: var(--color-text4);
-    background: var(--color-bg1);
-    font-weight: 500;
-    box-shadow: 0 0 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
-  }
-  .awfy-app-root.zen-mode .session-item-dot {
-    display: block;
-    opacity: 0.45;
-  }
-  .awfy-app-root.zen-mode .session-item.active .session-item-dot {
-    opacity: 0.75;
-  }
-  .awfy-app-root.zen-mode .session-item:hover .session-item-dot {
-    opacity: 0.65;
-  }
-  .awfy-app-root.zen-mode .session-item.streaming .session-item-dot {
-    opacity: 1;
-  }
-  .awfy-app-root.zen-mode .session-item.active .session-item-label {
-    font-weight: 500;
-  }
-  .awfy-app-root.zen-mode .session-item-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    visibility: hidden;
-  }
-  .awfy-app-root.zen-mode .session-item:hover .session-item-close {
-    visibility: visible;
-  }
 `
 
 export class TlAgentChat extends HTMLElement {
-  private _storeUnsub: (() => void) | null = null
+  private _unsubs: (() => void)[] = []
   private error: string | null = null
-  private inputValue = ''
   private activePanel: 'providers' | null = null
   private isInitializing = true
   private messagesEl: HTMLElement | null = null
@@ -1181,7 +704,6 @@ export class TlAgentChat extends HTMLElement {
   private _scrollToBottomBtn: HTMLElement | null = null
   private _scrollBtnVisible = false
   private _renderMode: 'initializing' | 'chat' | null = null
-  private _textarea: HTMLTextAreaElement | null = null
   private _errorBanner: HTMLElement | null = null
   private _retryBanner: HTMLElement | null = null
   private _retryCountdownTimer: ReturnType<typeof setInterval> | null = null
@@ -1195,24 +717,17 @@ export class TlAgentChat extends HTMLElement {
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
   private _providerPanel: HTMLElement | null = null
-  private _stopBtn: HTMLElement | null = null
   private _providerInfo: HTMLElement | null = null
-  private _providerGrid: HTMLElement | null = null
-  private _pastedText: string | null = null
-  private _pastedLineCount = 0
-  private _pasteExpanded = false
-  private _pasteAttachmentEl: HTMLElement | null = null
-  private _pasteLabelEl: HTMLElement | null = null
-  private _pastePreviewEl: HTMLElement | null = null
-  private _pendingAttachments: PendingAttachment[] = []
-  private _attachmentStripEl: HTMLElement | null = null
-  private _fileInputEl: HTMLInputElement | null = null
+  private _providerGridEl: HTMLElement | null = null
+  private _sessionTabsEl: HTMLElement | null = null
+  private _chatInputEl: HTMLElement | null = null
   private _closeLightbox: (() => void) | null = null
-  private _openBox: HTMLElement | null = null
-  private _sessionListEl: HTMLElement | null = null
-  private _sessionCountEl: HTMLElement | null = null
   private _isZenMode = false
   private _unlistenZenMode: (() => void) | null = null
+
+  // Per-agent state cache (scroll & tool state only — input state is in chat-input)
+  private _chatStateCache = new Map<string, { userScrolledUp: boolean; openToolSet: Set<string> }>()
+  private _currentAgentRoot: string | null = null
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -1232,19 +747,18 @@ export class TlAgentChat extends HTMLElement {
     this.containerEl.style.minHeight = '0'
     this.appendChild(this.containerEl)
 
+    this._currentAgentRoot = window.ipc?.agentRoot ?? null
     this.render()
     this.init()
   }
 
   focusInput() {
-    this._textarea?.focus()
+    (this._chatInputEl as any)?.focusInput?.()
   }
 
   disconnectedCallback() {
-    window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.removeEventListener('agentwfy:load-session', this.onLoadSession)
-    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     this._unlistenZenMode?.()
     this._unlistenZenMode = null
@@ -1252,18 +766,10 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
     this._closeLightbox?.()
-    this._storeUnsub?.()
-    this._storeUnsub = null
+    for (const unsub of this._unsubs) unsub()
+    this._unsubs.length = 0
     this.clearChatRefs()
     this._renderMode = null
-  }
-
-  private onPluginChanged = () => {
-    this.render()
-  }
-
-  private onConfigDbChanged = () => {
-    this.render()
   }
 
   private onOpenSessionInChat = (e: Event) => {
@@ -1282,36 +788,29 @@ export class TlAgentChat extends HTMLElement {
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
-  private _chatStateCache = new Map<string, { inputValue: string; userScrolledUp: boolean; openToolSet: Set<string> }>()
-  private _currentAgentRoot: string | null = null
-
   private onAgentSwitched = (e: Event) => {
     const detail = (e as CustomEvent).detail
     const newAgentRoot: string | null = detail?.agentRoot ?? null
     const agents: Array<{ path: string }> | undefined = detail?.agents
 
-    // Save current chat UI state
+    if (newAgentRoot === this._currentAgentRoot) return
+
     if (this._currentAgentRoot) {
       this._chatStateCache.set(this._currentAgentRoot, {
-        inputValue: this.inputValue,
         userScrolledUp: this.userScrolledUp,
         openToolSet: new Set(this.openToolSet),
       })
     }
 
-    // Restore cached state or reset
     const cached = newAgentRoot ? this._chatStateCache.get(newAgentRoot) : null
     if (cached) {
-      this.inputValue = cached.inputValue
       this.userScrolledUp = cached.userScrolledUp
       this.openToolSet = new Set(cached.openToolSet)
     } else {
-      this.inputValue = ''
       this.userScrolledUp = false
       this.openToolSet.clear()
     }
 
-    // Clean up cache entries for removed agents
     if (agents) {
       const activePaths = new Set(agents.map(a => a.path))
       for (const key of this._chatStateCache.keys()) {
@@ -1321,11 +820,6 @@ export class TlAgentChat extends HTMLElement {
 
     this.activePanel = null
     this.error = null
-    if (this._textarea) {
-      this._textarea.value = this.inputValue
-      this._textarea.style.height = 'auto'
-    }
-
     this._currentAgentRoot = newAgentRoot
   }
 
@@ -1361,14 +855,11 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private init() {
-    window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
     window.addEventListener('agentwfy:load-session', this.onLoadSession)
-    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
-    this._unlistenZenMode = window.ipc?.zenMode?.onChanged((isZen) => {
+    this._unlistenZenMode = window.ipc?.zenMode?.onChanged((isZen: boolean) => {
       this._isZenMode = isZen
-      this.updateOpenDots()
     }) ?? null
     window.addEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.addEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
@@ -1381,41 +872,113 @@ export class TlAgentChat extends HTMLElement {
       return
     }
 
-    // Subscribe to the shared store — single source of truth
-    this._storeUnsub = agentSessionStore.subscribe(() => {
-      this.error = null
-      this.render()
-    })
+    // Subscribe to targeted store slices instead of blanket subscribe()
+    this.subscribeToStore()
 
     // Wait for the store to be ready
     if (agentSessionStore.state.ready) {
       this.isInitializing = false
-    } else {
-      const unsub = agentSessionStore.select(s => s.ready, (ready) => {
-        if (ready) {
-          this.isInitializing = false
-          this.render()
-          unsub()
-        }
-      })
     }
 
     this.render()
   }
 
-  private async handleStop() {
-    try {
-      await agentSessionStore.abort()
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-      this.render()
+  private subscribeToStore() {
+    // Streaming message deltas (hot path) — only update messages area
+    this._unsubs.push(agentSessionStore.select(
+      s => s.streamingMessage,
+      () => this.updateMessages()
+    ))
+
+    // Messages array changed (new messages, session loaded)
+    this._unsubs.push(agentSessionStore.select(
+      s => s.messages,
+      () => {
+        this.error = null
+        this.updateMessages()
+        this.updateProviderGridVisibility()
+        this.updateNewSessionBtn()
+      }
+    ))
+
+    // Streaming state toggled (start/stop)
+    this._unsubs.push(agentSessionStore.select(
+      s => s.isStreaming,
+      () => {
+        this.error = null
+        this.updateMessages()
+        this.updateProviderGridVisibility()
+        this.updateNewSessionBtn()
+        this.updateNotifyBtn()
+        this.updateScrollToBottomBtn()
+      }
+    ))
+
+    // Ready state
+    this._unsubs.push(agentSessionStore.select(
+      s => s.ready,
+      (ready) => {
+        if (ready && this.isInitializing) {
+          this.isInitializing = false
+          this.render()
+        }
+      }
+    ))
+
+    // Retry state
+    this._unsubs.push(agentSessionStore.select(
+      s => s.retryState,
+      () => this.updateRetryBanner()
+    ))
+
+    // Notify state
+    this._unsubs.push(agentSessionStore.select(
+      s => s.notifyOnFinish,
+      () => this.updateNotifyBtn()
+    ))
+
+    // Provider info — selector returns a change-detection key; listener re-reads state
+    this._unsubs.push(agentSessionStore.select(
+      s => {
+        const hasMessages = s.messages.length > 0 || s.isStreaming
+        const providerId = hasMessages ? s.providerId : s.selectedProviderId
+        const provider = s.providerList.find(p => p.id === providerId)
+        const name = provider?.name || providerId || ''
+        const status = hasMessages
+          ? (s.statusLine || s.configStatusLine)
+          : (s.providerStatusLines.get(providerId) || '')
+        return `${name}\0${status}`
+      },
+      () => this.updateProviderInfo()
+    ))
+
+    // Provider list (for popup panel)
+    this._unsubs.push(agentSessionStore.select(
+      s => s.providerList,
+      () => this.updateProviderPanel()
+    ))
+  }
+
+  // ── Retry banner ──
+
+  private updateRetryBanner() {
+    if (!this._retryBanner) return
+    const retryState = agentSessionStore.state.retryState
+    if (retryState) {
+      this._retryBanner.style.display = ''
+      this.renderRetryBannerContent(retryState)
+    } else {
+      this._retryBanner.style.display = 'none'
+      if (this._retryCountdownTimer) {
+        clearInterval(this._retryCountdownTimer)
+        this._retryCountdownTimer = null
+      }
     }
   }
 
-  private updateRetryBanner(retryState: { attempt: number; maxAttempts: number; nextRetryAt: number; lastError: string; category: string }) {
+  private renderRetryBannerContent(retryState: { attempt: number; maxAttempts: number; nextRetryAt: number; lastError: string; category: string }) {
     if (!this._retryBanner) return
 
-    // Render static structure once, then update only the countdown text
     if (!this._retryBanner.querySelector('.retry-text')) {
       this._retryBanner.innerHTML = `
         <div class="retry-text">
@@ -1451,6 +1014,8 @@ export class TlAgentChat extends HTMLElement {
     this._retryCountdownTimer = setInterval(updateCountdown, 1000)
   }
 
+  // ── Streaming phase indicator ──
+
   private static PHASE_THRESHOLD_MS = 30_000
   private static DOTS_HTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'
 
@@ -1463,7 +1028,6 @@ export class TlAgentChat extends HTMLElement {
     const lastBlock = blocks[blocks.length - 1]
     if (lastBlock.type === 'exec_js') return 'tool'
 
-    // Detect content changes via block count + last text block identity
     const lastText = lastBlock.type === 'text' ? (lastBlock as { text: string }).text : null
     if (blocks.length !== this._lastStreamingBlockCount || lastText !== this._lastStreamingText) {
       this._lastStreamingBlockCount = blocks.length
@@ -1488,7 +1052,6 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
-  /** Manages the streaming phase indicator: dots normally, descriptive text after 30s in same state. */
   private updatePhaseLabel(s: typeof agentSessionStore.state): void {
     if (!this.messagesEl) return
     const indicator = this.messagesEl.querySelector<HTMLElement>('#streaming-indicator')
@@ -1502,8 +1065,6 @@ export class TlAgentChat extends HTMLElement {
       this.clearPhaseLabelTimer()
       indicator.innerHTML = phase ? TlAgentChat.DOTS_HTML : ''
 
-      // Background timer to check phase transitions and show labels after threshold.
-      // Needed because when events stop, the store stops notifying.
       if (phase) {
         this.startPhaseLabelTimer(indicator)
       }
@@ -1516,7 +1077,6 @@ export class TlAgentChat extends HTMLElement {
     this._phaseLabelTimer = setInterval(() => {
       const phase = this.getCurrentPhase(agentSessionStore.state)
 
-      // Phase changed — reset and restart
       if (phase !== this._currentPhase) {
         this._currentPhase = phase
         this._phaseStartTime = phase === 'idle' ? this._lastStreamEventTime : Date.now()
@@ -1525,13 +1085,11 @@ export class TlAgentChat extends HTMLElement {
         return
       }
 
-      // Streaming normally or no phase — keep dots
       if (!phase || phase === 'streaming') return
 
       const elapsed = Date.now() - this._phaseStartTime
       if (elapsed < TlAgentChat.PHASE_THRESHOLD_MS) return
 
-      // Threshold reached — show or update label
       const label = this.getPhaseLabel(phase, elapsed)
       if (!label) return
       const existing = indicator.querySelector('.streaming-phase-label')
@@ -1547,6 +1105,8 @@ export class TlAgentChat extends HTMLElement {
     if (this._phaseLabelTimer) { clearInterval(this._phaseLabelTimer); this._phaseLabelTimer = null }
   }
 
+  // ── Session actions ──
+
   private async handleNewSession() {
     this.activePanel = null
     try {
@@ -1554,141 +1114,19 @@ export class TlAgentChat extends HTMLElement {
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
     }
-    this.render()
+    this.updateErrorBanner()
   }
 
-  private async sendMessage() {
-    const typed = this.inputValue.trim()
-    const pasted = this._pastedText
-    const attachments = this._pendingAttachments
-    if (!typed && !pasted && attachments.length === 0) return
-
-    let text: string
-    if (pasted && typed) {
-      text = typed + '\n\n<context>\n' + pasted + '\n</context>'
-    } else if (pasted) {
-      text = pasted
-    } else {
-      text = typed
-    }
-
-    const files: FileContent[] | undefined = attachments.length > 0
-      ? attachments.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
-      : undefined
-
-    this.inputValue = ''
-    this._pastedText = null
-    this._pastedLineCount = 0
-    this._pasteExpanded = false
-    this._pendingAttachments = []
-    if (this._textarea) {
-      this._textarea.value = ''
-      this._textarea.style.height = 'auto'
-    }
-    this.renderPasteAttachment()
-    this.renderAttachmentStrip()
-    this.userScrolledUp = false
-    this.render()
-
-    try {
-      await agentSessionStore.sendMessage(text, files)
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-      this.render()
-    }
-  }
-
-  private handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      this.sendMessage()
-    } else if (e.key === 'Enter' && e.shiftKey) {
-      requestAnimationFrame(() => this.autoResizeTextarea(e.target as HTMLTextAreaElement))
-    }
-  }
-
-  private handleInput(e: Event) {
-    const textarea = e.target as HTMLTextAreaElement
-    this.inputValue = textarea.value
-    this.autoResizeTextarea(textarea)
-  }
-
-  private autoResizeTextarea(textarea: HTMLTextAreaElement) {
-    textarea.style.height = 'auto'
-    textarea.style.height = textarea.scrollHeight + 'px'
-  }
-
-  private static PASTE_THRESHOLD = 500
-
-  private handlePaste(e: ClipboardEvent) {
-    const items = e.clipboardData?.items
-    if (items) {
-      const imageFiles: File[] = []
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        if (item.kind === 'file' && item.type.startsWith('image/')) {
-          const file = item.getAsFile()
-          if (file) imageFiles.push(file)
-        }
-      }
-      if (imageFiles.length > 0) {
-        e.preventDefault()
-        void this.addImageFiles(imageFiles)
-        return
-      }
-    }
-
-    const text = e.clipboardData?.getData('text/plain')
-    if (!text || text.length < TlAgentChat.PASTE_THRESHOLD) return
-
-    e.preventDefault()
-    this._pastedText = text
-    this._pastedLineCount = 1
-    for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) === 10) this._pastedLineCount++
-    }
-    this._pasteExpanded = false
-    this.renderPasteAttachment()
-  }
-
-  private async addImageFiles(files: File[] | FileList): Promise<void> {
-    const images = Array.from(files).filter(f => f.type.startsWith('image/'))
-    if (images.length === 0) return
-    const results = await Promise.all(images.map(async (file) => {
-      try {
-        const data = await this.readFileAsBase64(file)
-        return { type: 'file' as const, data, mimeType: file.type, name: file.name || 'image' }
-      } catch (err) {
-        console.warn('[agent-chat] failed to read attachment', err)
-        return null
-      }
-    }))
-    const added = results.filter((a): a is PendingAttachment => a !== null)
-    if (added.length === 0) return
-    this._pendingAttachments = [...this._pendingAttachments, ...added]
-    this.renderAttachmentStrip()
-  }
-
-  private readFileAsBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const result = reader.result
-        if (typeof result !== 'string') {
-          reject(new Error('FileReader result was not a string'))
-          return
-        }
-        const comma = result.indexOf(',')
-        resolve(comma >= 0 ? result.slice(comma + 1) : result)
-      }
-      reader.onerror = () => reject(reader.error ?? new Error('FileReader error'))
-      reader.readAsDataURL(file)
+  private loadSession(file: string) {
+    agentSessionStore.loadSession(file).catch(err => {
+      this.error = err instanceof Error ? err.message : String(err)
+      this.updateErrorBanner()
     })
   }
 
+  // ── Image lightbox ──
+
   private openImageLightbox(src: string): void {
-    // Tab WebContentsViews render above the DOM, so a DOM overlay would be
-    // hidden behind them outside zen mode.
     if (!this._isZenMode) return
 
     this._closeLightbox?.()
@@ -1716,65 +1154,7 @@ export class TlAgentChat extends HTMLElement {
     this._closeLightbox = close
   }
 
-  private removeAttachment(index: number): void {
-    if (index < 0 || index >= this._pendingAttachments.length) return
-    this._pendingAttachments.splice(index, 1)
-    this.renderAttachmentStrip()
-  }
-
-  private renderAttachmentStrip(): void {
-    if (!this._attachmentStripEl) return
-    const items = this._pendingAttachments
-    if (items.length === 0) {
-      this._attachmentStripEl.classList.remove('has-items')
-      this._attachmentStripEl.innerHTML = ''
-      return
-    }
-    this._attachmentStripEl.classList.add('has-items')
-    this._attachmentStripEl.innerHTML = items.map((att, i) => {
-      const name = escapeHtml(att.name)
-      return `<div class="attachment-item" data-idx="${i}" title="${name}">
-        <img src="${imageDataUrl(att.mimeType, att.data)}" alt="${name}">
-        <button class="attachment-item-remove" data-remove-idx="${i}" title="Remove">
-          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
-        </button>
-      </div>`
-    }).join('')
-  }
-
-  private removePasteAttachment() {
-    this._pastedText = null
-    this._pastedLineCount = 0
-    this._pasteExpanded = false
-    this.renderPasteAttachment()
-  }
-
-  private renderPasteAttachment() {
-    if (!this._pasteAttachmentEl || !this._pastePreviewEl) return
-
-    if (!this._pastedText) {
-      this._pasteAttachmentEl.style.display = 'none'
-      this._pastePreviewEl.style.display = 'none'
-      this._pastePreviewEl.textContent = ''
-      return
-    }
-
-    const lines = this._pastedLineCount
-    const chars = this._pastedText.length
-    if (this._pasteLabelEl) {
-      this._pasteLabelEl.textContent = `Pasted text \u2014 ${lines} line${lines !== 1 ? 's' : ''}, ${chars.toLocaleString()} chars`
-    }
-
-    this._pasteAttachmentEl.style.display = 'flex'
-
-    if (this._pasteExpanded) {
-      this._pastePreviewEl.style.display = 'block'
-      this._pastePreviewEl.textContent = this._pastedText
-    } else {
-      this._pastePreviewEl.style.display = 'none'
-      this._pastePreviewEl.textContent = ''
-    }
-  }
+  // ── Scroll management ──
 
   private handleMessagesScroll = () => {
     if (!this.messagesEl || this._programmaticScrollCount > 0) return
@@ -1799,6 +1179,8 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
+  // ── Render lifecycle ──
+
   private render() {
     if (!this.containerEl) return
 
@@ -1811,17 +1193,15 @@ export class TlAgentChat extends HTMLElement {
       return
     }
 
-    // Chat mode
     if (this._renderMode !== 'chat') {
       this.buildChatLayout()
       this._renderMode = 'chat'
     }
-    this.updateChat()
+    this.updateAll()
   }
 
   private clearChatRefs() {
     this.messagesEl = null
-    this._textarea = null
     this._errorBanner = null
     this._retryBanner = null
     if (this._retryCountdownTimer) { clearInterval(this._retryCountdownTimer); this._retryCountdownTimer = null }
@@ -1831,17 +1211,10 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn = null
     this._settingsBtn = null
     this._providerPanel = null
-    this._stopBtn = null
     this._providerInfo = null
-    this._providerGrid = null
-    this._pasteAttachmentEl = null
-    this._pasteLabelEl = null
-    this._pastePreviewEl = null
-    this._attachmentStripEl = null
-    this._fileInputEl = null
-    this._openBox = null
-    this._sessionListEl = null
-    this._sessionCountEl = null
+    this._providerGridEl = null
+    this._sessionTabsEl = null
+    this._chatInputEl = null
     this._scrollToBottomBtn = null
   }
 
@@ -1853,106 +1226,22 @@ export class TlAgentChat extends HTMLElement {
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;'
 
-    // Open sessions list
-    this._openBox = document.createElement('div')
-    this._openBox.className = 'open-sessions-box'
-    this._openBox.style.display = 'none'
-
-    const header = document.createElement('div')
-    header.className = 'session-list-header'
-    header.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,3 5,7 8,3"/></svg><span></span>'
-    this._sessionCountEl = header.querySelector('span')
-    header.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      header.classList.toggle('collapsed')
-      this._sessionListEl?.classList.toggle('collapsed')
+    // Session tabs (sub-component)
+    this._sessionTabsEl = document.createElement('awfy-session-tabs')
+    this._sessionTabsEl.addEventListener('session-error', (e: Event) => {
+      this.error = (e as CustomEvent).detail.message
+      this.updateErrorBanner()
     })
-    this._openBox.appendChild(header)
+    container.appendChild(this._sessionTabsEl)
 
-    this._sessionListEl = document.createElement('div')
-    this._sessionListEl.className = 'session-list'
-    this._sessionListEl.addEventListener('mousedown', (e) => {
-      const target = e.target as HTMLElement
-      const closeBtn = target.closest('.session-item-close') as HTMLElement | null
-      if (closeBtn) {
-        e.preventDefault()
-        e.stopPropagation()
-        const item = closeBtn.closest('.session-item') as HTMLElement | null
-        if (item) {
-          const idx = parseInt(item.dataset.idx!, 10)
-          const session = agentSessionStore.state.openSessions[idx]
-          if (session) agentSessionStore.removeOpenSession(session.file)
-        }
-        return
-      }
-      const item = target.closest('.session-item') as HTMLElement | null
-      if (item) {
-        e.preventDefault()
-        const idx = parseInt(item.dataset.idx!, 10)
-        const session = agentSessionStore.state.openSessions[idx]
-        if (session && session.file !== agentSessionStore.state.activeSessionFile) {
-          this.loadSession(session.file)
-        }
-      }
+    // Provider grid (sub-component, shown when no messages)
+    this._providerGridEl = document.createElement('awfy-provider-grid')
+    this._providerGridEl.style.display = 'none'
+    this._providerGridEl.addEventListener('provider-error', (e: Event) => {
+      this.error = (e as CustomEvent).detail.message
+      this.updateErrorBanner()
     })
-    this._sessionListEl.addEventListener('auxclick', (e) => {
-      if (e.button !== 1) return
-      const item = (e.target as HTMLElement).closest('.session-item') as HTMLElement | null
-      if (item) {
-        e.preventDefault()
-        const idx = parseInt(item.dataset.idx!, 10)
-        const session = agentSessionStore.state.openSessions[idx]
-        if (session) agentSessionStore.removeOpenSession(session.file)
-      }
-    })
-
-    this._openBox.appendChild(this._sessionListEl)
-
-    container.appendChild(this._openBox)
-
-    // Provider grid (shown when no messages)
-    this._providerGrid = document.createElement('div')
-    this._providerGrid.className = 'provider-grid'
-    this._providerGrid.style.display = 'none'
-    this._providerGrid.addEventListener('mousedown', (e) => {
-      const target = e.target as HTMLElement
-
-      // Handle browse providers link
-      const browseBtn = target.closest('[data-action="browse-providers"]') as HTMLElement | null
-      if (browseBtn) {
-        e.preventDefault()
-        window.ipc?.tabs.openTab({ viewName: 'system.plugins', params: { tag: 'providers', tab: 'browse-plugins' } })
-        return
-      }
-
-      // Handle settings button on card
-      const settingsBtn = target.closest('.provider-card-settings-btn[data-settings-view]') as HTMLElement | null
-      if (settingsBtn) {
-        e.preventDefault()
-        e.stopPropagation()
-        this.openProviderSettingsView(settingsBtn.dataset.settingsView!)
-        return
-      }
-
-      // Handle "set as default" button
-      const setDefaultBtn = target.closest('.set-default-btn[data-provider-id]') as HTMLElement | null
-      if (setDefaultBtn) {
-        e.preventDefault()
-        e.stopPropagation()
-        const providerId = setDefaultBtn.dataset.providerId!
-        this.handleSetDefault(providerId)
-        return
-      }
-
-      // Handle card click
-      const card = target.closest('.provider-card[data-provider-id]') as HTMLElement | null
-      if (card) {
-        e.preventDefault()
-        agentSessionStore.selectProvider(card.dataset.providerId!)
-        this.render()
-      }
-    })
-    container.appendChild(this._providerGrid)
+    container.appendChild(this._providerGridEl)
 
     // Messages area
     this.messagesEl = document.createElement('div')
@@ -1990,7 +1279,7 @@ export class TlAgentChat extends HTMLElement {
           } else {
             this.openToolSet.add(toolId)
           }
-          this.render()
+          this.updateMessages()
         }
       }
     })
@@ -2019,7 +1308,7 @@ export class TlAgentChat extends HTMLElement {
         window.ipc?.dialog.openExternal(href)
       }
     })
-    // Scroll-to-bottom button (inside messages for sticky positioning)
+    // Scroll-to-bottom button
     this._scrollToBottomBtn = document.createElement('div')
     this._scrollToBottomBtn.className = 'scroll-to-bottom'
     this._scrollToBottomBtn.innerHTML = '<svg viewBox="0 0 12 12"><path d="M6 9L1.5 4.5 2.56 3.44 6 6.88 9.44 3.44 10.5 4.5z"/></svg> New messages'
@@ -2032,13 +1321,13 @@ export class TlAgentChat extends HTMLElement {
 
     container.appendChild(this.messagesEl)
 
-    // Error banner (hidden by default)
+    // Error banner
     this._errorBanner = document.createElement('div')
     this._errorBanner.className = 'error-banner'
     this._errorBanner.style.display = 'none'
     container.appendChild(this._errorBanner)
 
-    // Retry banner (hidden by default)
+    // Retry banner
     this._retryBanner = document.createElement('div')
     this._retryBanner.className = 'retry-banner'
     this._retryBanner.style.display = 'none'
@@ -2048,7 +1337,7 @@ export class TlAgentChat extends HTMLElement {
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
 
-    // Provider panel (hidden by default, overlays above input)
+    // Provider panel popup (hidden by default)
     this._providerPanel = document.createElement('div')
     this._providerPanel.className = 'popup-panel provider-panel'
     this._providerPanel.style.display = 'none'
@@ -2062,7 +1351,7 @@ export class TlAgentChat extends HTMLElement {
         const provider = agentSessionStore.state.providerList[idx]
         if (provider?.settingsView) {
           this.activePanel = null
-          this.render()
+          this.updateProviderPanel()
           this.openProviderSettingsView(provider.settingsView)
         }
         return
@@ -2079,111 +1368,21 @@ export class TlAgentChat extends HTMLElement {
     })
     inputArea.appendChild(this._providerPanel)
 
-    const inputContainer = document.createElement('div')
-    inputContainer.className = 'input-container'
-
-    // dragDepth counter avoids flicker when dragging over nested children.
-    let dragDepth = 0
-    inputContainer.addEventListener('dragenter', (e) => {
-      if (!e.dataTransfer?.types.includes('Files')) return
-      e.preventDefault()
-      dragDepth++
-      inputContainer.classList.add('drag-over')
+    // Chat input (sub-component)
+    this._chatInputEl = document.createElement('awfy-chat-input')
+    this._chatInputEl.addEventListener('chat-send', () => {
+      this.userScrolledUp = false
+      this.error = null
+      this.updateScrollToBottomBtn()
+      this.updateErrorBanner()
     })
-    inputContainer.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer?.types.includes('Files')) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+    this._chatInputEl.addEventListener('chat-error', (e: Event) => {
+      this.error = (e as CustomEvent).detail.message
+      this.updateErrorBanner()
     })
-    inputContainer.addEventListener('dragleave', (e) => {
-      if (!e.dataTransfer?.types.includes('Files')) return
-      dragDepth = Math.max(0, dragDepth - 1)
-      if (dragDepth === 0) inputContainer.classList.remove('drag-over')
-    })
-    inputContainer.addEventListener('drop', (e) => {
-      if (!e.dataTransfer?.files.length) return
-      e.preventDefault()
-      dragDepth = 0
-      inputContainer.classList.remove('drag-over')
-      void this.addImageFiles(e.dataTransfer.files)
-    })
+    inputArea.appendChild(this._chatInputEl)
 
-    this._attachmentStripEl = document.createElement('div')
-    this._attachmentStripEl.className = 'attachment-strip'
-    this._attachmentStripEl.addEventListener('mousedown', (ev) => {
-      const removeBtn = (ev.target as HTMLElement).closest('.attachment-item-remove') as HTMLElement | null
-      if (!removeBtn) return
-      ev.preventDefault()
-      ev.stopPropagation()
-      const idx = parseInt(removeBtn.dataset.removeIdx ?? '-1', 10)
-      this.removeAttachment(idx)
-      this._textarea?.focus()
-    })
-    inputContainer.appendChild(this._attachmentStripEl)
-
-    this._pasteAttachmentEl = document.createElement('div')
-    this._pasteAttachmentEl.className = 'paste-attachment'
-    this._pasteAttachmentEl.style.display = 'none'
-
-    const pasteIcon = document.createElement('span')
-    pasteIcon.className = 'paste-attachment-icon'
-    pasteIcon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-1.5"/><rect x="5" y="1" width="6" height="3" rx="1"/></svg>'
-    this._pasteAttachmentEl.appendChild(pasteIcon)
-
-    this._pasteLabelEl = document.createElement('span')
-    this._pasteLabelEl.className = 'paste-attachment-label'
-    this._pasteAttachmentEl.appendChild(this._pasteLabelEl)
-
-    const pasteRemoveBtn = document.createElement('button')
-    pasteRemoveBtn.className = 'paste-attachment-remove'
-    pasteRemoveBtn.title = 'Remove pasted text'
-    pasteRemoveBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>'
-    pasteRemoveBtn.addEventListener('mousedown', (ev) => {
-      ev.preventDefault()
-      ev.stopPropagation()
-      this.removePasteAttachment()
-      this._textarea?.focus()
-    })
-    this._pasteAttachmentEl.appendChild(pasteRemoveBtn)
-
-    this._pasteAttachmentEl.addEventListener('click', (ev) => {
-      if ((ev.target as HTMLElement).closest('.paste-attachment-remove')) return
-      this._pasteExpanded = !this._pasteExpanded
-      this.renderPasteAttachment()
-    })
-
-    inputContainer.appendChild(this._pasteAttachmentEl)
-
-    this._pastePreviewEl = document.createElement('div')
-    this._pastePreviewEl.className = 'paste-attachment-preview'
-    this._pastePreviewEl.style.display = 'none'
-    inputContainer.appendChild(this._pastePreviewEl)
-
-    this._textarea = document.createElement('textarea')
-    this._textarea.id = 'msg-input'
-    this._textarea.rows = 1
-    this._textarea.placeholder = 'Type your message here...'
-    this._textarea.value = this.inputValue
-    this._textarea.addEventListener('keydown', (e) => this.handleKeydown(e))
-    this._textarea.addEventListener('input', (e) => this.handleInput(e))
-    this._textarea.addEventListener('paste', (e) => this.handlePaste(e))
-    inputContainer.appendChild(this._textarea)
-
-    this.renderPasteAttachment()
-
-    this._stopBtn = document.createElement('button')
-    this._stopBtn.className = 'stop-btn'
-    this._stopBtn.title = 'Stop'
-    this._stopBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>'
-    this._stopBtn.style.display = 'none'
-    this._stopBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.handleStop()
-    })
-    inputContainer.appendChild(this._stopBtn)
-
-    inputArea.appendChild(inputContainer)
-
+    // Tools row
     const toolsRow = document.createElement('div')
     toolsRow.className = 'tools-row'
 
@@ -2206,27 +1405,14 @@ export class TlAgentChat extends HTMLElement {
     })
     actionsDiv.appendChild(this._newSessionBtn)
 
-    this._fileInputEl = document.createElement('input')
-    this._fileInputEl.type = 'file'
-    this._fileInputEl.accept = 'image/*'
-    this._fileInputEl.multiple = true
-    this._fileInputEl.style.display = 'none'
-    this._fileInputEl.addEventListener('change', () => {
-      const files = this._fileInputEl?.files
-      if (files && files.length > 0) {
-        void this.addImageFiles(files)
-      }
-      if (this._fileInputEl) this._fileInputEl.value = ''
-    })
-    actionsDiv.appendChild(this._fileInputEl)
-
+    // Attach button (triggers file select in chat-input)
     const attachBtn = document.createElement('button')
     attachBtn.className = 'gear-btn'
     attachBtn.title = 'Attach image'
     attachBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6.5 7.5 12a3 3 0 0 1-4.24-4.24l6-6a2 2 0 1 1 2.83 2.83l-6 6a1 1 0 0 1-1.42-1.42L9.5 4.5"/></svg>'
     attachBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      this._fileInputEl?.click()
+      ;(this._chatInputEl as any)?.triggerFileSelect?.()
     })
     actionsDiv.appendChild(attachBtn)
 
@@ -2270,176 +1456,118 @@ export class TlAgentChat extends HTMLElement {
     this.containerEl.appendChild(container)
   }
 
-  private updateChat() {
+  // ── Targeted update methods ──
+
+  /** Full UI sync — called on initial render and mode switch. */
+  private updateAll() {
+    this.updateMessages()
+    this.updateProviderGridVisibility()
+    this.updateErrorBanner()
+    this.updateRetryBanner()
+    this.updateNotifyBtn()
+    this.updateNewSessionBtn()
+    this.updateProviderInfo()
+    this.updateProviderPanel()
+  }
+
+  /** Update the messages area only (hot path during streaming). */
+  private updateMessages() {
     const s = agentSessionStore.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
 
-    // Combine completed messages + streaming message for rendering
+    if (this.messagesEl) {
+      this.messagesEl.style.display = hasMessages ? '' : 'none'
+    }
+
+    if (!this.messagesEl || !hasMessages) return
+
     const allMessages = s.isStreaming && s.streamingMessage
       ? [...s.messages, s.streamingMessage]
       : s.messages
     const displayBlocks = buildRenderBlocks(allMessages)
 
-    // 0. Provider grid vs messages visibility
-    if (this._providerGrid) {
-      if (hasMessages) {
-        this._providerGrid.style.display = 'none'
-      } else {
-        this._providerGrid.style.display = ''
-        this._providerGrid.style.justifyContent = 'center'
-        this._providerGrid.style.flex = '1'
-        this._providerGrid.style.paddingBottom = ''
-        this.renderProviderGrid()
+    const prevChildCount = this.messagesEl.childElementCount
+    updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
+    this.updatePhaseLabel(s)
+
+    if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
+      this.messagesEl.appendChild(this._scrollToBottomBtn)
+    }
+
+    if (!this.userScrolledUp) {
+      const gap = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
+      if (gap > TlAgentChat.SCROLL_THRESHOLD) {
+        this.scrollToBottom()
       }
     }
-    if (this.messagesEl) {
-      this.messagesEl.style.display = hasMessages ? '' : 'none'
-    }
-
-    // 1. Messages area
-    if (this.messagesEl && hasMessages) {
-      const prevChildCount = this.messagesEl.childElementCount
-      updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
-      this.updatePhaseLabel(s)
-
-      // Reposition button only when DOM children changed (new messages added/removed)
-      if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
-        this.messagesEl.appendChild(this._scrollToBottomBtn)
-      }
-
-      if (!this.userScrolledUp) {
-        // Only force-scroll when significantly behind (new message block, initial load).
-        // CSS overflow-anchor (#anchor div) handles smooth following during streaming deltas.
-        const gap = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
-        if (gap > TlAgentChat.SCROLL_THRESHOLD) {
-          this.scrollToBottom()
-        }
-      }
-      this.updateScrollToBottomBtn()
-    }
-
-    // 2. Stop button
-    if (this._stopBtn) {
-      this._stopBtn.style.display = s.isStreaming ? '' : 'none'
-    }
-
-    // 3. Error banner
-    if (this._errorBanner) {
-      if (this.error) {
-        this._errorBanner.style.display = ''
-        this._errorBanner.textContent = this.error
-      } else {
-        this._errorBanner.style.display = 'none'
-      }
-    }
-
-    // 3b. Retry banner
-    if (this._retryBanner) {
-      if (s.retryState) {
-        this._retryBanner.style.display = ''
-        this.updateRetryBanner(s.retryState)
-      } else {
-        this._retryBanner.style.display = 'none'
-        if (this._retryCountdownTimer) {
-          clearInterval(this._retryCountdownTimer)
-          this._retryCountdownTimer = null
-        }
-      }
-    }
-
-
-    // 4. Button states
-    if (this._notifyBtn) {
-      this._notifyBtn.style.display = hasMessages ? '' : 'none'
-      this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
-    }
-
-    // 5. Provider info in tools row
-    if (this._providerInfo) {
-      const providerId = hasMessages ? s.providerId : s.selectedProviderId
-      const provider = s.providerList.find(p => p.id === providerId)
-      const providerName = provider?.name || providerId || ''
-      const currentStatusLine = hasMessages
-        ? (s.statusLine || s.configStatusLine)
-        : (s.providerStatusLines.get(providerId) || '')
-      const contentKey = `${providerName}|${currentStatusLine}`
-      if (this._providerInfo.dataset.contentKey !== contentKey) {
-        this._providerInfo.dataset.contentKey = contentKey
-        const sep = providerName && currentStatusLine ? ' · ' : ''
-        this._providerInfo.innerHTML = providerName
-          ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(currentStatusLine)}`
-          : escapeHtml(currentStatusLine)
-      }
-    }
-
-    // 6. New session button visibility
-    if (this._newSessionBtn) {
-      this._newSessionBtn.style.display = hasMessages ? '' : 'none'
-    }
-
-    // 6. Textarea placeholder
-    if (this._textarea) {
-      const newPlaceholder = s.isStreaming ? 'Send follow-up message...' : 'Type your message here...'
-      if (this._textarea.placeholder !== newPlaceholder) {
-        this._textarea.placeholder = newPlaceholder
-      }
-    }
-
-    // 7. Open sessions dots
-    this.updateOpenDots()
-
-    // 9. Provider panel
-    if (this._providerPanel) {
-      if (this.activePanel === 'providers') {
-        this._providerPanel.style.display = ''
-        this._providerPanel.innerHTML = this.renderProviderPanelHtml()
-      } else {
-        this._providerPanel.style.display = 'none'
-      }
-    }
+    this.updateScrollToBottomBtn()
   }
 
-  private renderProviderGrid() {
-    if (!this._providerGrid) return
+  private updateProviderGridVisibility() {
+    if (!this._providerGridEl) return
     const s = agentSessionStore.state
-    if (s.providerList.length === 0) {
-      this._providerGrid.innerHTML = '<div style="text-align:center;color:var(--color-text2);font-size:13px;">No providers configured</div>'
-      return
-    }
-
-    const gearSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
-
-    this._providerGrid.innerHTML = s.providerList.map((p) => {
-      const isSelected = p.id === s.selectedProviderId
-      const isDefault = p.id === s.defaultProviderId
-      const statusLine = s.providerStatusLines.get(p.id) || ''
-      const cardClass = 'provider-card' + (isSelected ? ' selected' : '')
-
-      const settingsBtn = p.settingsView
-        ? `<button class="provider-card-settings-btn" data-settings-view="${escapeHtml(p.settingsView)}">${gearSvg} Settings</button>`
-        : ''
-      const defaultAction = isDefault
-        ? '<span class="default-badge">default</span>'
-        : `<button class="set-default-btn" data-provider-id="${escapeHtml(p.id)}">set default</button>`
-
-      return `<div class="${cardClass}" data-provider-id="${escapeHtml(p.id)}">
-        <div class="provider-card-name">${escapeHtml(p.name)}</div>
-        <div class="provider-card-status">${escapeHtml(statusLine)}</div>
-        <div class="provider-card-footer">${settingsBtn}${defaultAction}</div>
-      </div>`
-    }).join('')
-      + '<button class="browse-providers-link" data-action="browse-providers"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>Add provider</button>'
-  }
-
-  private async handleSetDefault(providerId: string) {
-    try {
-      await agentSessionStore.setDefaultProvider(providerId)
-      this.renderProviderGrid()
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-      this.render()
+    const hasMessages = s.messages.length > 0 || s.isStreaming
+    if (hasMessages) {
+      this._providerGridEl.style.display = 'none'
+    } else {
+      this._providerGridEl.style.display = ''
+      this._providerGridEl.style.justifyContent = 'center'
+      this._providerGridEl.style.flex = '1'
     }
   }
+
+  private updateErrorBanner() {
+    if (!this._errorBanner) return
+    if (this.error) {
+      this._errorBanner.style.display = ''
+      this._errorBanner.textContent = this.error
+    } else {
+      this._errorBanner.style.display = 'none'
+    }
+  }
+
+  private updateNotifyBtn() {
+    if (!this._notifyBtn) return
+    const s = agentSessionStore.state
+    const hasMessages = s.messages.length > 0 || s.isStreaming
+    this._notifyBtn.style.display = hasMessages ? '' : 'none'
+    this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
+  }
+
+  private updateNewSessionBtn() {
+    if (!this._newSessionBtn) return
+    const s = agentSessionStore.state
+    const hasMessages = s.messages.length > 0 || s.isStreaming
+    this._newSessionBtn.style.display = hasMessages ? '' : 'none'
+  }
+
+  private updateProviderInfo() {
+    if (!this._providerInfo) return
+    const s = agentSessionStore.state
+    const hasMessages = s.messages.length > 0 || s.isStreaming
+    const providerId = hasMessages ? s.providerId : s.selectedProviderId
+    const provider = s.providerList.find(p => p.id === providerId)
+    const providerName = provider?.name || providerId || ''
+    const statusLine = hasMessages
+      ? (s.statusLine || s.configStatusLine)
+      : (s.providerStatusLines.get(providerId) || '')
+    const sep = providerName && statusLine ? ' · ' : ''
+    this._providerInfo.innerHTML = providerName
+      ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(statusLine)}`
+      : escapeHtml(statusLine)
+  }
+
+  private updateProviderPanel() {
+    if (!this._providerPanel) return
+    if (this.activePanel === 'providers') {
+      this._providerPanel.style.display = ''
+      this._providerPanel.innerHTML = this.renderProviderPanelHtml()
+    } else {
+      this._providerPanel.style.display = 'none'
+    }
+  }
+
+  // ── Provider actions ──
 
   private async handleSelectProvider(providerId: string) {
     try {
@@ -2447,7 +1575,7 @@ export class TlAgentChat extends HTMLElement {
       await agentSessionStore.switchProvider(providerId)
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
-      this.render()
+      this.updateErrorBanner()
     }
   }
 
@@ -2461,67 +1589,10 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private async openProviderSettingsView(viewName: string) {
-    const ipc = window.ipc
-    if (!ipc) return
     try {
-      await ipc.tabs.openTab({ viewName })
+      await window.ipc?.tabs.openTab({ viewName })
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)
-    }
-  }
-
-  // --- Open sessions ---
-
-  private loadSession(file: string) {
-    agentSessionStore.loadSession(file).catch(err => {
-      this.error = err instanceof Error ? err.message : String(err)
-      this.render()
-    })
-  }
-
-  private updateOpenDots() {
-    if (!this._sessionListEl || !this._openBox) return
-    const s = agentSessionStore.state
-    const open = s.openSessions
-
-    const hasMessages = s.messages.length > 0 || s.isStreaming
-    if (!this._isZenMode && open.length <= 1 && hasMessages) {
-      this._openBox.style.display = 'none'
-      return
-    }
-    if (open.length === 0) {
-      this._openBox.style.display = 'none'
-      return
-    }
-
-    this._openBox.style.display = ''
-    if (this._sessionCountEl) this._sessionCountEl.textContent = `${open.length} sessions`
-
-    const activeFile = s.activeSessionFile
-    const streamingSet = new Set(s.streamingFiles)
-
-    const existing = Array.from(this._sessionListEl.querySelectorAll('.session-item')) as HTMLElement[]
-    while (existing.length > open.length) {
-      existing.pop()!.remove()
-    }
-    while (existing.length < open.length) {
-      const item = document.createElement('div')
-      item.className = 'session-item'
-      item.innerHTML = '<span class="session-item-dot"></span><span class="session-item-label"></span><button class="session-item-close"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg></button>'
-      this._sessionListEl.appendChild(item)
-      existing.push(item)
-    }
-
-    for (let i = 0; i < open.length; i++) {
-      const item = existing[i]
-      const isActive = open[i].file === activeFile
-      const isStreaming = streamingSet.has(open[i].file)
-      item.className = 'session-item'
-        + (isActive ? ' active' : '')
-        + (isStreaming ? ' streaming' : '')
-      item.dataset.idx = String(i)
-      const label = item.querySelector('.session-item-label') as HTMLElement
-      if (label) label.textContent = isActive ? (s.label || 'New Session') : open[i].label
     }
   }
 
@@ -2544,5 +1615,4 @@ export class TlAgentChat extends HTMLElement {
       </div>`
     }).join('')
   }
-
 }
