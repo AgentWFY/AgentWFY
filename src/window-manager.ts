@@ -7,6 +7,7 @@ import { ConfirmationManager } from './confirmation/manager.js';
 import { buildProviderState } from './ipc/providers.js';
 import { storeGet } from './ipc/store.js';
 import { Channels } from './ipc/channels.cjs';
+import type { PushMap } from './ipc/schema.js';
 import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { ActionDispatcher } from './action-dispatcher.js';
@@ -44,7 +45,7 @@ class WindowManager {
     this.factory = new AgentContextFactory({
       getMainWindow: () => this.mainWindow,
       getRendererWebContents: () => this.rendererView?.webContents ?? null,
-      sendToRenderer: (ch, ...args) => this.sendToRenderer(ch, ...args),
+      sendToRenderer: (ch, data) => this.sendToRenderer(ch, data),
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
       getCommandPalette: () => this.commandPalette!,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
@@ -57,7 +58,7 @@ class WindowManager {
 
     this.orchestrator = new AgentOrchestrator({
       factory: this.factory,
-      sendToRenderer: (ch, ...args) => this.sendToRenderer(ch, ...args),
+      sendToRenderer: (ch, data) => this.sendToRenderer(ch, data),
       getRendererWebContents: () => this.rendererView?.webContents ?? null,
       isWindowAvailable: () => !!this.mainWindow && !this.mainWindow.isDestroyed(),
       applyTheme: () => this.applyTheme(),
@@ -283,10 +284,10 @@ class WindowManager {
 
   // --- Renderer communication ---
 
-  private sendToRenderer(channel: string, ...args: unknown[]): void {
+  private sendToRenderer<C extends keyof PushMap>(channel: C, data: PushMap[C]): void {
     const wc = this.rendererView?.webContents;
     if (wc && !wc.isDestroyed()) {
-      wc.send(channel, ...args);
+      wc.send(channel, data);
     }
   }
 

@@ -13,10 +13,11 @@ import { runCleanup } from './cleanup.js';
 import { getConfigValue } from './settings/config.js';
 import { getViewByName } from './db/views.js';
 import { Channels } from './ipc/channels.cjs';
+import type { PushMap } from './ipc/schema.js';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;
-  sendToRenderer: (channel: string, ...args: unknown[]) => void;
+  sendToRenderer: <C extends keyof PushMap>(channel: C, data: PushMap[C]) => void;
   getRendererWebContents: () => Electron.WebContents | null;
   isWindowAvailable: () => boolean;
   applyTheme: () => void;
@@ -302,7 +303,7 @@ export class AgentOrchestrator {
     if (!this.deps.isWindowAvailable()) return;
 
     if (this.activeAgentRoot === agentRoot) {
-      this.deps.sendToRenderer('db:changed', change);
+      this.deps.sendToRenderer(Channels.db.changed, change);
     }
 
     if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {
