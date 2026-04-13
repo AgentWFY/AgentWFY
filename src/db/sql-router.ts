@@ -1,4 +1,4 @@
-import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest, type OnDbChange } from './sqlite.js';
+import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest } from './sqlite.js';
 import { resolveSqliteFilePath } from './paths.js';
 
 export type SqlTarget = 'agent' | 'sqlite-file';
@@ -48,9 +48,9 @@ export function parseRunSqlRequest(payload: unknown): RunSqlRequest {
   };
 }
 
-export async function routeSqlRequest(dataDir: string, request: RunSqlRequest, onDbChange?: OnDbChange): Promise<unknown[]> {
+export async function routeSqlRequest(dataDir: string, request: RunSqlRequest): Promise<unknown[]> {
   if (request.target === 'agent') {
-    return runAgentDbSql(dataDir, request, onDbChange);
+    return runAgentDbSql(dataDir, request);
   }
 
   const sqlitePath = await resolveSqliteFilePath(dataDir, request.path || '');

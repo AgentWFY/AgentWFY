@@ -12,8 +12,6 @@ export interface AgentDbChange {
   op: 'insert' | 'update' | 'delete';
 }
 
-export type OnDbChange = (change: AgentDbChange) => void;
-
 export const WRITE_RE = /^\s*(INSERT|UPDATE|DELETE)\b/i;
 
 function normalizeSqlValue(value: unknown): unknown {
@@ -67,8 +65,8 @@ function runSqliteQuery(dbPath: string, request: SqlExecutionRequest): unknown[]
   }
 }
 
-export async function runAgentDbSql(dataDir: string, request: SqlExecutionRequest, onDbChange?: OnDbChange): Promise<unknown[]> {
-  return getOrCreateAgentDb(dataDir).run(request, onDbChange);
+export async function runAgentDbSql(dataDir: string, request: SqlExecutionRequest): Promise<unknown[]> {
+  return getOrCreateAgentDb(dataDir).run(request);
 }
 
 export async function runSqliteFileSql(sqlitePath: string, request: SqlExecutionRequest): Promise<unknown[]> {

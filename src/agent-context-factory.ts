@@ -49,20 +49,21 @@ export class AgentContextFactory {
     const win = this.deps.getMainWindow()!;
 
     await ensureAgentRuntimeBootstrap(agentRoot);
-    getOrCreateAgentDb(agentRoot);
+
+    const db = getOrCreateAgentDb(agentRoot);
+    db.setChangeListener((change) => this.deps.onRuntimeDbChange(agentRoot, change));
 
     const providerRegistry = new ProviderRegistry();
     providerRegistry.register(createOpenAICompatibleFactory({
       getConfig: (key, fallback) => getConfigValue(agentRoot, key, fallback),
-      setConfig: (key, value) => setAgentConfig(agentRoot, key, value, (change) => this.deps.onRuntimeDbChange(agentRoot, change)),
+      setConfig: (key, value) => setAgentConfig(agentRoot, key, value),
     }));
 
     const functionRegistry = new FunctionRegistry();
     const eventBus = new EventBus();
     const busPublish = (topic: string, data: unknown) => eventBus.publish(topic, data);
 
-    const notifyDbChange = (change: AgentDbChange) => this.deps.onRuntimeDbChange(agentRoot, change);
-    const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry, notifyDbChange);
+    const pluginRegistry = loadPlugins(agentRoot, busPublish, providerRegistry, functionRegistry);
 
     const agentSession = this.getOrCreateAgentSession(agentRoot);
 
@@ -97,10 +98,6 @@ export class AgentContextFactory {
       agentRoot,
       rendererWebContents: this.deps.getRendererWebContents()!,
       tabTools,
-      onDbChange: (change) => {
-        if (win.isDestroyed()) return;
-        this.deps.onRuntimeDbChange(agentRoot, change);
-      },
       getSessionManager: () => agentCtx.sessionManager,
       getTaskRunner: () => agentCtx.taskRunner,
       getCommandPalette: () => this.deps.getCommandPalette(),

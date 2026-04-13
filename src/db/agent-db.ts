@@ -2,7 +2,7 @@ import { DatabaseSync, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import { WRITE_RE, normalizeSqlRows, normalizeParams } from './sqlite.js';
-import type { SqlExecutionRequest, OnDbChange } from './sqlite.js';
+import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
 
 const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules']);
 
@@ -199,10 +199,15 @@ interface SystemDataSync<T extends { name: string }> {
 
 class AgentDb {
   private db: DatabaseSync;
+  private changeListener: ((change: AgentDbChange) => void) | null = null;
 
   constructor(opts: { dbPath: string; systemDocsPath: string; systemViewsPath: string; systemConfigPath: string }) {
     this.db = new DatabaseSync(opts.dbPath);
     this.init(opts);
+  }
+
+  setChangeListener(listener: (change: AgentDbChange) => void): void {
+    this.changeListener = listener;
   }
 
   /** Generic sync: read JSON, diff against DB, upsert/delete in a transaction. */
@@ -459,16 +464,20 @@ class AgentDb {
     this.db.setAuthorizer(null);
     this.db.exec(DROP_GUARDS_SQL);
     try {
+      this.db.exec('DELETE FROM _changes;');
       fn();
     } finally {
       for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
       this.installAuthorizer();
     }
+    // Drain after guards are restored — if fn() threw, this line is unreachable
+    // so listeners only fire for committed writes.
+    this.drainChanges();
   }
 
-  run(request: SqlExecutionRequest, onDbChange?: OnDbChange): unknown[] {
+  run(request: SqlExecutionRequest): unknown[] {
     const params = normalizeParams(request.params);
-    const trackChanges = onDbChange && WRITE_RE.test(request.sql);
+    const trackChanges = this.changeListener && WRITE_RE.test(request.sql);
 
     if (trackChanges) {
       this.db.exec('DELETE FROM _changes;');
@@ -478,18 +487,26 @@ class AgentDb {
     const rows = statement.all(...params as (null | number | bigint | string)[]);
 
     if (trackChanges) {
-      const changes = this.db.prepare('SELECT table_name, row_id, op FROM _changes').all();
-      for (const raw of changes) {
-        const change = raw as Record<string, unknown>;
-        onDbChange({
-          table: change.table_name as string,
-          rowId: change.row_id as string | number,
-          op: change.op as 'insert' | 'update' | 'delete',
-        });
-      }
+      this.drainChanges();
     }
 
     return normalizeSqlRows(rows);
+  }
+
+  private drainChanges(): void {
+    if (!this.changeListener) return;
+    const changes = this.db.prepare('SELECT table_name, row_id, op FROM _changes').all();
+    if (changes.length > 0) {
+      this.db.exec('DELETE FROM _changes;');
+    }
+    for (const raw of changes) {
+      const change = raw as Record<string, unknown>;
+      this.changeListener({
+        table: change.table_name as string,
+        rowId: change.row_id as string | number,
+        op: change.op as 'insert' | 'update' | 'delete',
+      });
+    }
   }
 
   close(): void {

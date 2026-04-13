@@ -3,7 +3,6 @@ import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
 import { Channels } from './channels.js'
 import { getConfigValue, setAgentConfig } from '../settings/config.js'
-import type { AgentDbChange } from '../db/sqlite.js'
 
 export interface ProviderState {
   providerList: ProviderInfo[]
@@ -28,7 +27,6 @@ export function registerProviderHandlers(
   getAgentRoot: (e: Electron.IpcMainInvokeEvent) => string,
   getRendererWebContents: () => WebContents | undefined,
   onReconnect: (e: Electron.IpcMainInvokeEvent) => Promise<unknown>,
-  onDbChange: (agentRoot: string, change: AgentDbChange) => void,
 ): void {
   ipcMain.handle(Channels.providers.list, (event): ProviderInfo[] => {
     return getRegistry(event).list()
@@ -42,7 +40,7 @@ export function registerProviderHandlers(
 
   const setAndPush = async (event: Electron.IpcMainInvokeEvent, providerId: string, reconnect: boolean) => {
     const agentRoot = getAgentRoot(event)
-    setAgentConfig(agentRoot, 'system.provider', providerId, (change) => onDbChange(agentRoot, change))
+    setAgentConfig(agentRoot, 'system.provider', providerId)
     if (reconnect) await onReconnect(event)
     const state = buildProviderState(agentRoot, getRegistry(event))
     const wc = getRendererWebContents()

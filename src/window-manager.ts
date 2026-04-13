@@ -11,7 +11,7 @@ import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { ActionDispatcher } from './action-dispatcher.js';
 import type { ProviderRegistry } from './providers/registry.js';
-import type { AgentDbChange } from './db/sqlite.js';
+
 
 export type { AgentContext } from './agent-context.js';
 
@@ -143,16 +143,13 @@ class WindowManager {
         if (wc && !wc.isDestroyed()) wc.reload();
       },
       setAgentConfig: (name, value) => {
-        const agentRoot = this.orchestrator.getActiveAgentRoot()!;
-        setAgentConfig(agentRoot, name, value, (change) => this.orchestrator.onRuntimeDbChange(agentRoot, change));
+        setAgentConfig(this.orchestrator.getActiveAgentRoot()!, name, value);
       },
       clearAgentConfig: (name) => {
-        const agentRoot = this.orchestrator.getActiveAgentRoot()!;
-        clearAgentConfig(agentRoot, name, (change) => this.orchestrator.onRuntimeDbChange(agentRoot, change));
+        clearAgentConfig(this.orchestrator.getActiveAgentRoot()!, name);
       },
       removeAgentConfig: (name) => {
-        const agentRoot = this.orchestrator.getActiveAgentRoot()!;
-        removeAgentConfig(agentRoot, name, (change) => this.orchestrator.onRuntimeDbChange(agentRoot, change));
+        removeAgentConfig(this.orchestrator.getActiveAgentRoot()!, name);
       },
       pushProviderState: () => {
         const ctx = this.orchestrator.getActiveAgentContext();
@@ -395,8 +392,6 @@ class WindowManager {
   reorderAgents(fromIndex: number, toIndex: number) { this.orchestrator.reorderAgents(fromIndex, toIndex); }
   getInstalledAgentsList() { return this.orchestrator.getInstalledAgentsList(); }
 
-  onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange) { this.orchestrator.onDbChange(event, change); }
-  notifyDbChange(agentRoot: string, change: AgentDbChange) { this.orchestrator.onRuntimeDbChange(agentRoot, change); }
 }
 
 export const windowManager = new WindowManager();

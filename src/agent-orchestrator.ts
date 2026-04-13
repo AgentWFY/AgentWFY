@@ -337,14 +337,6 @@ export class AgentOrchestrator {
     }, 5000);
   }
 
-  onDbChange(event: IpcMainInvokeEvent, change: AgentDbChange): void {
-    // Resolve agent root via sender map
-    const agentRoot = this.tabSenderMap.get(event.sender.id) ?? this.activeAgentRoot;
-    if (!agentRoot) return;
-
-    this.onRuntimeDbChange(agentRoot, change);
-  }
-
   // --- Lifecycle ---
 
   hasActiveWork(): boolean {

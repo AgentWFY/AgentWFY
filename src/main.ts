@@ -126,7 +126,6 @@ onGlobalConfigChange(handleConfigChange);
 
 registerSqlHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
-  (event, change) => windowManager.onDbChange(event, change),
 );
 registerTabsHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).tabTools,
@@ -176,7 +175,6 @@ registerProviderHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   () => windowManager.getRendererWebContents() ?? undefined,
   reconnectSessionManager,
-  (agentRoot, change) => windowManager.notifyDbChange(agentRoot, change),
 );
 registerAgentSessionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).sessionManager,

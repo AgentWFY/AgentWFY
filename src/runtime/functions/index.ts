@@ -1,5 +1,4 @@
 import { type WebContents, shell } from 'electron'
-import type { OnDbChange } from '../../db/sqlite.js'
 import type { AgentTabTools } from '../../ipc/tabs.js'
 import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { TaskRunner } from '../../task-runner/task_runner.js'
@@ -19,7 +18,6 @@ interface BuiltInFunctionDeps {
   agentRoot: string
   rendererWebContents: WebContents
   tabTools: AgentTabTools
-  onDbChange?: OnDbChange
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
   getCommandPalette: () => CommandPaletteManager
@@ -29,7 +27,7 @@ interface BuiltInFunctionDeps {
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { agentRoot: deps.agentRoot })
-  registerSql(registry, { agentRoot: deps.agentRoot, onDbChange: deps.onDbChange })
+  registerSql(registry, { agentRoot: deps.agentRoot })
   registerTabs(registry, { tabTools: deps.tabTools, agentRoot: deps.agentRoot })
   registerEvents(registry, { eventBus: deps.eventBus })
   registerAgent(registry, { getSessionManager: deps.getSessionManager, rendererWebContents: deps.rendererWebContents })

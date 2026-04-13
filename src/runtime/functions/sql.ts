@@ -1,10 +1,9 @@
 import { parseRunSqlRequest, routeSqlRequest } from '../../db/sql-router.js'
-import type { OnDbChange } from '../../db/sqlite.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 
-export function registerSql(registry: FunctionRegistry, deps: { agentRoot: string; onDbChange?: OnDbChange }): void {
-  const { agentRoot, onDbChange } = deps
+export function registerSql(registry: FunctionRegistry, deps: { agentRoot: string }): void {
+  const { agentRoot } = deps
 
   registry.register('runSql', async (params) => {
     const request = params as WorkerHostMethodMap['runSql']['params']
@@ -19,6 +18,6 @@ export function registerSql(registry: FunctionRegistry, deps: { agentRoot: strin
       params: request.params,
       description: request.description,
     })
-    return await routeSqlRequest(agentRoot, parsed, onDbChange)
+    return await routeSqlRequest(agentRoot, parsed)
   })
 }
