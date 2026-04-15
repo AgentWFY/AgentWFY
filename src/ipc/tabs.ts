@@ -52,6 +52,8 @@ export interface AgentTabTools {
   captureTab: (request: CaptureTabRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
   getTabConsoleLogs: (request: GetTabConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
   execTabJs: (request: ExecTabJsRequest) => Promise<unknown>
+  sendInput: (request: { tabId: string; type: string; x?: number; y?: number; button?: string; clickCount?: number; deltaX?: number; deltaY?: number; keyCode?: string; modifiers?: string[] }) => Promise<void>
+  inspectElement: (request: { tabId: string; selector: string }) => Promise<unknown>
 }
 
 function parseTabId(value: unknown): string {
