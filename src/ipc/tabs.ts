@@ -18,9 +18,7 @@ interface ExecTabJsRequest {
   timeoutMs?: number
 }
 
-interface GetTabsResult {
-  tabs: Array<Record<string, unknown>>
-}
+type GetTabsResult = Array<Record<string, unknown>>
 
 interface OpenTabRequest {
   viewName?: string
