@@ -516,21 +516,19 @@ export class TabViewManager {
 
   // --- Tab handlers ---
 
-  async getTabsHandler(): Promise<{ tabs: Array<Record<string, unknown>> }> {
-    return {
-      tabs: this.tabs.map((tab) => ({
-        id: tab.id,
-        title: tab.title || '',
-        type: tab.type || 'view',
-        target: tab.target ?? null,
-        viewUpdatedAt: tab.viewUpdatedAt ?? null,
-        viewChanged: Boolean(tab.viewChanged),
-        pinned: Boolean(tab.pinned),
-        hidden: Boolean(tab.hidden),
-        selected: tab.id === this.selectedTabId,
-        params: tab.params || null,
-      })),
-    };
+  async getTabsHandler(): Promise<Array<Record<string, unknown>>> {
+    return this.tabs.map((tab) => ({
+      id: tab.id,
+      title: tab.title || '',
+      type: tab.type || 'view',
+      target: tab.target ?? null,
+      viewUpdatedAt: tab.viewUpdatedAt ?? null,
+      viewChanged: Boolean(tab.viewChanged),
+      pinned: Boolean(tab.pinned),
+      hidden: Boolean(tab.hidden),
+      selected: tab.id === this.selectedTabId,
+      params: tab.params || null,
+    }));
   }
 
   async openTabHandler(request: { viewName?: string; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<{ tabId: string }> {

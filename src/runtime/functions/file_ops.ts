@@ -231,25 +231,15 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
 
     const results: string[] = []
-    let limitReached = false
 
     for (const entry of entries) {
       const entryPath = path.join(dirPath, entry.name)
       if (isAgentPrivatePath(root, entryPath)) continue
-      if (results.length >= effectiveLimit) {
-        limitReached = true
-        break
-      }
+      if (results.length >= effectiveLimit) break
       results.push(entry.isDirectory() ? entry.name + '/' : entry.name)
     }
 
-    if (results.length === 0) return '(empty directory)'
-
-    let output = results.join('\n')
-    if (limitReached) {
-      output += `\n\n[${effectiveLimit} entries limit reached. Use limit=${effectiveLimit * 2} for more.]`
-    }
-    return output
+    return results
   })
 
   registry.register('mkdir', async (params) => {

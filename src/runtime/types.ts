@@ -98,18 +98,18 @@ interface WorkerGrepRequest {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface WorkerGetTabsRequest {}
 
-export interface WorkerGetTabsResult {
-  tabs: Array<{
-    id: string
-    title: string
-    viewName: string | null
-    viewUpdatedAt: number | null
-    viewChanged: boolean
-    pinned: boolean
-    hidden: boolean
-    selected: boolean
-  }>
-}
+export type WorkerGetTabsResult = Array<{
+  id: string
+  title: string
+  type: string
+  target: string | null
+  viewUpdatedAt: number | null
+  viewChanged: boolean
+  pinned: boolean
+  hidden: boolean
+  selected: boolean
+  params: Record<string, string> | null
+}>
 
 export interface WorkerOpenTabRequest {
   viewName?: string
@@ -193,7 +193,7 @@ export interface WorkerHostMethodMap {
   }
   ls: {
     params: WorkerLsRequest
-    result: string
+    result: string[]
   }
   mkdir: {
     params: WorkerMkdirRequest

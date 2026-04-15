@@ -63,7 +63,7 @@ All paths are relative to the data directory root. Path traversal outside the da
 - `writeBinary({ path, base64 })` → success message. Creates parent dirs. Decodes base64 string and writes raw binary.
 - `readBinary({ path, asBase64? })` → by default, file is auto-attached to the tool result as an image output you can see directly, returns `{ attached: true, mimeType, size }`. With `asBase64: true`, returns `{ base64, mimeType, size }` without attaching — use this when code needs the raw data (e.g. re-encoding, uploading, converting). Max 20MB.
 - `edit({ path, oldText, newText })` → success message. `oldText` must match exactly once (whitespace-sensitive).
-- `ls({ path?, limit? })` → text listing. Dirs have `/` suffix. Default limit 500.
+- `ls({ path?, limit? })` → `string[]`. Returns entries sorted alphabetically, with `/` suffix for directories. Default limit 500.
 - `mkdir({ path, recursive? })` → void
 - `remove({ path, recursive? })` → void
 - `rename({ oldPath, newPath })` → success message. Moves/renames a file or directory. Creates parent dirs for destination.
