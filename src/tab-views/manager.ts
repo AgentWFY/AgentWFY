@@ -611,6 +611,8 @@ export class TabViewManager {
     tab.viewChanged = false;
     this.reloadTabView(request.tabId);
     this.pushStateToRenderer();
+    // Wait for the page to finish loading so callers know when the reload is complete.
+    await this.resolveReadyTabViewState(request.tabId);
   }
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
