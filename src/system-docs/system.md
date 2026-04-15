@@ -58,11 +58,10 @@ await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", 
 
 All paths are relative to the data directory root. Path traversal outside the data directory root is blocked. Use `.tmp/` directory for any temporary files.
 
-- `read({ path, offset?, limit? })` → string with line-numbered content. Max 2000 lines / 50KB per call. Use `offset` (1-indexed line number) to paginate.
+- `read({ path, offset?, limit?, asBase64? })` → for text files: raw content as string, max 2000 lines / 50KB per call. Use `offset` (1-indexed line number) to paginate. For binary files (images, audio, video, PDF): auto-detected by extension, file is auto-attached to the tool result as an image/file output you can see directly, returns `{ attached: true, mimeType, size }`. With `asBase64: true`, returns `{ base64, mimeType, size }` without attaching — use this when code needs the raw data (e.g. re-encoding, uploading, converting). Max 20MB for binary files.
 - `write({ path, content })` → success message. Creates parent dirs. Overwrites entire file. UTF-8 text only.
 - `writeBinary({ path, base64 })` → success message. Creates parent dirs. Decodes base64 string and writes raw binary.
-- `readBinary({ path, asBase64? })` → by default, file is auto-attached to the tool result as an image output you can see directly, returns `{ attached: true, mimeType, size }`. With `asBase64: true`, returns `{ base64, mimeType, size }` without attaching — use this when code needs the raw data (e.g. re-encoding, uploading, converting). Max 20MB.
-- `edit({ path, oldText, newText })` → success message. `oldText` must match exactly once (whitespace-sensitive).
+- `edit({ path, edits })` → success message. `edits` is an array of `{ oldText, newText }`. Each `oldText` must match exactly once in the original file (whitespace-sensitive). Multiple edits are matched against the original file, not incrementally. Edits must not overlap; merge nearby changes into one edit instead.
 - `ls({ path?, limit? })` → `string[]`. Returns entries sorted alphabetically, with `/` suffix for directories. Default limit 500.
 - `mkdir({ path, recursive? })` → void
 - `remove({ path, recursive? })` → void

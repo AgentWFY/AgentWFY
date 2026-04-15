@@ -38,6 +38,13 @@ interface WorkerReadRequest {
   path: string
   offset?: number
   limit?: number
+  asBase64?: boolean
+}
+
+interface WorkerReadBinaryResult {
+  base64: string
+  mimeType: string
+  size: number
 }
 
 interface WorkerWriteRequest {
@@ -52,8 +59,7 @@ interface WorkerWriteBinaryRequest {
 
 interface WorkerEditRequest {
   path: string
-  oldText: string
-  newText: string
+  edits: Array<{ oldText: string; newText: string }>
 }
 
 interface WorkerLsRequest {
@@ -159,17 +165,6 @@ interface WorkerCaptureTabResult {
   mimeType: string
 }
 
-interface WorkerReadBinaryRequest {
-  path: string
-  asBase64?: boolean
-}
-
-interface WorkerReadBinaryResult {
-  base64: string
-  mimeType: string
-  size: number
-}
-
 export interface WorkerHostMethodMap {
   runSql: {
     params: WorkerRunSqlRequest
@@ -177,7 +172,7 @@ export interface WorkerHostMethodMap {
   }
   read: {
     params: WorkerReadRequest
-    result: string
+    result: string | WorkerReadBinaryResult
   }
   write: {
     params: WorkerWriteRequest
@@ -238,10 +233,6 @@ export interface WorkerHostMethodMap {
   captureTab: {
     params: WorkerCaptureTabRequest
     result: WorkerCaptureTabResult
-  }
-  readBinary: {
-    params: WorkerReadBinaryRequest
-    result: WorkerReadBinaryResult
   }
   getTabConsoleLogs: {
     params: WorkerGetTabConsoleLogsRequest

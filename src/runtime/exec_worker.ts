@@ -289,17 +289,23 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
           'captureTab',
           (r) => ({ attached: true, mimeType: r.mimeType }),
         ))
-      } else if (method === 'readBinary') {
-        const attachBinary = makeAttachmentBinding<WorkerHostMethodMap['readBinary']['result']>(
-          'readBinary',
-          (r) => ({ attached: true, mimeType: r.mimeType, size: r.size }),
-        )
+      } else if (method === 'read') {
         methodArgValues.push((params: unknown) => {
-          const req = params as WorkerHostMethodMap['readBinary']['params']
-          if (req && req.asBase64) {
-            return call('readBinary', params)
-          }
-          return attachBinary(params)
+          const req = params as WorkerHostMethodMap['read']['params']
+          const p = (async () => {
+            const result = await call('read', params)
+            if (result && typeof result === 'object' && 'base64' in (result as Record<string, unknown>)) {
+              const binResult = result as { base64: string; mimeType: string; size: number }
+              if (req && req.asBase64) {
+                return binResult
+              }
+              capturedFiles.push({ base64: binResult.base64, mimeType: binResult.mimeType })
+              return { attached: true, mimeType: binResult.mimeType, size: binResult.size }
+            }
+            return result
+          })()
+          pendingAttachments.push(p)
+          return p
         })
       } else {
         methodArgValues.push((params: unknown) => call(method, params))
