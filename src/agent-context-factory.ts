@@ -93,6 +93,8 @@ export class AgentContextFactory {
       captureTab: (req: Parameters<TabViewManager['captureTabById']>[0]) => tabViewManager.captureTabById(req),
       getTabConsoleLogs: (req: Parameters<TabViewManager['getTabConsoleLogsById']>[0]) => tabViewManager.getTabConsoleLogsById(req),
       execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
+      sendInput: (req: Parameters<TabViewManager['sendInputById']>[0]) => tabViewManager.sendInputById(req),
+      inspectElement: (req: Parameters<TabViewManager['inspectElementById']>[0]) => tabViewManager.inspectElementById(req),
     };
 
     registerAllBuiltInFunctions(functionRegistry, {

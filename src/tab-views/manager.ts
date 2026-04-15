@@ -93,6 +93,11 @@ const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   error: 'error',
 };
 
+const VALID_MODIFIERS = new Set<string>(['shift', 'control', 'alt', 'meta']);
+const MOUSE_EVENT_TYPES = new Set<string>(['mouseDown', 'mouseUp', 'mouseMove']);
+const KEY_EVENT_TYPES = new Set<string>(['keyDown', 'keyUp', 'char']);
+const VALID_BUTTONS = new Set<string>(['left', 'middle', 'right']);
+
 
 function isAbortedLoadError(error: unknown): boolean {
   return (error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3;
@@ -696,6 +701,154 @@ export class TabViewManager {
     // Wrap in async IIFE so return statements work (matching execJs behavior).
     const wrappedCode = `(async () => {\n${request.code}\n})()`;
     return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs);
+  }
+
+  async sendInputById(request: {
+    tabId: string
+    type: string
+    x?: number
+    y?: number
+    button?: string
+    clickCount?: number
+    deltaX?: number
+    deltaY?: number
+    keyCode?: string
+    modifiers?: string[]
+  }): Promise<void> {
+    const state = await this.resolveReadyTabViewState(request.tabId);
+    const wc = state.view.webContents;
+
+    const modifiers = (request.modifiers || []).filter(m => VALID_MODIFIERS.has(m)) as
+      Array<'shift' | 'control' | 'alt' | 'meta'>;
+    const x = Math.round(request.x ?? 0);
+    const y = Math.round(request.y ?? 0);
+    const button = VALID_BUTTONS.has(request.button ?? '') ? request.button as 'left' | 'middle' | 'right' : undefined;
+
+    if (request.type === 'click') {
+      const clickCount = Math.max(1, Math.floor(request.clickCount ?? 1));
+      wc.sendInputEvent({ type: 'mouseDown', x, y, button: button ?? 'left', clickCount, modifiers });
+      wc.sendInputEvent({ type: 'mouseUp', x, y, button: button ?? 'left', clickCount, modifiers });
+      return;
+    }
+
+    if (request.type === 'mouseWheel') {
+      wc.sendInputEvent({
+        type: 'mouseWheel',
+        x,
+        y,
+        deltaX: request.deltaX ?? 0,
+        deltaY: request.deltaY ?? 0,
+        modifiers,
+      });
+      return;
+    }
+
+    if (MOUSE_EVENT_TYPES.has(request.type)) {
+      wc.sendInputEvent({
+        type: request.type as 'mouseDown' | 'mouseUp' | 'mouseMove',
+        x,
+        y,
+        button,
+        clickCount: request.type === 'mouseDown' ? Math.max(1, Math.floor(request.clickCount ?? 1)) : undefined,
+        modifiers,
+      });
+      return;
+    }
+
+    if (KEY_EVENT_TYPES.has(request.type)) {
+      if (typeof request.keyCode !== 'string' || !request.keyCode) {
+        throw new Error('keyCode is required for keyboard input events');
+      }
+      wc.sendInputEvent({
+        type: request.type as 'keyDown' | 'keyUp' | 'char',
+        keyCode: request.keyCode,
+        modifiers,
+      });
+      return;
+    }
+
+    throw new Error(`Unknown input event type: ${request.type}`);
+  }
+
+  async inspectElementById(request: {
+    tabId: string
+    selector: string
+  }): Promise<unknown> {
+    if (typeof request.selector !== 'string' || !request.selector.trim()) {
+      throw new Error('inspectElement requires a non-empty CSS selector');
+    }
+
+    const selectorLiteral = JSON.stringify(request.selector);
+    const code = `
+    const el = document.querySelector(${selectorLiteral});
+    if (!el) return { found: false };
+
+    const cs = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+
+    return {
+      found: true,
+      tagName: el.tagName.toLowerCase(),
+      textContent: (el.textContent || '').trim().slice(0, 500),
+      attributes: Object.fromEntries(Array.from(el.attributes).map(a => [a.name, a.value])),
+      classes: Array.from(el.classList),
+      box: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+      },
+      styles: {
+        display: cs.display,
+        visibility: cs.visibility,
+        opacity: cs.opacity,
+        position: cs.position,
+        overflow: cs.overflow,
+        zIndex: cs.zIndex,
+        boxSizing: cs.boxSizing,
+        color: cs.color,
+        backgroundColor: cs.backgroundColor,
+        fontSize: cs.fontSize,
+        fontWeight: cs.fontWeight,
+        lineHeight: cs.lineHeight,
+        textAlign: cs.textAlign,
+        border: cs.border,
+        borderCollapse: cs.borderCollapse,
+        padding: cs.padding,
+        margin: cs.margin,
+        width: cs.width,
+        height: cs.height,
+        minWidth: cs.minWidth,
+        maxWidth: cs.maxWidth,
+        minHeight: cs.minHeight,
+        maxHeight: cs.maxHeight,
+        cursor: cs.cursor,
+        pointerEvents: cs.pointerEvents,
+        userSelect: cs.userSelect,
+        whiteSpace: cs.whiteSpace,
+        textOverflow: cs.textOverflow,
+        flexGrow: cs.flexGrow,
+        flexShrink: cs.flexShrink,
+        gridTemplateColumns: cs.gridTemplateColumns,
+      },
+      isVisible: cs.display !== 'none'
+        && cs.visibility !== 'hidden'
+        && parseFloat(cs.opacity) > 0
+        && rect.width > 0
+        && rect.height > 0,
+      isInViewport: rect.top < window.innerHeight
+        && rect.bottom > 0
+        && rect.left < window.innerWidth
+        && rect.right > 0,
+      childCount: el.children.length,
+      parentTag: el.parentElement ? el.parentElement.tagName.toLowerCase() : null,
+    };`;
+
+    return this.execTabJsById({ tabId: request.tabId, code });
   }
 
   // --- Webview tracking ---

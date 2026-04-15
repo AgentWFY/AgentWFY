@@ -71,7 +71,7 @@ All paths are relative to the data directory root. Path traversal outside the da
 
 ### Tabs
 
-For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `getTabConsoleLogs`, `getTabs`. See `system.tabs`.
+For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `inspectElement`, `sendInput`, `getTabConsoleLogs`, `getTabs`. See `system.tabs`.
 
 ### Other APIs
 

@@ -1,7 +1,7 @@
 import type { AgentTabTools } from '../../ipc/tabs.js'
 import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
-import type { WorkerHostMethodMap, WorkerTabConsoleLogEntry } from '../types.js'
+import type { WorkerHostMethodMap, WorkerTabConsoleLogEntry, WorkerSendInputRequest } from '../types.js'
 
 export function registerTabs(registry: FunctionRegistry, deps: { tabTools: AgentTabTools; agentRoot: string }): void {
   const { tabTools, agentRoot } = deps
@@ -117,5 +117,29 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       code: request.code,
       timeoutMs: request.timeoutMs,
     })
+  })
+
+  registry.register('sendInput', async (params) => {
+    const request = params as WorkerSendInputRequest
+    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+      throw new Error('sendInput requires a tabId')
+    }
+    if (typeof request.type !== 'string' || !request.type) {
+      throw new Error('sendInput requires a type')
+    }
+
+    return tabTools.sendInput(request)
+  })
+
+  registry.register('inspectElement', async (params) => {
+    const request = params as { tabId: string; selector: string }
+    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
+      throw new Error('inspectElement requires a tabId')
+    }
+    if (typeof request.selector !== 'string' || !request.selector.trim()) {
+      throw new Error('inspectElement requires a CSS selector')
+    }
+
+    return tabTools.inspectElement(request)
   })
 }

@@ -154,6 +154,24 @@ export interface WorkerExecTabJsRequest {
   timeoutMs?: number
 }
 
+export interface WorkerSendInputRequest {
+  tabId: string
+  type: 'mouseDown' | 'mouseUp' | 'mouseMove' | 'click' | 'mouseWheel' | 'keyDown' | 'keyUp' | 'char'
+  x?: number
+  y?: number
+  button?: 'left' | 'middle' | 'right'
+  clickCount?: number
+  deltaX?: number
+  deltaY?: number
+  keyCode?: string
+  modifiers?: string[]
+}
+
+export interface WorkerInspectElementRequest {
+  tabId: string
+  selector: string
+}
+
 export interface WorkerTabConsoleLogEntry {
   level: 'verbose' | 'info' | 'warning' | 'error'
   message: string
@@ -240,6 +258,14 @@ export interface WorkerHostMethodMap {
   }
   execTabJs: {
     params: WorkerExecTabJsRequest
+    result: unknown
+  }
+  sendInput: {
+    params: WorkerSendInputRequest
+    result: void
+  }
+  inspectElement: {
+    params: WorkerInspectElementRequest
     result: unknown
   }
   publish: {
