@@ -12,29 +12,61 @@ const DEFAULT_GREP_LIMIT = 100
 const DEFAULT_FIND_LIMIT = 1000
 const DEFAULT_LS_LIMIT = 500
 
-function truncateText(text: string, maxLines: number, maxBytes: number): { content: string; truncated: boolean; totalLines: number; shownLines: number } {
+interface TruncationResult {
+  content: string
+  truncated: boolean
+  truncatedBy: 'lines' | 'bytes' | null
+  totalLines: number
+  outputLines: number
+  firstLineExceedsLimit: boolean
+}
+
+function truncateHead(text: string, maxLines: number, maxBytes: number): TruncationResult {
+  const totalBytes = Buffer.byteLength(text, 'utf-8')
   const lines = text.split('\n')
   const totalLines = lines.length
 
+  if (totalLines <= maxLines && totalBytes <= maxBytes) {
+    return { content: text, truncated: false, truncatedBy: null, totalLines, outputLines: totalLines, firstLineExceedsLimit: false }
+  }
+
+  const firstLineBytes = Buffer.byteLength(lines[0], 'utf-8')
+  if (firstLineBytes > maxBytes) {
+    return { content: '', truncated: true, truncatedBy: 'bytes', totalLines, outputLines: 0, firstLineExceedsLimit: true }
+  }
+
   let byteCount = 0
   let lineCount = 0
+  let truncatedBy: 'lines' | 'bytes' = 'lines'
+
   for (let i = 0; i < lines.length && i < maxLines; i++) {
-    const lineBytes = Buffer.byteLength(lines[i], 'utf-8') + 1
-    if (byteCount + lineBytes > maxBytes && i > 0) break
+    const lineBytes = Buffer.byteLength(lines[i], 'utf-8') + (i > 0 ? 1 : 0)
+    if (byteCount + lineBytes > maxBytes) {
+      truncatedBy = 'bytes'
+      break
+    }
     byteCount += lineBytes
     lineCount++
   }
 
-  if (lineCount >= totalLines) {
-    return { content: text, truncated: false, totalLines, shownLines: totalLines }
+  if (lineCount >= maxLines && byteCount <= maxBytes) {
+    truncatedBy = 'lines'
   }
 
   return {
     content: lines.slice(0, lineCount).join('\n'),
     truncated: true,
+    truncatedBy,
     totalLines,
-    shownLines: lineCount,
+    outputLines: lineCount,
+    firstLineExceedsLimit: false,
   }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
 function truncateLine(line: string, maxLen: number): string {
@@ -112,30 +144,66 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     }
 
     const filePath = await assertPathAllowed(agentRoot, request.path)
+
+    // Auto-detect binary files by MIME type
+    const mime = mimeFromPath(filePath)
+    if (mime !== 'application/octet-stream' && !mime.startsWith('text/')) {
+      const stat = await fs.stat(filePath)
+      if (stat.size > MAX_READ_BINARY_BYTES) {
+        throw new Error(`File too large (${stat.size} bytes). Max binary read size is ${MAX_READ_BINARY_BYTES} bytes.`)
+      }
+      const buffer = await fs.readFile(filePath)
+      return {
+        base64: buffer.toString('base64'),
+        mimeType: mime,
+        size: buffer.length,
+      }
+    }
+
+    // Text file
     const raw = await fs.readFile(filePath, 'utf-8')
     const allLines = raw.split('\n')
-    const totalLines = allLines.length
+    const totalFileLines = allLines.length
 
     const startLine = request.offset ? Math.max(0, request.offset - 1) : 0
-    if (startLine >= totalLines) {
-      throw new Error(`Offset ${request.offset} is beyond end of file (${totalLines} lines total)`)
+    const startLineDisplay = startLine + 1
+    if (startLine >= totalFileLines) {
+      throw new Error(`Offset ${request.offset} is beyond end of file (${totalFileLines} lines total)`)
     }
 
-    const effectiveLimit = request.limit ?? MAX_READ_LINES
-    const endLine = Math.min(startLine + effectiveLimit, totalLines)
-    const selected = allLines.slice(startLine, endLine).join('\n')
+    let selectedContent: string
+    let userLimitedLines: number | undefined
 
-    const trunc = truncateText(selected, effectiveLimit, MAX_READ_BYTES)
-    const actualEnd = startLine + trunc.shownLines
-
-    let output = trunc.content
-
-    if (trunc.truncated || actualEnd < totalLines) {
-      const nextOffset = actualEnd + 1
-      output += `\n\n[Showing lines ${startLine + 1}-${actualEnd} of ${totalLines}. Use offset=${nextOffset} to continue.]`
+    if (request.limit !== undefined) {
+      const endLine = Math.min(startLine + request.limit, totalFileLines)
+      selectedContent = allLines.slice(startLine, endLine).join('\n')
+      userLimitedLines = endLine - startLine
+    } else {
+      selectedContent = allLines.slice(startLine).join('\n')
     }
 
-    return output
+    const trunc = truncateHead(selectedContent, MAX_READ_LINES, MAX_READ_BYTES)
+
+    if (trunc.firstLineExceedsLimit) {
+      return `[Line ${startLineDisplay} is ${formatSize(Buffer.byteLength(allLines[startLine], 'utf-8'))}, exceeds ${formatSize(MAX_READ_BYTES)} limit.]`
+    }
+
+    if (trunc.truncated) {
+      const endLineDisplay = startLine + trunc.outputLines
+      const nextOffset = endLineDisplay + 1
+      if (trunc.truncatedBy === 'lines') {
+        return trunc.content + `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`
+      }
+      return trunc.content + `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(MAX_READ_BYTES)} limit). Use offset=${nextOffset} to continue.]`
+    }
+
+    if (userLimitedLines !== undefined && startLine + userLimitedLines < totalFileLines) {
+      const remaining = totalFileLines - (startLine + userLimitedLines)
+      const nextOffset = startLine + userLimitedLines + 1
+      return trunc.content + `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`
+    }
+
+    return trunc.content
   })
 
   registry.register('write', async (params) => {
@@ -169,49 +237,68 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     return `Successfully wrote ${buffer.length} bytes to ${request.path}`
   })
 
-  registry.register('readBinary', async (params) => {
-    const request = params as WorkerHostMethodMap['readBinary']['params']
-    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
-      throw new Error('readBinary requires a non-empty path string')
-    }
-
-    const filePath = await assertPathAllowed(agentRoot, request.path)
-    const stat = await fs.stat(filePath)
-    if (stat.size > MAX_READ_BINARY_BYTES) {
-      throw new Error(`File too large (${stat.size} bytes). readBinary limit is ${MAX_READ_BINARY_BYTES} bytes.`)
-    }
-    const buffer = await fs.readFile(filePath)
-    return {
-      base64: buffer.toString('base64'),
-      mimeType: mimeFromPath(filePath),
-      size: buffer.length,
-    }
-  })
-
   registry.register('edit', async (params) => {
     const request = params as WorkerHostMethodMap['edit']['params']
     if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
       throw new Error('edit requires a non-empty path string')
     }
-    if (typeof request.oldText !== 'string') {
-      throw new Error('edit requires oldText as a string')
-    }
-    if (typeof request.newText !== 'string') {
-      throw new Error('edit requires newText as a string')
+    if (!Array.isArray(request.edits) || request.edits.length === 0) {
+      throw new Error('edit requires edits array with at least one replacement')
     }
 
     const filePath = await assertPathAllowed(agentRoot, request.path)
-    const content = await fs.readFile(filePath, 'utf-8')
-    const occurrences = content.split(request.oldText).length - 1
-    if (occurrences === 0) {
-      throw new Error(`Could not find the exact text in ${request.path}. The old text must match exactly including all whitespace and newlines.`)
+    const rawContent = await fs.readFile(filePath, 'utf-8')
+
+    // Strip BOM
+    const bom = rawContent.startsWith('\uFEFF') ? '\uFEFF' : ''
+    const content = bom ? rawContent.slice(1) : rawContent
+
+    // Detect and normalize line endings
+    const originalEnding = content.includes('\r\n') ? '\r\n' : '\n'
+    const normalized = content.replace(/\r\n/g, '\n')
+
+    // Find all edit positions in the original normalized content
+    const positions: Array<{ start: number; end: number; newText: string }> = []
+
+    for (const edit of request.edits) {
+      if (typeof edit.oldText !== 'string' || typeof edit.newText !== 'string') {
+        throw new Error('Each edit must have oldText and newText strings')
+      }
+      const normalizedOld = edit.oldText.replace(/\r\n/g, '\n')
+      const normalizedNew = edit.newText.replace(/\r\n/g, '\n')
+
+      const idx = normalized.indexOf(normalizedOld)
+      if (idx === -1) {
+        throw new Error(`Could not find the exact text in ${request.path}. The old text must match exactly including all whitespace and newlines.`)
+      }
+      if (normalized.indexOf(normalizedOld, idx + normalizedOld.length) !== -1) {
+        throw new Error(`Found multiple occurrences of the text in ${request.path}. Provide more context to make it unique.`)
+      }
+
+      positions.push({ start: idx, end: idx + normalizedOld.length, newText: normalizedNew })
     }
-    if (occurrences > 1) {
-      throw new Error(`Found ${occurrences} occurrences of the text in ${request.path}. The text must be unique. Provide more context to make it unique.`)
+
+    // Sort by position and check for overlaps
+    positions.sort((a, b) => a.start - b.start)
+    for (let i = 1; i < positions.length; i++) {
+      if (positions[i].start < positions[i - 1].end) {
+        throw new Error(`Edits overlap in ${request.path}. Merge overlapping edits into one.`)
+      }
     }
-    const updated = content.replace(request.oldText, request.newText)
-    await fs.writeFile(filePath, updated, 'utf-8')
-    return `Successfully replaced text in ${request.path}`
+
+    // Apply in reverse order to preserve positions
+    let result = normalized
+    for (let i = positions.length - 1; i >= 0; i--) {
+      const p = positions[i]
+      result = result.slice(0, p.start) + p.newText + result.slice(p.end)
+    }
+
+    // Restore original line endings and BOM
+    if (originalEnding === '\r\n') {
+      result = result.replace(/\n/g, '\r\n')
+    }
+    await fs.writeFile(filePath, bom + result, 'utf-8')
+    return `Successfully replaced ${request.edits.length} block(s) in ${request.path}`
   })
 
   registry.register('ls', async (params) => {
