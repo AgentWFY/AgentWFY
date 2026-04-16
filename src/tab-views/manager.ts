@@ -97,6 +97,14 @@ const VALID_MODIFIERS = new Set<string>(['shift', 'control', 'alt', 'meta']);
 const MOUSE_EVENT_TYPES = new Set<string>(['mouseDown', 'mouseUp', 'mouseMove']);
 const KEY_EVENT_TYPES = new Set<string>(['keyDown', 'keyUp', 'char']);
 const VALID_BUTTONS = new Set<string>(['left', 'middle', 'right']);
+const INPUT_TYPE_ALIASES: Record<string, string> = {
+  mousedown: 'mouseDown',
+  mouseup: 'mouseUp',
+  mousemove: 'mouseMove',
+  mousewheel: 'mouseWheel',
+  keydown: 'keyDown',
+  keyup: 'keyUp',
+};
 
 
 function isAbortedLoadError(error: unknown): boolean {
@@ -718,20 +726,21 @@ export class TabViewManager {
     const state = await this.resolveReadyTabViewState(request.tabId);
     const wc = state.view.webContents;
 
+    const type = INPUT_TYPE_ALIASES[request.type] ?? request.type;
     const modifiers = (request.modifiers || []).filter(m => VALID_MODIFIERS.has(m)) as
       Array<'shift' | 'control' | 'alt' | 'meta'>;
     const x = Math.round(request.x ?? 0);
     const y = Math.round(request.y ?? 0);
     const button = VALID_BUTTONS.has(request.button ?? '') ? request.button as 'left' | 'middle' | 'right' : undefined;
 
-    if (request.type === 'click') {
+    if (type === 'click') {
       const clickCount = Math.max(1, Math.floor(request.clickCount ?? 1));
       wc.sendInputEvent({ type: 'mouseDown', x, y, button: button ?? 'left', clickCount, modifiers });
       wc.sendInputEvent({ type: 'mouseUp', x, y, button: button ?? 'left', clickCount, modifiers });
       return;
     }
 
-    if (request.type === 'mouseWheel') {
+    if (type === 'mouseWheel') {
       wc.sendInputEvent({
         type: 'mouseWheel',
         x,
@@ -743,31 +752,32 @@ export class TabViewManager {
       return;
     }
 
-    if (MOUSE_EVENT_TYPES.has(request.type)) {
+    if (MOUSE_EVENT_TYPES.has(type)) {
       wc.sendInputEvent({
-        type: request.type as 'mouseDown' | 'mouseUp' | 'mouseMove',
+        type: type as 'mouseDown' | 'mouseUp' | 'mouseMove',
         x,
         y,
         button,
-        clickCount: request.type === 'mouseDown' ? Math.max(1, Math.floor(request.clickCount ?? 1)) : undefined,
+        clickCount: type === 'mouseDown' ? Math.max(1, Math.floor(request.clickCount ?? 1)) : undefined,
         modifiers,
       });
       return;
     }
 
-    if (KEY_EVENT_TYPES.has(request.type)) {
+    if (KEY_EVENT_TYPES.has(type)) {
       if (typeof request.keyCode !== 'string' || !request.keyCode) {
         throw new Error('keyCode is required for keyboard input events');
       }
       wc.sendInputEvent({
-        type: request.type as 'keyDown' | 'keyUp' | 'char',
+        type: type as 'keyDown' | 'keyUp' | 'char',
         keyCode: request.keyCode,
         modifiers,
       });
       return;
     }
 
-    throw new Error(`Unknown input event type: ${request.type}`);
+    const supported = ['click', ...MOUSE_EVENT_TYPES, 'mouseWheel', ...KEY_EVENT_TYPES];
+    throw new Error(`Unknown input event type: ${type}. Supported types: ${supported.join(', ')}`);
   }
 
   async inspectElementById(request: {
