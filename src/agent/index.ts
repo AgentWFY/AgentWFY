@@ -329,6 +329,10 @@ export class Agent {
                 // skipRetryDelay or user abort — continue to next attempt
               }
 
+              // Sync display with provider's committed messages so completed
+              // turns remain visible during the retry instead of disappearing.
+              this._state.messages = session.getDisplayMessages()
+
               this.emit({ type: 'retry_attempt', attempt: attempt + 1, maxAttempts: MAX_RETRY_ATTEMPTS })
               continue
             }
@@ -341,7 +345,8 @@ export class Agent {
               blocks: streamingBlocks,
               timestamp: Date.now(),
             }
-            this._state.messages = [...this._state.messages, errorMessage]
+            // Start from provider's committed messages so completed turns are shown
+            this._state.messages = [...session.getDisplayMessages(), errorMessage]
             this.emit({ type: 'agent_end' })
             break // exit retry loop
           }
