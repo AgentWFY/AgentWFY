@@ -48,10 +48,10 @@ Restrictions:
 
 Everything outside these protected namespaces is freely writable.
 
-Docs are stored in the `docs` table. Only use it for storing instructions for the agent — use files or separate SQLite tables for general data. Docs without dots in the name are preloaded into this prompt. Read others on demand:
+Docs are stored in the `docs` table. Only use it for storing instructions for the agent — use files or separate SQLite tables for general data. Docs without dots in the name are preloaded into this prompt. Read others on demand via `@docs/` paths:
 
 ```js
-await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['section-name'] })
+await read({ path: '@docs/section-name' })
 ```
 
 ### Files

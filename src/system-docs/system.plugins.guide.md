@@ -24,7 +24,7 @@ const result = await ffmpegRun({ args: ['-i', 'input.mp4', 'output.webm'] })
 Load `plugin.<name>` docs for each plugin's function reference:
 
 ```js
-const rows = await runSql({ target: 'agent', sql: "SELECT content FROM docs WHERE name = ?", params: ['plugin.ffmpeg'] })
+const content = await read({ path: '@docs/plugin.ffmpeg' })
 ```
 
 ## Querying Installed Plugins

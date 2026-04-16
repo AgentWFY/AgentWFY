@@ -15,7 +15,7 @@ const plugins = await runSql({ sql: "SELECT name, description, enabled FROM plug
 Each plugin may provide docs at `plugin.<name>`. Load them on demand:
 
 ```js
-const rows = await runSql({ sql: "SELECT content FROM docs WHERE name = ?", params: ['plugin.ffmpeg'] })
+const content = await read({ path: '@docs/plugin.ffmpeg' })
 ```
 
 ## Reference sections
