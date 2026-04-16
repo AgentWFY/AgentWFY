@@ -93,6 +93,8 @@ export interface WorkerGrepOptions {
   literal?: boolean
   context?: number
   limit?: number
+  glob?: string
+  filesOnly?: boolean
 }
 
 interface WorkerGrepRequest {

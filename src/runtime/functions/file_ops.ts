@@ -4,7 +4,7 @@ import { assertPathAllowed, isAgentPrivatePath } from '../../security/path-polic
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 import { parseDbPath, dbRead, dbWrite, dbEdit, dbLs, dbFind, dbGrep, dbRemove, dbRename } from './db_content.js'
-import { paginateText, applyTextEdits, matchesGlob, truncateLine, GREP_MAX_LINE_LENGTH, DEFAULT_GREP_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_LS_LIMIT } from './text_utils.js'
+import { paginateText, applyTextEdits, matchesGlob, compileGlob, truncateLine, GREP_MAX_LINE_LENGTH, DEFAULT_GREP_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_LS_LIMIT } from './text_utils.js'
 
 const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
 
@@ -332,6 +332,11 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     const contextLines = request.options?.context ?? 0
     const effectiveLimit = request.options?.limit ?? DEFAULT_GREP_LIMIT
 
+    const globPattern = request.options?.glob
+    const globRegex = globPattern ? compileGlob(globPattern) : null
+    const globBaseRegex = globPattern ? compileGlob(path.basename(globPattern)) : null
+    const filesOnly = request.options?.filesOnly ?? false
+
     let files: string[]
     const searchStat = await fs.stat(searchPath)
     if (searchStat.isFile()) {
@@ -350,13 +355,29 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     for (const rel of files) {
       if (rel.endsWith('/')) continue
       if (limitReached) break
+      if (globRegex && !globRegex.test(rel) && (!globBaseRegex || !globBaseRegex.test(path.basename(rel)))) continue
       const abs = path.join(root, rel)
-      let content: string
+
+      let buf: Buffer
       try {
-        content = await fs.readFile(abs, 'utf-8')
+        buf = await fs.readFile(abs)
       } catch {
         continue
       }
+      if (buf.includes(0)) continue
+      const content = buf.toString('utf-8')
+
+      if (filesOnly) {
+        if (regex.test(content)) {
+          matchCount++
+          if (matchCount > effectiveLimit) {
+            limitReached = true
+          }
+          outputLines.push(rel)
+        }
+        continue
+      }
+
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {

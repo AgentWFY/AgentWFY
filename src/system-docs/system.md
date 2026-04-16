@@ -70,7 +70,7 @@ All paths are relative to the data directory root. Path traversal outside the da
 - `remove({ path, recursive? })` → void
 - `rename({ oldPath, newPath })` → success message. Moves/renames a file or directory. Creates parent dirs for destination.
 - `find({ pattern, path?, limit? })` → text list of matching paths. Glob patterns (`*`, `**`, `?`). Default limit 1000.
-- `grep({ pattern, path?, options? })` → `file:line: content` format. Default limit 100. Options: `{ ignoreCase?, literal?, context?, limit? }`
+- `grep({ pattern, path?, options? })` → `file:line: content` format. Default limit 100. Options: `{ ignoreCase?, literal?, context?, limit?, glob?, filesOnly? }`
 
 ### Tabs
 

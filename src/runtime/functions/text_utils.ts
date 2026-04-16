@@ -67,14 +67,18 @@ export function truncateLine(line: string, maxLen: number): string {
   return line.slice(0, maxLen) + '\u2026'
 }
 
-export function matchesGlob(filename: string, pattern: string): boolean {
+export function compileGlob(pattern: string): RegExp {
   const regex = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '\0')
     .replace(/\*/g, '[^/]*')
     .replace(/\0/g, '.*')
     .replace(/\?/g, '.')
-  return new RegExp(`^${regex}$`).test(filename)
+  return new RegExp(`^${regex}$`)
+}
+
+export function matchesGlob(filename: string, pattern: string): boolean {
+  return compileGlob(pattern).test(filename)
 }
 
 export function applyTextEdits(
