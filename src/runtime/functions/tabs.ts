@@ -3,6 +3,19 @@ import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap, WorkerTabConsoleLogEntry, WorkerSendInputRequest } from '../types.js'
 
+function resolveTabId(params: unknown): string {
+  if (typeof params === 'string') {
+    if (!params.trim()) throw new Error('requires an id')
+    return params
+  }
+  const request = params as { id?: string; tabId?: string } | undefined
+  const tabId = request?.tabId ?? request?.id
+  if (typeof tabId !== 'string' || !tabId.trim()) {
+    throw new Error('requires an id (or tabId)')
+  }
+  return tabId
+}
+
 export function registerTabs(registry: FunctionRegistry, deps: { tabTools: AgentTabTools; agentRoot: string }): void {
   const { tabTools, agentRoot } = deps
 
@@ -40,7 +53,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       throw new Error('openTab requires exactly one of viewName, filePath, or url')
     }
 
-    return tabTools.openTab({
+    const result = await tabTools.openTab({
       viewName: hasResolvedViewName ? resolvedViewName : undefined,
       filePath: hasFilePath ? request.filePath : undefined,
       url: hasUrl ? request.url : undefined,
@@ -48,55 +61,43 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
       hidden: request.hidden,
       params: request.params,
     })
+
+    return { id: result.tabId, tabId: result.tabId }
   })
 
   registry.register('closeTab', async (params) => {
-    const request = params as WorkerHostMethodMap['closeTab']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('closeTab requires a tabId')
-    }
+    const tabId = resolveTabId(params)
 
-    await tabTools.closeTab({ tabId: request.tabId })
+    await tabTools.closeTab({ tabId })
     return undefined
   })
 
   registry.register('selectTab', async (params) => {
-    const request = params as WorkerHostMethodMap['selectTab']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('selectTab requires a tabId')
-    }
+    const tabId = resolveTabId(params)
 
-    await tabTools.selectTab({ tabId: request.tabId })
+    await tabTools.selectTab({ tabId })
     return undefined
   })
 
   registry.register('reloadTab', async (params) => {
-    const request = params as WorkerHostMethodMap['reloadTab']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('reloadTab requires a tabId')
-    }
+    const tabId = resolveTabId(params)
 
-    await tabTools.reloadTab({ tabId: request.tabId })
+    await tabTools.reloadTab({ tabId })
     return undefined
   })
 
   registry.register('captureTab', async (params) => {
-    const request = params as WorkerHostMethodMap['captureTab']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('captureTab requires a tabId')
-    }
+    const tabId = resolveTabId(params)
 
-    return tabTools.captureTab({ tabId: request.tabId })
+    return tabTools.captureTab({ tabId })
   })
 
   registry.register('getTabConsoleLogs', async (params) => {
     const request = params as WorkerHostMethodMap['getTabConsoleLogs']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('getTabConsoleLogs requires a tabId')
-    }
+    const tabId = resolveTabId(request)
 
     const logs = await tabTools.getTabConsoleLogs({
-      tabId: request.tabId,
+      tabId,
       since: request.since,
       limit: request.limit,
     })
@@ -105,15 +106,13 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
 
   registry.register('execTabJs', async (params) => {
     const request = params as WorkerHostMethodMap['execTabJs']['params']
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('execTabJs requires a tabId')
-    }
+    const tabId = resolveTabId(request)
     if (typeof request.code !== 'string') {
       throw new Error('execTabJs requires JavaScript code as a string')
     }
 
     return tabTools.execTabJs({
-      tabId: request.tabId,
+      tabId,
       code: request.code,
       timeoutMs: request.timeoutMs,
     })
@@ -121,25 +120,32 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
 
   registry.register('sendInput', async (params) => {
     const request = params as WorkerSendInputRequest
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('sendInput requires a tabId')
-    }
+    const tabId = resolveTabId(request)
     if (typeof request.type !== 'string' || !request.type) {
       throw new Error('sendInput requires a type')
     }
 
-    return tabTools.sendInput(request)
+    return tabTools.sendInput({
+      tabId,
+      type: request.type,
+      x: request.x,
+      y: request.y,
+      button: request.button,
+      clickCount: request.clickCount,
+      deltaX: request.deltaX,
+      deltaY: request.deltaY,
+      keyCode: request.keyCode,
+      modifiers: request.modifiers,
+    })
   })
 
   registry.register('inspectElement', async (params) => {
-    const request = params as { tabId: string; selector: string }
-    if (!request || typeof request.tabId !== 'string' || !request.tabId.trim()) {
-      throw new Error('inspectElement requires a tabId')
-    }
+    const request = params as { id?: string; tabId?: string; selector: string }
+    const tabId = resolveTabId(request)
     if (typeof request.selector !== 'string' || !request.selector.trim()) {
       throw new Error('inspectElement requires a CSS selector')
     }
 
-    return tabTools.inspectElement(request)
+    return tabTools.inspectElement({ tabId, selector: request.selector })
   })
 }

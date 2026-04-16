@@ -127,35 +127,42 @@ export interface WorkerOpenTabRequest {
 }
 
 export interface WorkerCloseTabRequest {
-  tabId: string
+  id?: string
+  tabId?: string
 }
 
 export interface WorkerSelectTabRequest {
-  tabId: string
+  id?: string
+  tabId?: string
 }
 
 export interface WorkerReloadTabRequest {
-  tabId: string
+  id?: string
+  tabId?: string
 }
 
 export interface WorkerCaptureTabRequest {
-  tabId: string
+  id?: string
+  tabId?: string
 }
 
 export interface WorkerGetTabConsoleLogsRequest {
-  tabId: string
+  id?: string
+  tabId?: string
   since?: number
   limit?: number
 }
 
 export interface WorkerExecTabJsRequest {
-  tabId: string
+  id?: string
+  tabId?: string
   code: string
   timeoutMs?: number
 }
 
 export interface WorkerSendInputRequest {
-  tabId: string
+  id?: string
+  tabId?: string
   type: 'mouseDown' | 'mouseUp' | 'mouseMove' | 'click' | 'mouseWheel' | 'keyDown' | 'keyUp' | 'char'
   x?: number
   y?: number
@@ -168,7 +175,8 @@ export interface WorkerSendInputRequest {
 }
 
 export interface WorkerInspectElementRequest {
-  tabId: string
+  id?: string
+  tabId?: string
   selector: string
 }
 
@@ -234,7 +242,7 @@ export interface WorkerHostMethodMap {
   }
   openTab: {
     params: WorkerOpenTabRequest
-    result: { tabId: string }
+    result: { id: string; tabId: string }
   }
   closeTab: {
     params: WorkerCloseTabRequest
