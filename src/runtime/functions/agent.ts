@@ -3,13 +3,15 @@ import type { AgentSessionManager } from '../../agent/session_manager.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 
+const DOCS_HINT = 'Read `@docs/system.sessions` for the full function reference.'
+
 export function registerAgent(registry: FunctionRegistry, deps: { getSessionManager: () => AgentSessionManager; rendererWebContents: WebContents }): void {
   const { getSessionManager, rendererWebContents: rwc } = deps
 
   registry.register('spawnSession', async (params) => {
     const request = params as WorkerHostMethodMap['spawnSession']['params']
     if (!request || typeof request.prompt !== 'string' || request.prompt.trim().length === 0) {
-      throw new Error('spawnSession requires a non-empty prompt string')
+      throw new Error(`spawnSession requires a non-empty prompt string. ${DOCS_HINT}`)
     }
     const sessionManager = getSessionManager()
     return sessionManager.spawnSession(request.prompt, request.providerId, request.providerOptions)
@@ -18,10 +20,10 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
   registry.register('sendToSession', async (params) => {
     const request = params as WorkerHostMethodMap['sendToSession']['params']
     if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
-      throw new Error('sendToSession requires a non-empty sessionId string')
+      throw new Error(`sendToSession requires a non-empty sessionId string. ${DOCS_HINT}`)
     }
     if (typeof request.message !== 'string' || request.message.trim().length === 0) {
-      throw new Error('sendToSession requires a non-empty message string')
+      throw new Error(`sendToSession requires a non-empty message string. ${DOCS_HINT}`)
     }
     const sessionManager = getSessionManager()
     await sessionManager.sendToSession(request.sessionId, request.message)
@@ -31,7 +33,7 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
   registry.register('openSessionInChat', async (params) => {
     const request = params as WorkerHostMethodMap['openSessionInChat']['params']
     if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
-      throw new Error('openSessionInChat requires a non-empty sessionId string')
+      throw new Error(`openSessionInChat requires a non-empty sessionId string. ${DOCS_HINT}`)
     }
     const sessionManager = getSessionManager()
     const { label } = await sessionManager.openSessionInChat(request.sessionId)

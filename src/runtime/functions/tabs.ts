@@ -3,15 +3,17 @@ import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap, WorkerTabConsoleLogEntry, WorkerSendInputRequest } from '../types.js'
 
+const DOCS_HINT = 'Read `@docs/system.tabs` for the full function reference.'
+
 function resolveTabId(params: unknown): string {
   if (typeof params === 'string') {
-    if (!params.trim()) throw new Error('requires an id')
+    if (!params.trim()) throw new Error(`requires an id. ${DOCS_HINT}`)
     return params
   }
   const request = params as { id?: string; tabId?: string } | undefined
   const tabId = request?.tabId ?? request?.id
   if (typeof tabId !== 'string' || !tabId.trim()) {
-    throw new Error('requires an id (or tabId)')
+    throw new Error(`requires an id (or tabId). ${DOCS_HINT}`)
   }
   return tabId
 }
@@ -26,7 +28,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
   registry.register('openTab', async (params) => {
     const request = params as WorkerHostMethodMap['openTab']['params']
     if (!request) {
-      throw new Error('openTab requires a request object')
+      throw new Error(`openTab requires a request object. ${DOCS_HINT}`)
     }
 
     // Validate viewName exists and resolve title
@@ -50,7 +52,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
     const sourceCount = (hasResolvedViewName ? 1 : 0) + (hasFilePath ? 1 : 0) + (hasUrl ? 1 : 0)
 
     if (sourceCount !== 1) {
-      throw new Error('openTab requires exactly one of viewName, filePath, or url')
+      throw new Error(`openTab requires exactly one of viewName, filePath, or url. ${DOCS_HINT}`)
     }
 
     const result = await tabTools.openTab({
@@ -108,7 +110,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
     const request = params as WorkerHostMethodMap['execTabJs']['params']
     const tabId = resolveTabId(request)
     if (typeof request.code !== 'string') {
-      throw new Error('execTabJs requires JavaScript code as a string')
+      throw new Error(`execTabJs requires JavaScript code as a string. ${DOCS_HINT}`)
     }
 
     return tabTools.execTabJs({
@@ -122,7 +124,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
     const request = params as WorkerSendInputRequest
     const tabId = resolveTabId(request)
     if (typeof request.type !== 'string' || !request.type) {
-      throw new Error('sendInput requires a type')
+      throw new Error(`sendInput requires a type. ${DOCS_HINT}`)
     }
 
     return tabTools.sendInput({
@@ -143,7 +145,7 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
     const request = params as { id?: string; tabId?: string; selector: string }
     const tabId = resolveTabId(request)
     if (typeof request.selector !== 'string' || !request.selector.trim()) {
-      throw new Error('inspectElement requires a CSS selector')
+      throw new Error(`inspectElement requires a CSS selector. ${DOCS_HINT}`)
     }
 
     return tabTools.inspectElement({ tabId, selector: request.selector })

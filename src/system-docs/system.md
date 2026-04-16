@@ -74,17 +74,17 @@ All paths are relative to the data directory root. Path traversal outside the da
 
 ### Tabs
 
-For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `inspectElement`, `sendInput`, `getTabConsoleLogs`, `getTabs`. See `system.tabs`.
+For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openTab`, `closeTab`, `selectTab`, `reloadTab`, `captureTab`, `execTabJs`, `inspectElement`, `sendInput`, `getTabConsoleLogs`, `getTabs`. Read `@docs/system.tabs` for the full function reference.
 
 ### Other APIs
 
-- Tasks & Triggers: `startTask({ taskName, input? })`, `stopTask({ runId })`. See `system.tasks` and `system.triggers`.
-- EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `system.eventbus`.
-- Sessions: `spawnSession({ prompt, providerId? })`, `sendToSession({ sessionId, message })`. See `system.sessions`.
+- Tasks & Triggers: `startTask({ taskName, input? })`, `stopTask({ runId })`. See `@docs/system.tasks` and `@docs/system.triggers`.
+- EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `@docs/system.eventbus`.
+- Sessions: `spawnSession({ prompt, providerId? })`, `sendToSession({ sessionId, message })`. See `@docs/system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
 
 ## Other docs
 
-- `system.views` — how to create views, CSS variables, view runtime
-- `system.config` — config keys, resolution order, how to read/write settings
-- `system.plugins` — plugin system overview
+- `@docs/system.views` — how to create views, CSS variables, view runtime
+- `@docs/system.config` — config keys, resolution order, how to read/write settings
+- `@docs/system.plugins` — plugin system overview
