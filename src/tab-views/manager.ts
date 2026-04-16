@@ -707,7 +707,8 @@ export class TabViewManager {
     const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
     // Wrap in async IIFE so return statements work (matching execJs behavior).
-    const wrappedCode = `(async () => {\n${request.code}\n})()`;
+    // Coerce undefined → null so JSON serialization across IPC doesn't fail.
+    const wrappedCode = `(async () => {\n${request.code}\n})().then(v => v === undefined ? null : v)`;
     return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs);
   }
 
