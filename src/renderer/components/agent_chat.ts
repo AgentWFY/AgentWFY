@@ -26,9 +26,10 @@ const STYLES = `
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    overflow-anchor: none;
   }
   .messages * { overflow-anchor: none; }
-  .messages #anchor { overflow-anchor: auto; height: 1px; }
+  .messages #anchor { height: 1px; }
   .block {
     user-select: text;
     word-break: break-word;
@@ -696,9 +697,10 @@ export class TlAgentChat extends HTMLElement {
   private isInitializing = true
   private messagesEl: HTMLElement | null = null
   private openToolSet = new Set<string>()
+  private activeTabs = new Map<string, string>()
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
-  private static readonly SCROLL_THRESHOLD = 50
+  private static readonly SCROLL_THRESHOLD = 4
   private userScrolledUp = false
   private _programmaticScrollCount = 0
   private _scrollToBottomBtn: HTMLElement | null = null
@@ -726,7 +728,7 @@ export class TlAgentChat extends HTMLElement {
   private _unlistenZenMode: (() => void) | null = null
 
   // Per-agent state cache (scroll & tool state only — input state is in chat-input)
-  private _chatStateCache = new Map<string, { userScrolledUp: boolean; openToolSet: Set<string> }>()
+  private _chatStateCache = new Map<string, { userScrolledUp: boolean; openToolSet: Set<string>; activeTabs: Map<string, string> }>()
   private _currentAgentRoot: string | null = null
 
   connectedCallback() {
@@ -799,6 +801,7 @@ export class TlAgentChat extends HTMLElement {
       this._chatStateCache.set(this._currentAgentRoot, {
         userScrolledUp: this.userScrolledUp,
         openToolSet: new Set(this.openToolSet),
+        activeTabs: new Map(this.activeTabs),
       })
     }
 
@@ -806,9 +809,11 @@ export class TlAgentChat extends HTMLElement {
     if (cached) {
       this.userScrolledUp = cached.userScrolledUp
       this.openToolSet = new Set(cached.openToolSet)
+      this.activeTabs = new Map(cached.activeTabs)
     } else {
       this.userScrolledUp = false
       this.openToolSet.clear()
+      this.activeTabs.clear()
     }
 
     if (agents) {
@@ -1163,6 +1168,26 @@ export class TlAgentChat extends HTMLElement {
     this.updateScrollToBottomBtn()
   }
 
+  private handleUserScrollIntent = (e: Event) => {
+    if (!this.messagesEl || this.userScrolledUp) return
+    if (e.type === 'wheel') {
+      const we = e as WheelEvent
+      if (we.deltaY >= 0) return
+      if (this.messagesEl.scrollTop === 0) return
+    }
+    this.userScrolledUp = true
+    this.updateScrollToBottomBtn()
+  }
+
+  private handleScrollKeydown = (e: KeyboardEvent) => {
+    if ((e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') && !this.userScrolledUp) {
+      if (this.messagesEl && this.messagesEl.scrollTop > 0) {
+        this.userScrolledUp = true
+        this.updateScrollToBottomBtn()
+      }
+    }
+  }
+
   private scrollToBottom() {
     if (!this.messagesEl) return
     this._programmaticScrollCount++
@@ -1248,6 +1273,8 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.className = 'messages'
     this.messagesEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;'
     this.messagesEl.addEventListener('scroll', this.handleMessagesScroll)
+    this.messagesEl.addEventListener('wheel', this.handleUserScrollIntent, { passive: true })
+    this.messagesEl.addEventListener('keydown', this.handleScrollKeydown)
     this.messagesEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
 
@@ -1257,6 +1284,7 @@ export class TlAgentChat extends HTMLElement {
         e.preventDefault()
         const toolId = tab.dataset.toolTab!
         const pane = tab.dataset.pane!
+        this.activeTabs.set(toolId, pane)
         const card = tab.closest('.tool-card') as HTMLElement | null
         if (card) {
           card.querySelectorAll<HTMLElement>(`.tb-tab[data-tool-tab="${toolId}"]`).forEach(t => t.classList.remove('active'))
@@ -1487,7 +1515,9 @@ export class TlAgentChat extends HTMLElement {
     const displayBlocks = buildRenderBlocks(allMessages)
 
     const prevChildCount = this.messagesEl.childElementCount
-    updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, s.isStreaming)
+    const wasScrolledUp = this.userScrolledUp
+    const prevScrollTop = wasScrolledUp ? this.messagesEl.scrollTop : 0
+    updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.activeTabs, s.isStreaming)
     this.updatePhaseLabel(s)
 
     if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
@@ -1499,6 +1529,10 @@ export class TlAgentChat extends HTMLElement {
       if (gap > TlAgentChat.SCROLL_THRESHOLD) {
         this.scrollToBottom()
       }
+    } else if (this.messagesEl.scrollTop !== prevScrollTop) {
+      this._programmaticScrollCount++
+      this.messagesEl.scrollTop = prevScrollTop
+      requestAnimationFrame(() => { this._programmaticScrollCount-- })
     }
     this.updateScrollToBottomBtn()
   }
