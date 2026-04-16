@@ -420,13 +420,19 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     }
 
     const root = await assertPathAllowed(agentRoot, '.', { allowMissing: true, allowAgentPrivate: true })
-    const searchDir = request.path ? await assertPathAllowed(agentRoot, request.path, { allowMissing: true }) : root
+    const searchPath = request.path ? await assertPathAllowed(agentRoot, request.path, { allowMissing: true }) : root
     const ignoreCase = request.options?.ignoreCase ?? false
     const literal = request.options?.literal ?? false
     const contextLines = request.options?.context ?? 0
     const effectiveLimit = request.options?.limit ?? DEFAULT_GREP_LIMIT
 
-    const files = await walkDir(searchDir, root)
+    let files: string[]
+    const searchStat = await fs.stat(searchPath)
+    if (searchStat.isFile()) {
+      files = [path.relative(root, searchPath)]
+    } else {
+      files = await walkDir(searchPath, root)
+    }
     const flags = ignoreCase ? 'i' : ''
     const escapedPattern = literal ? request.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : request.pattern
     const regex = new RegExp(escapedPattern, flags)
