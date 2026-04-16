@@ -80,32 +80,13 @@ modules (name PK, type ['js'|'css'], content, created_at, updated_at)
 
 **Naming:** same format as views (`[a-z0-9._-]+`). `system.*` and `plugin.*` are read-only. Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g. `dashboard.filters` is deleted with view `dashboard`). Shared modules (e.g. `ui.data-table`) are not tied to any view.
 
-**CRUD:**
-```js
-// Create/update
-await runSql({ target: 'agent', sql: `INSERT OR REPLACE INTO modules (name, type, content) VALUES (?, ?, ?)`, params: ['dashboard.filters', 'js', jsCode] })
-// Edit one module independently
-await runSql({ target: 'agent', sql: `UPDATE modules SET content = ? WHERE name = ?`, params: [newCode, 'dashboard.filters'] })
-```
-
-`reloadTab` after updating any module.
+`reloadTab` after updating any module or view content.
 
 **Recommended pattern — Web Components:** store each UI piece as a JS module defining a custom element. The view becomes a thin shell of `<script src>` tags and custom element tags. Each component is independently editable without touching the view or other components.
 
-## Working with Large Views
+For large views, prefer splitting into modules.
 
-For large views, prefer splitting into modules. If editing inline content directly, use targeted reads and surgical edits:
-
-```js
-// Surgical edit via REPLACE()
-await runSql({
-  target: 'agent',
-  sql: 'UPDATE views SET content = REPLACE(content, ?, ?) WHERE name = ?',
-  params: [oldText, newText, viewName]
-})
-```
-
-`reloadTab` after updating view content.
+Use regular <script> (not type="module") for view code. This keeps variables accessible to execTabJs.
 
 ## Browser API Limitations
 
