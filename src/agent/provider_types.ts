@@ -115,7 +115,7 @@ export const EXECJS_TOOL_DEFINITION = {
       },
       code: {
         type: 'string',
-        description: 'JavaScript code to execute. Use explicit return for result values.',
+        description: 'JavaScript code to execute. A bare expression returns its value; multi-statement code needs an explicit `return`.',
       },
       timeoutMs: {
         type: 'integer',

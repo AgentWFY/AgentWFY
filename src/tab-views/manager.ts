@@ -706,9 +706,26 @@ export class TabViewManager {
       : VIEW_EXEC_DEFAULT_TIMEOUT_MS;
     const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
-    // Wrap in async IIFE so return statements work (matching execJs behavior).
-    // Coerce undefined → null so JSON serialization across IPC doesn't fail.
-    const wrappedCode = `(async () => {\n${request.code}\n})().then(v => v === undefined ? null : v)`;
+    // Try compiling as `return (<code>)` first so bare expressions (e.g. "SYMBOLS.length")
+    // evaluate to their value instead of silently becoming null. If that throws a
+    // SyntaxError — e.g. the code uses statements, declarations, or its own `return` —
+    // fall back to treating the code as an async function body (original behavior).
+    // Detection runs inside the tab so parsing uses the same V8 as execution.
+    // Coerce undefined → null so IPC serialization stays well-formed.
+    const codeLiteral = JSON.stringify(request.code);
+    const wrappedCode = `(async () => {
+  const __code = ${codeLiteral};
+  const __AsyncFn = (async function(){}).constructor;
+  let __fn;
+  try {
+    __fn = new __AsyncFn('return (\\n' + __code + '\\n);');
+  } catch (__err) {
+    if (!(__err instanceof SyntaxError)) throw __err;
+    __fn = new __AsyncFn(__code);
+  }
+  const __result = await __fn();
+  return __result === undefined ? null : __result;
+})()`;
     return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs);
   }
 

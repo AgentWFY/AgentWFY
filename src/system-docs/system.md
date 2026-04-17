@@ -9,7 +9,7 @@ execJs runs JavaScript in a Node.js utility process. All Node.js globals are ava
 
 In addition to Node.js globals, execJs provides runtime functions as globals. In views, the same functions are available via `window.agentwfy.<method>(...)`. If you can't find a needed function in these docs, call `getAvailableFunctions()` to list all runtime functions including plugin-provided ones.
 
-The code runs inside an async IIFE with `"use strict"`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — no state persists between calls.
+The code runs in a `"use strict"` async context. It can be a bare expression that returns its value or a multi-statement body with an explicit `return`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — no state persists between calls.
 
 Default timeout is 5000ms, maximum 120000ms. Tool results are truncated at 50,000 characters.
 

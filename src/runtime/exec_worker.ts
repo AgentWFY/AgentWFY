@@ -54,8 +54,10 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-// AsyncFunction adds 2 implicit lines (function signature) +
-// our body wrapper adds 2 lines ("use strict";\n + return await (async () => {\n)
+// AsyncFunction adds 2 implicit lines (function signature) + our body wrapper adds 2
+// lines: `"use strict";\n` followed by either `return (\n` (expression form) or
+// `return await (async () => {\n` (body form). Both prefixes are 2 lines, so a single
+// offset works for either compilation path.
 const V8_LINE_OFFSET = 4
 
 function cleanStack(raw: string | undefined, codeLineCount?: number): string | undefined {
@@ -312,12 +314,30 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       }
     }
 
-    const fn = new AsyncFunction(
-      ...shadowParamNames,
-      ...methodParamNames,
-      'input',
-      `"use strict";\nreturn await (async () => {\n${code}\n})();`
-    )
+    // Try compiling as a bare expression first so agents can write
+    // `await read({ path })` instead of `const x = await read({ path }); return x;`.
+    // If the expression wrap is a SyntaxError — e.g. code has statements, declarations,
+    // or its own `return` — fall back to the original async IIFE body.
+    const expressionBody = `"use strict";\nreturn (\n${code}\n);`
+    const iifeBody = `"use strict";\nreturn await (async () => {\n${code}\n})();`
+
+    let fn: (...callArgs: unknown[]) => Promise<unknown>
+    try {
+      fn = new AsyncFunction(
+        ...shadowParamNames,
+        ...methodParamNames,
+        'input',
+        expressionBody,
+      )
+    } catch (compileErr) {
+      if (!(compileErr instanceof SyntaxError)) throw compileErr
+      fn = new AsyncFunction(
+        ...shadowParamNames,
+        ...methodParamNames,
+        'input',
+        iifeBody,
+      )
+    }
 
     const value = await withTimeoutAndAbort(
       fn(
