@@ -66,8 +66,7 @@ CREATE TABLE IF NOT EXISTS plugins (
 );
 
 CREATE TABLE IF NOT EXISTS modules (
-  name TEXT NOT NULL PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('js', 'css')),
+  name TEXT NOT NULL PRIMARY KEY CHECK(name GLOB '*.js' OR name GLOB '*.css'),
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(created_at) = 'integer' AND created_at > 0),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK(typeof(updated_at) = 'integer' AND updated_at > 0)
@@ -376,7 +375,6 @@ class AgentDb {
     docs: Array<{ name: string; content: string }>,
     views: Array<{ name: string; title: string; content: string }>,
     config: Array<{ name: string; value: string | null; description: string }>,
-    modules?: Array<{ name: string; type: string; content: string }>,
   ): void {
     this.adminWrite(() => {
       const upsertPlugin = this.db.prepare(`
@@ -404,13 +402,6 @@ class AgentDb {
             title = excluded.title,
             content = excluded.content
       `);
-      const upsertModule = this.db.prepare(`
-        INSERT INTO modules (name, type, content)
-          VALUES (?, ?, ?)
-          ON CONFLICT(name) DO UPDATE SET
-            type = excluded.type,
-            content = excluded.content
-      `);
       const upsertConfig = this.db.prepare(`
         INSERT INTO config (name, value, description)
           VALUES (?, ?, ?)
@@ -427,11 +418,6 @@ class AgentDb {
       }
       for (const v of views) {
         upsertView.run(v.name, v.title, v.content);
-      }
-      if (modules) {
-        for (const m of modules) {
-          upsertModule.run(m.name, m.type, m.content);
-        }
       }
       for (const c of config) {
         upsertConfig.run(c.name, c.value, c.description);

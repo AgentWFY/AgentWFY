@@ -6,7 +6,7 @@ import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
 import { serveFile } from './file-server.js';
 import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from './view-document.js';
 import { getViewContent } from '../db/views.js';
-import { getModuleContent } from '../db/modules.js';
+import { getModuleContent, getModuleContentType } from '../db/modules.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
@@ -113,11 +113,10 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
         });
       }
 
-      const contentType = record.type === 'css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8';
       return new Response(record.content, {
         status: 200,
         headers: {
-          'Content-Type': contentType,
+          'Content-Type': getModuleContentType(record.name),
           'Cache-Control': 'no-store',
         },
       });

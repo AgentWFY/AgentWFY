@@ -73,20 +73,20 @@ const result = await window.agentwfy.fetch({
 Modules store reusable JS/CSS in the `modules` table, served via `agentview://module/<name>`. Use them to split large views into components and share code across views.
 
 ```
-modules (name PK, type ['js'|'css'], content, created_at, updated_at)
+modules (name PK [must end in .js or .css], content, created_at, updated_at)
 ```
 
-**Loading in views:** `<script src="agentview://module/name">` for JS, `<link rel="stylesheet" href="agentview://module/name">` for CSS. `type="module"` also works.
+**Naming:** module names must end with `.js` or `.css` — the extension determines the served Content-Type (there is no separate `type` column). Name format: `[a-z0-9._-]+` (e.g. `note-render.js`, `ui.data-table.css`). `system.*` and `plugin.*` are read-only. Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g. `dashboard.filters.js` is deleted with view `dashboard`). Shared modules (e.g. `ui.data-table.js`) are not tied to any view.
 
-**Naming:** same format as views (`[a-z0-9._-]+`). `system.*` and `plugin.*` are read-only. Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g. `dashboard.filters` is deleted with view `dashboard`). Shared modules (e.g. `ui.data-table`) are not tied to any view.
+**Loading in views:** `<script src="agentview://module/note-render.js">` for JS, `<link rel="stylesheet" href="agentview://module/note-render.css">` for CSS. Use regular `<script>` (not `type="module"`) so variables stay accessible to execTabJs.
+
+**Writing:** `write({ path: '@modules/foo.js', content })` creates/updates a JS module. Same for `.css`. Writing a name without a `.js`/`.css` suffix is rejected.
 
 `reloadTab` after updating any module or view content.
 
 **Recommended pattern — Web Components:** store each UI piece as a JS module defining a custom element. The view becomes a thin shell of `<script src>` tags and custom element tags. Each component is independently editable without touching the view or other components.
 
 For large views, prefer splitting into modules.
-
-Use regular <script> (not type="module") for view code. This keeps variables accessible to execTabJs.
 
 ## Browser API Limitations
 

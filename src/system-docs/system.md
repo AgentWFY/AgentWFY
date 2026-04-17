@@ -26,7 +26,7 @@ Targets:
 Agent DB schema:
 ```
 views (name PK, title, content, created_at, updated_at)
-modules (name PK, type ['js'|'css'], content, created_at, updated_at)
+modules (name PK [must end in .js or .css], content, created_at, updated_at)
 docs (name PK, content, created_at, updated_at)
 tasks (name PK, title, description, content, timeout_ms, created_at, updated_at)
 triggers (name PK, task_name FK→tasks, type ['schedule'|'http'|'event'], config, description, enabled, created_at, updated_at)
@@ -58,7 +58,7 @@ await read({ path: '@docs/section-name' })
 
 All paths are relative to the data directory root. Path traversal outside the data directory root is blocked. Use `.tmp/` directory for any temporary files.
 
-**`@table/name` paths:** All file tools work with DB content tables: `@views/`, `@modules/`, `@tasks/`, `@docs/`. `write` creates rows with defaults (empty title, type='js' for modules); use `runSql` for metadata. `ls({ path: '@' })` lists tables.
+**`@table/name` paths:** All file tools work with DB content tables: `@views/`, `@modules/`, `@tasks/`, `@docs/`. `write` creates rows with defaults (empty title for views/tasks); use `runSql` for metadata. Module names must include a `.js` or `.css` extension (e.g. `@modules/my-ui.css`). `ls({ path: '@' })` lists tables.
 
 **File operations:**
 - `read({ path, offset?, limit?, asBase64? })` → for text files: raw content as string, max 2000 lines / 50KB per call. Use `offset` (1-indexed line number) to paginate. For binary files (images, audio, video, PDF): auto-detected by extension, file is auto-attached to the tool result as an image/file output you can see directly, returns `{ attached: true, mimeType, size }`. With `asBase64: true`, returns `{ base64, mimeType, size }` without attaching — use this when code needs the raw data (e.g. re-encoding, uploading, converting). Max 20MB for binary files.

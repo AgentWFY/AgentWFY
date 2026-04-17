@@ -2,8 +2,11 @@ import { runAgentDbSql } from './sqlite.js';
 
 export interface ModuleRecord {
   name: string;
-  type: string;
   content: string;
+}
+
+export function getModuleContentType(name: string): string {
+  return name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8';
 }
 
 export async function getModuleContent(
@@ -11,7 +14,7 @@ export async function getModuleContent(
   name: string,
 ): Promise<ModuleRecord | null> {
   const rows = await runAgentDbSql(dataDir, {
-    sql: 'SELECT name, type, content FROM modules WHERE name = ? LIMIT 1',
+    sql: 'SELECT name, content FROM modules WHERE name = ? LIMIT 1',
     params: [name],
   });
 
@@ -22,7 +25,6 @@ export async function getModuleContent(
   const row = rows[0] as Record<string, unknown>;
   return {
     name: row.name as string,
-    type: row.type as string,
     content: row.content as string,
   };
 }

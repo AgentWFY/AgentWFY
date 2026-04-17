@@ -651,9 +651,9 @@ The view becomes a thin shell:
 
 ```html
 <!-- View: dashboard -->
-<script src="agentview://module/dashboard.filters"></script>
-<script src="agentview://module/dashboard.chart-panel"></script>
-<link rel="stylesheet" href="agentview://module/dashboard.layout">
+<script src="agentview://module/dashboard.filters.js"></script>
+<script src="agentview://module/dashboard.chart-panel.js"></script>
+<link rel="stylesheet" href="agentview://module/dashboard.layout.css">
 
 <dashboard-filters></dashboard-filters>
 <dashboard-chart-panel metric="revenue"></dashboard-chart-panel>
@@ -662,12 +662,14 @@ The view becomes a thin shell:
 **Creating modules:**
 
 ```js
-await runSql({
-  sql: `INSERT OR REPLACE INTO modules (name, type, content) VALUES (?, ?, ?)`,
-  params: ['dashboard.filters', 'js', `class DashboardFilters extends HTMLElement { ... }
-customElements.define('dashboard-filters', DashboardFilters)`]
+await write({
+  path: '@modules/dashboard.filters.js',
+  content: `class DashboardFilters extends HTMLElement { ... }
+customElements.define('dashboard-filters', DashboardFilters)`,
 })
 ```
+
+The extension (`.js` or `.css`) in the module name determines the Content-Type served to views. Names without a `.js` or `.css` suffix are rejected.
 
 Reload the tab after updating any module.
 
