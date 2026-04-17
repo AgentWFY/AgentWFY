@@ -126,8 +126,6 @@ export class AgentOrchestrator {
     if (agentRoot === this.activeAgentRoot) return;
     if (!this.persistedAgentPaths.includes(agentRoot) && !this.agentContexts.has(agentRoot)) return;
 
-    const prevRoot = this.activeAgentRoot;
-
     // Lazy-init: initialize agent context on first switch
     let ctx = this.agentContexts.get(agentRoot);
     if (!ctx) {
@@ -143,18 +141,10 @@ export class AgentOrchestrator {
       this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
     }
 
-    // Hide previous agent's views (after successful init to avoid blank state on failure)
-    if (prevRoot && prevRoot !== agentRoot) {
-      const prevCtx = this.agentContexts.get(prevRoot);
-      if (prevCtx) {
-        prevCtx.tabViewManager.hideAllViews();
-      }
-    }
-
     this.activeAgentRoot = agentRoot;
     this.deps.applyTheme();
 
-    ctx.tabViewManager.showAllViews();
+    ctx.tabViewManager.activateViews();
 
     this.pushFullState(ctx);
   }

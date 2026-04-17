@@ -207,6 +207,7 @@ export class TabViewManager {
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
+  private selectedBounds: Rectangle | null = null;
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
@@ -363,27 +364,77 @@ export class TabViewManager {
       return;
     }
 
+    if (mainWindow.contentView.children.includes(state.view)) {
+      return;
+    }
+
     try {
       mainWindow.contentView.addChildView(state.view);
     } catch {
-      // Ignore if already attached to the same parent view.
+      // defensive: Electron may still consider it a child
     }
   }
 
+  // Skip the reorder when already on top — addChildView on an attached view
+  // tears down and rebuilds the RenderWidgetHostView, briefly blanking the tab.
+  private bringToFront(state: TabViewState): void {
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    const children = mainWindow.contentView.children;
+    const currentIndex = children.indexOf(state.view);
+    if (currentIndex < 0 || currentIndex === children.length - 1) {
+      return;
+    }
+
+    try {
+      mainWindow.contentView.addChildView(state.view);
+    } catch {
+      // defensive
+    }
+  }
+
+  // All tab views stay setVisible(true) — across tabs and across agents.
+  // captureTab needs a live compositor surface (capturePage fails with
+  // "Current display surface not available" on setVisible(false) views).
+  // Stacking is pure z-order: the selected tab sits on top and its opaque
+  // WebContentsView background occludes the tabs behind it.
   private applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
     this.attachTabViewToWindow(state);
 
     if (visible) {
-      state.view.setBounds(bounds);
+      const changed =
+        !this.selectedBounds ||
+        this.selectedBounds.x !== bounds.x ||
+        this.selectedBounds.y !== bounds.y ||
+        this.selectedBounds.width !== bounds.width ||
+        this.selectedBounds.height !== bounds.height;
+      if (changed) {
+        this.selectedBounds = bounds;
+        // Propagate to every background tab so the selected tab on top
+        // occludes them exactly — otherwise sidebar/header would leak.
+        for (const other of this.tabViewsByTabId.values()) {
+          other.view.setBounds(bounds);
+        }
+      }
+      state.view.setVisible(true);
+      this.bringToFront(state);
     } else {
-      // Keep real dimensions so the WebContents renders at a proper viewport
-      // (CSS layouts, media queries, capturePage all depend on non-zero bounds).
-      const mainWindow = this.deps.getMainWindow();
-      const [w, h] = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getContentSize() : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
-      state.view.setBounds({ x: 0, y: 0, width: w, height: h });
+      // Renderer sends 0x0 bounds for display:none panels; reuse the
+      // selected tab's bounds so the compositor surface stays valid.
+      state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
+      state.view.setVisible(true);
     }
+  }
 
-    state.view.setVisible(visible);
+  private defaultContentBounds(): Rectangle {
+    const mainWindow = this.deps.getMainWindow();
+    const [w, h] = mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.getContentSize()
+      : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
+    return { x: 0, y: 0, width: w, height: h };
   }
 
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
@@ -455,16 +506,12 @@ export class TabViewManager {
     this.selectedTabId = null;
   }
 
-  /** Hide all tab views without detaching them from the window (used when switching agents).
-   *  Views stay as children of contentView to avoid page reloads that detach/re-attach can trigger. */
-  hideAllViews(): void {
-    for (const state of this.tabViewsByTabId.values()) {
-      state.view.setVisible(false);
+  // Brings this agent's selected tab above other agents' views on a switch.
+  activateViews(): void {
+    const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
+    if (selected) {
+      this.bringToFront(selected);
     }
-  }
-
-  /** Restore tab views for the active agent and push state to the renderer. */
-  showAllViews(): void {
     this.pushStateToRenderer();
   }
 
@@ -578,11 +625,7 @@ export class TabViewManager {
     // waiting for a renderer round-trip (which is gated by requestAnimationFrame
     // and gets severely throttled when the window is in the background).
     const state = this.ensureTabViewState(tabId, target, { tabType: type });
-    const mainWindow = this.deps.getMainWindow();
-    const [w, h] = mainWindow && !mainWindow.isDestroyed()
-      ? mainWindow.getContentSize()
-      : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
-    this.applyTabViewPlacement(state, { x: 0, y: 0, width: w, height: h }, !isHidden);
+    this.applyTabViewPlacement(state, this.defaultContentBounds(), !isHidden);
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {
@@ -629,51 +672,11 @@ export class TabViewManager {
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
     const state = await this.resolveReadyTabViewState(request.tabId);
-
-    // Non-selected views have setVisible(false) to save compositor resources.
-    // Temporarily enable compositing for the capture. Only re-parent if the
-    // view isn't already a child — re-adding an already-attached view
-    // reorders it, which triggers another RWHV teardown/reattach cycle and
-    // is the main cause of repeated "display surface not available" errors.
-    const needsCompositing = state.tabId !== this.selectedTabId;
-    if (needsCompositing) {
-      const mainWindow = this.deps.getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        const children = mainWindow.contentView.children;
-        if (!children.includes(state.view)) {
-          mainWindow.contentView.addChildView(state.view, 0);
-        }
-      }
-      state.view.setVisible(true);
-    }
-
-    try {
-      // Retry while the view is still attaching to the compositor. Transient
-      // errors: "UnknownVizError" (Viz frame sink not registered yet) and
-      // "Current display surface not available for capture" (RWHV null right
-      // after setVisible(true)). Budget of ~3s covers slow/busy frames.
-      const deadline = Date.now() + 3000;
-      while (true) {
-        try {
-          const image = await state.view.webContents.capturePage();
-          return {
-            base64: image.toPNG().toString('base64'),
-            mimeType: 'image/png',
-          };
-        } catch (err) {
-          const msg = String(err);
-          const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
-          if (!retriable || Date.now() >= deadline) {
-            throw err;
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 50));
-        }
-      }
-    } finally {
-      if (needsCompositing) {
-        state.view.setVisible(false);
-      }
-    }
+    const image = await state.view.webContents.capturePage();
+    return {
+      base64: image.toPNG().toString('base64'),
+      mimeType: 'image/png',
+    };
   }
 
   async getTabConsoleLogsById(request: {
