@@ -97,35 +97,38 @@ export function registerFileOps(registry: FunctionRegistry, deps: { agentRoot: s
     if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
       throw new Error('write requires a non-empty path string')
     }
-    if (typeof request.content !== 'string') {
-      throw new Error('write requires content as a string')
+
+    const hasContent = typeof request.content === 'string'
+    const hasBase64 = typeof request.base64 === 'string'
+
+    if (hasContent && hasBase64) {
+      throw new Error('write accepts either `content` (text) or `base64` (binary), not both. Pick one based on the data you want to write.')
+    }
+    if (!hasContent && !hasBase64) {
+      throw new Error('write requires either `content` (string, for UTF-8 text) or `base64` (string, for binary data like images/PDFs).')
     }
 
     const dbPath = parseDbPath(request.path)
-    if (dbPath) return dbWrite(agentRoot, dbPath, request.content)
-
-    const filePath = await assertPathAllowed(agentRoot, request.path, { allowMissing: true })
-    await fs.mkdir(path.dirname(filePath), { recursive: true })
-    await fs.writeFile(filePath, request.content, 'utf-8')
-    return `Successfully wrote ${Buffer.byteLength(request.content, 'utf-8')} bytes to ${request.path}`
-  })
-
-  registry.register('writeBinary', async (params) => {
-    const request = params as WorkerHostMethodMap['writeBinary']['params']
-    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
-      throw new Error('writeBinary requires a non-empty path string')
-    }
-    if (typeof request.base64 !== 'string') {
-      throw new Error('writeBinary requires base64 as a string')
+    if (dbPath) {
+      if (hasBase64) {
+        throw new Error(`write to ${request.path}: DB content tables (@views/, @docs/, @tasks/, @modules/) store UTF-8 text only. Pass \`content\` instead of \`base64\`.`)
+      }
+      return dbWrite(agentRoot, dbPath, request.content as string)
     }
 
-    if (parseDbPath(request.path)) {
-      throw new Error('writeBinary is not supported for DB content. Use write instead.')
+    let buffer: Buffer
+    if (hasBase64) {
+      const base64 = request.base64 as string
+      if (!/^[A-Za-z0-9+/=\s]*$/.test(base64)) {
+        throw new Error('write: `base64` contains characters that are not valid base64. Expected A-Z, a-z, 0-9, +, /, = (and whitespace).')
+      }
+      buffer = Buffer.from(base64, 'base64')
+    } else {
+      buffer = Buffer.from(request.content as string, 'utf-8')
     }
 
     const filePath = await assertPathAllowed(agentRoot, request.path, { allowMissing: true })
     await fs.mkdir(path.dirname(filePath), { recursive: true })
-    const buffer = Buffer.from(request.base64, 'base64')
     await fs.writeFile(filePath, buffer)
     return `Successfully wrote ${buffer.length} bytes to ${request.path}`
   })

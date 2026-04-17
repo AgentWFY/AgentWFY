@@ -236,7 +236,7 @@
     const bytes = new Uint8Array(buf);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    await window.agentwfy.writeBinary({ path: destPath, base64: btoa(binary) });
+    await window.agentwfy.write({ path: destPath, base64: btoa(binary) });
   }
 
   async function loadPlugins() {

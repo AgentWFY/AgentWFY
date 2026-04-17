@@ -49,12 +49,8 @@ interface WorkerReadBinaryResult {
 
 interface WorkerWriteRequest {
   path: string
-  content: string
-}
-
-interface WorkerWriteBinaryRequest {
-  path: string
-  base64: string
+  content?: string
+  base64?: string
 }
 
 interface WorkerEditRequest {
@@ -204,10 +200,6 @@ export interface WorkerHostMethodMap {
   }
   write: {
     params: WorkerWriteRequest
-    result: string
-  }
-  writeBinary: {
-    params: WorkerWriteBinaryRequest
     result: string
   }
   edit: {
