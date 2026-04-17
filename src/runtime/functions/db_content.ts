@@ -61,7 +61,7 @@ const UPSERT_SQL: Record<string, { sql: string; params: (name: string, content: 
     params: (name, content) => [name, content],
   },
   modules: {
-    sql: `INSERT INTO modules (name, type, content) VALUES (?, 'js', ?) ON CONFLICT(name) DO UPDATE SET content = excluded.content`,
+    sql: `INSERT INTO modules (name, content) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET content = excluded.content`,
     params: (name, content) => [name, content],
   },
   tasks: {
@@ -76,6 +76,9 @@ const UPSERT_SQL: Record<string, { sql: string; params: (name: string, content: 
 
 export async function dbWrite(agentRoot: string, dbPath: DbPath, content: string): Promise<string> {
   const name = requireName(dbPath, 'write')
+  if (dbPath.table === 'modules' && !/\.(js|css)$/.test(name)) {
+    throw new Error(`Module name must end with .js or .css: @modules/${name}`)
+  }
   const spec = UPSERT_SQL[dbPath.table]
   await runAgentDbSql(agentRoot, {
     sql: spec.sql,

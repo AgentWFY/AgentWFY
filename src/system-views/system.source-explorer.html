@@ -564,7 +564,6 @@ function lineNums(c) { const n = (c || '').split('\n').length; return Array.from
 function detectLang(item) {
   if (item.type === 'views') return 'html';
   if (item.type === 'tasks' || item.type === 'plugins') return 'js';
-  if (item.type === 'modules') return item.subType === 'css' ? 'css' : 'js';
   const name = (item.name || '').toLowerCase();
   if (name.endsWith('.html') || name.endsWith('.htm')) return 'html';
   if (name.endsWith('.css')) return 'css';
@@ -572,6 +571,10 @@ function detectLang(item) {
   const c = (item.content || '').trimStart();
   if (c.startsWith('<!') || c.startsWith('<html') || c.startsWith('<div')) return 'html';
   return 'md';
+}
+
+function moduleExt(name) {
+  return name.endsWith('.css') ? 'css' : 'js';
 }
 
 // ── UI Building Blocks ──
@@ -629,7 +632,7 @@ function toast(msg, type) {
 }
 
 // ── Mode Config ──
-// Modes with `hasSubType: true` have a row-level `type` column (e.g. triggers.type, modules.type)
+// Modes with `hasSubType: true` have a row-level `type` column (e.g. triggers.type)
 // that collides with the UI's mode-type. We preserve the row's type as `selected.subType`.
 
 const MODE_CONFIG = {
@@ -652,15 +655,14 @@ const MODE_CONFIG = {
   },
   modules: {
     label: 'Modules', singular: 'module', table: 'modules', creatable: true,
-    loadSql: "SELECT name, type, LENGTH(content) as content_length, created_at, updated_at FROM modules ORDER BY name",
-    lazyContent: true, hasSubType: true,
+    loadSql: "SELECT name, LENGTH(content) as content_length, created_at, updated_at FROM modules ORDER BY name",
+    lazyContent: true,
     create: {
       title: 'Create Module',
-      fields: '<label>Name</label><input type="text" id="cName" placeholder="my-module">'
-        + '<label>Type</label><select id="cModType"><option value="js">js</option><option value="css">css</option></select>',
+      fields: '<label>Name</label><input type="text" id="cName" placeholder="my-module.js or my-module.css">',
       buildInsert: (name) => ({
-        sql: "INSERT INTO modules (name, type, content) VALUES (?, ?, ?)",
-        params: [name, $('cModType').value, ''],
+        sql: "INSERT INTO modules (name, content) VALUES (?, ?)",
+        params: [name, ''],
       }),
     },
   },
@@ -872,7 +874,7 @@ function renderList() {
   } else if (mode === 'modules') {
     el.innerHTML = DATA.modules.filter(m => m.name.toLowerCase().includes(q)).map(m =>
       listItem(m.name, m.name,
-        '<span style="text-transform:uppercase;opacity:0.7">' + esc(m.type) + '</span>'
+        '<span style="text-transform:uppercase;opacity:0.7">' + esc(moduleExt(m.name)) + '</span>'
         + '<span>' + fmtSize(m.content_length || 0) + '</span>'
         + '<span>' + fmtDate(m.updated_at) + '</span>',
         selected && selected.type === 'modules' && selected.name === m.name)
@@ -926,7 +928,7 @@ function showContent() {
   let info = size + ' \u00b7 ' + lines + ' lines';
   if (s.type === 'views' && s.title) info = s.name + ' \u00b7 ' + info;
   if (s.type === 'tasks' && s.timeout_ms) info += ' \u00b7 ' + fmtTimeout(s.timeout_ms);
-  if (s.type === 'modules') info = (s.subType || '').toUpperCase() + ' \u00b7 ' + info;
+  if (s.type === 'modules') info = moduleExt(s.name).toUpperCase() + ' \u00b7 ' + info;
   const ts = s.updated_at || s.created_at;
   if (ts) info += ' \u00b7 ' + fmtDate(ts);
 
