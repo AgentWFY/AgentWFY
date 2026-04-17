@@ -200,20 +200,18 @@ Read a text file with optional pagination.
 const content = await read({ path: 'data/config.json' })
 ```
 
-#### `write({ path, content })`
+#### `write({ path, content })` / `write({ path, base64 })`
 
-Write a text file. Creates parent directories automatically.
-- `path` (string): Relative path
-- `content` (string): File content
-- Returns: Success message with byte count
+Write a file. Creates parent directories automatically. Pass exactly one of:
+- `content` (string): UTF-8 text content
+- `base64` (string): base64-encoded binary data (for images, PDFs, etc.)
+
+Returns a success message with byte count. `@table/` paths accept `content` only.
 
 ```js
 await write({ path: 'output/report.html', content: '<h1>Report</h1>...' })
+await write({ path: 'output/logo.png', base64: '<base64 string>' })
 ```
-
-#### `writeBinary({ path, base64 })`
-
-Write a binary file from base64 data.
 
 #### `readBinary({ path })`
 
