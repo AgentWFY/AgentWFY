@@ -4,6 +4,7 @@ import path from 'path';
 import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
 import { Channels } from '../ipc/channels.cjs';
 import type { SendToRenderer } from '../ipc/schema.js';
+import { resolveTimeout, formatTimeoutError } from '../runtime/timeout_utils.js';
 
 // --- Types & Constants ---
 
@@ -161,10 +162,10 @@ export function toNonEmptyString(value: unknown): string {
   return normalized;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, wasDefault: boolean): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`View JavaScript execution timed out after ${timeoutMs}ms`));
+      reject(new Error(formatTimeoutError('execTabJs', timeoutMs, wasDefault, VIEW_EXEC_MAX_TIMEOUT_MS)));
     }, timeoutMs);
 
     promise
@@ -705,9 +706,7 @@ export class TabViewManager {
       throw new Error('execTabJs requires code as a string');
     }
 
-    const requestedTimeout = typeof request.timeoutMs === 'number' && Number.isFinite(request.timeoutMs)
-      ? Math.floor(request.timeoutMs)
-      : VIEW_EXEC_DEFAULT_TIMEOUT_MS;
+    const { timeoutMs: requestedTimeout, wasDefault } = resolveTimeout(request.timeoutMs, VIEW_EXEC_DEFAULT_TIMEOUT_MS);
     const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
     // Try compiling as `return (<code>)` first so bare expressions (e.g. "SYMBOLS.length")
@@ -730,7 +729,7 @@ export class TabViewManager {
   const __result = await __fn();
   return __result === undefined ? null : __result;
 })()`;
-    return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs);
+    return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs, wasDefault);
   }
 
   async sendInputById(request: {

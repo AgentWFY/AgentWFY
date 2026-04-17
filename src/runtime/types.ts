@@ -350,6 +350,7 @@ export interface WorkerExecuteRequestMessage {
   requestId: string
   code: string
   timeoutMs: number
+  timeoutWasDefault: boolean
   input?: unknown
   methods: string[]
 }
