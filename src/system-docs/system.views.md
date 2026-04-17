@@ -109,4 +109,4 @@ Visible tabs steal the user's focus and clutter their tab bar. Hidden tabs load 
 
 Always close hidden tabs and remove `.tmp/` files when done.
 
-**Tools:** `captureTab({ tabId })` for screenshots, `getTabConsoleLogs({ tabId })` for console output, `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access).
+**Tools:** `captureTab({ tabId })` for screenshots, `getTabConsoleLogs({ tabId })` for console output, `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access), `inspectElement({ id, selector })` to see computed styles and box model.
