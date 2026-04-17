@@ -631,23 +631,29 @@ export class TabViewManager {
     const state = await this.resolveReadyTabViewState(request.tabId);
 
     // Non-selected views have setVisible(false) to save compositor resources.
-    // Temporarily enable compositing behind all other views for the capture.
+    // Temporarily enable compositing for the capture. Only re-parent if the
+    // view isn't already a child — re-adding an already-attached view
+    // reorders it, which triggers another RWHV teardown/reattach cycle and
+    // is the main cause of repeated "display surface not available" errors.
     const needsCompositing = state.tabId !== this.selectedTabId;
     if (needsCompositing) {
       const mainWindow = this.deps.getMainWindow();
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.contentView.addChildView(state.view, 0);
+        const children = mainWindow.contentView.children;
+        if (!children.includes(state.view)) {
+          mainWindow.contentView.addChildView(state.view, 0);
+        }
       }
       state.view.setVisible(true);
     }
 
     try {
-      // Retry while the view is still attaching to the compositor. Two
-      // transient errors show up here: "UnknownVizError" (Viz frame sink not
-      // registered yet) and "Current display surface not available for
-      // capture" (RenderWidgetHostView is null right after setVisible(true)).
-      const maxAttempts = 20;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Retry while the view is still attaching to the compositor. Transient
+      // errors: "UnknownVizError" (Viz frame sink not registered yet) and
+      // "Current display surface not available for capture" (RWHV null right
+      // after setVisible(true)). Budget of ~3s covers slow/busy frames.
+      const deadline = Date.now() + 3000;
+      while (true) {
         try {
           const image = await state.view.webContents.capturePage();
           return {
@@ -657,13 +663,12 @@ export class TabViewManager {
         } catch (err) {
           const msg = String(err);
           const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
-          if (attempt === maxAttempts || !retriable) {
+          if (!retriable || Date.now() >= deadline) {
             throw err;
           }
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
         }
       }
-      throw new Error('captureTab: failed after retries');
     } finally {
       if (needsCompositing) {
         state.view.setVisible(false);
