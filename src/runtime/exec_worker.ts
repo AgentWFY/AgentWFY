@@ -9,6 +9,7 @@ import type {
   WorkerExecuteRequestMessage,
   WorkerHostResultMessage,
 } from './types.js'
+import { formatTimeoutError } from './timeout_utils.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -142,10 +143,12 @@ function captureConsole(requestId: string): { logs: ExecJsLogEntry[]; restore: (
   }
 }
 
-function withTimeoutAndAbort<T>(promise: Promise<T>, timeoutMs: number, signal: AbortSignal): Promise<T> {
+const MAX_EXEC_TIMEOUT_MS = 120000
+
+function withTimeoutAndAbort<T>(promise: Promise<T>, timeoutMs: number, wasDefault: boolean, signal: AbortSignal): Promise<T> {
   const timeoutPromise = new Promise<T>((_, reject) => {
     const timerId = setTimeout(() => {
-      reject(new Error(`JavaScript execution timed out after ${timeoutMs}ms`))
+      reject(new Error(formatTimeoutError('execJs', timeoutMs, wasDefault, MAX_EXEC_TIMEOUT_MS)))
     }, timeoutMs)
 
     promise.finally(() => clearTimeout(timerId)).catch(() => {})
@@ -245,7 +248,7 @@ function callHostMethod(
 }
 
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
-  const { requestId, code, timeoutMs, input, methods } = message
+  const { requestId, code, timeoutMs, timeoutWasDefault, input, methods } = message
   const abortController = new AbortController()
   activeRequests.set(requestId, abortController)
 
@@ -346,6 +349,7 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
         input,
       ),
       timeoutMs,
+      timeoutWasDefault,
       abortController.signal
     )
 
