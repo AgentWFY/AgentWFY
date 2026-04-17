@@ -259,7 +259,11 @@ const MD = {
           continue;
         }
       }
-      out += s[i];
+      const ch = s[i];
+      if (ch === '<') out += '&lt;';
+      else if (ch === '>') out += '&gt;';
+      else if (ch === '&') out += '&amp;';
+      else out += ch;
       i++;
     }
     s = out;
@@ -680,12 +684,13 @@ const MD = {
 
     container.querySelectorAll('code').forEach(codeEl => {
       if (codeEl.parentElement.tagName === 'PRE') return;
-      const text = codeEl.textContent.trim();
-      if (docNames.has(text)) {
+      const raw = codeEl.textContent.trim();
+      const target = raw.startsWith('@docs/') ? raw.slice(6) : raw;
+      if (docNames.has(target)) {
         codeEl.classList.add('doc-link');
-        codeEl.dataset.doc = text;
-        codeEl.addEventListener('click', () => navigateTo(text));
-        attachPreviewEvents(codeEl, text);
+        codeEl.dataset.doc = target;
+        codeEl.addEventListener('click', () => navigateTo(target));
+        attachPreviewEvents(codeEl, target);
       }
     });
 
