@@ -641,9 +641,11 @@ export class TabViewManager {
     }
 
     try {
-      // Retry capturePage when the compositor hasn't produced a frame yet
-      // (Chromium rejects with "UnknownVizError" before the first composite).
-      const maxAttempts = 10;
+      // Retry while the view is still attaching to the compositor. Two
+      // transient errors show up here: "UnknownVizError" (Viz frame sink not
+      // registered yet) and "Current display surface not available for
+      // capture" (RenderWidgetHostView is null right after setVisible(true)).
+      const maxAttempts = 20;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const image = await state.view.webContents.capturePage();
@@ -652,7 +654,9 @@ export class TabViewManager {
             mimeType: 'image/png',
           };
         } catch (err) {
-          if (attempt === maxAttempts || !String(err).includes('UnknownVizError')) {
+          const msg = String(err);
+          const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
+          if (attempt === maxAttempts || !retriable) {
             throw err;
           }
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
