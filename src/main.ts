@@ -47,6 +47,8 @@ function devRebuild(): Promise<void> {
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
 
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
 if (process.env.AGENTWFY_HEADLESS && process.platform === 'darwin') {
   app.dock?.hide();
 }
