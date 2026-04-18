@@ -62,6 +62,8 @@ You rarely need a CDP client of your own — `./scripts/preview --eval` runs exp
 
 Return `null` from side-effecting expressions (Runtime.evaluate can't serialize `undefined`). The helper wraps everything as if prefixed with `await`, so async IPC calls work directly.
 
+For multi-statement snippets (`const x = ...; ...`), wrap in an IIFE — statements aren't expressions and return `null` otherwise: `"(() => { const x = ...; return {...}; })()"`.
+
 ### Raw CDP
 
 ```bash

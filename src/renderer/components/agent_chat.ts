@@ -1271,7 +1271,7 @@ export class TlAgentChat extends HTMLElement {
     // Messages area
     this.messagesEl = document.createElement('div')
     this.messagesEl.className = 'messages'
-    this.messagesEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;'
+    this.messagesEl.style.cssText = 'flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin:0 -10px;padding:0 10px;'
     this.messagesEl.addEventListener('scroll', this.handleMessagesScroll)
     this.messagesEl.addEventListener('wheel', this.handleUserScrollIntent, { passive: true })
     this.messagesEl.addEventListener('keydown', this.handleScrollKeydown)
