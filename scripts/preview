@@ -6,15 +6,38 @@
 //   ./scripts/preview                                  Current directory
 //   ./scripts/preview <worktree-path>                  Specific worktree
 //   ./scripts/preview <worktree> --agent <agent-path>  With existing agent data
-//   ./scripts/preview --restart <name>                  Rebuild and restart app
+//   ./scripts/preview --restart <name>                 Rebuild and restart app
 //   ./scripts/preview --stop [name]                    Stop a preview (or all)
 //   ./scripts/preview --list                           List running previews
+//   ./scripts/preview --cdp <name>                     Print CDP base URL and /json
+//   ./scripts/preview --screenshot <name> <path>       Composited screenshot (grim)
+//   ./scripts/preview --sqlite <name> <sql>            Run SQL against the agent DB
+//   ./scripts/preview --eval <name> [--tab <frag>] <expr>   CDP Runtime.evaluate
+//   ./scripts/preview --exec <name> <cmd...>           docker exec passthrough
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { setTimeout as sleep } from 'node:timers/promises';
+
+async function waitForCdpReady(port, timeoutMs = 120_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://localhost:${port}/json`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const list = await res.json();
+        if (Array.isArray(list) && list.some((t) => t.type === 'page' && typeof t.url === 'string' && t.url.startsWith('app://'))) {
+          return;
+        }
+      }
+    } catch {}
+    await sleep(500);
+  }
+  throw new Error(`CDP readiness timed out on :${port} (no app:// target).`);
+}
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRoot = join(scriptDir, '..');
@@ -22,6 +45,28 @@ const PREFIX = 'agentwfy-preview';
 const IMAGE = 'agentwfy-preview-base';
 
 const args = process.argv.slice(2);
+
+function containerFor(name) { return `${PREFIX}-${name}`; }
+
+// Returns host port mapped to a given container port for a container, or null.
+function mappedHostPort(container, containerPort) {
+  try {
+    const out = execSync(`docker port ${container} ${containerPort}/tcp`, { encoding: 'utf-8' }).trim();
+    if (!out) return null;
+    // docker port output: "0.0.0.0:54321" (possibly multiple lines — take first)
+    const m = out.split('\n')[0].match(/:(\d+)$/);
+    return m ? Number(m[1]) : null;
+  } catch { return null; }
+}
+
+function requireName(flag) {
+  const name = args[1];
+  if (!name) { console.error(`Usage: ./scripts/preview ${flag} <name> [...]`); process.exit(1); }
+  const container = containerFor(name);
+  try { execSync(`docker inspect ${container}`, { stdio: 'pipe' }); }
+  catch { console.error(`No preview named "${name}". Use --list.`); process.exit(1); }
+  return { name, container };
+}
 
 if (args[0] === '--list') {
   try {
@@ -33,7 +78,7 @@ if (args[0] === '--list') {
 if (args[0] === '--stop') {
   const name = args[1];
   if (name) {
-    const container = `${PREFIX}-${name}`;
+    const container = containerFor(name);
     try { execSync(`docker stop ${container} && docker rm ${container}`, { stdio: 'inherit' }); }
     catch { console.log(`No preview named "${name}".`); }
   } else {
@@ -51,19 +96,78 @@ if (args[0] === '--stop') {
 }
 
 if (args[0] === '--restart') {
-  const name = args[1];
-  if (!name) {
-    console.error('Usage: ./scripts/preview --restart <name>');
-    process.exit(1);
-  }
-  const container = `${PREFIX}-${name}`;
+  const { container } = requireName('--restart');
   try {
     execSync(`docker exec ${container} bash -c 'kill $(pgrep -f "electron /app" | head -1)'`, { stdio: 'pipe' });
-    console.log(`Restarting app in ${name}...`);
+    console.log(`Restarting app in ${args[1]}...`);
   } catch {
-    console.log(`No preview named "${name}" or app not running.`);
+    console.log(`App not running in ${args[1]}.`);
   }
   process.exit(0);
+}
+
+if (args[0] === '--cdp') {
+  const { container } = requireName('--cdp');
+  const port = mappedHostPort(container, 9224);
+  if (!port) { console.error('CDP port 9223 is not published. Rebuild the preview.'); process.exit(1); }
+  console.log(`  base: http://localhost:${port}`);
+  console.log(`  list: http://localhost:${port}/json`);
+  process.exit(0);
+}
+
+if (args[0] === '--screenshot') {
+  const { container } = requireName('--screenshot');
+  const outPath = args[2] ? resolve(args[2]) : join(process.cwd(), 'preview-screenshot.png');
+  try {
+    // Brief settle so tab switches / bounds changes land before grim samples.
+    // selectTab + updateViewBounds is async through the renderer → main-process
+    // round-trip; without this, screenshots lag the logical tab state.
+    execSync(`docker exec ${container} bash -lc 'export XDG_RUNTIME_DIR=/tmp/preview-xdg; export WAYLAND_DISPLAY=$(basename $(ls /tmp/preview-xdg/wayland-* 2>/dev/null | grep -v lock | head -1)); sleep 0.5 && grim /tmp/preview-screenshot.png'`, { stdio: 'pipe' });
+    execSync(`docker cp ${container}:/tmp/preview-screenshot.png "${outPath}"`, { stdio: 'pipe' });
+    console.log(outPath);
+  } catch (err) {
+    console.error(`Screenshot failed: ${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+if (args[0] === '--sqlite') {
+  const { container } = requireName('--sqlite');
+  const sql = args.slice(2).join(' ');
+  if (!sql) { console.error('Usage: ./scripts/preview --sqlite <name> "<sql>"'); process.exit(1); }
+  // Pull AGENT_PATH from the running entrypoint (PID 1) so --agent mounts resolve correctly.
+  const r = spawnSync('docker', ['exec', '-i', container, 'bash', '-lc',
+    `AGENT_PATH=$(tr '\\0' '\\n' < /proc/1/environ | awk -F= '/^AGENT_PATH=/ {print $2}'); sqlite3 "${'$'}{AGENT_PATH:-/tmp/preview-agent}/.agentwfy/agent.db"`],
+    { input: sql + '\n', stdio: ['pipe', 'inherit', 'inherit'] });
+  process.exit(r.status ?? 1);
+}
+
+if (args[0] === '--eval') {
+  const { container } = requireName('--eval');
+  const rest = args.slice(2);
+  let tabFrag = null;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--tab' && rest[i + 1]) { tabFrag = rest[i + 1]; rest.splice(i, 2); i--; }
+  }
+  const expr = rest.join(' ').trim();
+  if (!expr) {
+    console.error('Usage: ./scripts/preview --eval <name> [--tab <url-fragment>] "<expression>"');
+    process.exit(1);
+  }
+  const dockerArgs = ['exec', container, 'node', '/cdp-eval.mjs'];
+  if (tabFrag) dockerArgs.push('--target', tabFrag);
+  dockerArgs.push(expr);
+  const r = spawnSync('docker', dockerArgs, { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+}
+
+if (args[0] === '--exec') {
+  const { container } = requireName('--exec');
+  const rest = args.slice(2);
+  if (!rest.length) { console.error('Usage: ./scripts/preview --exec <name> <cmd...>'); process.exit(1); }
+  const r = spawnSync('docker', ['exec', container, ...rest], { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
 }
 
 // Parse args
@@ -92,7 +196,7 @@ if (agentPath && !existsSync(join(agentPath, '.agentwfy', 'agent.db'))) {
 }
 
 const dirName = basename(appPath).replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-const containerName = `${PREFIX}-${dirName}`;
+const containerName = containerFor(dirName);
 
 function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -106,7 +210,8 @@ function findFreePort() {
 }
 
 async function main() {
-  const port = await findFreePort();
+  const vncPort = await findFreePort();
+  const cdpPort = await findFreePort();
   const dockerfile = join(scriptDir, 'Dockerfile.preview');
 
   try { execSync(`docker stop ${containerName} && docker rm ${containerName}`, { stdio: 'pipe' }); } catch {}
@@ -134,7 +239,8 @@ async function main() {
     'run', '-d',
     '--name', containerName,
     '--shm-size=256m',
-    '-p', `${port}:6080`,
+    '-p', `${vncPort}:6080`,
+    '-p', `${cdpPort}:9224`,
     '-v', `${appPath}:/src:ro`,
   ];
 
@@ -145,20 +251,33 @@ async function main() {
 
   dockerArgs.push(IMAGE);
 
-  console.log(`[preview] Starting ${containerName} on port ${port}...`);
+  console.log(`[preview] Starting ${containerName} (VNC ${vncPort}, CDP ${cdpPort})...`);
   if (agentPath) console.log(`[preview] Agent: ${agentPath}`);
   console.log(`[preview] Source: ${appPath} (mounted, changes picked up on reload)`);
   execSync(`docker ${dockerArgs.join(' ')}`, { stdio: 'inherit' });
 
-  const url = `http://localhost:${port}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0`;
-  console.log(`\n  ${url}\n`);
-  console.log(`  Restart: ./scripts/preview --restart ${dirName}`);
-  console.log(`  Stop:    ./scripts/preview --stop ${dirName}`);
-  console.log(`  List:    ./scripts/preview --list\n`);
+  // Wait for CDP to serve an app:// target so the first scripted call
+  // doesn't race the Electron boot (otherwise /json returns empty or the
+  // connection is refused for a few seconds).
+  process.stdout.write('[preview] Waiting for app to come up... ');
+  try {
+    await waitForCdpReady(cdpPort);
+    console.log('ready.');
+  } catch (err) {
+    console.log('timeout.');
+    console.error(err.message);
+    process.exit(1);
+  }
 
-  setTimeout(() => {
-    try { execSync(`open "${url}"`, { stdio: 'pipe' }); } catch {}
-  }, 8000);
+  const url = `http://localhost:${vncPort}/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0`;
+  console.log(`\n  VNC: ${url}`);
+  console.log(`  CDP: http://localhost:${cdpPort}/json  (e.g. curl ... | jq)\n`);
+  console.log(`  Restart:    ./scripts/preview --restart ${dirName}`);
+  console.log(`  Stop:       ./scripts/preview --stop ${dirName}`);
+  console.log(`  Screenshot: ./scripts/preview --screenshot ${dirName} out.png`);
+  console.log(`  SQL:        ./scripts/preview --sqlite ${dirName} "SELECT name FROM views"`);
+  console.log(`  Eval:       ./scripts/preview --eval ${dirName} "await window.ipc.tabs.getTabState()"`);
+  console.log(`  List:       ./scripts/preview --list\n`);
 }
 
 main().catch(err => { console.error(err.message); process.exit(1); });

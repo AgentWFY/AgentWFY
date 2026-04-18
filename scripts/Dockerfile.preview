@@ -1,6 +1,6 @@
 FROM debian:trixie-slim
 
-# sway (wlroots compositor) + wayvnc + noVNC + Electron deps
+# sway (wlroots compositor) + wayvnc + noVNC + Electron deps + agent-driving tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sway \
     wayvnc \
@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     seatd \
     rsync \
+    sqlite3 \
+    grim \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -49,6 +52,179 @@ RUN ELECTRON_INSTALL_PLATFORM=linux ELECTRON_INSTALL_ARCH=arm64 node scripts/set
 
 WORKDIR /app
 
+# Tiny Host-rewriting proxy so the Electron CDP (which rejects Host headers
+# other than localhost:9223) can be reached via published Docker ports.
+RUN cat > /cdp-proxy.mjs << 'PROXY'
+import http from 'node:http';
+import net from 'node:net';
+
+const LISTEN = Number(process.env.CDP_PROXY_PORT || 9224);
+const TARGET_HOST = '127.0.0.1';
+const TARGET_PORT = Number(process.env.CDP_PORT || 9223);
+const HOST_HEADER = `localhost:${TARGET_PORT}`;
+
+const server = http.createServer((req, res) => {
+  const headers = { ...req.headers, host: HOST_HEADER };
+  const upstream = http.request({
+    host: TARGET_HOST, port: TARGET_PORT, method: req.method, path: req.url, headers,
+  }, (ures) => {
+    // Rewrite any localhost:9223 references in JSON to the proxy's host:port
+    // so tools that follow the printed ws URLs connect back through the proxy.
+    const proxyHost = (req.headers.host || `localhost:${LISTEN}`);
+    let buf = [];
+    ures.on('data', (c) => buf.push(c));
+    ures.on('end', () => {
+      let body = Buffer.concat(buf);
+      const ct = ures.headers['content-type'] || '';
+      if (ct.includes('application/json') || ct.includes('text/')) {
+        body = Buffer.from(body.toString('utf-8').replaceAll(HOST_HEADER, proxyHost));
+      }
+      const outHeaders = { ...ures.headers };
+      delete outHeaders['content-length'];
+      res.writeHead(ures.statusCode || 200, outHeaders);
+      res.end(body);
+    });
+  });
+  upstream.on('error', (e) => { res.writeHead(502); res.end(String(e)); });
+  req.pipe(upstream);
+});
+
+server.on('upgrade', (req, socket, head) => {
+  const headers = { ...req.headers, host: HOST_HEADER };
+  const upstream = net.connect(TARGET_PORT, TARGET_HOST, () => {
+    const reqLines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
+    for (const [k, v] of Object.entries(headers)) reqLines.push(`${k}: ${v}`);
+    upstream.write(reqLines.join('\r\n') + '\r\n\r\n');
+    if (head && head.length) upstream.write(head);
+    upstream.pipe(socket);
+    socket.pipe(upstream);
+  });
+  upstream.on('error', () => socket.destroy());
+  socket.on('error', () => upstream.destroy());
+});
+
+server.listen(LISTEN, '0.0.0.0', () => {
+  console.log(`[cdp-proxy] 0.0.0.0:${LISTEN} -> ${TARGET_HOST}:${TARGET_PORT}`);
+});
+PROXY
+
+# CDP evaluate helper. Usage:
+#   node /cdp-eval.mjs [--target <url-fragment>] '<js-expression>'
+#
+# Runs the expression in the chosen target's page (default: app://index.html).
+# Prints the evaluated value as JSON on stdout; prints errors to stderr and
+# exits non-zero. Uses awaitPromise+returnByValue so async IPC calls like
+# window.ipc.tabs.openTab(...) work transparently.
+RUN cat > /cdp-eval.mjs << 'EVAL'
+import http from 'node:http';
+
+const args = process.argv.slice(2);
+let targetFrag = 'app://';
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--target' && args[i + 1]) { targetFrag = args[i + 1]; args.splice(i, 2); i--; }
+}
+const expression = args.join(' ');
+if (!expression) {
+  console.error('Usage: cdp-eval.mjs [--target <url-fragment>] <expression>');
+  process.exit(2);
+}
+
+const CDP_PORT = Number(process.env.CDP_PORT || 9223);
+
+function httpGet(path) {
+  return new Promise((resolve, reject) => {
+    const req = http.get({ host: '127.0.0.1', port: CDP_PORT, path, headers: { Host: `localhost:${CDP_PORT}` } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf-8') }));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function waitForTarget(timeoutMs) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const { status, body } = await httpGet('/json');
+      if (status === 200) {
+        const list = JSON.parse(body);
+        const match = list.find((t) => t.type === 'page' && t.url.includes(targetFrag));
+        if (match) return match;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`No CDP page target matched "${targetFrag}" within ${timeoutMs}ms`);
+}
+
+const target = await waitForTarget(15000);
+
+await new Promise((resolve, reject) => {
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  let id = 0;
+  const pending = new Map();
+  const send = (method, params = {}) => new Promise((res, rej) => {
+    const mid = ++id;
+    pending.set(mid, { resolve: res, reject: rej });
+    ws.send(JSON.stringify({ id: mid, method, params }));
+  });
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (!msg.id || !pending.has(msg.id)) return;
+    const { resolve: r, reject: j } = pending.get(msg.id);
+    pending.delete(msg.id);
+    if (msg.error) j(new Error(msg.error.message));
+    else r(msg.result);
+  };
+  ws.onerror = (e) => reject(new Error(`WebSocket error: ${e.message || 'connection failed'}`));
+  ws.onopen = async () => {
+    try {
+      await send('Runtime.enable');
+      // Try parsing as a single expression first (so the return value is
+      // the expression value). Fall back to treating the code as a
+      // statement body if that syntax errors. This lets callers pass
+      // either "await window.ipc.tabs.getTabState()" or a multi-statement
+      // block ending in a `return`.
+      const codeLiteral = JSON.stringify(expression);
+      const wrapped = `(async () => {
+        const __code = ${codeLiteral};
+        const __AsyncFn = (async function(){}).constructor;
+        let __fn;
+        try {
+          __fn = new __AsyncFn('return (\\n' + __code + '\\n);');
+        } catch (__err) {
+          if (!(__err instanceof SyntaxError)) throw __err;
+          __fn = new __AsyncFn(__code);
+        }
+        const __result = await __fn();
+        return __result === undefined ? null : __result;
+      })()`;
+      const result = await send('Runtime.evaluate', {
+        expression: wrapped,
+        awaitPromise: true,
+        returnByValue: true,
+        userGesture: true,
+      });
+      if (result.exceptionDetails) {
+        const text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
+        ws.close();
+        reject(new Error(text));
+        return;
+      }
+      const value = result.result?.value;
+      process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value));
+      process.stdout.write('\n');
+      ws.close();
+      resolve();
+    } catch (err) {
+      ws.close();
+      reject(err);
+    }
+  };
+});
+EVAL
+
 # Entrypoint: sway + wayvnc + noVNC + app rebuild loop
 # Source is mounted at /src at runtime. Built into /app.
 RUN cat > /entrypoint.sh << 'ENTRY' \
@@ -58,6 +234,12 @@ set -e
 export AGENT_PATH="${AGENT_PATH:-/tmp/preview-agent}"
 mkdir -p "$AGENT_PATH"
 VNC_PORT="${VNC_PORT:-5900}"; WEB_PORT="${WEB_PORT:-6080}"
+# CDP is always bound to 127.0.0.1:9223 inside the container. A tiny
+# Host-rewriting proxy on 0.0.0.0:CDP_PROXY_PORT is what actually gets
+# published to the host — Chromium otherwise rejects the "Host: localhost:<host-port>"
+# header that Docker port-forwarding produces.
+CDP_PORT="${CDP_PORT:-9223}"
+CDP_PROXY_PORT="${CDP_PROXY_PORT:-9224}"
 export XDG_RUNTIME_DIR="/tmp/preview-xdg"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
 if [ ! -d /src/src ]; then
@@ -88,17 +270,24 @@ echo "[preview] Sway ready: $WAYLAND_DISPLAY"
 (
   while kill -0 $SWAY_PID 2>/dev/null; do
     echo "[preview] Building app from /src..."
-    rsync -a --delete \
+    # -c forces checksum comparison — macOS bind-mount mtimes can come back
+    # with coarser precision than the /app side, so default size+mtime can
+    # falsely skip real edits.
+    rsync -ac --delete \
       --exclude='vendor/' --exclude='dist/' --exclude='node_modules/' \
       --exclude='.git/' --exclude='tests/' --exclude='.claude/' \
       /src/ /app/
     ln -sfn /setup-cache/vendor /app/vendor
     node /app/scripts/build
     echo "[preview] Starting Electron..."
+    CDP_ARGS=""
+    if [ -n "$CDP_PORT" ]; then
+      CDP_ARGS="--remote-debugging-port=$CDP_PORT"
+    fi
     AGENTWFY_CONFIG="/tmp/preview-config.json" \
     AGENTWFY_APP_ID="AgentWFY-preview" \
     node /app/scripts/start "--agent-path=${AGENT_PATH}" \
-      --ozone-platform=wayland --no-sandbox --disable-gpu --disable-dev-shm-usage || true
+      --ozone-platform=wayland --no-sandbox --disable-gpu --disable-dev-shm-usage $CDP_ARGS || true
     echo "[preview] App exited. Rebuilding..."
     sleep 1
   done
@@ -112,11 +301,17 @@ sleep 10
 ) &
 sleep 2
 websockify --web=/opt/novnc "$WEB_PORT" "localhost:$VNC_PORT" &
+if [ -n "$CDP_PORT" ]; then
+  ( while true; do CDP_PORT="$CDP_PORT" CDP_PROXY_PORT="$CDP_PROXY_PORT" node /cdp-proxy.mjs || true; sleep 2; done ) &
+fi
 echo ""
-echo "  http://localhost:$WEB_PORT/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0"
+echo "  VNC:   http://localhost:$WEB_PORT/vnc.html?autoconnect=true&resize=scale&quality=9&compression=0"
+if [ -n "$CDP_PORT" ]; then
+  echo "  CDP:   http://localhost:$CDP_PROXY_PORT/json  (via Host-rewriting proxy)"
+fi
 echo ""
 wait $SWAY_PID 2>/dev/null
 ENTRY
 
-EXPOSE 6080
+EXPOSE 6080 9224
 ENTRYPOINT ["/entrypoint.sh"]

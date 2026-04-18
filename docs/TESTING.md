@@ -2,16 +2,12 @@
 
 How to test the AgentWFY app through its UI. Read this before testing. Update this doc when you discover something that will make future testing faster or more reliable — corrected selectors, timing quirks, non-obvious gotchas. Don't add noise.
 
-For CDP tool reference (API signatures, commands, output format), see [CDP.md](CDP.md).
-
 ## Setup
 
-### Preview mode (recommended)
-
-Runs the app in Docker with VNC — accessible via browser tab. Source is mounted, so code changes are picked up on app restart. Works with any worktree.
+Testing runs the app in Docker with VNC — connect to the URL it prints with a browser or any VNC client. Source is mounted, so code changes are picked up on app restart. Works with any worktree.
 
 ```bash
-# Start preview
+# Start preview (waits until the app is serving CDP before returning)
 ./scripts/preview                                    # current directory
 ./scripts/preview ~/projects/agentwfy/.claude/worktrees/my-feature
 ./scripts/preview <worktree> --agent ~/my-agent      # with existing agent data
@@ -22,7 +18,7 @@ Runs the app in Docker with VNC — accessible via browser tab. Source is mounte
 ./scripts/preview --stop                             # stop all
 ```
 
-Opens a noVNC URL in the browser. Interact with the app visually through VNC.
+First run on a machine pulls/builds the ~1GB base image and can take 5-10 minutes; subsequent runs reuse the cache.
 
 **After code changes:** restart the app. It rebuilds from the mounted source automatically.
 
@@ -32,18 +28,74 @@ Opens a noVNC URL in the browser. Interact with the app visually through VNC.
 
 VNC reconnects in a few seconds after rebuild.
 
-### Local headless mode
+## Driving the preview programmatically
 
-Faster startup, no Docker. No visual output.
+The preview publishes two host ports: noVNC (visual) and the Electron app's Chrome DevTools Protocol (CDP). Start output prints both. The main renderer (`app://index.html/`) exposes `window.ipc` with the full IPC surface; each tab is a separate `agentview://` CDP target with its own DOM.
+
+You rarely need a CDP client of your own — `./scripts/preview --eval` runs expressions for you. The raw CDP endpoints are still there if you want them.
+
+### The everyday helper: `--eval`
+
+`--eval` runs an expression against the app's main renderer by default, awaits the returned promise, and prints the JSON result on stdout. Use `--tab <url-fragment>` to target a specific WebContentsView tab instead.
 
 ```bash
-./scripts/build
-./scripts/cdp start              # headless, isolated instance
-# After code changes:
-./scripts/build && ./scripts/cdp restart
-# When done:
-./scripts/cdp stop
+# State of all tabs (runs in main renderer — window.ipc is available)
+./scripts/preview --eval <name> "await window.ipc.tabs.getTabState()"
+
+# Open a view as a tab
+./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.source-explorer' })"
+
+# Open as a hidden background tab
+./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.docs', hidden: true })"
+
+# Select a tab by id (ids come from getTabState)
+./scripts/preview --eval <name> "window.ipc.tabs.selectTab({ tabId: 'abc123' })"
+
+# Inspect the DOM of a specific tab — --tab matches the tab's URL substring
+./scripts/preview --eval <name> --tab system.source-explorer \
+  "Array.from(document.querySelectorAll('.item .item-name')).map(n => n.textContent.trim())"
+
+# Fire a click inside a tab
+./scripts/preview --eval <name> --tab system.source-explorer \
+  "document.querySelector('.tab-btn[data-tab=\"views\"]').click(); null"
 ```
+
+Return `null` from side-effecting expressions (Runtime.evaluate can't serialize `undefined`). The helper wraps everything as if prefixed with `await`, so async IPC calls work directly.
+
+### Raw CDP
+
+```bash
+./scripts/preview --cdp <name>              # print CDP base URL and /json URL
+
+# List targets (main renderer + each WebContentsView tab)
+curl -s http://localhost:<cdp>/json | jq '.[] | {title, url, id}'
+
+# Just the main renderer target
+curl -s http://localhost:<cdp>/json | jq '.[] | select(.url|startswith("app://"))'
+```
+
+Each target's `webSocketDebuggerUrl` in `/json` is a WebSocket endpoint you can drive with any CDP client. The in-container proxy rewrites those URLs to point back through the published port, so they work from the host as-is.
+
+### Screenshots, SQL, escape hatch
+
+```bash
+# Composited screenshot via grim (captures WebContentsView layers — CDP screenshots don't).
+# Includes a 500ms settle so tab switches / bounds changes land before capture.
+./scripts/preview --screenshot <name> out.png
+
+# SQL against the running agent DB — for seeding views, triggers, config
+./scripts/preview --sqlite <name> "SELECT name FROM views"
+./scripts/preview --sqlite <name> "INSERT OR REPLACE INTO config (name, value) VALUES ('system.default-view', 'my-view')"
+
+# Raw docker exec into the container
+./scripts/preview --exec <name> bash -c '...'
+```
+
+The container ships `sqlite3`, `grim`, `jq`, `curl`, and Node — agent-side scripting needs no host deps.
+
+### After changing tab state, wait a beat before screenshotting
+
+`selectTab` and `openTab` push state to the renderer, which then IPC's bounds back through the main process — the grim compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
 
 ## App Layout
 
@@ -64,7 +116,7 @@ awfy-app
    └─ <awfy-status-line>               24px footer, Shadow DOM
 ```
 
-Shadow DOM components: `awfy-agent-sidebar`, `awfy-task-panel`, `awfy-status-line`. CDP primitives (`click`, `getText`, etc.) traverse shadow roots automatically. But `eval()` JS needs explicit `.shadowRoot` access.
+Shadow DOM components: `awfy-agent-sidebar`, `awfy-task-panel`, `awfy-status-line`. Clicking visible elements traverses shadow roots automatically; direct JS access needs explicit `.shadowRoot` traversal.
 
 ## Selectors
 
@@ -221,60 +273,6 @@ Middle-click closes tab (if not pinned). Right-click opens context menu. Draggab
 
 The command palette is a WebContentsView overlay inside the main window. Open with Ctrl+K (Linux) / Cmd+K (macOS).
 
-## Flows
-
-### Send a chat message
-
-```js
-await click("textarea#msg-input");
-await type("Hello!");
-await press("Enter");
-await waitFor(".assistant-text");
-```
-
-### Switch sidebar panels
-
-```js
-await click('.awfy-app-sidebar-switcher-btn[data-panel="tasks"]');
-await waitFor("awfy-task-panel");
-```
-
-### Toggle sidebar
-
-```js
-await click(".awfy-app-sidebar-toggle");       // close
-await click(".awfy-app-inline-toggle");         // reopen
-```
-
-### Close active tab
-
-```js
-await click(".tab-item.active .tab-close");
-```
-
-### Run a task
-
-```js
-await click('.awfy-app-sidebar-switcher-btn[data-panel="tasks"]');
-await click('.tab[data-tab="tasks"]');
-await click('.task-card[data-task-name="my-task"]');
-await click('.tc-run[data-run-task="my-task"]');
-await click('.tab[data-tab="runs"]');
-await waitFor(".rr-pulse");
-```
-
-### Select a provider
-
-```js
-await click('.provider-card[data-provider-id="openai-compatible"]');
-```
-
-### Check streaming state
-
-```js
-const isStreaming = await eval('document.querySelector(".stop-btn")?.style.display !== "none"');
-```
-
 ## Testing Tips
 
 <!-- Add findings here that will make future testing faster or more reliable. -->
@@ -288,17 +286,20 @@ const isStreaming = await eval('document.querySelector(".stop-btn")?.style.displ
 
 ### Plugin installation without file dialog
 
-Insert directly into the agent's `agent.db` via the `sqlite3` CLI (bypasses the app's TEMP write-guard triggers since it's a separate connection), then restart:
+Insert directly into the agent's `agent.db` (bypasses the app's TEMP write-guard triggers — separate connection), then restart:
 
 ```bash
-AGENT_ROOT=$(CDP_PORT=... ./scripts/cdp run 'return await eval("window.ipc.getAgentRoot()")' | jq -r .data)
-sqlite3 "$AGENT_ROOT/.agentwfy/agent.db" "INSERT INTO plugins (name, title, description, version, code, enabled, created_at, updated_at) VALUES ('my-plugin', 'My Plugin', '', '1.0.0', 'module.exports = { activate(api) { ... } }', 1, unixepoch(), unixepoch());"
-./scripts/cdp restart
+./scripts/preview --sqlite <name> "INSERT INTO plugins (name, title, description, version, code, enabled, created_at, updated_at) VALUES ('my-plugin', 'My Plugin', '', '1.0.0', 'module.exports = { activate(api) { ... } }', 1, unixepoch(), unixepoch())"
+./scripts/preview --restart <name>
 ```
 
 ### Session close button needs hover
 
-`.session-item-close` is `display: none` by default, only visible on CSS `:hover`. CDP click still works because it resolves coordinates via deep query, but `getRect` will fail (zero size). Use `eval` to force `display: flex` first, or close sessions via IPC (`window.ipc.agent.closeSession()`).
+`.session-item-close` is `display: none` by default, only visible on CSS `:hover`. Hover the session row before clicking, or close sessions via CDP (`window.ipc.agent.closeSession()`).
+
+### Hidden-tab repro needs full-viewport body
+
+When inserting test views that use `openTab({ hidden: true })` to exercise tab stacking, make both the selected and hidden view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded hidden tab — the repro becomes unfalsifiable.
 
 ### Test provider setup
 

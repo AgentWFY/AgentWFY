@@ -53,7 +53,7 @@ if (process.env.AGENTWFY_HEADLESS && process.platform === 'darwin') {
   app.dock?.hide();
 }
 
-// Write main process logs to .dev.log when not packaged (readable via scripts/cdp logs)
+// Write main process logs to .dev.log when not packaged
 if (!app.isPackaged) {
   const devLogStream = fs.createWriteStream(path.join(import.meta.dirname, '..', '.dev.log'), { flags: 'w' });
   devLogStream.on('error', () => {}); // ignore log file write failures

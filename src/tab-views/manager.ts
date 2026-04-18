@@ -389,8 +389,15 @@ export class TabViewManager {
       return;
     }
 
+    // addChildView on an already-attached child appends a duplicate
+    // instead of reordering. Explicit remove + re-add forces the move,
+    // and we reapply bounds/visibility because a fresh attach starts
+    // with a zero-size, hidden compositor surface.
     try {
+      mainWindow.contentView.removeChildView(state.view);
       mainWindow.contentView.addChildView(state.view);
+      state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
+      state.view.setVisible(true);
     } catch {
       // defensive
     }
@@ -426,6 +433,13 @@ export class TabViewManager {
       // selected tab's bounds so the compositor surface stays valid.
       state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
       state.view.setVisible(true);
+      // A freshly-attached background view lands at the end of children —
+      // i.e. topmost in z-order — and would occlude the selected tab.
+      // Re-assert the selected tab's top-of-stack position.
+      const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
+      if (selected && selected !== state) {
+        this.bringToFront(selected);
+      }
     }
   }
 
@@ -657,6 +671,14 @@ export class TabViewManager {
     const tab = this.tabs.find(t => t.id === request.tabId);
     if (!tab || this.selectedTabId === request.tabId) return;
     this.selectedTabId = request.tabId;
+    // Promote the new selection to the top of the z-order immediately. The
+    // renderer's MutationObserver-driven bounds sync fires reliably when
+    // the user clicks a tab but can miss programmatic (CDP) selection —
+    // doing it here means selectTab's visual effect is deterministic.
+    const state = this.tabViewsByTabId.get(request.tabId);
+    if (state) {
+      this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
+    }
     this.pushStateToRenderer();
   }
 
