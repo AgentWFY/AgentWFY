@@ -113,6 +113,9 @@ if (isApp) {
       toggleDevTools(tabId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.toggleDevTools, tabId);
       },
+      describe(): Promise<unknown> {
+        return ipcRenderer.invoke(Channels.tabs.describe);
+      },
     },
     sessions: {
       list(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {

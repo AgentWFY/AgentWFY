@@ -15,6 +15,7 @@ export const Channels = {
     togglePin: 'tabs:togglePin',
     revealTab: 'tabs:revealTab',
     toggleDevTools: 'tabs:toggleDevTools',
+    describe: 'tabs:describe',
   },
   sessions: {
     list: 'sessions:list',

@@ -35,4 +35,5 @@ export interface TabsApi {
   togglePin(tabId: string): Promise<void>
   revealTab(tabId: string): Promise<void>
   toggleDevTools(tabId: string): Promise<void>
+  describe(): Promise<unknown>
 }

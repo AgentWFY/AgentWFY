@@ -13,6 +13,8 @@
 //   ./scripts/preview --screenshot <name> <path>       Composited screenshot (grim)
 //   ./scripts/preview --sqlite <name> <sql>            Run SQL against the agent DB
 //   ./scripts/preview --eval <name> [--tab <frag>] <expr>   CDP Runtime.evaluate
+//   ./scripts/preview --logs <name> [--renderer] [-n N]  Main/renderer logs (stream, or last N)
+//   ./scripts/preview --inspect tabs <name>           Main-process tab state dump
 //   ./scripts/preview --exec <name> <cmd...>           docker exec passthrough
 
 import { execSync, spawnSync } from 'node:child_process';
@@ -65,7 +67,27 @@ function requireName(flag) {
   const container = containerFor(name);
   try { execSync(`docker inspect ${container}`, { stdio: 'pipe' }); }
   catch { console.error(`No preview named "${name}". Use --list.`); process.exit(1); }
+  warnIfStale(container, name);
   return { name, container };
+}
+
+// Warn when the container's image ID doesn't match the current base
+// image — which happens when scripts/ or Dockerfile have been updated
+// since the container was started. Previews built before a change will
+// silently lack new /cdp-eval, /cdp-logs, Chromium flags, etc. and
+// subcommands fail in ways that look like broken docs.
+function warnIfStale(container, name) {
+  try {
+    const containerImage = execSync(`docker inspect ${container} --format '{{.Image}}'`, { encoding: 'utf-8' }).trim();
+    const currentImage = execSync(`docker image inspect ${IMAGE} --format '{{.Id}}'`, { encoding: 'utf-8' }).trim();
+    if (containerImage && currentImage && containerImage !== currentImage) {
+      console.error(`[preview] WARNING: preview "${name}" is running an older image than ${IMAGE}.`);
+      console.error(`[preview] Stop it and re-run ./scripts/preview to pick up the latest fixes:`);
+      console.error(`[preview]   ./scripts/preview --stop ${name} && ./scripts/preview`);
+    }
+  } catch {
+    // If either image has been pruned, skip the check rather than noise.
+  }
 }
 
 if (args[0] === '--list') {
@@ -96,14 +118,65 @@ if (args[0] === '--stop') {
 }
 
 if (args[0] === '--restart') {
-  const { container } = requireName('--restart');
+  const { name, container } = requireName('--restart');
   try {
     execSync(`docker exec ${container} bash -c 'kill $(pgrep -f "electron /app" | head -1)'`, { stdio: 'pipe' });
-    console.log(`Restarting app in ${args[1]}...`);
+    process.stdout.write(`Restarting app in ${name}... `);
   } catch {
-    console.log(`App not running in ${args[1]}.`);
+    console.log(`App not running in ${name}.`);
+    process.exit(0);
+  }
+  const cdpPort = mappedHostPort(container, 9224);
+  if (!cdpPort) {
+    console.log('(CDP port not published; skipping readiness wait.)');
+    process.exit(0);
+  }
+  try {
+    await waitForCdpReady(cdpPort, 120_000);
+    console.log('ready.');
+  } catch (err) {
+    console.log('timeout.');
+    console.error(err.message);
+    process.exit(1);
   }
   process.exit(0);
+}
+
+if (args[0] === '--logs') {
+  const { container } = requireName('--logs');
+  const renderer = args.includes('--renderer');
+  const nFlagIdx = args.indexOf('-n');
+  const nLines = nFlagIdx >= 0 && args[nFlagIdx + 1] ? parseInt(args[nFlagIdx + 1], 10) : null;
+  if (renderer) {
+    // Stream Runtime.consoleAPICalled from the main renderer via the
+    // baked-in /cdp-logs.mjs helper.
+    console.error('[preview] streaming renderer console — Ctrl+C to stop');
+    const r = spawnSync('docker', ['exec', container, 'node', '/cdp-logs.mjs'], { stdio: 'inherit' });
+    process.exit(r.status ?? 1);
+  }
+  if (nLines && Number.isFinite(nLines)) {
+    // Snapshot the last N lines and exit — useful for one-shot checks.
+    const r = spawnSync('docker', ['exec', container, 'tail', '-n', String(nLines), '/app/.dev.log'], { stdio: 'inherit' });
+    process.exit(r.status ?? 1);
+  }
+  console.error('[preview] streaming /app/.dev.log — Ctrl+C to stop (use -n N for a snapshot)');
+  const r = spawnSync('docker', ['exec', container, 'tail', '-F', '/app/.dev.log'], { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
+}
+
+if (args[0] === '--inspect') {
+  const subject = args[1];
+  const name = args[2];
+  if (subject !== 'tabs' || !name) {
+    console.error('Usage: ./scripts/preview --inspect tabs <name>');
+    process.exit(1);
+  }
+  const container = containerFor(name);
+  try { execSync(`docker inspect ${container}`, { stdio: 'pipe' }); }
+  catch { console.error(`No preview named "${name}". Use --list.`); process.exit(1); }
+  const r = spawnSync('docker', ['exec', container, 'node', '/cdp-eval.mjs',
+    'await window.ipc.tabs.describe()'], { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
 }
 
 if (args[0] === '--cdp') {

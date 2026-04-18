@@ -228,6 +228,40 @@ export class TabViewManager {
     return { tabs: this.tabs, selectedTabId: this.selectedTabId };
   }
 
+  // Diagnostic snapshot of main-process tab state — per-tab bounds and
+  // z-index directly from the BaseWindow's child list, which isn't
+  // reachable from the renderer. Used by `preview --inspect tabs`.
+  describeState(): {
+    selectedTabId: string | null;
+    selectedBounds: Rectangle | null;
+    totalChildren: number;
+    tabs: Array<{
+      tabId: string;
+      viewName: string;
+      bounds: Rectangle;
+      zIndex: number;
+      visible: boolean;
+      isSelected: boolean;
+    }>;
+  } {
+    const mainWindow = this.deps.getMainWindow();
+    const children = mainWindow && !mainWindow.isDestroyed() ? mainWindow.contentView.children : [];
+    const tabs = Array.from(this.tabViewsByTabId.values()).map((state) => ({
+      tabId: state.tabId,
+      viewName: state.viewName,
+      bounds: state.view.getBounds(),
+      zIndex: children.indexOf(state.view),
+      visible: state.view.getVisible(),
+      isSelected: state.tabId === this.selectedTabId,
+    }));
+    return {
+      selectedTabId: this.selectedTabId,
+      selectedBounds: this.selectedBounds,
+      totalChildren: children.length,
+      tabs,
+    };
+  }
+
   // --- Tab lifecycle ---
 
   createTabViewState(tabId: string, viewName: string, options?: { tabType?: TabType }): TabViewState {
@@ -429,16 +463,34 @@ export class TabViewManager {
       state.view.setVisible(true);
       this.bringToFront(state);
     } else {
-      // Renderer sends 0x0 bounds for display:none panels; reuse the
-      // selected tab's bounds so the compositor surface stays valid.
-      state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
+      // Honor the renderer's bounds for not-visible tabs. Display:none
+      // panels report 0x0 — the view shrinks to nothing while staying
+      // setVisible(true) so captureTab's capturePage still has a live
+      // compositor surface.
+      state.view.setBounds(bounds);
       state.view.setVisible(true);
-      // A freshly-attached background view lands at the end of children —
-      // i.e. topmost in z-order — and would occlude the selected tab.
-      // Re-assert the selected tab's top-of-stack position.
-      const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
-      if (selected && selected !== state) {
-        this.bringToFront(selected);
+
+      if (state.tabId === this.selectedTabId) {
+        // The *selected* tab reporting not-visible means the whole tab
+        // area is collapsed (zen mode, app hidden). The renderer only
+        // fires bounds events for panels whose style changed; the other
+        // panels were already display:none and stay that way, so we
+        // won't get a per-tab event for them. Collapse every other tab
+        // to 0x0 proactively so nothing leaks through.
+        for (const other of this.tabViewsByTabId.values()) {
+          if (other !== state) {
+            other.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+          }
+        }
+      } else {
+        // A freshly-attached background tab lands at the end of
+        // children — topmost in z-order — and would occlude the
+        // selected tab until the renderer reports 0x0 bounds for it.
+        // Re-assert the selected tab's top-of-stack position.
+        const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
+        if (selected) {
+          this.bringToFront(selected);
+        }
       }
     }
   }
@@ -527,6 +579,26 @@ export class TabViewManager {
       this.bringToFront(selected);
     }
     this.pushStateToRenderer();
+  }
+
+  // Directly shrink/restore every tab view in response to main-process
+  // signals (zen mode, window hidden, etc.) that the renderer's
+  // ResizeObserver/MutationObserver chain won't pick up — zen mode
+  // removes the tab area from the box tree by an ancestor display:none,
+  // which per spec doesn't fire ResizeObserver.
+  setAllTabsCollapsed(collapsed: boolean): void {
+    if (collapsed) {
+      const zero = { x: 0, y: 0, width: 0, height: 0 };
+      for (const state of this.tabViewsByTabId.values()) {
+        state.view.setBounds(zero);
+      }
+    } else if (this.selectedBounds) {
+      for (const state of this.tabViewsByTabId.values()) {
+        state.view.setBounds(this.selectedBounds);
+      }
+      const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
+      if (selected) this.bringToFront(selected);
+    }
   }
 
   reloadTabView(tabId: string): void {

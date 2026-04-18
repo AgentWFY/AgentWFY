@@ -20,6 +20,8 @@ Testing runs the app in Docker with VNC — connect to the URL it prints with a 
 
 First run on a machine pulls/builds the ~1GB base image and can take 5-10 minutes; subsequent runs reuse the cache.
 
+**Always start a fresh preview for each test run** — `./scripts/preview` from the worktree you want to test. Attaching to a preview that was started earlier (from this worktree or another) means you're running whatever image was current when it was started, not the current source. Preview subcommands warn when they detect this, but the safest default is to stop any existing preview and start again.
+
 **After code changes:** restart the app. It rebuilds from the mounted source automatically.
 
 ```bash
@@ -95,9 +97,37 @@ Each target's `webSocketDebuggerUrl` in `/json` is a WebSocket endpoint you can 
 
 The container ships `sqlite3`, `grim`, `jq`, `curl`, and Node — agent-side scripting needs no host deps.
 
+### Diagnostics
+
+```bash
+# Tail main-process logs (stdout + stderr, written to /app/.dev.log).
+# This streams — Ctrl+C to stop. Add `-n N` for a one-shot snapshot.
+./scripts/preview --logs <name>
+./scripts/preview --logs <name> -n 50
+
+# Stream the main renderer's console.* output over CDP (Ctrl+C to stop).
+./scripts/preview --logs <name> --renderer
+
+# Main-process tab state: per-tab bounds, z-index, visible flag,
+# selectedTabId, contentView children count. Use this when a screenshot
+# doesn't match the tab state you expect.
+./scripts/preview --inspect tabs <name>
+```
+
+`visible: true` in the `--inspect tabs` output just means `WebContentsView.setVisible(true)` — a tab with `bounds: {0,0,0,0}` is fully collapsed and draws nothing, but still reports visible. Trust the bounds first.
+
 ### After changing tab state, wait a beat before screenshotting
 
 `selectTab` and `openTab` push state to the renderer, which then IPC's bounds back through the main process — the grim compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
+
+### Preview vs real desktop
+
+The preview runs Electron headless against a wayvnc compositor — close to the real app but not identical. A few things to know when a test behaves strangely:
+
+- **rAF isn't throttled.** The preview launches Chromium with `--disable-renderer-backgrounding` and friends, so `requestAnimationFrame` fires at normal cadence even though there's no visible OS-level window. If you find yourself writing code that works around rAF being suspended, you're fighting a bug — file it.
+- **`window.ipc` is frozen.** `contextBridge.exposeInMainWorld` produces a non-writable object. You can't monkey-patch `window.ipc.tabs.*` from `--eval` to observe calls — the assignment silently no-ops. Use `--logs --renderer` to see renderer `console.log` output, or add temporary `window.__probe = []; window.__probe.push(...)` scaffolding in the source if you need a side channel.
+- **Renderer logs don't land in `/app/.dev.log`.** That file only captures main-process stdout/stderr. For renderer diagnostics use `--logs --renderer` (streams `Runtime.consoleAPICalled` over CDP).
+- **Main-process state is authoritative for tab geometry.** The renderer tells the main process what bounds tabs should have; `--eval` only sees the renderer's view. When the screenshot disagrees with `window.ipc.tabs.getTabState()`, run `--inspect tabs` — it dumps per-tab `bounds`, `zIndex`, `visible` straight from the main process's BaseWindow children.
 
 ## App Layout
 
@@ -274,6 +304,18 @@ Middle-click closes tab (if not pinned). Right-click opens context menu. Draggab
 ### Command Palette
 
 The command palette is a WebContentsView overlay inside the main window. Open with Ctrl+K (Linux) / Cmd+K (macOS).
+
+### Zen Mode
+
+Hides the agent sidebar, tab bar, main column, and status line; only the active chat sidebar remains. Triggered by the `toggle-zen-mode` shortcut action (default `Ctrl+.` / `Cmd+.`) or programmatically:
+
+```js
+await window.ipc.zenMode.set(true)   // enable
+await window.ipc.zenMode.set(false)  // disable
+await window.ipc.zenMode.toggle()
+```
+
+When zen is on, the root element gains the `zen-mode` class and every tab view's bounds collapse to `{0,0,0,0}`. `--inspect tabs` is the authoritative check: all tabs should have zero-sized bounds while zen is active.
 
 ## Testing Tips
 

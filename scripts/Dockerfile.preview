@@ -209,7 +209,14 @@ await new Promise((resolve, reject) => {
       if (result.exceptionDetails) {
         const text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
         ws.close();
-        reject(new Error(text));
+        // Surface the target + original expression so the agent can see
+        // *what* actually ran, not just *how* it failed.
+        const detail = [
+          `[cdp-eval] target: ${target.url}`,
+          `[cdp-eval] expression: ${expression}`,
+          text,
+        ].join('\n');
+        reject(new Error(detail));
         return;
       }
       const value = result.result?.value;
@@ -224,6 +231,90 @@ await new Promise((resolve, reject) => {
   };
 });
 EVAL
+
+# Stream Runtime.consoleAPICalled from the main renderer's CDP target to
+# stdout. Usage: node /cdp-logs.mjs [--target <url-fragment>]
+# (default target: app://index.html).
+RUN cat > /cdp-logs.mjs << 'LOGS'
+import http from 'node:http';
+
+const args = process.argv.slice(2);
+let targetFrag = 'app://';
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--target' && args[i + 1]) { targetFrag = args[i + 1]; args.splice(i, 2); i--; }
+}
+
+const CDP_PORT = Number(process.env.CDP_PORT || 9223);
+
+function httpGet(path) {
+  return new Promise((resolve, reject) => {
+    const req = http.get({ host: '127.0.0.1', port: CDP_PORT, path, headers: { Host: `localhost:${CDP_PORT}` } }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf-8') }));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function waitForTarget() {
+  for (;;) {
+    try {
+      const { status, body } = await httpGet('/json');
+      if (status === 200) {
+        const list = JSON.parse(body);
+        const match = list.find((t) => t.type === 'page' && t.url.includes(targetFrag));
+        if (match) return match;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+function formatArg(p) {
+  if (p.value !== undefined) return typeof p.value === 'string' ? p.value : JSON.stringify(p.value);
+  if (p.description) return p.description;
+  if (p.preview) return JSON.stringify(p.preview);
+  return p.type;
+}
+
+async function attach(target) {
+  const ws = new WebSocket(target.webSocketDebuggerUrl);
+  let id = 0;
+  const send = (method, params = {}) => new Promise((res, rej) => {
+    const mid = ++id;
+    const onMsg = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.id !== mid) return;
+      ws.removeEventListener('message', onMsg);
+      if (msg.error) rej(new Error(msg.error.message));
+      else res(msg.result);
+    };
+    ws.addEventListener('message', onMsg);
+    ws.send(JSON.stringify({ id: mid, method, params }));
+  });
+  await new Promise((r) => ws.addEventListener('open', r, { once: true }));
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.method === 'Runtime.consoleAPICalled') {
+      const level = msg.params.type.padEnd(5);
+      const args = msg.params.args.map(formatArg).join(' ');
+      console.log(`[${level}] ${args}`);
+    } else if (msg.method === 'Runtime.exceptionThrown') {
+      const e = msg.params.exceptionDetails;
+      console.log(`[EXC  ] ${e.exception?.description || e.text}`);
+    }
+  });
+  ws.addEventListener('close', () => process.exit(0));
+  await send('Runtime.enable');
+  console.error(`[cdp-logs] attached to ${target.url}`);
+}
+
+const t = await waitForTarget();
+await attach(t);
+// Keep alive until the socket closes.
+setInterval(() => {}, 1 << 30);
+LOGS
 
 # Entrypoint: sway + wayvnc + noVNC + app rebuild loop
 # Source is mounted at /src at runtime. Built into /app.
@@ -284,10 +375,18 @@ echo "[preview] Sway ready: $WAYLAND_DISPLAY"
     if [ -n "$CDP_PORT" ]; then
       CDP_ARGS="--remote-debugging-port=$CDP_PORT"
     fi
+    # Keep the main renderer foregrounded: wayvnc doesn't expose visibility
+    # the way a real OS window manager does, so Chromium otherwise marks the
+    # document as hidden, which throttles requestAnimationFrame to zero and
+    # breaks any renderer code that depends on it (ResizeObserver scheduling,
+    # our tab-view bounds sync, etc). The three disable-* flags match what
+    # Playwright/puppeteer use for the same reason.
     AGENTWFY_CONFIG="/tmp/preview-config.json" \
     AGENTWFY_APP_ID="AgentWFY-preview" \
     node /app/scripts/start "--agent-path=${AGENT_PATH}" \
-      --ozone-platform=wayland --no-sandbox --disable-gpu --disable-dev-shm-usage $CDP_ARGS || true
+      --ozone-platform=wayland --no-sandbox --disable-gpu --disable-dev-shm-usage \
+      --disable-renderer-backgrounding --disable-backgrounding-occluded-windows \
+      --disable-background-timer-throttling $CDP_ARGS || true
     echo "[preview] App exited. Rebuilding..."
     sleep 1
   done

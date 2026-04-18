@@ -324,6 +324,13 @@ class WindowManager {
   setZenMode(value: boolean): void {
     if (this.isZenMode === value) return;
     this.isZenMode = value;
+    // Zen mode hides the whole tab area via ancestor display:none. The
+    // renderer's bounds-sync chain (ResizeObserver / MutationObserver)
+    // can't fire for that mutation, so main collapses every tab view
+    // directly.
+    for (const ctx of this.orchestrator.getAllContexts()) {
+      ctx.tabViewManager.setAllTabsCollapsed(value);
+    }
     this.sendToRenderer(Channels.zenMode.changed, this.isZenMode);
   }
 
