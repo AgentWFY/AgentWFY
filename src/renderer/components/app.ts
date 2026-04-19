@@ -24,6 +24,9 @@ export class TlApp extends HTMLElement {
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
   private isResizing = false
+  private resizeStartX = 0
+  private resizeStartWidth = 0
+  private _resizeDispatchPending: number | null = null
   private isZenMode = false
   private isAgentSidebarVisible = true
 
@@ -92,6 +95,8 @@ export class TlApp extends HTMLElement {
   private onResizeMouseDown = (e: MouseEvent) => {
     e.preventDefault()
     this.isResizing = true
+    this.resizeStartX = e.clientX
+    this.resizeStartWidth = this.sidebarEl.getBoundingClientRect().width
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', this.onResizeMouseMove)
@@ -100,16 +105,29 @@ export class TlApp extends HTMLElement {
 
   private onResizeMouseMove = (e: MouseEvent) => {
     if (!this.isResizing) return
-    const newWidth = Math.min(Math.max(e.clientX - AGENT_SIDEBAR_WIDTH, 200), window.innerWidth - AGENT_SIDEBAR_WIDTH - 4)
+    const delta = e.clientX - this.resizeStartX
+    const agentSidebarWidth = this.isAgentSidebarVisible ? AGENT_SIDEBAR_WIDTH : 0
+    const maxWidth = window.innerWidth - agentSidebarWidth - 4
+    const newWidth = Math.min(Math.max(this.resizeStartWidth + delta, 200), maxWidth)
     this.sidebarWidth = newWidth
     this.sidebarEl.style.width = `${newWidth}px`
-    window.dispatchEvent(new Event('resize'))
+    if (this._resizeDispatchPending === null) {
+      this._resizeDispatchPending = requestAnimationFrame(() => {
+        this._resizeDispatchPending = null
+        window.dispatchEvent(new Event('resize'))
+      })
+    }
   }
 
   private onResizeMouseUp = () => {
     this.isResizing = false
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
+    if (this._resizeDispatchPending !== null) {
+      cancelAnimationFrame(this._resizeDispatchPending)
+      this._resizeDispatchPending = null
+    }
+    window.dispatchEvent(new Event('resize'))
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
   }

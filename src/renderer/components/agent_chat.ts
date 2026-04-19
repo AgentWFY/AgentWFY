@@ -34,6 +34,10 @@ const STYLES = `
     user-select: text;
     word-break: break-word;
   }
+  .messages > [data-msg-idx] {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 80px;
+  }
   .block-user {
     margin: 8px 0;
   }
@@ -715,6 +719,7 @@ export class TlAgentChat extends HTMLElement {
   private _lastStreamingBlockCount: number = 0
   private _lastStreamingText: string | null = null
   private _lastStreamEventTime: number = 0
+  private _updateMessagesPending: number | null = null
   private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
@@ -770,6 +775,10 @@ export class TlAgentChat extends HTMLElement {
     this._closeLightbox?.()
     for (const unsub of this._unsubs) unsub()
     this._unsubs.length = 0
+    if (this._updateMessagesPending !== null) {
+      cancelAnimationFrame(this._updateMessagesPending)
+      this._updateMessagesPending = null
+    }
     this.clearChatRefs()
     this._renderMode = null
   }
@@ -888,11 +897,19 @@ export class TlAgentChat extends HTMLElement {
     this.render()
   }
 
+  private scheduleUpdateMessages() {
+    if (this._updateMessagesPending !== null) return
+    this._updateMessagesPending = requestAnimationFrame(() => {
+      this._updateMessagesPending = null
+      this.updateMessages()
+    })
+  }
+
   private subscribeToStore() {
     // Streaming message deltas (hot path) — only update messages area
     this._unsubs.push(agentSessionStore.select(
       s => s.streamingMessage,
-      () => this.updateMessages()
+      () => this.scheduleUpdateMessages()
     ))
 
     // Messages array changed (new messages, session loaded)
@@ -900,7 +917,7 @@ export class TlAgentChat extends HTMLElement {
       s => s.messages,
       () => {
         this.error = null
-        this.updateMessages()
+        this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
         this.updateNewSessionBtn()
       }
@@ -911,7 +928,7 @@ export class TlAgentChat extends HTMLElement {
       s => s.isStreaming,
       () => {
         this.error = null
-        this.updateMessages()
+        this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
         this.updateNewSessionBtn()
         this.updateNotifyBtn()
