@@ -140,8 +140,8 @@ const STYLES = `
   }
   .stop-btn {
     position: absolute;
-    right: 6px;
-    bottom: 6px;
+    right: 5px;
+    bottom: 5px;
     width: 26px;
     height: 26px;
     display: flex;
