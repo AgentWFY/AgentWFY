@@ -10,7 +10,7 @@
 //   ./scripts/preview --stop [name]                    Stop a preview (or all)
 //   ./scripts/preview --list                           List running previews
 //   ./scripts/preview --cdp <name>                     Print CDP base URL and /json
-//   ./scripts/preview --screenshot <name> <path>       Composited screenshot (grim)
+//   ./scripts/preview --screenshot <name> [--no-settle] <path>  Composited screenshot (grim; default 500ms settle)
 //   ./scripts/preview --sqlite <name> <sql>            Run SQL against the agent DB
 //   ./scripts/preview --eval <name> [--tab <frag>] <expr>   CDP Runtime.evaluate
 //   ./scripts/preview --logs <name> [--renderer] [-n N]  Main/renderer logs (stream, or last N)
@@ -190,12 +190,18 @@ if (args[0] === '--cdp') {
 
 if (args[0] === '--screenshot') {
   const { container } = requireName('--screenshot');
-  const outPath = args[2] ? resolve(args[2]) : join(process.cwd(), 'preview-screenshot.png');
+  const rest = args.slice(2);
+  const noSettleIdx = rest.indexOf('--no-settle');
+  const noSettle = noSettleIdx !== -1;
+  if (noSettle) rest.splice(noSettleIdx, 1);
+  const outPath = rest[0] ? resolve(rest[0]) : join(process.cwd(), 'preview-screenshot.png');
   try {
-    // Brief settle so tab switches / bounds changes land before grim samples.
-    // selectTab + updateViewBounds is async through the renderer → main-process
-    // round-trip; without this, screenshots lag the logical tab state.
-    execSync(`docker exec ${container} bash -lc 'export XDG_RUNTIME_DIR=/tmp/preview-xdg; export WAYLAND_DISPLAY=$(basename $(ls /tmp/preview-xdg/wayland-* 2>/dev/null | grep -v lock | head -1)); sleep 0.5 && grim /tmp/preview-screenshot.png'`, { stdio: 'pipe' });
+    // Default settle lets tab switches / bounds changes land before grim samples —
+    // selectTab + updateViewBounds is async through the renderer → main round-trip.
+    // Use --no-settle to capture mid-transition state for race-condition repros
+    // (see docs/TESTING.md "Catching transient state").
+    const settle = noSettle ? '' : 'sleep 0.5 && ';
+    execSync(`docker exec ${container} bash -lc 'export XDG_RUNTIME_DIR=/tmp/preview-xdg; export WAYLAND_DISPLAY=$(basename $(ls /tmp/preview-xdg/wayland-* 2>/dev/null | grep -v lock | head -1)); ${settle}grim /tmp/preview-screenshot.png'`, { stdio: 'pipe' });
     execSync(`docker cp ${container}:/tmp/preview-screenshot.png "${outPath}"`, { stdio: 'pipe' });
     console.log(outPath);
   } catch (err) {

@@ -36,6 +36,33 @@ The preview publishes two host ports: noVNC (visual) and the Electron app's Chro
 
 You rarely need a CDP client of your own — `./scripts/preview --eval` runs expressions for you. The raw CDP endpoints are still there if you want them.
 
+### System views available for testing
+
+Every fresh install ships with these views. Pick visually distinct ones for stacking / occlusion / tab-switch tests:
+
+| View | Notes |
+|------|-------|
+| `home` | Initial tab on a fresh preview. Full-viewport background. |
+| `system.source-explorer` | File tree + content pane. Distinct layout. |
+| `system.docs` | Markdown doc list. |
+| `system.plugins` | Plugin manager page. |
+| `system.openai-compatible-provider.settings-view` | Provider settings. |
+
+`openTab({ viewName: 'does-not-exist' })` rejects with `View not found`. `./scripts/preview --sqlite <name> "SELECT name FROM views"` enumerates whatever's actually installed (plugins can register more).
+
+A handy "reset to a clean tab state" snippet:
+
+```bash
+./scripts/preview --eval <name> "
+(async () => {
+  const s = await window.ipc.tabs.getTabState();
+  for (const t of s.tabs) { if (t.target !== 'home') await window.ipc.tabs.closeTab({ tabId: t.id }); }
+})()
+"
+```
+
+Partial failures in `openTab` (e.g. a non-existent view mid-sequence) still create the tabs that *did* succeed — always reset between runs.
+
 ### The everyday helper: `--eval`
 
 `--eval` runs an expression against the app's main renderer by default, awaits the returned promise, and prints the JSON result on stdout. Use `--tab <url-fragment>` to target a specific WebContentsView tab instead.
@@ -84,8 +111,11 @@ Each target's `webSocketDebuggerUrl` in `/json` is a WebSocket endpoint you can 
 
 ```bash
 # Composited screenshot via grim (captures WebContentsView layers — CDP screenshots don't).
-# Includes a 500ms settle so tab switches / bounds changes land before capture.
+# Default 500ms settle so tab switches / bounds changes land before capture.
 ./scripts/preview --screenshot <name> out.png
+
+# Skip the settle to capture mid-transition frames (see "Catching transient state" below).
+./scripts/preview --screenshot <name> --no-settle out.png
 
 # SQL against the running agent DB — for seeding views, triggers, config
 ./scripts/preview --sqlite <name> "SELECT name FROM views"
@@ -115,6 +145,23 @@ The container ships `sqlite3`, `grim`, `jq`, `curl`, and Node — agent-side scr
 ```
 
 `visible: true` in the `--inspect tabs` output just means `WebContentsView.setVisible(true)` — a tab with `bounds: {0,0,0,0}` is fully collapsed and draws nothing, but still reports visible. Trust the bounds first.
+
+**`window.ipc.tabs.describe()` is the bounds/z-order authority.** For occlusion, tab-close, or "wrong tab is visible" bugs, it reports per-tab `bounds`, `zIndex`, `visible`, and `isSelected` straight from `BaseWindow.contentView.children` — the single source of truth for what the compositor will actually draw. `getTabState()` only reports the logical tab list; it doesn't see z-order. `--inspect tabs` is a thin wrapper around `describe`. Prefer it when debugging any visibility mismatch.
+
+### Catching transient state (race-condition repros)
+
+Some bugs live in the window between a handler returning and the renderer reacting. To catch that state:
+
+- **Pipeline IPC calls in one `--eval`.** Fire the trigger and the inspector as parallel promises — they arrive on main in IPC order, so the inspector reads main-state the moment the handler returns, before the renderer's ResizeObserver / rAF cycle can paper over it:
+  ```js
+  const trigger = window.ipc.tabs.closeTab({ tabId });
+  const snap = window.ipc.tabs.describe();
+  await trigger;
+  return await snap;   // main-state immediately post-handler
+  ```
+  Awaiting `closeTab` first and then calling `describe` gives the renderer a full round-trip to fix the state up; pipelining as above does not.
+- **`--screenshot --no-settle`** captures the compositor frame without the 500ms settle — useful when the race is long enough to be visible. Pair with a `sleep`-offset wrapper if you need a specific delay into the transition.
+- **Renderer-side races are different.** If the race lives in the renderer (not main), block the renderer's event loop after the trigger by looping `while (Date.now() - t0 < N) {}` in the same `--eval` expression, then inspect via a second `--eval` call.
 
 ### After changing tab state, wait a beat before screenshotting
 

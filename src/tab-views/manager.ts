@@ -739,13 +739,26 @@ export class TabViewManager {
     const tab = this.tabs.find(t => t.id === request.tabId);
     if (!tab || tab.pinned) return;
 
+    const wasSelected = this.selectedTabId === request.tabId;
     this.tabs = this.tabs.filter(t => t.id !== request.tabId);
     this.destroyTabView(request.tabId);
 
-    if (this.selectedTabId === request.tabId) {
+    if (wasSelected) {
       const visible = this.tabs.filter(t => !t.hidden);
       const last = visible[visible.length - 1];
       this.selectedTabId = last?.id || null;
+      // Promote the new selection to the top of z-order with full bounds.
+      // Background tabs sit at 0x0 bounds after the renderer reports them
+      // not-visible, so without this the tab that was 2nd-from-top (also
+      // 0x0) stays on top and any older full-bounds tab underneath leaks
+      // through — the tab bar shows the new selection while the viewport
+      // shows a different tab's content. Mirrors selectTabHandler.
+      if (this.selectedTabId) {
+        const state = this.tabViewsByTabId.get(this.selectedTabId);
+        if (state) {
+          this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
+        }
+      }
     }
     this.pushStateToRenderer();
   }
