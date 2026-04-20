@@ -683,6 +683,17 @@ export class TabViewManager {
     let target: string;
     if (type === 'url') {
       target = request.url!;
+      // A scheme-less URL makes loadURL reject with ERR_INVALID_URL after the
+      // tab is already attached and selected, leaving a zombie tab that
+      // occludes the previous one and hangs execTabJs/devtools. Validate up
+      // front so callers get a synchronous error instead.
+      try {
+        new URL(target);
+      } catch {
+        const looksLikePath = target.startsWith('/') || target.startsWith('./') || target.startsWith('file/');
+        const hint = looksLikePath ? ' Did you mean to pass filePath instead of url?' : '';
+        throw new Error(`openTab url must be an absolute URL with a scheme (got ${JSON.stringify(target)}).${hint}`);
+      }
     } else if (type === 'file') {
       target = request.filePath!;
     } else {
