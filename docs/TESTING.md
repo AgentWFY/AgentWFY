@@ -178,7 +178,8 @@ Active button: `.active` class. Hidden panel: `.panel-hidden` class.
 | Element | Selector |
 |---------|----------|
 | Text input | `textarea#msg-input` |
-| Stop streaming | `.stop-btn` (display:none when idle) |
+| Stop streaming | `.composer-stop` (display:none when idle) |
+| Status line | `.composer-status` (click to open provider panel) |
 
 Enter sends. Shift+Enter for newline.
 
@@ -211,13 +212,16 @@ Selected: `.provider-card.selected`.
 
 | Element | Selector |
 |---------|----------|
-| Session item | `.session-item` |
-| Active session | `.session-item.active` |
-| Streaming | `.session-item.streaming` |
-| Close session | `.session-item-close` (visible on hover) |
-| New session | `.gear-btn[title="New session"]` |
-| All sessions | `.gear-btn[title="All sessions"]` |
-| Settings | `.gear-btn[title="Settings"]` |
+| Session tab | `.awfy-st-tab` (pill-shaped, in composer top strip) |
+| Active session | `.awfy-st-tab.active` (bolder border + expanded label) |
+| Streaming dot | `.awfy-st-dot.streaming` (pulsing blue) |
+| Collapsed tab | `.awfy-st-tab.collapsed` (20×20 dot box when >2 sessions) |
+| Close session | middle-click or right-click on `.awfy-st-tab` |
+| New session | `.awfy-st-new` (+ button in strip) |
+| All sessions | `.icon-btn[title="All sessions"]` |
+| Settings | `.icon-btn[title="Settings"]` |
+| Attach | `.icon-btn[title="Attach image"]` |
+| Notify | `.icon-btn[title="Notify when finished"]` |
 
 **Retry/Error:**
 
@@ -337,9 +341,9 @@ Insert directly into the agent's `agent.db` (bypasses the app's TEMP write-guard
 ./scripts/preview --restart <name>
 ```
 
-### Session close button needs hover
+### Closing a session tab
 
-`.session-item-close` is `display: none` by default, only visible on CSS `:hover`. Hover the session row before clicking, or close sessions via CDP (`window.ipc.agent.closeSession()`).
+There's no explicit close button. Middle-click (`button === 1`) or right-click a `.awfy-st-tab` to close it, or call `window.ipc.agent.closeSession()` via CDP for the active session.
 
 ### Hidden-tab repro needs full-viewport body
 

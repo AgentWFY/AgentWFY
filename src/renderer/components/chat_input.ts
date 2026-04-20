@@ -11,27 +11,26 @@ const STYLES = `
   }
   .input-container {
     position: relative;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-md);
-    background: var(--color-input-bg);
-    transition: border-color var(--transition-fast);
-  }
-  .input-container:focus-within {
-    border-color: var(--color-focus-border);
+    background: transparent;
   }
   .input-container textarea {
     display: block;
     width: 100%;
     resize: none;
-    min-height: 36px;
+    min-height: 34px;
     max-height: 120px;
     line-height: 1.4;
     overflow-y: auto;
     border: none;
     background: transparent;
-    padding: 8px 40px 8px 10px;
+    padding: 7px 10px 3px 10px;
     outline: none;
     box-sizing: border-box;
+    font-size: 13px;
+    color: var(--color-text3);
+  }
+  .input-container textarea::placeholder {
+    color: var(--color-placeholder, var(--color-text2));
   }
   .paste-attachment {
     display: flex;
@@ -135,28 +134,7 @@ const STYLES = `
     background: var(--color-red-fg);
   }
   .input-container.drag-over {
-    border-color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 8%, var(--color-input-bg));
-  }
-  .stop-btn {
-    position: absolute;
-    right: 5px;
-    bottom: 5px;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-text3);
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    color: var(--color-bg1);
-    padding: 0;
-    transition: background var(--transition-fast);
-  }
-  .stop-btn:hover {
-    background: var(--color-red-fg);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   }
 `
 
@@ -174,7 +152,6 @@ export class TlChatInput extends HTMLElement {
   private _styleEl: HTMLStyleElement | null = null
   private _containerEl: HTMLElement | null = null
   private _textarea: HTMLTextAreaElement | null = null
-  private _stopBtn: HTMLElement | null = null
   private _inputValue = ''
   private _pastedText: string | null = null
   private _pastedLineCount = 0
@@ -202,7 +179,6 @@ export class TlChatInput extends HTMLElement {
     this._storeUnsub = agentSessionStore.select(
       s => s.isStreaming,
       (isStreaming) => {
-        if (this._stopBtn) this._stopBtn.style.display = isStreaming ? '' : 'none'
         if (this._textarea) {
           const p = isStreaming ? 'Send follow-up message...' : 'Type your message here...'
           if (this._textarea.placeholder !== p) this._textarea.placeholder = p
@@ -372,18 +348,6 @@ export class TlChatInput extends HTMLElement {
     this._containerEl.appendChild(this._textarea)
 
     this.renderPasteAttachment()
-
-    // Stop button
-    this._stopBtn = document.createElement('button')
-    this._stopBtn.className = 'stop-btn'
-    this._stopBtn.title = 'Stop'
-    this._stopBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="1.5" fill="currentColor"/></svg>'
-    this._stopBtn.style.display = agentSessionStore.state.isStreaming ? '' : 'none'
-    this._stopBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.handleStop()
-    })
-    this._containerEl.appendChild(this._stopBtn)
 
     // Hidden file input
     this._fileInputEl = document.createElement('input')
@@ -592,14 +556,4 @@ export class TlChatInput extends HTMLElement {
     }
   }
 
-  private async handleStop() {
-    try {
-      await agentSessionStore.abort()
-    } catch (e) {
-      this.dispatchEvent(new CustomEvent('chat-error', {
-        bubbles: true,
-        detail: { message: e instanceof Error ? e.message : String(e) }
-      }))
-    }
-  }
 }

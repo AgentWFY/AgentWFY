@@ -4,6 +4,24 @@ import {
 } from './chat_message_renderer.js'
 import { escapeHtml, parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
+import type { TlChatInput } from './chat_input.js'
+
+const ATTACH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>'
+const NOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
+const HISTORY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>'
+const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+
+function makeIconBtn(title: string, html: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement('button')
+  btn.className = 'icon-btn'
+  btn.title = title
+  btn.innerHTML = html
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault()
+    onClick()
+  })
+  return btn
+}
 
 const STYLES = `
   awfy-agent-chat {
@@ -467,11 +485,107 @@ const STYLES = `
     flex-shrink: 0;
     position: relative;
   }
-  .tools-row {
-    margin-top: 6px;
+  .composer {
+    background: var(--color-input-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    overflow: hidden;
+    transition: border-color var(--transition-fast);
+  }
+  .composer:focus-within {
+    border-color: var(--color-focus-border);
+  }
+  .composer-bar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 0;
+    padding: 0 3px 2px 3px;
+  }
+  .composer-bar .spacer { flex: 1; }
+  .composer-status {
+    display: block;
+    padding: 3px 10px 4px 10px;
+    font-size: 10.5px;
+    line-height: 1.35;
+    border-top: 1px solid var(--color-divider);
+    background: var(--color-bg2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .composer-status:hover { color: var(--color-text3); }
+  .composer-status .provider-name {
+    color: var(--color-text4);
+    font-weight: 600;
+  }
+  .composer-status .provider-stats {
+    color: var(--color-text1);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 10px;
+  }
+  .icon-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--color-text2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    padding: 0;
+    position: relative;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .icon-btn:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text4);
+  }
+  .icon-btn svg {
+    width: 13px;
+    height: 13px;
+    display: block;
+  }
+  .icon-btn.active { color: var(--color-accent); }
+  .icon-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-red-fg);
+    border: 2px solid var(--color-input-bg);
+    display: none;
+  }
+  .icon-btn.active .icon-badge { display: block; }
+  .composer-stop {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 8px 0 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text4);
+    background: var(--color-bg3);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .composer-stop:hover { background: var(--color-item-hover); }
+  .composer-stop-sq {
+    width: 7px;
+    height: 7px;
+    border-radius: 1.5px;
+    background: var(--color-red-fg);
+    flex-shrink: 0;
   }
   .error-banner {
     color: var(--color-red-fg);
@@ -592,13 +706,6 @@ const STYLES = `
     background: var(--color-text2);
     animation: thinking 1.4s ease-in-out infinite;
   }
-  .tools-row-actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-    margin-left: auto;
-  }
   .popup-panel {
     position: absolute;
     bottom: 100%;
@@ -616,25 +723,6 @@ const STYLES = `
   .provider-panel {
     padding: 4px 0;
   }
-  .gear-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 6px;
-    color: var(--color-text2);
-    font-size: 16px;
-    line-height: 1;
-    border-radius: 3px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .gear-btn:hover {
-    color: var(--color-text4);
-    background: var(--color-item-hover);
-  }
-  .gear-btn.active { color: var(--color-accent); }
-  .gear-btn.active svg { fill: currentColor; }
   .provider-panel-item {
     display: flex;
     align-items: center;
@@ -679,19 +767,6 @@ const STYLES = `
     color: var(--color-text4);
     background: var(--color-item-hover);
   }
-  .provider-info {
-    font-size: 11px;
-    color: var(--color-text2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 1;
-  }
-  .provider-info-name {
-    font-weight: 600;
-    color: var(--color-text3);
-  }
 `
 
 export class TlAgentChat extends HTMLElement {
@@ -720,14 +795,16 @@ export class TlAgentChat extends HTMLElement {
   private _lastStreamingText: string | null = null
   private _lastStreamEventTime: number = 0
   private _updateMessagesPending: number | null = null
-  private _newSessionBtn: HTMLElement | null = null
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
+  private _stopBtn: HTMLElement | null = null
   private _providerPanel: HTMLElement | null = null
-  private _providerInfo: HTMLElement | null = null
+  private _statusEl: HTMLElement | null = null
+  private _statusProviderEl: HTMLElement | null = null
+  private _statusStatsEl: HTMLElement | null = null
   private _providerGridEl: HTMLElement | null = null
   private _sessionTabsEl: HTMLElement | null = null
-  private _chatInputEl: HTMLElement | null = null
+  private _chatInputEl: TlChatInput | null = null
   private _closeLightbox: (() => void) | null = null
   private _isZenMode = false
   private _unlistenZenMode: (() => void) | null = null
@@ -919,7 +996,6 @@ export class TlAgentChat extends HTMLElement {
         this.error = null
         this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
-        this.updateNewSessionBtn()
       }
     ))
 
@@ -930,8 +1006,8 @@ export class TlAgentChat extends HTMLElement {
         this.error = null
         this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
-        this.updateNewSessionBtn()
         this.updateNotifyBtn()
+        this.updateStopBtn()
         this.updateScrollToBottomBtn()
       }
     ))
@@ -971,7 +1047,7 @@ export class TlAgentChat extends HTMLElement {
           : (s.providerStatusLines.get(providerId) || '')
         return `${name}\0${status}`
       },
-      () => this.updateProviderInfo()
+      () => this.updateStatus()
     ))
 
     // Provider list (for popup panel)
@@ -1129,16 +1205,6 @@ export class TlAgentChat extends HTMLElement {
 
   // ── Session actions ──
 
-  private async handleNewSession() {
-    this.activePanel = null
-    try {
-      await agentSessionStore.createSession()
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-    }
-    this.updateErrorBanner()
-  }
-
   private loadSession(file: string) {
     agentSessionStore.loadSession(file).catch(err => {
       this.error = err instanceof Error ? err.message : String(err)
@@ -1249,11 +1315,13 @@ export class TlAgentChat extends HTMLElement {
     if (this._retryCountdownTimer) { clearInterval(this._retryCountdownTimer); this._retryCountdownTimer = null }
     this.clearPhaseLabelTimer()
     this._currentPhase = null
-    this._newSessionBtn = null
     this._notifyBtn = null
     this._settingsBtn = null
+    this._stopBtn = null
     this._providerPanel = null
-    this._providerInfo = null
+    this._statusEl = null
+    this._statusProviderEl = null
+    this._statusStatsEl = null
     this._providerGridEl = null
     this._sessionTabsEl = null
     this._chatInputEl = null
@@ -1267,14 +1335,6 @@ export class TlAgentChat extends HTMLElement {
     const container = document.createElement('div')
     container.className = 'container'
     container.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;height:100%;overflow:hidden;padding:4px 10px 10px;box-sizing:border-box;'
-
-    // Session tabs (sub-component)
-    this._sessionTabsEl = document.createElement('awfy-session-tabs')
-    this._sessionTabsEl.addEventListener('session-error', (e: Event) => {
-      this.error = (e as CustomEvent).detail.message
-      this.updateErrorBanner()
-    })
-    container.appendChild(this._sessionTabsEl)
 
     // Provider grid (sub-component, shown when no messages)
     this._providerGridEl = document.createElement('awfy-provider-grid')
@@ -1378,11 +1438,9 @@ export class TlAgentChat extends HTMLElement {
     this._retryBanner.style.display = 'none'
     container.appendChild(this._retryBanner)
 
-    // Input area
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
 
-    // Provider panel popup (hidden by default)
     this._providerPanel = document.createElement('div')
     this._providerPanel.className = 'popup-panel provider-panel'
     this._providerPanel.style.display = 'none'
@@ -1413,8 +1471,17 @@ export class TlAgentChat extends HTMLElement {
     })
     inputArea.appendChild(this._providerPanel)
 
-    // Chat input (sub-component)
-    this._chatInputEl = document.createElement('awfy-chat-input')
+    const composer = document.createElement('div')
+    composer.className = 'composer'
+
+    this._sessionTabsEl = document.createElement('awfy-session-tabs')
+    this._sessionTabsEl.addEventListener('session-error', (e: Event) => {
+      this.error = (e as CustomEvent).detail.message
+      this.updateErrorBanner()
+    })
+    composer.appendChild(this._sessionTabsEl)
+
+    this._chatInputEl = document.createElement('awfy-chat-input') as TlChatInput
     this._chatInputEl.addEventListener('chat-send', () => {
       this.userScrolledUp = false
       this.error = null
@@ -1425,80 +1492,66 @@ export class TlAgentChat extends HTMLElement {
       this.error = (e as CustomEvent).detail.message
       this.updateErrorBanner()
     })
-    inputArea.appendChild(this._chatInputEl)
+    composer.appendChild(this._chatInputEl)
 
-    // Tools row
-    const toolsRow = document.createElement('div')
-    toolsRow.className = 'tools-row'
+    const bar = document.createElement('div')
+    bar.className = 'composer-bar'
 
-    this._providerInfo = document.createElement('div')
-    this._providerInfo.className = 'provider-info'
-    toolsRow.appendChild(this._providerInfo)
+    bar.appendChild(makeIconBtn('Attach image', ATTACH_SVG, () => this._chatInputEl?.triggerFileSelect()))
+    this._notifyBtn = makeIconBtn(
+      'Notify when finished',
+      NOTIFY_SVG + '<span class="icon-badge"></span>',
+      () => agentSessionStore.setNotifyOnFinish(!agentSessionStore.state.notifyOnFinish),
+    )
+    bar.appendChild(this._notifyBtn)
+    bar.appendChild(makeIconBtn('All sessions', HISTORY_SVG, () => window.ipc?.commandPalette?.show({ screen: 'sessions' })))
+    this._settingsBtn = makeIconBtn('Settings', GEAR_SVG, () => this.openActiveProviderSettings())
+    bar.appendChild(this._settingsBtn)
 
-    const actionsDiv = document.createElement('div')
-    actionsDiv.className = 'tools-row-actions'
+    const spacer = document.createElement('div')
+    spacer.className = 'spacer'
+    bar.appendChild(spacer)
 
-    // New session button
-    this._newSessionBtn = document.createElement('button')
-    this._newSessionBtn.className = 'gear-btn'
-    this._newSessionBtn.title = 'New session'
-    this._newSessionBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/></svg>'
-    this._newSessionBtn.style.display = 'none'
-    this._newSessionBtn.addEventListener('mousedown', (e) => {
+    this._stopBtn = document.createElement('button')
+    this._stopBtn.className = 'composer-stop'
+    this._stopBtn.title = 'Stop generation'
+    this._stopBtn.innerHTML = '<span class="composer-stop-sq"></span><span>Stop</span>'
+    this._stopBtn.style.display = 'none'
+    this._stopBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      this.handleNewSession()
+      this.handleStop()
     })
-    actionsDiv.appendChild(this._newSessionBtn)
+    bar.appendChild(this._stopBtn)
 
-    // Attach button (triggers file select in chat-input)
-    const attachBtn = document.createElement('button')
-    attachBtn.className = 'gear-btn'
-    attachBtn.title = 'Attach image'
-    attachBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 6.5 7.5 12a3 3 0 0 1-4.24-4.24l6-6a2 2 0 1 1 2.83 2.83l-6 6a1 1 0 0 1-1.42-1.42L9.5 4.5"/></svg>'
-    attachBtn.addEventListener('mousedown', (e) => {
+    composer.appendChild(bar)
+
+    this._statusEl = document.createElement('div')
+    this._statusEl.className = 'composer-status'
+    this._statusProviderEl = document.createElement('span')
+    this._statusProviderEl.className = 'provider-name'
+    this._statusStatsEl = document.createElement('span')
+    this._statusStatsEl.className = 'provider-stats'
+    this._statusEl.append(this._statusProviderEl, this._statusStatsEl)
+    this._statusEl.addEventListener('mousedown', (e) => {
       e.preventDefault()
-      ;(this._chatInputEl as any)?.triggerFileSelect?.()
+      this.activePanel = this.activePanel === 'providers' ? null : 'providers'
+      this.updateProviderPanel()
     })
-    actionsDiv.appendChild(attachBtn)
+    composer.appendChild(this._statusEl)
 
-    // Notify button
-    this._notifyBtn = document.createElement('button')
-    this._notifyBtn.className = 'gear-btn'
-    this._notifyBtn.title = 'Notify when finished'
-    this._notifyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5C5.5 1.5 4 3.5 4 5.5c0 3-1.5 4.5-2 5h12c-.5-.5-2-2-2-5 0-2-1.5-4-4-4z"/><path d="M6.5 12.5c.3.6.9 1 1.5 1s1.2-.4 1.5-1"/></svg>'
-    this._notifyBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      agentSessionStore.setNotifyOnFinish(!agentSessionStore.state.notifyOnFinish)
-    })
-    actionsDiv.appendChild(this._notifyBtn)
-
-    // Sessions button
-    const sessionsBtn = document.createElement('button')
-    sessionsBtn.className = 'gear-btn'
-    sessionsBtn.title = 'All sessions'
-    sessionsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8a6.5 6.5 0 1 1 1.1 3.6"/><polyline points="1 5 1.5 8 4.5 8"/><polyline points="8 4.5 8 8 10.5 9.5"/></svg>'
-    sessionsBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      window.ipc?.commandPalette?.show({ screen: 'sessions' })
-    })
-    actionsDiv.appendChild(sessionsBtn)
-
-    // Settings button
-    this._settingsBtn = document.createElement('button')
-    this._settingsBtn.className = 'gear-btn'
-    this._settingsBtn.title = 'Settings'
-    this._settingsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
-    this._settingsBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.openActiveProviderSettings()
-    })
-    actionsDiv.appendChild(this._settingsBtn)
-
-    toolsRow.appendChild(actionsDiv)
-    inputArea.appendChild(toolsRow)
+    inputArea.appendChild(composer)
 
     container.appendChild(inputArea)
     this.containerEl.appendChild(container)
+  }
+
+  private async handleStop() {
+    try {
+      await agentSessionStore.abort()
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
+      this.updateErrorBanner()
+    }
   }
 
   // ── Targeted update methods ──
@@ -1510,8 +1563,8 @@ export class TlAgentChat extends HTMLElement {
     this.updateErrorBanner()
     this.updateRetryBanner()
     this.updateNotifyBtn()
-    this.updateNewSessionBtn()
-    this.updateProviderInfo()
+    this.updateStopBtn()
+    this.updateStatus()
     this.updateProviderPanel()
   }
 
@@ -1580,20 +1633,17 @@ export class TlAgentChat extends HTMLElement {
   private updateNotifyBtn() {
     if (!this._notifyBtn) return
     const s = agentSessionStore.state
-    const hasMessages = s.messages.length > 0 || s.isStreaming
-    this._notifyBtn.style.display = hasMessages ? '' : 'none'
     this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
   }
 
-  private updateNewSessionBtn() {
-    if (!this._newSessionBtn) return
+  private updateStopBtn() {
+    if (!this._stopBtn) return
     const s = agentSessionStore.state
-    const hasMessages = s.messages.length > 0 || s.isStreaming
-    this._newSessionBtn.style.display = hasMessages ? '' : 'none'
+    this._stopBtn.style.display = s.isStreaming ? '' : 'none'
   }
 
-  private updateProviderInfo() {
-    if (!this._providerInfo) return
+  private updateStatus() {
+    if (!this._statusEl || !this._statusProviderEl || !this._statusStatsEl) return
     const s = agentSessionStore.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
     const providerId = hasMessages ? s.providerId : s.selectedProviderId
@@ -1602,10 +1652,12 @@ export class TlAgentChat extends HTMLElement {
     const statusLine = hasMessages
       ? (s.statusLine || s.configStatusLine)
       : (s.providerStatusLines.get(providerId) || '')
-    const sep = providerName && statusLine ? ' · ' : ''
-    this._providerInfo.innerHTML = providerName
-      ? `<span class="provider-info-name">${escapeHtml(providerName)}</span>${sep}${escapeHtml(statusLine)}`
-      : escapeHtml(statusLine)
+    const stats = statusLine ? (providerName ? ' · ' + statusLine : statusLine) : ''
+
+    if (this._statusProviderEl.textContent !== providerName) this._statusProviderEl.textContent = providerName
+    if (this._statusStatsEl.textContent !== stats) this._statusStatsEl.textContent = stats
+    const title = providerName && statusLine ? providerName + ' · ' + statusLine : (providerName || statusLine)
+    if (this._statusEl.title !== title) this._statusEl.title = title
   }
 
   private updateProviderPanel() {
