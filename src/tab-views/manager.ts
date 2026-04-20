@@ -790,11 +790,26 @@ export class TabViewManager {
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
     const state = await this.resolveReadyTabViewState(request.tabId);
-    const image = await state.view.webContents.capturePage();
-    return {
-      base64: image.toPNG().toString('base64'),
-      mimeType: 'image/png',
-    };
+    // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
+    // frame sink not registered yet) and "Current display surface not
+    // available" (RWHV null). Retry on a short budget.
+    const deadline = Date.now() + 3000;
+    while (true) {
+      try {
+        const image = await state.view.webContents.capturePage();
+        return {
+          base64: image.toPNG().toString('base64'),
+          mimeType: 'image/png',
+        };
+      } catch (err) {
+        const msg = String(err);
+        const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
+        if (!retriable || Date.now() >= deadline || state.view.webContents.isDestroyed()) {
+          throw err;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    }
   }
 
   async getTabConsoleLogsById(request: {
