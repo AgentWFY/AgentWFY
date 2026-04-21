@@ -1,6 +1,9 @@
 import {
   buildRenderBlocks,
-  updateMessagesEl
+  updateMessagesEl,
+  findToolPair,
+  renderToolDetailsHtml,
+  type ToolPair,
 } from './chat_message_renderer.js'
 import { escapeHtml, parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
@@ -39,6 +42,7 @@ const STYLES = `
     overflow: hidden;
     padding: 10px;
     box-sizing: border-box;
+    position: relative;
   }
   .messages {
     flex: 1;
@@ -218,14 +222,7 @@ const STYLES = `
   .tools-group {
     margin-top: 2px;
   }
-  /* ── Tool card ── */
-  .tool-card {
-    background: var(--color-bg2);
-    border-radius: var(--radius-md);
-    margin: 4px -10px;
-    padding: 0;
-    overflow: hidden;
-  }
+  /* ── Tool row ── */
   .tool-header {
     display: flex;
     align-items: baseline;
@@ -235,126 +232,24 @@ const STYLES = `
     user-select: none;
     font-size: 12px;
     color: var(--color-text2);
+    border-radius: 3px;
+    transition: background var(--transition-fast), color var(--transition-fast);
   }
-  .tool-card .tool-header {
-    padding: 6px 10px;
+  .tool-header:hover {
+    color: var(--color-text4);
+    background: var(--color-item-hover);
   }
-  .tool-header:hover { color: var(--color-text3); }
   .tool-description {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tool-error-badge {
     font-size: 10px;
     color: var(--color-red-fg);
     flex-shrink: 0;
-  }
-  .tb-tabs {
-    display: flex;
-    gap: 0;
-    padding: 0 10px;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .tb-tab {
-    padding: 4px 10px 5px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: var(--color-text2);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color var(--transition-fast);
-    user-select: none;
-  }
-  .tb-tab:hover { color: var(--color-text3); }
-  .tb-tab.active {
-    color: var(--color-text4);
-    border-bottom-color: var(--color-accent);
-  }
-  .tb-tab.tab-error {
-    color: var(--color-red-fg);
-  }
-  .tb-tab.tab-error.active {
-    border-bottom-color: var(--color-red-fg);
-  }
-  .tb-badge {
-    display: inline-block;
-    background: var(--color-accent);
-    color: #fff;
-    font-size: 8px;
-    padding: 0 4px;
-    border-radius: 6px;
-    margin-left: 3px;
-    line-height: 14px;
-    vertical-align: middle;
-  }
-  .tool-body {
-    font-size: 11px;
-  }
-  .tb-pane {
-    display: none;
-    padding: 8px 10px;
-  }
-  .tb-pane.active {
-    display: block;
-  }
-  .tool-body pre {
-    margin: 0;
-    padding: 6px 8px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.45;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 200px;
-    overflow: auto;
-    background: var(--color-bg3);
-    border-radius: var(--radius-sm);
-    color: var(--color-text3);
-  }
-  .tool-body pre.tool-result-empty {
-    color: var(--color-text2);
-    font-style: italic;
-  }
-  .result-section { margin-bottom: 6px; }
-  .result-section:last-child { margin-bottom: 0; }
-  .rs-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: var(--color-text2);
-    margin-bottom: 3px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .rs-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .dot-value { background: var(--color-green-fg); }
-  .dot-log { background: var(--color-accent); }
-  .dot-error { background: var(--color-red-fg); }
-  .rs-meta {
-    font-weight: 400;
-    margin-left: auto;
-    text-transform: none;
-    letter-spacing: 0;
-  }
-  .log-list {
-    background: var(--color-bg3);
-    border-radius: var(--radius-sm);
-    padding: 4px 0;
-    max-height: 120px;
-    overflow: auto;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.5;
   }
   .log-entry {
     padding: 0 8px;
@@ -380,28 +275,7 @@ const STYLES = `
     word-break: break-word;
     min-width: 0;
   }
-  .error-block {
-    padding: 6px 8px;
-    background: var(--color-red-bg);
-    color: var(--color-red-fg);
-    border-radius: var(--radius-sm);
-    font-size: 11px;
-    font-family: var(--font-mono);
-    line-height: 1.45;
-  }
-  .error-name { font-weight: 700; margin-bottom: 2px; }
-  .error-msg { word-break: break-word; }
-  .tb-img-wrap {
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-  }
-  .tb-img-wrap + .tb-img-wrap { margin-top: 6px; }
-  .tb-img-wrap img {
-    display: block;
-    max-width: 100%;
-  }
-  .awfy-app-root.zen-mode .tb-img-wrap img {
+  .awfy-app-root.zen-mode .tp-img-wrap img {
     cursor: zoom-in;
   }
   .image-lightbox-overlay {
@@ -429,23 +303,6 @@ const STYLES = `
     from { opacity: 0; }
     to { opacity: 1; }
   }
-  .tb-img-meta {
-    padding: 4px 8px;
-    font-size: 10px;
-    color: var(--color-text2);
-    background: var(--color-bg3);
-    border-top: 1px solid var(--color-border);
-    display: flex;
-    gap: 6px;
-  }
-  .tb-img-meta .pill {
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 600;
-    background: var(--color-bg1);
-    color: var(--color-text2);
-  }
   .file-badge {
     display: inline-block;
     padding: 2px 8px;
@@ -455,6 +312,245 @@ const STYLES = `
     color: var(--color-text2);
     background: var(--color-bg3);
     border-radius: var(--radius-sm);
+  }
+  /* ── Tool details popup ── */
+  .tool-popup-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    background: var(--color-modal-overlay);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    display: flex;
+    padding: 14px;
+    box-sizing: border-box;
+    animation: tp-overlay-fade 160ms ease-out;
+  }
+  .tool-popup-overlay[hidden] { display: none; }
+  @keyframes tp-overlay-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .tool-popup {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    background: var(--color-bg1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--color-modal-shadow);
+    animation: tp-popup-rise 200ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  }
+  @keyframes tp-popup-rise {
+    from { transform: translateY(8px) scale(0.985); opacity: 0; }
+    to   { transform: translateY(0) scale(1); opacity: 1; }
+  }
+  .tool-popup-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 10px 10px 16px;
+    flex-shrink: 0;
+  }
+  .tool-popup-description {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--color-text4);
+    font-weight: 600;
+    letter-spacing: -0.1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tool-popup-error-badge {
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--color-red-fg);
+    background: var(--color-red-bg);
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .tool-popup-close {
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: transparent;
+    color: var(--color-text2);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+    border-radius: 7px;
+    flex-shrink: 0;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .tool-popup-close:hover {
+    background: var(--color-item-hover);
+    color: var(--color-text4);
+  }
+  .tool-popup-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 4px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scrollbar-gutter: stable;
+  }
+  .tp-section {
+    display: flex;
+    flex-direction: column;
+  }
+  .tp-section-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--color-text2);
+  }
+  .tp-section-meta {
+    margin-left: auto;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    text-transform: none;
+    font-size: 10.5px;
+    color: var(--color-text2);
+  }
+  .tp-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tp-dot-code  { background: var(--color-text2); }
+  .tp-dot-value { background: var(--color-green-fg); }
+  .tp-dot-error { background: var(--color-red-fg); }
+  .tp-dot-log   { background: var(--color-accent); }
+  .tp-dot-img   { background: var(--color-accent); }
+  .tp-dot-file  { background: var(--color-text2); }
+  .tp-block {
+    margin: 0;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--color-code-bg);
+    color: var(--color-text4);
+    border-radius: var(--radius-md);
+    overflow: auto;
+    max-height: none;
+  }
+  .tp-block.tp-value { color: var(--color-text3); }
+  .tp-error {
+    padding: 12px 14px;
+    background: var(--color-red-bg);
+    color: var(--color-red-fg);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .tp-error-name {
+    font-weight: 700;
+    margin-bottom: 3px;
+  }
+  .tp-error-msg {
+    word-break: break-word;
+    opacity: 0.92;
+  }
+  .tp-logs {
+    background: var(--color-bg2);
+    border-radius: 8px;
+    padding: 6px 0;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.6;
+    max-height: none;
+    overflow: hidden;
+  }
+  .tp-logs .log-entry {
+    padding: 1px 12px;
+  }
+  .tp-logs .log-level {
+    width: 36px;
+  }
+  .tp-images {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tp-img-wrap {
+    margin: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--color-bg2);
+  }
+  .tp-img-wrap img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+  }
+  .tp-img-meta {
+    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--color-text2);
+    background: var(--color-bg3);
+    display: flex;
+    gap: 6px;
+  }
+  .tp-img-pill {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    background: var(--color-bg1);
+    color: var(--color-text2);
+  }
+  .tp-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .tp-file-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-text2);
+    background: var(--color-bg2);
+    border-radius: 6px;
+  }
+  .tp-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-text2);
+    font-style: italic;
+    font-size: 12px;
+  }
+  .tp-empty-inline {
+    padding: 10px 14px;
+    background: var(--color-bg2);
+    color: var(--color-text2);
+    border-radius: 8px;
+    font-style: italic;
+    font-size: 12px;
   }
   .block-custom {
     font-size: 12px;
@@ -775,10 +871,14 @@ export class TlAgentChat extends HTMLElement {
   private activePanel: 'providers' | null = null
   private isInitializing = true
   private messagesEl: HTMLElement | null = null
-  private openToolSet = new Set<string>()
-  private activeTabs = new Map<string, string>()
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
+  private _toolPopupOverlay: HTMLElement | null = null
+  private _toolPopupDescription: HTMLElement | null = null
+  private _toolPopupErrorBadge: HTMLElement | null = null
+  private _toolPopupBody: HTMLElement | null = null
+  private _activeToolId: string | null = null
+  private _activeToolSig: string | null = null
   private static readonly SCROLL_THRESHOLD = 4
   private userScrolledUp = false
   private _programmaticScrollCount = 0
@@ -810,7 +910,7 @@ export class TlAgentChat extends HTMLElement {
   private _unlistenZenMode: (() => void) | null = null
 
   // Per-agent state cache (scroll & tool state only — input state is in chat-input)
-  private _chatStateCache = new Map<string, { userScrolledUp: boolean; openToolSet: Set<string>; activeTabs: Map<string, string> }>()
+  private _chatStateCache = new Map<string, { userScrolledUp: boolean }>()
   private _currentAgentRoot: string | null = null
 
   connectedCallback() {
@@ -849,6 +949,7 @@ export class TlAgentChat extends HTMLElement {
     window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
+    document.removeEventListener('keydown', this.onPopupKeydown, true)
     this._closeLightbox?.()
     for (const unsub of this._unsubs) unsub()
     this._unsubs.length = 0
@@ -886,21 +987,16 @@ export class TlAgentChat extends HTMLElement {
     if (this._currentAgentRoot) {
       this._chatStateCache.set(this._currentAgentRoot, {
         userScrolledUp: this.userScrolledUp,
-        openToolSet: new Set(this.openToolSet),
-        activeTabs: new Map(this.activeTabs),
       })
     }
 
     const cached = newAgentRoot ? this._chatStateCache.get(newAgentRoot) : null
     if (cached) {
       this.userScrolledUp = cached.userScrolledUp
-      this.openToolSet = new Set(cached.openToolSet)
-      this.activeTabs = new Map(cached.activeTabs)
     } else {
       this.userScrolledUp = false
-      this.openToolSet.clear()
-      this.activeTabs.clear()
     }
+    this.closeToolPopup()
 
     if (agents) {
       const activePaths = new Set(agents.map(a => a.path))
@@ -955,6 +1051,7 @@ export class TlAgentChat extends HTMLElement {
     window.addEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
     window.addEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
     window.addEventListener('agentwfy:cycle-session', this.onCycleSession)
+    document.addEventListener('keydown', this.onPopupKeydown, true)
 
     if (!window.ipc?.agent) {
       this.activePanel = 'providers'
@@ -1326,6 +1423,12 @@ export class TlAgentChat extends HTMLElement {
     this._sessionTabsEl = null
     this._chatInputEl = null
     this._scrollToBottomBtn = null
+    this._toolPopupOverlay = null
+    this._toolPopupDescription = null
+    this._toolPopupErrorBadge = null
+    this._toolPopupBody = null
+    this._activeToolId = null
+    this._activeToolSig = null
   }
 
   private buildChatLayout() {
@@ -1355,37 +1458,12 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.addEventListener('mousedown', (e) => {
       const target = e.target as HTMLElement
 
-      // Tab switching within tool cards
-      const tab = target.closest('.tb-tab[data-tool-tab]') as HTMLElement | null
-      if (tab) {
-        e.preventDefault()
-        const toolId = tab.dataset.toolTab!
-        const pane = tab.dataset.pane!
-        this.activeTabs.set(toolId, pane)
-        const card = tab.closest('.tool-card') as HTMLElement | null
-        if (card) {
-          card.querySelectorAll<HTMLElement>(`.tb-tab[data-tool-tab="${toolId}"]`).forEach(t => t.classList.remove('active'))
-          card.querySelectorAll<HTMLElement>(`.tb-pane[data-tool-pane="${toolId}"]`).forEach(p => p.classList.remove('active'))
-          tab.classList.add('active')
-          const targetPane = card.querySelector<HTMLElement>(`.tb-pane[data-tool-pane="${toolId}"][data-pane="${pane}"]`)
-          if (targetPane) targetPane.classList.add('active')
-        }
-        return
-      }
-
-      // Tool header collapse/expand toggle
+      // Tool header → open details popup
       const toolHeader = target.closest('.tool-header[data-tool-id]') as HTMLElement | null
       if (toolHeader) {
         e.preventDefault()
         const toolId = toolHeader.dataset.toolId
-        if (toolId) {
-          if (this.openToolSet.has(toolId)) {
-            this.openToolSet.delete(toolId)
-          } else {
-            this.openToolSet.add(toolId)
-          }
-          this.updateMessages()
-        }
+        if (toolId) this.openToolPopup(toolId)
       }
     })
     this.messagesEl.addEventListener('click', (e) => {
@@ -1393,7 +1471,7 @@ export class TlAgentChat extends HTMLElement {
 
       if (target.tagName === 'IMG') {
         const img = target as HTMLImageElement
-        if (img.matches('.user-file-image') || img.closest('.tb-img-wrap')) {
+        if (img.matches('.user-file-image') || img.closest('.tp-img-wrap')) {
           e.preventDefault()
           this.openImageLightbox(img.src)
           return
@@ -1542,7 +1620,129 @@ export class TlAgentChat extends HTMLElement {
     inputArea.appendChild(composer)
 
     container.appendChild(inputArea)
+
+    this.buildToolPopup(container)
+
     this.containerEl.appendChild(container)
+  }
+
+  private buildToolPopup(container: HTMLElement) {
+    const overlay = document.createElement('div')
+    overlay.className = 'tool-popup-overlay'
+    overlay.hidden = true
+
+    const popup = document.createElement('div')
+    popup.className = 'tool-popup'
+
+    const header = document.createElement('div')
+    header.className = 'tool-popup-header'
+
+    const description = document.createElement('div')
+    description.className = 'tool-popup-description'
+
+    const errorBadge = document.createElement('span')
+    errorBadge.className = 'tool-popup-error-badge'
+    errorBadge.textContent = 'error'
+    errorBadge.style.display = 'none'
+
+    const closeBtn = document.createElement('button')
+    closeBtn.className = 'tool-popup-close'
+    closeBtn.type = 'button'
+    closeBtn.title = 'Close'
+    closeBtn.setAttribute('aria-label', 'Close tool details')
+    closeBtn.textContent = '×'
+    closeBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      this.closeToolPopup()
+    })
+
+    header.append(description, errorBadge, closeBtn)
+
+    const body = document.createElement('div')
+    body.className = 'tool-popup-body'
+
+    popup.append(header, body)
+    overlay.appendChild(popup)
+
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) {
+        e.preventDefault()
+        this.closeToolPopup()
+      }
+    })
+
+    container.appendChild(overlay)
+
+    this._toolPopupOverlay = overlay
+    this._toolPopupDescription = description
+    this._toolPopupErrorBadge = errorBadge
+    this._toolPopupBody = body
+  }
+
+  private findActiveTool(): ToolPair | null {
+    if (!this._activeToolId) return null
+    const s = agentSessionStore.state
+    if (s.streamingMessage) {
+      const fromStream = findToolPair([s.streamingMessage], this._activeToolId)
+      if (fromStream) return fromStream
+    }
+    return findToolPair(s.messages, this._activeToolId)
+  }
+
+  private toolSignature(tool: ToolPair): string {
+    let n = 0
+    if (Array.isArray(tool.result)) {
+      for (const item of tool.result as Array<Record<string, unknown>>) {
+        if (typeof item.text === 'string') n += item.text.length
+        else if (typeof item.data === 'string') n += item.data.length
+      }
+    } else if (tool.result !== null) {
+      n = 1
+    }
+    return `${tool.code.length}|${tool.isError ? 1 : 0}|${n}`
+  }
+
+  private openToolPopup(toolId: string) {
+    this._activeToolId = toolId
+    const tool = this.findActiveTool()
+    if (!tool) { this._activeToolId = null; return }
+    this.renderToolPopup(tool, true)
+    if (this._toolPopupOverlay) this._toolPopupOverlay.hidden = false
+  }
+
+  private renderToolPopup(tool: ToolPair, resetScroll: boolean) {
+    if (!this._toolPopupDescription || !this._toolPopupErrorBadge || !this._toolPopupBody) return
+    this._toolPopupDescription.textContent = tool.description
+    this._toolPopupDescription.title = tool.description
+    this._toolPopupErrorBadge.textContent = 'error'
+    this._toolPopupErrorBadge.style.display = tool.isError ? '' : 'none'
+    this._toolPopupBody.innerHTML = renderToolDetailsHtml(tool)
+    if (resetScroll) this._toolPopupBody.scrollTop = 0
+    this._activeToolSig = this.toolSignature(tool)
+  }
+
+  private refreshToolPopup() {
+    if (!this._activeToolId) return
+    const tool = this.findActiveTool()
+    if (!tool) return
+    const sig = this.toolSignature(tool)
+    if (sig === this._activeToolSig) return
+    this.renderToolPopup(tool, false)
+  }
+
+  private closeToolPopup() {
+    if (this._toolPopupOverlay) this._toolPopupOverlay.hidden = true
+    if (this._toolPopupBody) this._toolPopupBody.innerHTML = ''
+    this._activeToolId = null
+    this._activeToolSig = null
+  }
+
+  private onPopupKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape' && this._activeToolId) {
+      e.preventDefault()
+      e.stopPropagation()
+      this.closeToolPopup()
+    }
   }
 
   private async handleStop() {
@@ -1587,8 +1787,9 @@ export class TlAgentChat extends HTMLElement {
     const prevChildCount = this.messagesEl.childElementCount
     const wasScrolledUp = this.userScrolledUp
     const prevScrollTop = wasScrolledUp ? this.messagesEl.scrollTop : 0
-    updateMessagesEl(this.messagesEl, displayBlocks, this.openToolSet, this.activeTabs, s.isStreaming)
+    updateMessagesEl(this.messagesEl, displayBlocks, s.isStreaming)
     this.updatePhaseLabel(s)
+    this.refreshToolPopup()
 
     if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
       this.messagesEl.appendChild(this._scrollToBottomBtn)

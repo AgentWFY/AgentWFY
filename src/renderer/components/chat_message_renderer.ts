@@ -2,7 +2,7 @@ import { renderMarkdown } from '../markdown.js'
 import type { DisplayMessage, Block } from '../../agent/provider_types.js'
 import { escapeHtml, imageDataUrl } from './chat_utils.js'
 
-interface ToolPair {
+export interface ToolPair {
   id: string
   description: string
   code: string
@@ -173,80 +173,87 @@ function renderLogEntry(log: { level: string; message: string }): string {
   return `<div class="log-entry"><span class="log-level ${cls}">${label}</span><span class="log-msg">${escapeHtml(log.message)}</span></div>`
 }
 
-function renderResultBody(parsed: ParsedResult): string {
-  let html = ''
-
-  // Error section
-  if (parsed.error) {
-    html += '<div class="result-section">'
-    html += '<div class="rs-label"><span class="rs-dot dot-error"></span> Error</div>'
-    html += `<div class="error-block"><div class="error-name">${escapeHtml(parsed.error.name)}</div><div class="error-msg">${escapeHtml(parsed.error.message)}</div></div>`
-    html += '</div>'
-  }
-  // Value section
-  else if (parsed.value !== undefined) {
-    html += '<div class="result-section">'
-    html += '<div class="rs-label"><span class="rs-dot dot-value"></span> Return value</div>'
-    html += `<pre>${escapeHtml(parsed.value)}</pre>`
-    html += '</div>'
-  }
-
-  // Console logs section
-  if (parsed.logs.length > 0) {
-    html += '<div class="result-section">'
-    html += `<div class="rs-label"><span class="rs-dot dot-log"></span> Console <span class="rs-meta">${parsed.logs.length} message${parsed.logs.length !== 1 ? 's' : ''}</span></div>`
-    html += '<div class="log-list">'
-    html += parsed.logs.map(renderLogEntry).join('')
-    html += '</div></div>'
-  }
-
-  return html
-}
-
-function renderToolHtml(tool: ToolPair, isOpen: boolean, activeTab: string | undefined): string {
-  const headerHtml = `<div class="tool-header${isOpen ? ' open' : ''}" data-tool-id="${escapeHtml(tool.id)}">
+function renderToolHtml(tool: ToolPair): string {
+  return `<div class="tool-header" data-tool-id="${escapeHtml(tool.id)}">
     <span class="tool-description">${escapeHtml(tool.description)}</span>
     ${tool.isError ? '<span class="tool-error-badge">error</span>' : ''}
   </div>`
-  if (!isOpen) return headerHtml
+}
 
+export function findToolPair(messages: DisplayMessage[], toolId: string): ToolPair | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role !== 'assistant') continue
+    for (const block of msg.blocks) {
+      if (block.type === 'exec_js' && block.id === toolId) {
+        const resultBlock = msg.blocks.find(
+          b => b.type === 'exec_js_result' && (b as Block & { type: 'exec_js_result' }).id === block.id
+        )
+        return {
+          id: block.id,
+          description: block.description || 'Executing code',
+          code: block.code,
+          result: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.content : null,
+          isError: resultBlock && resultBlock.type === 'exec_js_result' ? resultBlock.isError : false,
+        }
+      }
+    }
+  }
+  return null
+}
+
+function tpSection(label: string, dotClass: string, meta: string, body: string): string {
+  const metaHtml = meta ? `<span class="tp-section-meta">${meta}</span>` : ''
+  return `<section class="tp-section"><div class="tp-section-label"><span class="tp-dot ${dotClass}"></span>${label}${metaHtml}</div>${body}</section>`
+}
+
+export function renderToolDetailsHtml(tool: ToolPair): string {
   const parsed = parseToolResult(tool.result)
   const hasError = tool.isError || !!parsed.error
   const imageFiles = parsed.files.filter(f => f.mimeType.startsWith('image/'))
   const nonImageFiles = parsed.files.filter(f => !f.mimeType.startsWith('image/'))
-  const toolEid = escapeHtml(tool.id)
 
-  // Resolve active pane: prefer stored selection, but fall back to default if unavailable
-  const defaultPane = hasError ? 'result' : 'code'
-  let activePane = activeTab ?? defaultPane
-  if (activePane === 'images' && imageFiles.length === 0) activePane = defaultPane
+  const sections: string[] = []
 
-  let tabsHtml = '<div class="tb-tabs">'
-  tabsHtml += `<div class="tb-tab${activePane === 'code' ? ' active' : ''}" data-tool-tab="${toolEid}" data-pane="code">Code</div>`
-  const resultTabClass = hasError ? 'tb-tab tab-error' : 'tb-tab'
-  tabsHtml += `<div class="${resultTabClass}${activePane === 'result' ? ' active' : ''}" data-tool-tab="${toolEid}" data-pane="result">${hasError ? 'Error' : 'Result'}</div>`
-  if (imageFiles.length > 0) {
-    tabsHtml += `<div class="tb-tab${activePane === 'images' ? ' active' : ''}" data-tool-tab="${toolEid}" data-pane="images">Image${imageFiles.length !== 1 ? 's' : ''} <span class="tb-badge">${imageFiles.length}</span></div>`
+  if (tool.code) {
+    sections.push(tpSection('Code', 'tp-dot-code', '', `<pre class="tp-block tp-code">${escapeHtml(tool.code)}</pre>`))
   }
-  tabsHtml += '</div>'
 
-  const codePaneHtml = `<div class="tb-pane${activePane === 'code' ? ' active' : ''}" data-tool-pane="${toolEid}" data-pane="code">${tool.code ? `<pre>${escapeHtml(tool.code)}</pre>` : ''}</div>`
+  if (hasError && parsed.error) {
+    const body = `<div class="tp-error"><div class="tp-error-name">${escapeHtml(parsed.error.name)}</div><div class="tp-error-msg">${escapeHtml(parsed.error.message)}</div></div>`
+    sections.push(tpSection('Error', 'tp-dot-error', '', body))
+  } else if (parsed.value !== undefined) {
+    sections.push(tpSection('Return value', 'tp-dot-value', '', `<pre class="tp-block tp-value">${escapeHtml(parsed.value)}</pre>`))
+  } else if (tool.result === null) {
+    sections.push(tpSection('Result', 'tp-dot-value', '', '<div class="tp-empty-inline">Still running…</div>'))
+  }
 
-  const resultContent = renderResultBody(parsed)
-  const resultPaneHtml = `<div class="tb-pane${activePane === 'result' ? ' active' : ''}" data-tool-pane="${toolEid}" data-pane="result">${resultContent || '<pre class="tool-result-empty">No output</pre>'}</div>`
+  if (parsed.logs.length > 0) {
+    const rows = parsed.logs.map(renderLogEntry).join('')
+    const meta = `${parsed.logs.length} message${parsed.logs.length !== 1 ? 's' : ''}`
+    sections.push(tpSection('Console', 'tp-dot-log', meta, `<div class="tp-logs">${rows}</div>`))
+  }
 
-  let imagesPaneHtml = ''
   if (imageFiles.length > 0) {
-    const imagesContent = imageFiles.map(f => {
+    const items = imageFiles.map(f => {
       const ext = f.mimeType.split('/')[1]?.toUpperCase() || 'IMG'
-      return `<div class="tb-img-wrap"><img src="${imageDataUrl(f.mimeType, f.data)}"><div class="tb-img-meta"><span class="pill">${escapeHtml(ext)}</span></div></div>`
+      return `<figure class="tp-img-wrap"><img src="${imageDataUrl(f.mimeType, f.data)}"><figcaption class="tp-img-meta"><span class="tp-img-pill">${escapeHtml(ext)}</span></figcaption></figure>`
     }).join('')
-    imagesPaneHtml = `<div class="tb-pane${activePane === 'images' ? ' active' : ''}" data-tool-pane="${toolEid}" data-pane="images">${imagesContent}</div>`
+    const meta = String(imageFiles.length)
+    const label = imageFiles.length === 1 ? 'Image' : 'Images'
+    sections.push(tpSection(label, 'tp-dot-img', meta, `<div class="tp-images">${items}</div>`))
   }
 
-  const nonImageHtml = nonImageFiles.map(f => `<span class="file-badge">${escapeHtml(f.mimeType)}</span>`).join('')
+  if (nonImageFiles.length > 0) {
+    const badges = nonImageFiles.map(f => `<span class="tp-file-badge">${escapeHtml(f.mimeType)}</span>`).join('')
+    sections.push(tpSection('Files', 'tp-dot-file', '', `<div class="tp-files">${badges}</div>`))
+  }
 
-  return `<div class="tool-card">${headerHtml}${tabsHtml}<div class="tool-body">${codePaneHtml}${resultPaneHtml}${imagesPaneHtml}</div>${nonImageHtml}</div>`
+  if (sections.length === 0) {
+    return '<div class="tp-empty">No output</div>'
+  }
+
+  return sections.join('')
 }
 
 // --- Incremental DOM rendering ---
@@ -259,7 +266,6 @@ interface BlockCacheEntry {
   errorLen: number
   toolCount: number
   toolResultCount: number
-  toolOpenState: string
   toolIds: string
   fileCount: number
 }
@@ -267,7 +273,7 @@ interface BlockCacheEntry {
 const _blockCache = new WeakMap<HTMLElement, BlockCacheEntry>()
 const _indicatorCache = new WeakMap<HTMLElement, string>()
 
-function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCacheEntry {
+function blockCacheEntry(block: RenderBlock): BlockCacheEntry {
   return {
     messageKey: block.ref.timestamp,
     blockType: block.type === 'user' ? 'user' : 'assistant',
@@ -276,9 +282,6 @@ function blockCacheEntry(block: RenderBlock, openToolSet: Set<string>): BlockCac
     errorLen: block.error.length,
     toolCount: block.tools.length,
     toolResultCount: block.tools.reduce((n, t) => n + (t.result !== null ? 1 : 0), 0),
-    toolOpenState: block.tools.length > 0
-      ? block.tools.map(t => openToolSet.has(t.id) ? '1' : '0').join('')
-      : '',
     toolIds: block.tools.length > 0 ? block.tools.map(t => t.id).join('|') : '',
     fileCount: block.files.length,
   }
@@ -292,7 +295,6 @@ function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
     && a.errorLen === b.errorLen
     && a.toolCount === b.toolCount
     && a.toolResultCount === b.toolResultCount
-    && a.toolOpenState === b.toolOpenState
     && a.toolIds === b.toolIds
     && a.fileCount === b.fileCount
 }
@@ -308,7 +310,7 @@ function renderUserFilesHtml(files: RenderFile[]): string {
   return `<div class="user-files">${parts.join('')}</div>`
 }
 
-function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>, activeTabs: Map<string, string>): string {
+function renderBlockHtml(block: RenderBlock): string {
   if (block.type === 'user') {
     const textHtml = block.text ? renderMarkdown(block.text) : ''
     return `<div class="block block-user">${textHtml}${renderUserFilesHtml(block.files)}</div>`
@@ -325,7 +327,7 @@ function renderBlockHtml(block: RenderBlock, openToolSet: Set<string>, activeTab
     if (block.tools.length > 0) {
       html += '<div class="tools-group">'
       for (const tool of block.tools) {
-        html += renderToolHtml(tool, openToolSet.has(tool.id), activeTabs.get(tool.id))
+        html += renderToolHtml(tool)
       }
       html += '</div>'
     }
@@ -346,8 +348,6 @@ function renderIndicatorHtml(isStreaming: boolean): string {
 export function updateMessagesEl(
   container: HTMLElement,
   blocks: RenderBlock[],
-  openToolSet: Set<string>,
-  activeTabs: Map<string, string>,
   isStreaming: boolean,
 ): void {
   let indicator = container.querySelector<HTMLElement>('#streaming-indicator')
@@ -371,18 +371,18 @@ export function updateMessagesEl(
 
   const existingCount = Math.min(wrappers.length, blocks.length)
   for (let i = 0; i < existingCount; i++) {
-    const entry = blockCacheEntry(blocks[i], openToolSet)
+    const entry = blockCacheEntry(blocks[i])
     const cached = _blockCache.get(wrappers[i])
     if (cached && blockCacheMatches(cached, entry)) continue
-    wrappers[i].innerHTML = renderBlockHtml(blocks[i], openToolSet, activeTabs)
+    wrappers[i].innerHTML = renderBlockHtml(blocks[i])
     _blockCache.set(wrappers[i], entry)
   }
 
   for (let i = wrappers.length; i < blocks.length; i++) {
     const wrapper = document.createElement('div')
     wrapper.dataset.msgIdx = String(i)
-    wrapper.innerHTML = renderBlockHtml(blocks[i], openToolSet, activeTabs)
-    _blockCache.set(wrapper, blockCacheEntry(blocks[i], openToolSet))
+    wrapper.innerHTML = renderBlockHtml(blocks[i])
+    _blockCache.set(wrapper, blockCacheEntry(blocks[i]))
     container.insertBefore(wrapper, indicator)
   }
 

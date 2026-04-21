@@ -238,8 +238,9 @@ Enter sends. Shift+Enter for newline.
 | User message | `.block-user` |
 | Assistant text | `.assistant-text` |
 | Thinking text | `.thinking-text` |
-| Tool card | `.tool-card` |
-| Tool header (click to toggle) | `.tool-header` |
+| Tool header (click to open popup) | `.tool-header` |
+| Tool details popup overlay | `.tool-popup-overlay` (click backdrop to close) |
+| Tool popup close button | `.tool-popup-close` |
 | Error banner | `.error-banner` |
 | Retry banner | `.retry-banner` |
 | Scroll to bottom | `.scroll-to-bottom` |
