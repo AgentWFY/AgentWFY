@@ -11,7 +11,7 @@ In addition to Node.js globals, execJs provides runtime functions as globals. In
 
 The code runs in a `"use strict"` async context. It can be a bare expression that returns its value or a multi-statement body with an explicit `return`. All runtime functions are `await`-able. Console output is captured automatically. Each execJs call is self-contained — no state persists between calls.
 
-Default timeout is 5000ms, maximum 120000ms. Tool results are truncated at 50,000 characters.
+Default timeout is 10000ms, maximum 120000ms. Tool results are truncated at 50,000 characters.
 
 ### SQL
 

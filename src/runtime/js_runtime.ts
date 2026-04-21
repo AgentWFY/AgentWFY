@@ -11,7 +11,7 @@ import type {
 import type { FunctionRegistry } from './function_registry.js'
 import { resolveTimeout } from './timeout_utils.js'
 
-const DEFAULT_EXEC_TIMEOUT_MS = 5000
+const DEFAULT_EXEC_TIMEOUT_MS = 10000
 
 type PendingExecution = {
   requestId: string

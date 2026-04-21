@@ -121,7 +121,7 @@ export const EXECJS_TOOL_DEFINITION = {
         type: 'integer',
         minimum: 1,
         maximum: 120000,
-        description: 'Execution timeout in milliseconds (default 5000).',
+        description: 'Execution timeout in milliseconds (default 10000).',
       },
     },
     required: ['description', 'code'],

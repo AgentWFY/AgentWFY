@@ -66,7 +66,7 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
     parameters: EXECJS_TOOL_DEFINITION.parameters as Record<string, unknown>,
     execute: async (_toolCallId, params, signal) => {
       const typedParams = params as { code: string; timeoutMs?: number }
-      const timeoutMs = typedParams.timeoutMs ?? 5000
+      const timeoutMs = typedParams.timeoutMs ?? 10000
 
       try {
         const runtime = args.getJsRuntime()

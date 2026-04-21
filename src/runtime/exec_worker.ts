@@ -15,6 +15,8 @@ type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
 type PendingHostCall = {
   requestId: string
+  method: string
+  startedAt: number
   resolve: (value: unknown) => void
   reject: (error: unknown) => void
 }
@@ -145,10 +147,32 @@ function captureConsole(requestId: string): { logs: ExecJsLogEntry[]; restore: (
 
 const MAX_EXEC_TIMEOUT_MS = 120000
 
-function withTimeoutAndAbort<T>(promise: Promise<T>, timeoutMs: number, wasDefault: boolean, signal: AbortSignal): Promise<T> {
+function summarizeInFlightHostCalls(requestId: string, now: number): string {
+  const entries: Array<{ method: string; elapsedMs: number }> = []
+  for (const pending of pendingHostCalls.values()) {
+    if (pending.requestId !== requestId) continue
+    entries.push({ method: pending.method, elapsedMs: now - pending.startedAt })
+  }
+  if (entries.length === 0) return ''
+  entries.sort((a, b) => b.elapsedMs - a.elapsedMs)
+  const top = entries.slice(0, 3).map((e) => `${e.method} (${e.elapsedMs}ms)`).join(', ')
+  const more = entries.length > 3 ? ` (+${entries.length - 3} more)` : ''
+  const noun = entries.length === 1 ? 'call' : 'calls'
+  return `At timeout: ${entries.length} in-flight host ${noun} — ${top}${more}.`
+}
+
+function withTimeoutAndAbort<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  wasDefault: boolean,
+  signal: AbortSignal,
+  requestId: string,
+): Promise<T> {
   const timeoutPromise = new Promise<T>((_, reject) => {
     const timerId = setTimeout(() => {
-      reject(new Error(formatTimeoutError('execJs', timeoutMs, wasDefault, MAX_EXEC_TIMEOUT_MS)))
+      const base = formatTimeoutError('execJs', timeoutMs, wasDefault, MAX_EXEC_TIMEOUT_MS)
+      const inFlight = summarizeInFlightHostCalls(requestId, Date.now())
+      reject(new Error(inFlight ? `${base} ${inFlight}` : base))
     }, timeoutMs)
 
     promise.finally(() => clearTimeout(timerId)).catch(() => {})
@@ -227,6 +251,8 @@ function callHostMethod(
 
     pendingHostCalls.set(callId, {
       requestId,
+      method,
+      startedAt: Date.now(),
       resolve: (value) => {
         signal.removeEventListener('abort', onAbort)
         resolve(value)
@@ -350,7 +376,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
       ),
       timeoutMs,
       timeoutWasDefault,
-      abortController.signal
+      abortController.signal,
+      requestId,
     )
 
     await Promise.allSettled(pendingAttachments)
