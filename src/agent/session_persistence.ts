@@ -68,6 +68,60 @@ export async function readSessionFile(sessionsDir: string, fileName: string): Pr
   return fs.readFile(filePath, 'utf-8')
 }
 
+/**
+ * Read the first `byteCount` bytes of a session file and extract the top-level
+ * `title` string without parsing the whole JSON. Session files can be tens of
+ * megabytes, so full-file reads are too slow for a listing.
+ *
+ * Relies on JSON.stringify preserving property order: version, sessionId,
+ * providerId, title, providerState, updatedAt — so the first `"title"` token
+ * in the head of the file is always the top-level title.
+ */
+export async function readSessionTitle(sessionsDir: string, fileName: string, byteCount = 8192): Promise<string> {
+  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
+  let handle: fs.FileHandle | null = null
+  try {
+    handle = await fs.open(filePath, 'r')
+    const buffer = Buffer.alloc(byteCount)
+    const { bytesRead } = await handle.read(buffer, 0, byteCount, 0)
+    const head = buffer.subarray(0, bytesRead).toString('utf-8')
+    return extractTitleFromHead(head)
+  } catch {
+    return ''
+  } finally {
+    if (handle) await handle.close().catch(() => {})
+  }
+}
+
+function extractTitleFromHead(head: string): string {
+  const idx = head.indexOf('"title"')
+  if (idx < 0) return ''
+
+  let i = idx + 7
+  while (i < head.length && (head[i] === ' ' || head[i] === '\t' || head[i] === '\n' || head[i] === '\r')) i++
+  if (head[i] !== ':') return ''
+  i++
+  while (i < head.length && (head[i] === ' ' || head[i] === '\t' || head[i] === '\n' || head[i] === '\r')) i++
+  if (head[i] !== '"') return ''
+
+  const start = i
+  i++
+  while (i < head.length) {
+    const c = head[i]
+    if (c === '\\') { i += 2; continue }
+    if (c === '"') {
+      try {
+        const parsed = JSON.parse(head.slice(start, i + 1))
+        return typeof parsed === 'string' ? parsed : ''
+      } catch {
+        return ''
+      }
+    }
+    i++
+  }
+  return ''
+}
+
 export async function ensureSessionsDir(sessionsDir: string): Promise<void> {
   await fs.mkdir(sessionsDir, { recursive: true })
 }
@@ -77,7 +131,7 @@ export async function writeSessionFile(sessionsDir: string, fileName: string, co
   await fs.writeFile(filePath, content, 'utf-8')
 }
 
-export async function listSessionFiles(sessionsDir: string, limit: number): Promise<Array<{ name: string; updatedAt: number }>> {
+export async function listSessionFiles(sessionsDir: string): Promise<Array<{ name: string; updatedAt: number }>> {
   try {
     await fs.mkdir(sessionsDir, { recursive: true })
   } catch {
@@ -99,7 +153,7 @@ export async function listSessionFiles(sessionsDir: string, limit: number): Prom
     }
 
     sessions.sort((a, b) => b.updatedAt - a.updatedAt)
-    return sessions.slice(0, limit)
+    return sessions
   } catch {
     return []
   }

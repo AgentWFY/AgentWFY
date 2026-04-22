@@ -10,6 +10,7 @@ import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
 import {
   readSessionFile,
+  readSessionTitle,
   listSessionFiles,
   parseStoredSession,
 } from './session_persistence.js'
@@ -587,30 +588,19 @@ export class AgentSessionManager {
     const sessionsDir = this.sessionsDir
 
     try {
-      const sessions = await listSessionFiles(sessionsDir, 200)
+      const sessions = await listSessionFiles(sessionsDir)
       if (sessions.length === 0) return []
 
-      const items: SessionHistoryItem[] = []
+      const results = await Promise.all(sessions.map(async (session) => {
+        if (!session.name.endsWith('.json')) return null
+        const title = await readSessionTitle(sessionsDir, session.name)
+        if (!title) return null
+        return { file: session.name, updatedAt: session.updatedAt, firstUserMessage: title }
+      }))
 
-      for (const session of sessions) {
-        if (!session.name.endsWith('.json')) continue
-
-        try {
-          const raw = await readSessionFile(sessionsDir, session.name)
-          const parsed = JSON.parse(raw)
-          const updatedAt = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : session.updatedAt
-          const title = typeof parsed.title === 'string' ? parsed.title : ''
-
-          if (title) {
-            items.push({ file: session.name, updatedAt, firstUserMessage: title })
-          }
-        } catch {
-          // Skip unparseable files
-        }
-      }
-
+      const items: SessionHistoryItem[] = results.filter((r): r is SessionHistoryItem => r !== null)
       items.sort((a, b) => b.updatedAt - a.updatedAt)
-      return items.slice(0, 50)
+      return items
     } catch {
       return []
     }
