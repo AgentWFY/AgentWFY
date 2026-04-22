@@ -913,6 +913,12 @@ export class TlAgentChat extends HTMLElement {
   private _chatStateCache = new Map<string, { userScrolledUp: boolean }>()
   private _currentAgentRoot: string | null = null
 
+  // Per-session scroll cache — only populated when the user scrolled up;
+  // at-bottom is represented by absence (auto-scroll handles it).
+  private _sessionScrollCache = new Map<string, { scrollTop: number }>()
+  private _currentSessionFile: string | null = null
+  private _pendingScrollTarget: number | null = null
+
   connectedCallback() {
     this.style.display = 'flex'
     this.style.flexDirection = 'column'
@@ -1080,6 +1086,11 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private subscribeToStore() {
+    this._unsubs.push(agentSessionStore.select(
+      s => s.activeSessionFile,
+      (newFile) => this.onActiveSessionFileChanged(newFile)
+    ))
+
     // Streaming message deltas (hot path) — only update messages area
     this._unsubs.push(agentSessionStore.select(
       s => s.streamingMessage,
@@ -1340,6 +1351,33 @@ export class TlAgentChat extends HTMLElement {
   }
 
   // ── Scroll management ──
+
+  private onActiveSessionFileChanged(newFile: string | null): void {
+    const openFiles = new Set(agentSessionStore.state.openSessions.map(s => s.file))
+    // DOM still reflects the previous session here (messages re-render on rAF).
+    if (this._currentSessionFile && this.messagesEl) {
+      if (this.userScrolledUp && openFiles.has(this._currentSessionFile)) {
+        this._sessionScrollCache.set(this._currentSessionFile, {
+          scrollTop: this.messagesEl.scrollTop,
+        })
+      } else {
+        this._sessionScrollCache.delete(this._currentSessionFile)
+      }
+    }
+    for (const key of this._sessionScrollCache.keys()) {
+      if (!openFiles.has(key)) this._sessionScrollCache.delete(key)
+    }
+    this._currentSessionFile = newFile
+    const cached = newFile ? this._sessionScrollCache.get(newFile) : null
+    if (cached) {
+      this.userScrolledUp = true
+      this._pendingScrollTarget = cached.scrollTop
+    } else {
+      this.userScrolledUp = false
+      this._pendingScrollTarget = null
+    }
+    this.updateScrollToBottomBtn()
+  }
 
   private handleMessagesScroll = () => {
     if (!this.messagesEl || this._programmaticScrollCount > 0) return
@@ -1786,7 +1824,11 @@ export class TlAgentChat extends HTMLElement {
 
     const prevChildCount = this.messagesEl.childElementCount
     const wasScrolledUp = this.userScrolledUp
-    const prevScrollTop = wasScrolledUp ? this.messagesEl.scrollTop : 0
+    const pendingTarget = this._pendingScrollTarget
+    this._pendingScrollTarget = null
+    const prevScrollTop = pendingTarget !== null
+      ? pendingTarget
+      : (wasScrolledUp ? this.messagesEl.scrollTop : 0)
     updateMessagesEl(this.messagesEl, displayBlocks, s.isStreaming)
     this.updatePhaseLabel(s)
     this.refreshToolPopup()
@@ -1800,7 +1842,7 @@ export class TlAgentChat extends HTMLElement {
       if (gap > TlAgentChat.SCROLL_THRESHOLD) {
         this.scrollToBottom()
       }
-    } else if (this.messagesEl.scrollTop !== prevScrollTop) {
+    } else if (pendingTarget !== null || this.messagesEl.scrollTop !== prevScrollTop) {
       this._programmaticScrollCount++
       this.messagesEl.scrollTop = prevScrollTop
       requestAnimationFrame(() => { this._programmaticScrollCount-- })
