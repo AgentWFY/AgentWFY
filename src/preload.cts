@@ -232,9 +232,6 @@ if (isApp) {
       getStatusLine(providerId: string): Promise<string> {
         return ipcRenderer.invoke(Channels.providers.getStatusLine, providerId);
       },
-      switchProvider(providerId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.providers.switchProvider, providerId);
-      },
       setDefault(providerId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.providers.setDefault, providerId);
       },

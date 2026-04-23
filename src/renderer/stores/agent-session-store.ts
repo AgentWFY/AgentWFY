@@ -284,11 +284,6 @@ class AgentSessionStore {
     await window.ipc?.providers?.setDefault(id)
   }
 
-  async switchProvider(id: string): Promise<void> {
-    this.setState({ providerId: id, defaultProviderId: id })
-    await window.ipc?.providers?.switchProvider(id)
-  }
-
   // ── Internal ──
 
   /** Apply an IPC snapshot to state in a single setState call. */

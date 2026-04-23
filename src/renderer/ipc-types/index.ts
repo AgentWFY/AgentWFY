@@ -27,7 +27,6 @@ export interface CommandPaletteApi {
 export interface ProvidersApi {
   list(): Promise<Array<{ id: string; name: string; settingsView?: string }>>
   getStatusLine(providerId: string): Promise<string>
-  switchProvider(providerId: string): Promise<void>
   setDefault(providerId: string): Promise<void>
   onStateChanged(callback: (state: ProviderState) => void): () => void
 }

@@ -26,7 +26,6 @@ export function registerProviderHandlers(
   getRegistry: (e: Electron.IpcMainInvokeEvent) => ProviderRegistry,
   getAgentRoot: (e: Electron.IpcMainInvokeEvent) => string,
   getRendererWebContents: () => WebContents | undefined,
-  onReconnect: (e: Electron.IpcMainInvokeEvent) => Promise<unknown>,
 ): void {
   ipcMain.handle(Channels.providers.list, (event): ProviderInfo[] => {
     return getRegistry(event).list()
@@ -38,20 +37,11 @@ export function registerProviderHandlers(
     return factory.getStatusLine()
   })
 
-  const setAndPush = async (event: Electron.IpcMainInvokeEvent, providerId: string, reconnect: boolean) => {
+  ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
     const agentRoot = getAgentRoot(event)
     setAgentConfig(agentRoot, 'system.provider', providerId)
-    if (reconnect) await onReconnect(event)
     const state = buildProviderState(agentRoot, getRegistry(event))
     const wc = getRendererWebContents()
     if (wc) pushProviderState(wc, state)
-  }
-
-  ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
-    await setAndPush(event, providerId, false)
-  })
-
-  ipcMain.handle(Channels.providers.switchProvider, async (event, providerId: string) => {
-    await setAndPush(event, providerId, true)
   })
 }

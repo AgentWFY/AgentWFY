@@ -48,7 +48,6 @@ export const Channels = {
   providers: {
     list: 'provider:list',
     getStatusLine: 'provider:get-status-line',
-    switchProvider: 'provider:switch-provider',
     setDefault: 'provider:set-default',
     stateChanged: 'provider:state-changed',
   },

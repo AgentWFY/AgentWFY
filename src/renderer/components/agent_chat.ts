@@ -5,7 +5,7 @@ import {
   renderToolDetailsHtml,
   type ToolPair,
 } from './chat_message_renderer.js'
-import { escapeHtml, parseTabLink } from './chat_utils.js'
+import { parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
 import type { TlChatInput } from './chat_input.js'
 
@@ -610,10 +610,7 @@ const STYLES = `
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--color-text2);
-    cursor: pointer;
-    user-select: none;
   }
-  .composer-status:hover { color: var(--color-text3); }
   .composer-status .provider-name {
     color: var(--color-text4);
     font-weight: 600;
@@ -802,73 +799,11 @@ const STYLES = `
     background: var(--color-text2);
     animation: thinking 1.4s ease-in-out infinite;
   }
-  .popup-panel {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    max-height: 300px;
-    overflow-y: auto;
-    box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
-    margin-bottom: 4px;
-    z-index: 10;
-  }
-  .provider-panel {
-    padding: 4px 0;
-  }
-  .provider-panel-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    cursor: pointer;
-    font-size: 12px;
-    color: var(--color-text3);
-  }
-  .provider-panel-item:hover { background: var(--color-item-hover); }
-  .provider-panel-item.active {
-    background: var(--color-item-hover);
-    font-weight: 600;
-  }
-  .provider-active-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #4caf50;
-    flex-shrink: 0;
-  }
-  .provider-active-dot.hidden { visibility: hidden; }
-  .provider-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .provider-settings-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 2px 4px;
-    color: var(--color-text2);
-    font-size: 14px;
-    line-height: 1;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-  .provider-settings-btn:hover {
-    color: var(--color-text4);
-    background: var(--color-item-hover);
-  }
 `
 
 export class TlAgentChat extends HTMLElement {
   private _unsubs: (() => void)[] = []
   private error: string | null = null
-  private activePanel: 'providers' | null = null
   private isInitializing = true
   private messagesEl: HTMLElement | null = null
   private containerEl!: HTMLDivElement
@@ -898,7 +833,6 @@ export class TlAgentChat extends HTMLElement {
   private _notifyBtn: HTMLElement | null = null
   private _settingsBtn: HTMLElement | null = null
   private _stopBtn: HTMLElement | null = null
-  private _providerPanel: HTMLElement | null = null
   private _statusEl: HTMLElement | null = null
   private _statusProviderEl: HTMLElement | null = null
   private _statusStatsEl: HTMLElement | null = null
@@ -1011,7 +945,6 @@ export class TlAgentChat extends HTMLElement {
       }
     }
 
-    this.activePanel = null
     this.error = null
     this._currentAgentRoot = newAgentRoot
   }
@@ -1060,7 +993,6 @@ export class TlAgentChat extends HTMLElement {
     document.addEventListener('keydown', this.onPopupKeydown, true)
 
     if (!window.ipc?.agent) {
-      this.activePanel = 'providers'
       this.isInitializing = false
       this.render()
       return
@@ -1156,12 +1088,6 @@ export class TlAgentChat extends HTMLElement {
         return `${name}\0${status}`
       },
       () => this.updateStatus()
-    ))
-
-    // Provider list (for popup panel)
-    this._unsubs.push(agentSessionStore.select(
-      s => s.providerList,
-      () => this.updateProviderPanel()
     ))
   }
 
@@ -1453,7 +1379,6 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn = null
     this._settingsBtn = null
     this._stopBtn = null
-    this._providerPanel = null
     this._statusEl = null
     this._statusProviderEl = null
     this._statusStatsEl = null
@@ -1557,36 +1482,6 @@ export class TlAgentChat extends HTMLElement {
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
 
-    this._providerPanel = document.createElement('div')
-    this._providerPanel.className = 'popup-panel provider-panel'
-    this._providerPanel.style.display = 'none'
-    this._providerPanel.addEventListener('mousedown', (e) => {
-      const target = e.target as HTMLElement
-      const settingsBtn = target.closest('.provider-settings-btn[data-provider-idx]') as HTMLElement | null
-      if (settingsBtn) {
-        e.preventDefault()
-        e.stopPropagation()
-        const idx = parseInt(settingsBtn.dataset.providerIdx!, 10)
-        const provider = agentSessionStore.state.providerList[idx]
-        if (provider?.settingsView) {
-          this.activePanel = null
-          this.updateProviderPanel()
-          this.openProviderSettingsView(provider.settingsView)
-        }
-        return
-      }
-      const providerItem = target.closest('.provider-panel-item[data-provider-idx]') as HTMLElement | null
-      if (providerItem) {
-        e.preventDefault()
-        const idx = parseInt(providerItem.dataset.providerIdx!, 10)
-        const provider = agentSessionStore.state.providerList[idx]
-        if (provider && provider.id !== agentSessionStore.state.providerId) {
-          this.handleSelectProvider(provider.id)
-        }
-      }
-    })
-    inputArea.appendChild(this._providerPanel)
-
     const composer = document.createElement('div')
     composer.className = 'composer'
 
@@ -1648,11 +1543,6 @@ export class TlAgentChat extends HTMLElement {
     this._statusStatsEl = document.createElement('span')
     this._statusStatsEl.className = 'provider-stats'
     this._statusEl.append(this._statusProviderEl, this._statusStatsEl)
-    this._statusEl.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.activePanel = this.activePanel === 'providers' ? null : 'providers'
-      this.updateProviderPanel()
-    })
     composer.appendChild(this._statusEl)
 
     inputArea.appendChild(composer)
@@ -1803,7 +1693,6 @@ export class TlAgentChat extends HTMLElement {
     this.updateNotifyBtn()
     this.updateStopBtn()
     this.updateStatus()
-    this.updateProviderPanel()
   }
 
   /** Update the messages area only (hot path during streaming). */
@@ -1903,27 +1792,7 @@ export class TlAgentChat extends HTMLElement {
     if (this._statusEl.title !== title) this._statusEl.title = title
   }
 
-  private updateProviderPanel() {
-    if (!this._providerPanel) return
-    if (this.activePanel === 'providers') {
-      this._providerPanel.style.display = ''
-      this._providerPanel.innerHTML = this.renderProviderPanelHtml()
-    } else {
-      this._providerPanel.style.display = 'none'
-    }
-  }
-
   // ── Provider actions ──
-
-  private async handleSelectProvider(providerId: string) {
-    try {
-      this.activePanel = null
-      await agentSessionStore.switchProvider(providerId)
-    } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-      this.updateErrorBanner()
-    }
-  }
 
   private openActiveProviderSettings() {
     const s = agentSessionStore.state
@@ -1940,25 +1809,5 @@ export class TlAgentChat extends HTMLElement {
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)
     }
-  }
-
-  private renderProviderPanelHtml(): string {
-    const s = agentSessionStore.state
-    if (s.providerList.length === 0) {
-      return '<div style="padding:10px;font-size:12px;color:var(--color-text2)">No providers available</div>'
-    }
-    return s.providerList.map((p, i) => {
-      const isActive = p.id === s.providerId
-      const dotClass = isActive ? 'provider-active-dot' : 'provider-active-dot hidden'
-      const itemClass = isActive ? 'provider-panel-item active' : 'provider-panel-item'
-      const settingsBtn = p.settingsView
-        ? `<button class="provider-settings-btn" data-provider-idx="${i}" title="Settings">&#9881;</button>`
-        : ''
-      return `<div class="${itemClass}" data-provider-idx="${i}">
-        <span class="${dotClass}"></span>
-        <span class="provider-name">${escapeHtml(p.name)}</span>
-        ${settingsBtn}
-      </div>`
-    }).join('')
   }
 }
