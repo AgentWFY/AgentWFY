@@ -5,6 +5,7 @@ export interface ShortcutAction {
 
 export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'toggle-command-palette': { label: 'Command Palette',   defaultKey: 'mod+k' },
+  'open-sessions-list':    { label: 'Open Sessions List', defaultKey: 'mod+shift+k' },
   'toggle-agent-chat':     { label: 'Toggle AI Panel',    defaultKey: 'mod+i' },
   'toggle-task-panel':     { label: 'Toggle Task Panel',  defaultKey: 'mod+j' },
   'close-current-tab':     { label: 'Close Current Tab',  defaultKey: 'mod+w' },

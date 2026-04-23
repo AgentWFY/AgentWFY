@@ -71,6 +71,9 @@ export class ActionDispatcher {
       case 'open-settings':
         this.deps.getCommandPalette()?.show({ screen: 'settings' });
         break;
+      case 'open-sessions-list':
+        this.deps.getCommandPalette()?.show({ screen: 'sessions' });
+        break;
       case 'toggle-dev-tools':
         this.deps.getRendererView()?.webContents.toggleDevTools();
         break;
