@@ -94,6 +94,9 @@ export const Channels = {
     showContextMenu: 'agent-sidebar:showContextMenu',
     reorder: 'agent-sidebar:reorder',
   },
+  traces: {
+    list: 'traces:list',
+  },
   app: {
     restart: 'app:restart',
     stop: 'app:stop',

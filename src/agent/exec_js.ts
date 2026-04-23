@@ -65,14 +65,15 @@ export function createExecJsTool(args: CreateExecJsToolArgs): AgentTool {
     description: EXECJS_TOOL_DEFINITION.description,
     parameters: EXECJS_TOOL_DEFINITION.parameters as Record<string, unknown>,
     execute: async (_toolCallId, params, signal) => {
-      const typedParams = params as { code: string; timeoutMs?: number }
+      const typedParams = params as { code: string; description?: string; timeoutMs?: number }
       const timeoutMs = typedParams.timeoutMs ?? 10000
+      const description = typeof typedParams.description === 'string' ? typedParams.description : ''
 
       try {
         const runtime = args.getJsRuntime()
         const sessionId = args.getSessionId()
 
-        const details = await runtime.executeExecJs(sessionId, typedParams.code, timeoutMs, signal) as ExecJsDetails
+        const details = await runtime.executeExecJs(sessionId, typedParams.code, timeoutMs, signal, undefined, description) as ExecJsDetails
         return buildToolResult(details)
       } catch (error) {
         const details = toFailureDetails(error, timeoutMs)

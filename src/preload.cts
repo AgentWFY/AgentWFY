@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { Channels } from './ipc/channels.cjs';
 import type { PushMap, PushChannel } from './ipc/schema.js';
-import type { AppIpc } from './renderer/ipc-types/index.js';
+import type { AppIpc, TraceEvent } from './renderer/ipc-types/index.js';
 
 // --- Helpers ---
 
@@ -281,6 +281,11 @@ if (isApp) {
       },
       retryNow(): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.retryNow);
+      },
+    },
+    traces: {
+      list(sessionId: string): Promise<TraceEvent[]> {
+        return ipcRenderer.invoke(Channels.traces.list, sessionId);
       },
     },
     zenMode: {

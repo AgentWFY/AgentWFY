@@ -10,6 +10,16 @@ import type {
 } from './types.js'
 import type { FunctionRegistry } from './function_registry.js'
 import { resolveTimeout } from './timeout_utils.js'
+import type { TraceWriter } from './trace_writer.js'
+import {
+  TRACE_VERSION,
+  TRACE_CODE_CAP,
+  TRACE_PARAMS_CAP,
+  TRACE_RESULT_CAP,
+  stringifySafe,
+  truncateWithFlag,
+  toTraceError,
+} from './trace_types.js'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 10000
 
@@ -18,6 +28,11 @@ type PendingExecution = {
   resolve: (details: ExecJsDetails) => void
   reject: (error: unknown) => void
   cleanup?: () => void
+  traceCode?: string
+  traceDescription?: string
+  traceStartedAt?: number
+  traceTimeoutMs?: number
+  traceSessionId?: string
 }
 
 type ChildEntry = {
@@ -32,6 +47,7 @@ type ChildEntry = {
 
 export interface JsRuntimeDeps {
   functionRegistry: FunctionRegistry
+  traceWriter?: TraceWriter
 }
 
 function createId(prefix: string): string {
@@ -143,7 +159,8 @@ export class JsRuntime {
     code: string,
     timeoutMs?: number,
     signal?: AbortSignal,
-    input?: unknown
+    input?: unknown,
+    description?: string,
   ): Promise<ExecJsDetails> {
     const normalizedSessionId = normalizeSessionId(sessionId)
     this.ensureWorker(normalizedSessionId)
@@ -175,6 +192,11 @@ export class JsRuntime {
         requestId,
         resolve,
         reject,
+        traceCode: code,
+        traceDescription: description,
+        traceStartedAt: Date.now(),
+        traceTimeoutMs: timeout,
+        traceSessionId: normalizedSessionId,
       }
 
       if (signal) {
@@ -225,6 +247,13 @@ export class JsRuntime {
 
         entry.pendingExecutions.delete(message.requestId)
         pending.cleanup?.()
+        try {
+          this.emitExecTrace(pending, message.requestId, message.details)
+        } catch (err) {
+          // Tracing is observational — never let a trace-side bug swallow the
+          // exec result or hang the tool call.
+          console.error('[trace] emitExecTrace failed:', err)
+        }
         pending.resolve(message.details)
         return
       }
@@ -243,8 +272,10 @@ export class JsRuntime {
   }
 
   private async handleHostCall(entry: ChildEntry, message: WorkerHostCallMessage): Promise<void> {
+    const traceStartedAt = Date.now()
     try {
       const value = await this.deps.functionRegistry.call(message.method, message.params)
+      this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
       entry.child.postMessage({
         type: 'host:result',
         requestId: message.requestId,
@@ -253,6 +284,7 @@ export class JsRuntime {
         value,
       } satisfies HostToWorkerMessage)
     } catch (error) {
+      this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
       entry.child.postMessage({
         type: 'host:result',
         requestId: message.requestId,
@@ -261,6 +293,95 @@ export class JsRuntime {
         error: serializeError(error),
       } satisfies HostToWorkerMessage)
     }
+  }
+
+  private safeEmitCallTrace(
+    entry: ChildEntry,
+    message: WorkerHostCallMessage,
+    startedAt: number,
+    value: unknown,
+    error: unknown,
+  ): void {
+    try {
+      this.emitCallTrace(entry, message, startedAt, value, error)
+    } catch (err) {
+      console.error('[trace] emitCallTrace failed:', err)
+    }
+  }
+
+  private emitExecTrace(pending: PendingExecution, requestId: string, details: ExecJsDetails): void {
+    const writer = this.deps.traceWriter
+    if (!writer) return
+    if (!pending.traceSessionId || pending.traceStartedAt === undefined) return
+
+    const startedAt = pending.traceStartedAt
+    const durationMs = Date.now() - startedAt
+    const codeRaw = pending.traceCode ?? ''
+    const code = truncateWithFlag(codeRaw, TRACE_CODE_CAP)
+
+    let resultPreview: string | null = null
+    let resultTruncated = false
+    if (details.ok && 'value' in details) {
+      const preview = truncateWithFlag(stringifySafe((details as { value: unknown }).value), TRACE_RESULT_CAP)
+      resultPreview = preview.text
+      resultTruncated = preview.truncated
+    }
+
+    writer.append({
+      v: TRACE_VERSION,
+      t: 'exec',
+      id: requestId,
+      sessionId: pending.traceSessionId,
+      description: pending.traceDescription ?? '',
+      code: code.text,
+      codeTruncated: code.truncated,
+      startedAt,
+      durationMs,
+      ok: details.ok,
+      error: details.ok ? null : toTraceError(details.error),
+      resultPreview,
+      resultTruncated,
+      timeoutMs: pending.traceTimeoutMs ?? details.timeoutMs,
+    })
+  }
+
+  private emitCallTrace(
+    entry: ChildEntry,
+    message: WorkerHostCallMessage,
+    startedAt: number,
+    value: unknown,
+    error: unknown,
+  ): void {
+    const writer = this.deps.traceWriter
+    if (!writer) return
+
+    const durationMs = Date.now() - startedAt
+    const params = truncateWithFlag(stringifySafe(message.params), TRACE_PARAMS_CAP)
+    const ok = error === null
+    let resultPreview: string | null = null
+    let resultTruncated = false
+    if (ok && value !== undefined) {
+      const preview = truncateWithFlag(stringifySafe(value), TRACE_RESULT_CAP)
+      resultPreview = preview.text
+      resultTruncated = preview.truncated
+    }
+
+    writer.append({
+      v: TRACE_VERSION,
+      t: 'call',
+      id: message.callId,
+      execId: message.requestId,
+      sessionId: entry.sessionId,
+      method: message.method,
+      paramsPreview: params.text,
+      paramsTruncated: params.truncated,
+      resultPreview,
+      resultTruncated,
+      startedAt,
+      durationMs,
+      ok,
+      error: ok ? null : toTraceError(error),
+    })
   }
 
   private disposeEntry(entry: ChildEntry, error: Error): void {
@@ -275,6 +396,21 @@ export class JsRuntime {
 
     for (const [, pending] of entry.pendingExecutions) {
       pending.cleanup?.()
+      // Record a synthetic failure trace so the timeline matches the message
+      // log — agents see the call as errored via toFailureDetails, and the
+      // trace viewer should not silently skip it.
+      const syntheticDetails: ExecJsDetails = {
+        ok: false,
+        error: { name: error.name || 'Error', message: error.message },
+        logs: [],
+        files: [],
+        timeoutMs: pending.traceTimeoutMs ?? 0,
+      }
+      try {
+        this.emitExecTrace(pending, pending.requestId, syntheticDetails)
+      } catch (err) {
+        console.error('[trace] emitExecTrace failed:', err)
+      }
       pending.reject(error)
     }
 

@@ -215,7 +215,7 @@ export class AgentSessionManager {
     }
 
     this._activeSessionFile = file
-    this._activeSessionId = null
+    this._activeSessionId = stored.sessionId || null
     this._activeMessages = messages
     this._activeLabel = stored.title || 'Session'
     this._activeNotifyOnFinish = false
@@ -414,6 +414,7 @@ export class AgentSessionManager {
       statusLine: agent?.state.statusLine,
       providerId: this._activeProviderId,
       activeSessionFile: this._activeSessionFile,
+      activeSessionId: agent?.sessionId ?? this._activeSessionId,
       streamingFiles,
       retryState: agent?.state.retryState ?? null,
       stalledSince: agent?.state.stalledSince ?? null,

@@ -13,6 +13,8 @@ import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
+import { registerTraceHandlers } from './ipc/traces.js';
+import { flushAllTraceWriters } from './ipc/exec-js.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -180,6 +182,9 @@ registerProviderHandlers(
 registerAgentSessionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
   reconnectSessionManager,
+);
+registerTraceHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).agentRoot,
 );
 
 ipcMain.handle(Channels.app.restart, async () => {
@@ -571,6 +576,8 @@ app.on('window-all-closed', () => {
 
 let forceQuit = false;
 let quitDialogOpen = false;
+let flushInProgress = false;
+let flushComplete = false;
 
 function doQuitCleanup() {
   stopFileWatcher();
@@ -580,14 +587,34 @@ function doQuitCleanup() {
   windowManager.destroyAll();
 }
 
+// Drain buffered trace writes before the sync cleanup — disposeRuntime fires
+// its own flush but doesn't await it, so without this the last few trace
+// records (the ones most useful for post-mortem debugging) can be lost on exit.
+async function flushThenCleanup() {
+  if (flushInProgress) return;
+  flushInProgress = true;
+  try {
+    await flushAllTraceWriters();
+  } catch (err) {
+    console.error('[quit] trace flush failed:', err);
+  }
+  flushComplete = true;
+  doQuitCleanup();
+  app.quit();
+}
+
 app.on('before-quit', (event) => {
+  if (flushComplete) return;
+
   if (forceQuit) {
-    doQuitCleanup();
+    event.preventDefault();
+    void flushThenCleanup();
     return;
   }
 
   if (!windowManager.hasActiveWork()) {
-    doQuitCleanup();
+    event.preventDefault();
+    void flushThenCleanup();
     return;
   }
 

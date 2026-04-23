@@ -8,11 +8,13 @@ import {
 import { parseTabLink } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
 import type { TlChatInput } from './chat_input.js'
+import type { TlTracePanel } from './trace_panel.js'
 
 const ATTACH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>'
 const NOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
 const HISTORY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>'
 const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+const TRACE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>'
 
 function makeIconBtn(title: string, html: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement('button')
@@ -839,6 +841,8 @@ export class TlAgentChat extends HTMLElement {
   private _providerGridEl: HTMLElement | null = null
   private _sessionTabsEl: HTMLElement | null = null
   private _chatInputEl: TlChatInput | null = null
+  private _traceBtn: HTMLElement | null = null
+  private _tracePanelEl: TlTracePanel | null = null
   private _closeLightbox: (() => void) | null = null
   private _isZenMode = false
   private _unlistenZenMode: (() => void) | null = null
@@ -937,6 +941,7 @@ export class TlAgentChat extends HTMLElement {
       this.userScrolledUp = false
     }
     this.closeToolPopup()
+    this._tracePanelEl?.close()
 
     if (agents) {
       const activePaths = new Set(agents.map(a => a.path))
@@ -1021,6 +1026,11 @@ export class TlAgentChat extends HTMLElement {
     this._unsubs.push(agentSessionStore.select(
       s => s.activeSessionFile,
       (newFile) => this.onActiveSessionFileChanged(newFile)
+    ))
+
+    this._unsubs.push(agentSessionStore.select(
+      s => s.activeSessionId,
+      () => this.updateTraceBtn()
     ))
 
     // Streaming message deltas (hot path) — only update messages area
@@ -1294,6 +1304,7 @@ export class TlAgentChat extends HTMLElement {
       if (!openFiles.has(key)) this._sessionScrollCache.delete(key)
     }
     this._currentSessionFile = newFile
+    this._tracePanelEl?.close()
     const cached = newFile ? this._sessionScrollCache.get(newFile) : null
     if (cached) {
       this.userScrolledUp = true
@@ -1386,6 +1397,8 @@ export class TlAgentChat extends HTMLElement {
     this._sessionTabsEl = null
     this._chatInputEl = null
     this._scrollToBottomBtn = null
+    this._traceBtn = null
+    this._tracePanelEl = null
     this._toolPopupOverlay = null
     this._toolPopupDescription = null
     this._toolPopupErrorBadge = null
@@ -1516,6 +1529,9 @@ export class TlAgentChat extends HTMLElement {
     )
     bar.appendChild(this._notifyBtn)
     bar.appendChild(makeIconBtn('All sessions', HISTORY_SVG, () => window.ipc?.commandPalette?.show({ screen: 'sessions' })))
+    this._traceBtn = makeIconBtn('Function trace', TRACE_SVG, () => this.handleOpenTracePanel())
+    this._traceBtn.style.display = 'none'
+    bar.appendChild(this._traceBtn)
     this._settingsBtn = makeIconBtn('Settings', GEAR_SVG, () => this.openActiveProviderSettings())
     bar.appendChild(this._settingsBtn)
 
@@ -1551,7 +1567,27 @@ export class TlAgentChat extends HTMLElement {
 
     this.buildToolPopup(container)
 
+    this._tracePanelEl = document.createElement('awfy-trace-panel') as TlTracePanel
+    container.appendChild(this._tracePanelEl)
+
     this.containerEl.appendChild(container)
+  }
+
+  private handleOpenTracePanel() {
+    const panel = this._tracePanelEl
+    if (!panel) return
+    if (panel.isOpen()) {
+      panel.close()
+      return
+    }
+    const s = agentSessionStore.state
+    const sessionId = s.activeSessionId
+    if (!sessionId) {
+      this.error = 'No active session to show traces for'
+      this.updateErrorBanner()
+      return
+    }
+    void panel.open(sessionId, s.label || '')
   }
 
   private buildToolPopup(container: HTMLElement) {
@@ -1692,6 +1728,7 @@ export class TlAgentChat extends HTMLElement {
     this.updateRetryBanner()
     this.updateNotifyBtn()
     this.updateStopBtn()
+    this.updateTraceBtn()
     this.updateStatus()
   }
 
@@ -1772,6 +1809,12 @@ export class TlAgentChat extends HTMLElement {
     if (!this._stopBtn) return
     const s = agentSessionStore.state
     this._stopBtn.style.display = s.isStreaming ? '' : 'none'
+  }
+
+  private updateTraceBtn() {
+    if (!this._traceBtn) return
+    const s = agentSessionStore.state
+    this._traceBtn.style.display = s.activeSessionId ? '' : 'none'
   }
 
   private updateStatus() {

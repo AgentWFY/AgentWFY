@@ -32,6 +32,7 @@ export interface AgentSnapshot {
   statusLine: string | undefined
   providerId: string
   activeSessionFile: string | null
+  activeSessionId: string | null
   streamingFiles: string[]
   retryState: RetryState | null
   stalledSince: number | null
