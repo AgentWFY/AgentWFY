@@ -77,7 +77,7 @@ app.name = APP_NAME;
 // Suppress Electron's automatic "Error occurred in handler for '...'" console.error
 // messages from ipcMain.handle. These are expected validation errors from agent tool
 // calls and are already propagated to the renderer as rejected promises.
-const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'execJs:', 'plugin:'];
+const suppressedChannels = ['files:', 'sql:', 'tabs:', 'bus:', 'execJs:', 'plugin:', 'runtime-functions:'];
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
   const first = args[0]
