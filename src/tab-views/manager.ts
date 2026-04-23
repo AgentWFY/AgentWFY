@@ -208,6 +208,13 @@ export class TabViewManager {
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
   private selectedBounds: Rectangle | null = null;
+  // True while setAllTabsCollapsed has forced every view to 0x0 (zen mode,
+  // app hidden). Placement paths (bringToFront, applyTabViewPlacement)
+  // must be no-ops while this is set, or a keyboard shortcut or agent
+  // switch would re-expand the selected tab on top of the zen-mode UI
+  // with no way for the renderer to undo it (the ancestor display:none
+  // suppresses ResizeObserver).
+  private collapsed = false;
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
@@ -409,29 +416,38 @@ export class TabViewManager {
     }
   }
 
-  // Skip the reorder when already on top — addChildView on an attached view
-  // tears down and rebuilds the RenderWidgetHostView, briefly blanking the tab.
   private bringToFront(state: TabViewState): void {
     const mainWindow = this.deps.getMainWindow();
     if (!mainWindow || mainWindow.isDestroyed()) {
       return;
     }
 
+    // While collapsed, only setAllTabsCollapsed(false) may restore bounds —
+    // agent switches and tab-nav shortcuts must not un-collapse zen mode.
+    if (this.collapsed) {
+      return;
+    }
+
+    // Always restore full bounds + visibility — the promoted tab may have
+    // been a background tab collapsed to 0x0, and we must reverse that
+    // before the compositor paints the next frame.
+    state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
+    state.view.setVisible(true);
+
     const children = mainWindow.contentView.children;
     const currentIndex = children.indexOf(state.view);
+    // Skip the reorder when already on top — addChildView on an attached
+    // view tears down and rebuilds the RenderWidgetHostView, briefly
+    // blanking the tab.
     if (currentIndex < 0 || currentIndex === children.length - 1) {
       return;
     }
 
     // addChildView on an already-attached child appends a duplicate
-    // instead of reordering. Explicit remove + re-add forces the move,
-    // and we reapply bounds/visibility because a fresh attach starts
-    // with a zero-size, hidden compositor surface.
+    // instead of reordering. Explicit remove + re-add forces the move.
     try {
       mainWindow.contentView.removeChildView(state.view);
       mainWindow.contentView.addChildView(state.view);
-      state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
-      state.view.setVisible(true);
     } catch {
       // defensive
     }
@@ -446,6 +462,13 @@ export class TabViewManager {
     this.attachTabViewToWindow(state);
 
     if (visible) {
+      // While collapsed, only setAllTabsCollapsed(false) may restore bounds.
+      // bringToFront already bails for the same reason; the early-return
+      // here additionally prevents the propagation loop below from
+      // re-expanding background tabs.
+      if (this.collapsed) {
+        return;
+      }
       const changed =
         !this.selectedBounds ||
         this.selectedBounds.x !== bounds.x ||
@@ -456,11 +479,11 @@ export class TabViewManager {
         this.selectedBounds = bounds;
         // Propagate to every background tab so the selected tab on top
         // occludes them exactly — otherwise sidebar/header would leak.
+        // bringToFront below handles the target's own bounds.
         for (const other of this.tabViewsByTabId.values()) {
-          other.view.setBounds(bounds);
+          if (other !== state) other.view.setBounds(bounds);
         }
       }
-      state.view.setVisible(true);
       this.bringToFront(state);
     } else {
       // Honor the renderer's bounds for not-visible tabs. Display:none
@@ -587,6 +610,7 @@ export class TabViewManager {
   // removes the tab area from the box tree by an ancestor display:none,
   // which per spec doesn't fire ResizeObserver.
   setAllTabsCollapsed(collapsed: boolean): void {
+    this.collapsed = collapsed;
     if (collapsed) {
       const zero = { x: 0, y: 0, width: 0, height: 0 };
       for (const state of this.tabViewsByTabId.values()) {
@@ -753,12 +777,7 @@ export class TabViewManager {
       // 0x0) stays on top and any older full-bounds tab underneath leaks
       // through — the tab bar shows the new selection while the viewport
       // shows a different tab's content. Mirrors selectTabHandler.
-      if (this.selectedTabId) {
-        const state = this.tabViewsByTabId.get(this.selectedTabId);
-        if (state) {
-          this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
-        }
-      }
+      this.promoteSelectedToFront();
     }
     this.pushStateToRenderer();
   }
@@ -771,11 +790,20 @@ export class TabViewManager {
     // renderer's MutationObserver-driven bounds sync fires reliably when
     // the user clicks a tab but can miss programmatic (CDP) selection —
     // doing it here means selectTab's visual effect is deterministic.
-    const state = this.tabViewsByTabId.get(request.tabId);
-    if (state) {
-      this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
-    }
+    this.promoteSelectedToFront();
     this.pushStateToRenderer();
+  }
+
+  // Promote the currently-selected tab to the top of the z-order with full
+  // bounds. Keeps the main-process view geometry in sync with the logical
+  // selection — without this, a tab switch that doesn't reach the renderer
+  // (e.g. keyboard shortcut) leaves the previously-selected tab still
+  // painting on top until the renderer's ResizeObserver catches up.
+  private promoteSelectedToFront(): void {
+    if (!this.selectedTabId) return;
+    const state = this.tabViewsByTabId.get(this.selectedTabId);
+    if (!state) return;
+    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {
@@ -1199,6 +1227,7 @@ export class TabViewManager {
     if (!tab || !tab.hidden) return;
     tab.hidden = false;
     this.selectedTabId = tabId;
+    this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
@@ -1219,6 +1248,7 @@ export class TabViewManager {
     const tab = visible[index];
     if (tab.id === this.selectedTabId) return;
     this.selectedTabId = tab.id;
+    this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
@@ -1229,6 +1259,7 @@ export class TabViewManager {
     const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
     const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % visible.length;
     this.selectedTabId = visible[nextIdx].id;
+    this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
@@ -1239,6 +1270,7 @@ export class TabViewManager {
     const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
     const prevIdx = currentIdx <= 0 ? visible.length - 1 : currentIdx - 1;
     this.selectedTabId = visible[prevIdx].id;
+    this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
