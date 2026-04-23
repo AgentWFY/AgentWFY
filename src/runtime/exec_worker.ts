@@ -145,7 +145,7 @@ function captureConsole(requestId: string): { logs: ExecJsLogEntry[]; restore: (
   }
 }
 
-const MAX_EXEC_TIMEOUT_MS = 120000
+const MAX_EXEC_TIMEOUT_MS = 600000
 
 function summarizeInFlightHostCalls(requestId: string, now: number): string {
   const entries: Array<{ method: string; elapsedMs: number }> = []
