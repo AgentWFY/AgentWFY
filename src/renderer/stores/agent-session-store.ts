@@ -20,6 +20,7 @@ export interface AgentSessionState {
   statusLine: string
   providerId: string
   activeSessionFile: string | null
+  activeSessionId: string | null
   streamingFiles: string[]
   retryState: RetryState | null
   stalledSince: number | null
@@ -51,6 +52,7 @@ function defaultState(): AgentSessionState {
     statusLine: '',
     providerId: '',
     activeSessionFile: null,
+    activeSessionId: null,
     streamingFiles: [],
     retryState: null,
     stalledSince: null,
@@ -304,6 +306,7 @@ class AgentSessionStore {
       statusLine: s.statusLine || '',
       providerId: s.providerId,
       activeSessionFile: s.activeSessionFile ?? null,
+      activeSessionId: s.activeSessionId ?? null,
       streamingFiles: s.streamingFiles ?? [],
       retryState: s.retryState ?? null,
       stalledSince: s.stalledSince ?? null,

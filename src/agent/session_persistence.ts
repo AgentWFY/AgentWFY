@@ -78,14 +78,23 @@ export async function readSessionFile(sessionsDir: string, fileName: string): Pr
  * in the head of the file is always the top-level title.
  */
 export async function readSessionTitle(sessionsDir: string, fileName: string, byteCount = 8192): Promise<string> {
+  const head = await readSessionHead(sessionsDir, fileName, byteCount)
+  return head ? extractStringFromHead(head, 'title') : ''
+}
+
+export async function readSessionId(sessionsDir: string, fileName: string, byteCount = 2048): Promise<string> {
+  const head = await readSessionHead(sessionsDir, fileName, byteCount)
+  return head ? extractStringFromHead(head, 'sessionId') : ''
+}
+
+async function readSessionHead(sessionsDir: string, fileName: string, byteCount: number): Promise<string> {
   const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
   let handle: fs.FileHandle | null = null
   try {
     handle = await fs.open(filePath, 'r')
     const buffer = Buffer.alloc(byteCount)
     const { bytesRead } = await handle.read(buffer, 0, byteCount, 0)
-    const head = buffer.subarray(0, bytesRead).toString('utf-8')
-    return extractTitleFromHead(head)
+    return buffer.subarray(0, bytesRead).toString('utf-8')
   } catch {
     return ''
   } finally {
@@ -93,11 +102,12 @@ export async function readSessionTitle(sessionsDir: string, fileName: string, by
   }
 }
 
-function extractTitleFromHead(head: string): string {
-  const idx = head.indexOf('"title"')
+function extractStringFromHead(head: string, key: string): string {
+  const needle = `"${key}"`
+  const idx = head.indexOf(needle)
   if (idx < 0) return ''
 
-  let i = idx + 7
+  let i = idx + needle.length
   while (i < head.length && (head[i] === ' ' || head[i] === '\t' || head[i] === '\n' || head[i] === '\r')) i++
   if (head[i] !== ':') return ''
   i++

@@ -5,6 +5,7 @@ export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
 export type { DbApi, AgentDbChange } from './db.js'
 export type { TasksApi } from './tasks.js'
+export type { TracesApi, TraceEvent, TraceExecEvent, TraceCallEvent } from './traces.js'
 
 import type { SqlApi } from './sql.js'
 import type { TabsApi } from './tabs.js'
@@ -13,6 +14,7 @@ import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
+import type { TracesApi } from './traces.js'
 import type { FileContent } from '../../agent/types.js'
 import type { ProviderState } from '../../ipc/providers.js'
 import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
@@ -78,6 +80,7 @@ export interface AppIpc {
   providers: ProvidersApi
   commandPalette: CommandPaletteApi
   agent: AgentApi
+  traces: TracesApi
   zenMode: ZenModeApi
   agentSidebar: AgentSidebarApi
   restart(): Promise<void>
