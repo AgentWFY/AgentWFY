@@ -192,6 +192,7 @@ const STYLES = `
     overflow: auto;
     padding: 2px 6px 12px;
     scrollbar-gutter: stable;
+    user-select: text;
   }
   .tr-empty {
     height: 100%;
