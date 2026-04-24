@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Orchestrate a demo recording against a running ./scripts/preview.
+#
+# Usage: scripts/record-demo <preview-name> <demo-dir>
+#
+# <demo-dir> is the folder holding the demo's driver.js (and where the
+# final demo.mp4 will be written). The driver.js is a Node script
+# executed with:
+#
+#   $PREVIEW_NAME  — the preview name (first argument to record-demo)
+#   $WORKTREE      — absolute path to the worktree, pre-cd'd into
+#
+# Drivers import from scripts/lib/demo.mjs for evalMain / evalPalette /
+# installCursorHelpers / sleep. Recording starts after setup and stops
+# after the driver returns — drivers should not start / stop the
+# recorder themselves.
+#
+# Prereqs:
+#   1) ./scripts/preview must already be running for <preview-name>.
+#   2) Demo dir must contain a driver.js. The produced demo.mp4 is
+#      written into the same directory.
+set -euo pipefail
+
+NAME="${1:-}"
+DEMO_DIR="${2:-}"
+
+if [ -z "$NAME" ] || [ -z "$DEMO_DIR" ]; then
+  echo "usage: scripts/record-demo <preview-name> <demo-dir>" >&2
+  exit 1
+fi
+
+WORKTREE=$(cd "$(dirname "$0")/.." && pwd)
+cd "$WORKTREE"
+
+# Resolve demo dir relative to the worktree if given as a relative path.
+if [ -d "$DEMO_DIR" ]; then
+  DEMO_DIR=$(cd "$DEMO_DIR" && pwd)
+elif [ -d "$WORKTREE/$DEMO_DIR" ]; then
+  DEMO_DIR=$(cd "$WORKTREE/$DEMO_DIR" && pwd)
+else
+  echo "demo dir not found: $DEMO_DIR" >&2
+  exit 1
+fi
+
+DRIVER="$DEMO_DIR/driver.js"
+OUT="$DEMO_DIR/demo.mp4"
+
+if [ ! -f "$DRIVER" ]; then
+  echo "driver.js not found in $DEMO_DIR" >&2
+  exit 1
+fi
+
+# --- Known-clean starting state ------------------------------------------
+# Config file persists across app restarts and across recording runs. Wipe
+# it so every demo begins from the defaults (e.g. light theme) — otherwise
+# a prior recording that set system.theme=dark leaves later runs starting
+# in the wrong state, which makes a "flip to dark" step invisible.
+./scripts/preview --exec "$NAME" bash -c 'echo "{}" > /tmp/preview-config.json' >/dev/null
+
+# Fresh app state so the demo starts from a known UI.
+./scripts/preview --restart "$NAME" >/dev/null
+sleep 2
+
+# Install the test-provider plugin — the demos drive a fake provider so
+# they don't need real API keys. CAST to TEXT: sqlite readfile() returns
+# a BLOB by default and better-sqlite3 would then give us a Buffer, which
+# `new Function(...buf)` stringifies wrong.
+./scripts/preview --sqlite "$NAME" "
+INSERT OR REPLACE INTO plugins (name, title, description, version, code, enabled)
+VALUES ('test-provider', 'Test Provider',
+        'Test provider for demos and session-resilience tests', '1.0.0',
+        CAST(readfile('/src/plugins/test-provider/src/index.js') AS TEXT), 1);
+" >/dev/null
+./scripts/preview --restart "$NAME" >/dev/null
+sleep 2
+
+# Cursor on, parked at bottom-right so the first on-screen move is visible.
+./scripts/preview --eval "$NAME" \
+  "window.ipc.previewCursor.setVisible(true).then(() => window.ipc.previewCursor.setPos(1180, 640))" >/dev/null
+
+./scripts/preview --record-start "$NAME"
+
+# Driver runs while wf-recorder records. If it throws, still stop the
+# recorder so we don't leak the process.
+set +e
+PREVIEW_NAME="$NAME" WORKTREE="$WORKTREE" node "$DRIVER"
+DRIVER_RC=$?
+set -e
+
+./scripts/preview --record-stop "$NAME" "$OUT"
+
+if [ "$DRIVER_RC" -ne 0 ]; then
+  echo "driver exited non-zero: $DRIVER_RC" >&2
+  exit "$DRIVER_RC"
+fi
+
+echo "recorded: $OUT"

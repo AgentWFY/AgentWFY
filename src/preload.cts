@@ -288,6 +288,14 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.traces.list, sessionId);
       },
     },
+    previewCursor: {
+      setPos(x: number, y: number): Promise<void> {
+        return ipcRenderer.invoke(Channels.previewCursor.setPos, { x, y });
+      },
+      setVisible(visible: boolean): Promise<void> {
+        return ipcRenderer.invoke(Channels.previewCursor.setVisible, visible);
+      },
+    },
     zenMode: {
       toggle(): Promise<void> {
         return ipcRenderer.invoke(Channels.zenMode.toggle);

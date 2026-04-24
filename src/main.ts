@@ -322,6 +322,16 @@ ipcMain.handle(Channels.zenMode.set, (_event, value: boolean) => {
   windowManager.setZenMode(!!value);
 });
 
+// --- Preview cursor overlay (only active when AGENTWFY_PREVIEW_CURSOR is set) ---
+
+ipcMain.handle(Channels.previewCursor.setPos, (_event, payload: { x: number; y: number }) => {
+  windowManager.getPreviewCursor()?.setPos(payload.x, payload.y);
+});
+
+ipcMain.handle(Channels.previewCursor.setVisible, (_event, visible: boolean) => {
+  windowManager.getPreviewCursor()?.setVisible(!!visible);
+});
+
 // --- Menu ---
 
 function buildAndSetMenu() {

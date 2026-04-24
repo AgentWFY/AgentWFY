@@ -11,6 +11,8 @@
 //   ./scripts/preview --list                           List running previews
 //   ./scripts/preview --cdp <name>                     Print CDP base URL and /json
 //   ./scripts/preview --screenshot <name> [--no-settle] <path>  Composited screenshot (grim; default 500ms settle)
+//   ./scripts/preview --record-start <name>                    Start wf-recorder (mp4 in container)
+//   ./scripts/preview --record-stop <name> <path>              Stop recorder, copy mp4 to <path>
 //   ./scripts/preview --sqlite <name> <sql>            Run SQL against the agent DB
 //   ./scripts/preview --eval <name> [--tab <frag>] <expr>   CDP Runtime.evaluate
 //   ./scripts/preview --logs <name> [--renderer] [-n N]  Main/renderer logs (stream, or last N)
@@ -206,6 +208,61 @@ if (args[0] === '--screenshot') {
     console.log(outPath);
   } catch (err) {
     console.error(`Screenshot failed: ${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+if (args[0] === '--record-start') {
+  const { container } = requireName('--record-start');
+  try {
+    // wf-recorder writes mp4 in the container; we SIGINT to finalize cleanly.
+    // -y overwrites any leftover file from a previous aborted run.
+    execSync(`docker exec -d ${container} bash -lc '
+      export XDG_RUNTIME_DIR=/tmp/preview-xdg
+      export WAYLAND_DISPLAY=$(basename $(ls /tmp/preview-xdg/wayland-* 2>/dev/null | grep -v lock | head -1))
+      rm -f /tmp/preview-recording.mp4 /tmp/preview-recording.pid
+      wf-recorder -y -o HEADLESS-1 -f /tmp/preview-recording.mp4 >/tmp/preview-recording.log 2>&1 &
+      echo $! > /tmp/preview-recording.pid
+    '`, { stdio: 'pipe' });
+    // Give wf-recorder a moment to open the output and start capturing
+    // before the caller fires the first UI action.
+    await sleep(800);
+    console.log(`Recording started in ${args[1]}.`);
+  } catch (err) {
+    console.error(`record-start failed: ${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+if (args[0] === '--record-stop') {
+  const { container } = requireName('--record-stop');
+  const outPath = args[2] ? resolve(args[2]) : join(process.cwd(), 'preview-recording.mp4');
+  try {
+    execSync(`docker exec ${container} bash -lc '
+      PID=$(cat /tmp/preview-recording.pid 2>/dev/null || true)
+      if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
+        echo "no active recording" >&2
+        exit 1
+      fi
+      # SIGINT lets wf-recorder flush the MP4 moov atom. SIGTERM/SIGKILL
+      # would leave an unplayable file.
+      kill -INT "$PID"
+      for i in $(seq 1 150); do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.1
+      done
+      if kill -0 "$PID" 2>/dev/null; then
+        echo "wf-recorder did not exit; forcing" >&2
+        kill -9 "$PID" 2>/dev/null || true
+      fi
+      rm -f /tmp/preview-recording.pid
+    '`, { stdio: 'inherit' });
+    execSync(`docker cp ${container}:/tmp/preview-recording.mp4 "${outPath}"`, { stdio: 'pipe' });
+    console.log(outPath);
+  } catch (err) {
+    console.error(`record-stop failed: ${err.message}`);
     process.exit(1);
   }
   process.exit(0);
