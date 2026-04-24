@@ -125,7 +125,9 @@ Each target's `webSocketDebuggerUrl` in `/json` is a WebSocket endpoint you can 
 ./scripts/preview --exec <name> bash -c '...'
 ```
 
-The container ships `sqlite3`, `grim`, `jq`, `curl`, and Node — agent-side scripting needs no host deps.
+The container ships `sqlite3`, `grim`, `jq`, `curl`, `wf-recorder`, `wtype`, `wlrctl`, and Node — agent-side scripting needs no host deps.
+
+`wf-recorder` is wired into the preview via `--record-start <name>` / `--record-stop <name> <out.mp4>` for recording demos. See [RECORDING_DEMOS.md](RECORDING_DEMOS.md) for the full workflow, the preview-cursor overlay, and where to drop new demo scripts.
 
 ### Diagnostics
 

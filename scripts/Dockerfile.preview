@@ -32,6 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     grim \
     jq \
+    wf-recorder \
+    wtype \
+    wlrctl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -383,6 +386,7 @@ echo "[preview] Sway ready: $WAYLAND_DISPLAY"
     # Playwright/puppeteer use for the same reason.
     AGENTWFY_CONFIG="/tmp/preview-config.json" \
     AGENTWFY_APP_ID="AgentWFY-preview" \
+    AGENTWFY_PREVIEW_CURSOR=1 \
     node /app/scripts/start "--agent-path=${AGENT_PATH}" \
       --ozone-platform=wayland --no-sandbox --disable-gpu --disable-dev-shm-usage \
       --disable-renderer-backgrounding --disable-backgrounding-occluded-windows \
@@ -400,6 +404,36 @@ sleep 10
 ) &
 sleep 2
 websockify --web=/opt/novnc "$WEB_PORT" "localhost:$VNC_PORT" &
+
+# Force the Electron main window to fill the compositor output.
+# Chromium's Wayland client reports its own natural geometry (~830x641)
+# and ignores the size in sway's initial xdg_toplevel.configure — so a
+# plain `for_window ... fullscreen enable` rule (applied at window
+# creation) leaves the surface small in the top-left corner with the
+# rest of the 1280x720 output black. Issuing `fullscreen` over IPC
+# *after* the surface is mapped produces a fresh configure event that
+# Chromium does honor. This watcher polls for the electron toplevel and
+# re-applies fullscreen whenever a new con_id appears, which also
+# covers the rebuild-loop restart case (old window goes away, new one
+# gets resized on the next poll). Toggle off/on because sway treats an
+# "enable" on an already-fullscreen window as a no-op and wouldn't emit
+# a new configure.
+(
+  export SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)
+  PREV_ID=""
+  while kill -0 $SWAY_PID 2>/dev/null; do
+    ID=$(swaymsg -t get_tree 2>/dev/null | jq -r '[.. | objects | select(.app_id? == "electron")] | first | .id // empty')
+    if [ -n "$ID" ] && [ "$ID" != "$PREV_ID" ]; then
+      sleep 0.5
+      swaymsg "[con_id=$ID] fullscreen disable" >/dev/null 2>&1 || true
+      swaymsg "[con_id=$ID] fullscreen enable" >/dev/null 2>&1 || true
+      PREV_ID=$ID
+    elif [ -z "$ID" ]; then
+      PREV_ID=""
+    fi
+    sleep 0.5
+  done
+) &
 if [ -n "$CDP_PORT" ]; then
   ( while true; do CDP_PORT="$CDP_PORT" CDP_PROXY_PORT="$CDP_PROXY_PORT" node /cdp-proxy.mjs || true; sleep 2; done ) &
 fi

@@ -56,6 +56,11 @@ export interface ZenModeApi {
   onChanged(callback: (isZen: boolean) => void): () => void
 }
 
+export interface PreviewCursorApi {
+  setPos(x: number, y: number): Promise<void>
+  setVisible(visible: boolean): Promise<void>
+}
+
 export interface AgentSidebarApi {
   getInstalled(): Promise<InstalledAgent[]>
   switch(agentRoot: string): Promise<void>
@@ -81,6 +86,7 @@ export interface AppIpc {
   agent: AgentApi
   traces: TracesApi
   zenMode: ZenModeApi
+  previewCursor: PreviewCursorApi
   agentSidebar: AgentSidebarApi
   restart(): Promise<void>
   stop(): Promise<void>

@@ -79,6 +79,10 @@ export const Channels = {
   views: {
     fetch: 'views:fetch',
   },
+  previewCursor: {
+    setPos: 'previewCursor:setPos',
+    setVisible: 'previewCursor:setVisible',
+  },
   zenMode: {
     toggle: 'zenMode:toggle',
     set: 'zenMode:set',

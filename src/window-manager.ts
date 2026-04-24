@@ -2,6 +2,7 @@ import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainIn
 import path from 'path';
 import { RendererBridge } from './renderer-bridge.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
+import { PreviewCursorManager } from './preview-cursor/manager.js';
 import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from './settings/config.js';
 import { ConfirmationManager } from './confirmation/manager.js';
 import { buildProviderState } from './ipc/providers.js';
@@ -31,6 +32,7 @@ class WindowManager {
   private rendererBridge: RendererBridge | null = null;
   private commandPalette: CommandPaletteManager | null = null;
   private confirmation: ConfirmationManager | null = null;
+  private previewCursor: PreviewCursorManager | null = null;
   private isZenMode = false;
   private forceClose = false;
 
@@ -161,6 +163,10 @@ class WindowManager {
     this.confirmation = new ConfirmationManager({
       getMainWindow: () => this.mainWindow!,
     });
+
+    if (process.env.AGENTWFY_PREVIEW_CURSOR) {
+      this.previewCursor = new PreviewCursorManager(window);
+    }
 
     // Wire up window events
     rendererView.webContents.on('page-title-updated', (evt) => {
@@ -387,6 +393,7 @@ class WindowManager {
   getActiveHttpApiPort(): number | null { return this.orchestrator.getActiveHttpApiPort(); }
   getCommandPalette(): CommandPaletteManager { return this.commandPalette!; }
   getConfirmation(): ConfirmationManager { return this.confirmation!; }
+  getPreviewCursor(): PreviewCursorManager | null { return this.previewCursor; }
   getAllContexts() { return this.orchestrator.getAllContexts(); }
 
   getContextForSender(senderId: number) { return this.orchestrator.getContextForSender(senderId); }
