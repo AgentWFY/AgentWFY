@@ -409,6 +409,7 @@ const STYLES = `
     flex-direction: column;
     gap: 14px;
     scrollbar-gutter: stable;
+    user-select: text;
   }
   .tp-section {
     display: flex;
