@@ -87,6 +87,11 @@ const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
 const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 const FALLBACK_VIEW_WIDTH = 1280;
 const FALLBACK_VIEW_HEIGHT = 720;
+const ZERO_BOUNDS: Rectangle = { x: 0, y: 0, width: 0, height: 0 };
+// Far-negative origin for capturePage's forced paint. Any realistic desktop
+// window fits inside a 30k pixel half-plane around the origin, so painting
+// at this coordinate is guaranteed off-screen.
+const CAPTURE_OFFSCREEN_OFFSET = -30000;
 const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
   info: 'info',
@@ -215,6 +220,13 @@ export class TabViewManager {
   // with no way for the renderer to undo it (the ancestor display:none
   // suppresses ResizeObserver).
   private collapsed = false;
+  // True only for the agent currently shown in the window. All WebContentsViews
+  // — active and inactive — share mainWindow.contentView.children, so an
+  // inactive manager must keep its views at 0x0 bounds (setVisible stays true
+  // for captureTab). Otherwise a just-closed active tab unmasks an inactive
+  // agent's view underneath, or a background openTab pops on top of the
+  // active agent.
+  private isActive = false;
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
@@ -424,7 +436,8 @@ export class TabViewManager {
 
     // While collapsed, only setAllTabsCollapsed(false) may restore bounds —
     // agent switches and tab-nav shortcuts must not un-collapse zen mode.
-    if (this.collapsed) {
+    // Inactive agents likewise stay at 0x0 until activateViews runs.
+    if (this.collapsed || !this.isActive) {
       return;
     }
 
@@ -460,6 +473,15 @@ export class TabViewManager {
   // WebContentsView background occludes the tabs behind it.
   private applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
     this.attachTabViewToWindow(state);
+
+    // Inactive agents keep every view at 0x0 regardless of what the renderer
+    // or openTab requested, while staying setVisible(true) from creation so
+    // captureTab's capturePage retains a live compositor surface for
+    // background sessions.
+    if (!this.isActive) {
+      state.view.setBounds(ZERO_BOUNDS);
+      return;
+    }
 
     if (visible) {
       // While collapsed, only setAllTabsCollapsed(false) may restore bounds.
@@ -502,7 +524,7 @@ export class TabViewManager {
         // to 0x0 proactively so nothing leaks through.
         for (const other of this.tabViewsByTabId.values()) {
           if (other !== state) {
-            other.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+            other.view.setBounds(ZERO_BOUNDS);
           }
         }
       } else {
@@ -597,11 +619,27 @@ export class TabViewManager {
 
   // Brings this agent's selected tab above other agents' views on a switch.
   activateViews(): void {
+    this.isActive = true;
     const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
     if (selected) {
       this.bringToFront(selected);
     }
     this.pushStateToRenderer();
+  }
+
+  // Inverse of activateViews. Called on the outgoing agent during a switch
+  // so its views can't leak through when the incoming agent has no selected
+  // tab on top (e.g. user just closed the last tab). Views stay attached
+  // and setVisible(true) so captureTab keeps working for background sessions.
+  deactivateViews(): void {
+    this.isActive = false;
+    this.zeroAllViewBounds();
+  }
+
+  private zeroAllViewBounds(): void {
+    for (const state of this.tabViewsByTabId.values()) {
+      state.view.setBounds(ZERO_BOUNDS);
+    }
   }
 
   // Directly shrink/restore every tab view in response to main-process
@@ -612,11 +650,10 @@ export class TabViewManager {
   setAllTabsCollapsed(collapsed: boolean): void {
     this.collapsed = collapsed;
     if (collapsed) {
-      const zero = { x: 0, y: 0, width: 0, height: 0 };
-      for (const state of this.tabViewsByTabId.values()) {
-        state.view.setBounds(zero);
-      }
-    } else if (this.selectedBounds) {
+      this.zeroAllViewBounds();
+    } else if (this.isActive && this.selectedBounds) {
+      // Only the active agent's views should re-expand on zen exit; inactive
+      // agents must stay at 0x0 or they'd unmask underneath the active agent.
       for (const state of this.tabViewsByTabId.values()) {
         state.view.setBounds(this.selectedBounds);
       }
@@ -818,24 +855,58 @@ export class TabViewManager {
 
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
     const state = await this.resolveReadyTabViewState(request.tabId);
-    // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
-    // frame sink not registered yet) and "Current display surface not
-    // available" (RWHV null). Retry on a short budget.
-    const deadline = Date.now() + 3000;
-    while (true) {
-      try {
-        const image = await state.view.webContents.capturePage();
-        return {
-          base64: image.toPNG().toString('base64'),
-          mimeType: 'image/png',
-        };
-      } catch (err) {
-        const msg = String(err);
-        const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
-        if (!retriable || Date.now() >= deadline || state.view.webContents.isDestroyed()) {
-          throw err;
+    const wc = state.view.webContents;
+    // capturePage forces Chromium to paint a frame. For a background view the
+    // compositor paints it for one frame at the view's origin using its
+    // internal viewport size — the tab flashes over whatever the user is
+    // looking at. Detaching the view from contentView breaks capturePage
+    // (RWHV gets torn down), and stayHidden:true alone doesn't suppress the
+    // flash for WebContentsView-attached contents.
+    //
+    // Workaround: move the view fully off-screen for the duration. The paint
+    // still happens, but at negative coordinates where nothing is composited
+    // on-screen. We preserve the view's size so the page doesn't relayout.
+    const originalBounds = state.view.getBounds();
+    // An on-screen tab (the active agent's selected tab) is already being
+    // composited at its normal bounds; capturePage won't add any flash.
+    // Only a zero-sized view (hidden tab or inactive agent) gets force-painted
+    // at origin by the capture — move that one off-screen first.
+    const needsRebounds = originalBounds.width === 0 || originalBounds.height === 0;
+    const captureSize = this.selectedBounds && this.selectedBounds.width > 0 && this.selectedBounds.height > 0
+      ? { width: this.selectedBounds.width, height: this.selectedBounds.height }
+      : { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
+    if (needsRebounds) {
+      state.view.setBounds({
+        x: CAPTURE_OFFSCREEN_OFFSET,
+        y: CAPTURE_OFFSCREEN_OFFSET,
+        width: captureSize.width,
+        height: captureSize.height,
+      });
+    }
+    try {
+      // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
+      // frame sink not registered yet) and "Current display surface not
+      // available" (RWHV null). Retry on a short budget.
+      const deadline = Date.now() + 3000;
+      while (true) {
+        try {
+          const image = await wc.capturePage(undefined, { stayHidden: true });
+          return {
+            base64: image.toPNG().toString('base64'),
+            mimeType: 'image/png',
+          };
+        } catch (err) {
+          const msg = String(err);
+          const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
+          if (!retriable || Date.now() >= deadline || wc.isDestroyed()) {
+            throw err;
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, 50));
         }
-        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    } finally {
+      if (needsRebounds && !wc.isDestroyed()) {
+        state.view.setBounds(originalBounds);
       }
     }
   }

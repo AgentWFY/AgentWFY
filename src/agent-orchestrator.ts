@@ -126,6 +126,8 @@ export class AgentOrchestrator {
     if (agentRoot === this.activeAgentRoot) return;
     if (!this.persistedAgentPaths.includes(agentRoot) && !this.agentContexts.has(agentRoot)) return;
 
+    const previousCtx = this.activeAgentRoot ? this.agentContexts.get(this.activeAgentRoot) : undefined;
+
     // Lazy-init: initialize agent context on first switch
     let ctx = this.agentContexts.get(agentRoot);
     if (!ctx) {
@@ -144,6 +146,10 @@ export class AgentOrchestrator {
     this.activeAgentRoot = agentRoot;
     this.deps.applyTheme();
 
+    // Collapse outgoing agent's views to 0x0 before promoting incoming. If
+    // the user then closes the incoming agent's last tab, nothing underneath
+    // the z-stack is left at stale bounds to leak through.
+    previousCtx?.tabViewManager.deactivateViews();
     ctx.tabViewManager.activateViews();
 
     this.pushFullState(ctx);
@@ -248,6 +254,7 @@ export class AgentOrchestrator {
   startActiveAgent(): void {
     const ctx = this.getActiveAgentContext();
     if (!ctx) return;
+    ctx.tabViewManager.activateViews();
     this.pushFullState(ctx);
     ctx.triggerEngine.start().then(() => {
       this.broadcastSidebarState(); // refresh HTTP port in status line
