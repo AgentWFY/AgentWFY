@@ -164,28 +164,45 @@ export async function dbGrep(
   pattern: string,
   options?: { ignoreCase?: boolean; literal?: boolean; context?: number; limit?: number },
 ): Promise<string> {
-  if (!dbPath.table) {
-    throw new Error('grep requires a table: @views, @modules, @tasks, or @docs')
-  }
-
   const ignoreCase = options?.ignoreCase ?? false
   const literal = options?.literal ?? false
   const contextLines = options?.context ?? 0
   const effectiveLimit = options?.limit ?? DEFAULT_GREP_LIMIT
 
-  let contentRows: unknown[]
-  if (dbPath.name) {
-    contentRows = await runAgentDbSql(agentRoot, {
+  interface ContentRow { table: string; name: string; content: string }
+  let contentRows: ContentRow[] = []
+
+  if (!dbPath.table) {
+    for (const table of [...VALID_TABLES].sort()) {
+      const rows = await runAgentDbSql(agentRoot, {
+        sql: `SELECT name, content FROM ${table} ORDER BY name`,
+        params: [],
+      })
+      for (const r of rows) {
+        const row = r as Record<string, unknown>
+        contentRows.push({ table, name: row.name as string, content: row.content as string })
+      }
+    }
+  } else if (dbPath.name) {
+    const rows = await runAgentDbSql(agentRoot, {
       sql: `SELECT name, content FROM ${dbPath.table} WHERE name = ?`,
       params: [dbPath.name],
     })
-    if (contentRows.length === 0) {
+    if (rows.length === 0) {
       throw new Error(`Not found: @${dbPath.table}/${dbPath.name}`)
     }
+    contentRows = rows.map(r => {
+      const row = r as Record<string, unknown>
+      return { table: dbPath.table, name: row.name as string, content: row.content as string }
+    })
   } else {
-    contentRows = await runAgentDbSql(agentRoot, {
+    const rows = await runAgentDbSql(agentRoot, {
       sql: `SELECT name, content FROM ${dbPath.table} ORDER BY name`,
       params: [],
+    })
+    contentRows = rows.map(r => {
+      const row = r as Record<string, unknown>
+      return { table: dbPath.table, name: row.name as string, content: row.content as string }
     })
   }
 
@@ -199,11 +216,9 @@ export async function dbGrep(
 
   for (const row of contentRows) {
     if (limitReached) break
-    const r = row as Record<string, unknown>
-    const name = r.name as string
-    const content = r.content as string
+    const { table, name, content } = row
     const lines = content.split('\n')
-    const ref = `@${dbPath.table}/${name}`
+    const ref = `@${table}/${name}`
 
     for (let i = 0; i < lines.length; i++) {
       if (regex.test(lines[i])) {
