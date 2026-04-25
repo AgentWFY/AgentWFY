@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0t64 \
     fonts-dejavu-core \
     fonts-liberation \
+    fonts-inter \
+    fonts-jetbrains-mono \
     unzip \
     ca-certificates \
     curl \
