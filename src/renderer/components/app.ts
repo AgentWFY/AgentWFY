@@ -302,7 +302,7 @@ export class TlApp extends HTMLElement {
         padding: 0;
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
-        margin-right: 2px;
+        margin-right: 4px;
       }
       .awfy-app-inline-toggle:hover {
         color: var(--color-text4);
@@ -310,7 +310,7 @@ export class TlApp extends HTMLElement {
       }
       .awfy-app-inline-toggle.visible {
         display: flex;
-        margin-left: 6px;
+        margin-left: 4px;
       }
       .awfy-app-main-area {
         flex: 1;
