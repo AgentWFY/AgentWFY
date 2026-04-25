@@ -258,6 +258,11 @@ ipcMain.handle(Channels.app.getBackupStatus, () => {
   }
 });
 
+ipcMain.handle(Channels.app.getSetting, (event, key: string, fallback?: unknown) => {
+  const root = windowManager.getAgentRootForEvent(event);
+  return getConfigValue(root, key, fallback) ?? null;
+});
+
 // --- Agent sidebar IPC handlers ---
 
 ipcMain.handle(Channels.agentSidebar.getInstalled, () => {

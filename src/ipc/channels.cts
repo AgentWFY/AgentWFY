@@ -111,5 +111,7 @@ export const Channels = {
     getHttpApiPort: 'app:getHttpApiPort',
     getBackupStatus: 'app:getBackupStatus',
     getDefaultView: 'app:getDefaultView',
+    getSetting: 'app:getSetting',
+    settingChanged: 'app:settingChanged',
   },
 } as const;

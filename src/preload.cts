@@ -196,6 +196,12 @@ if (isApp) {
     getDefaultView(): Promise<{ viewName: string; title: string; viewUpdatedAt: number } | null> {
       return ipcRenderer.invoke(Channels.app.getDefaultView);
     },
+    getSetting(key: string, fallback?: unknown): Promise<unknown> {
+      return ipcRenderer.invoke(Channels.app.getSetting, key, fallback);
+    },
+    onSettingChanged(callback: (data: PushMap['app:settingChanged']) => void): () => void {
+      return typedOn(Channels.app.settingChanged, callback);
+    },
     tasks: {
       start(taskName: string, input?: unknown, origin?: unknown): Promise<{ runId: string }> {
         return ipcRenderer.invoke(Channels.tasks.start, taskName, input, origin);

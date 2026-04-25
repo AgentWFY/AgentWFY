@@ -352,6 +352,7 @@ class WindowManager {
     if (cpWc && !cpWc.isDestroyed()) {
       cpWc.send(COMMAND_PALETTE_CHANNEL.SETTING_CHANGED, { key, value });
     }
+    this.sendToRenderer(Channels.app.settingChanged, { key, value });
   }
 
   // --- Lifecycle ---

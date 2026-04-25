@@ -422,6 +422,8 @@ export class CommandPaletteManager {
     if (scope === 'agent') {
       this.deps.setAgentConfig(name, rawValue);
     } else {
+      // Clear agent override so the new global value wins resolution.
+      this.clearAgentOverride(name);
       globalConfigSet(name, rawValue);
     }
     return { success: true };

@@ -36,6 +36,7 @@ export class TlTabs extends HTMLElement {
   private hiddenTabsBtnEl!: HTMLDivElement
   private hiddenTabsExpanded = false
   private unsubscribeStateChanged: (() => void) | null = null
+  private unsubscribeSettingChanged: (() => void) | null = null
   private lastDispatchedSelectedTabId: string | null = null
 
   connectedCallback() {
@@ -93,6 +94,12 @@ export class TlTabs extends HTMLElement {
     // Load tab-source config flag and react to changes from anywhere
     void this.loadConfig()
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    if (ipc) {
+      this.unsubscribeSettingChanged = ipc.onSettingChanged(({ key }) => {
+        if (key !== 'system.show-tab-source') return
+        void this.loadConfig()
+      })
+    }
 
     this.render()
   }
@@ -101,6 +108,10 @@ export class TlTabs extends HTMLElement {
     if (this.unsubscribeStateChanged) {
       this.unsubscribeStateChanged()
       this.unsubscribeStateChanged = null
+    }
+    if (this.unsubscribeSettingChanged) {
+      this.unsubscribeSettingChanged()
+      this.unsubscribeSettingChanged = null
     }
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     document.documentElement.classList.remove('tabs-show-source')
@@ -116,11 +127,8 @@ export class TlTabs extends HTMLElement {
     const ipc = window.ipc
     if (!ipc) return
     try {
-      const rows = await ipc.sql.run({
-        target: 'agent',
-        sql: "SELECT value FROM config WHERE name = 'system.show-tab-source'",
-      }) as Array<{ value: string | null }>
-      const v = (rows?.[0]?.value || '').toLowerCase()
+      const value = await ipc.getSetting('system.show-tab-source')
+      const v = String(value ?? '').toLowerCase()
       const next = v === 'true' || v === '1' || v === 'yes'
       document.documentElement.classList.toggle('tabs-show-source', next)
     } catch {

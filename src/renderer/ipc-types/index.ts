@@ -17,9 +17,9 @@ import type { TasksApi } from './tasks.js'
 import type { TracesApi } from './traces.js'
 import type { FileContent } from '../../agent/types.js'
 import type { ProviderState } from '../../ipc/providers.js'
-import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
+import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
 
-export type { ProviderState, AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
+export type { ProviderState, AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
 
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
@@ -97,6 +97,8 @@ export interface AppIpc {
   getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>
   getDefaultView(): Promise<{ viewName: string; title: string; viewUpdatedAt: number } | null>
+  getSetting(key: string, fallback?: unknown): Promise<unknown>
+  onSettingChanged(callback: (data: SettingChangedPayload) => void): () => void
 }
 
 declare global {

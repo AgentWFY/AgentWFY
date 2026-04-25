@@ -74,6 +74,11 @@ export interface SidebarSwitchedPayload {
   agents: InstalledAgent[]
 }
 
+export interface SettingChangedPayload {
+  key: string
+  value: unknown
+}
+
 // ── Push channel map (main → renderer) ──
 
 export interface PushMap {
@@ -87,6 +92,7 @@ export interface PushMap {
   'agent-sidebar:switched': SidebarSwitchedPayload
   'tasks:runFinished': TaskRunFinishedPayload
   'tasks:runStarted': TaskRunStartedPayload
+  'app:settingChanged': SettingChangedPayload
 }
 
 // ── Helper types ──
