@@ -103,7 +103,9 @@ Everything else is normal app IPC.
 
 Headless wlroots exposes no pointer device, so sway never renders a real cursor. The app creates a transparent `WebContentsView` above every tab view that carries a macOS-style black arrow. `window.ipc.previewCursor` positions it.
 
-CDP-dispatched mouse events **do not move the OS cursor**, and moving the overlay **does not fire DOM events**. A "click" is two separate operations: animate the overlay over the target, then dispatch synthetic `mousedown` / `mouseup` / `click` events on the element. Several app handlers (provider card, tool header, popup close) listen on `mousedown` only — always dispatch the full sequence. `d.clickEl` does both.
+**Hover states**: every `setPos` call dispatches a real `mouseMove` input event (via `webContents.sendInputEvent`) into every `WebContentsView` whose bounds contain `(x, y)` — main renderer, the active tab view, the command palette, etc. That's what triggers CSS `:hover`, JS `mouseenter` / `mouseover` listeners, and any other hover-driven UI (close × on tabs, hover affordances on buttons, …). Drivers don't need to dispatch synthetic hover DOM events themselves; just `d.moveTo(...)` / `d.moveToEl(...)` over the target and the visible hover state will appear in the recording. Pause briefly (`d.sleep(900)` or so) before moving away so the hover state is on screen for at least a frame or two.
+
+**Clicks** are still two separate operations: animate the overlay over the target, then dispatch synthetic `mousedown` / `mouseup` / `click` events on the element. Several app handlers (provider card, tool header, popup close) listen on `mousedown` only — always dispatch the full sequence. `d.clickEl` does both.
 
 `installCursorHelpers` tracks the current cursor position on `window.__demo.{x,y}`. Because the main-renderer page persists across every `evalMain` call, subsequent segments read the last known position and continue motion from there without needing to restate it.
 
@@ -161,6 +163,7 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 - **Video file is tiny (< 50 KB) or won't play** — `wf-recorder` didn't see a mapped output. Usually means the preview's Electron window didn't come up; check `./scripts/preview --logs <name> -n 30`.
 - **Driver throws `Cannot read properties of undefined (reading 'previewCursor')`** — the preview is running an image built before the overlay feature landed. Rebuild: `./scripts/preview --stop <name> && ./scripts/preview`.
 - **Clicks on a provider card or a settings button do nothing** — that handler listens on `mousedown`. Dispatch the full `mousedown` / `mouseup` / `click` sequence, not just `element.click()`.
+- **Hover state isn't visible in the recording** — either the cursor passed over the target too quickly (add a `d.sleep(800)` after `d.moveToEl(...)`) or the target was outside the WebContentsView the renderer cares about (e.g. the command-palette view's bounds). `setPos` only dispatches `mouseMove` to views whose bounds contain `(x, y)`; if the palette is open, hover-triggering elements behind it don't see hover events. Move the cursor inside the relevant view, or close the overlay first.
 - **Tool-header click opens the popup then the popup disappears** — you clicked while the message was still streaming. `waitFor` both `.tool-header[data-tool-id]` AND `.composer-stop` being hidden before clicking.
 - **Theme flip doesn't apply** — the palette's `Save` only writes when the target is Global or Agent; Default never persists. Click `.settings-target-btn[data-target="global"]` before typing the value.
 - **Palette stays open after Save** — the palette never auto-closes on Save, only on action fire (Enter) or Escape. Dispatch Escape on the palette document to pop it.

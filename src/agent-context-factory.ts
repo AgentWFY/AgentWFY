@@ -1,5 +1,5 @@
 import { session } from 'electron';
-import type { BaseWindow } from 'electron';
+import type { BaseWindow, WebContentsView } from 'electron';
 import { TabViewManager } from './tab-views/manager.js';
 import { getConfigValue, setAgentConfig } from './settings/config.js';
 import { ShortcutManager } from './shortcuts/manager.js';
@@ -36,6 +36,7 @@ export interface AgentContextFactoryDeps {
   unregisterTabSender: (webContentsId: number) => void;
   onRuntimeDbChange: (agentRoot: string, change: AgentDbChange) => void;
   clientPath: string;
+  getOverlayViews?: () => ReadonlyArray<WebContentsView>;
 }
 
 export class AgentContextFactory {
@@ -82,6 +83,7 @@ export class AgentContextFactory {
       session: agentSession,
       registerSender,
       unregisterSender,
+      getOverlayViews: this.deps.getOverlayViews,
     });
 
     const tabTools: AgentTabTools = {

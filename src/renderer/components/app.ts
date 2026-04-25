@@ -169,20 +169,22 @@ export class TlApp extends HTMLElement {
       .awfy-app-sidebar-top {
         display: flex;
         align-items: center;
-        height: 42px;
+        height: 30px;
         padding: 0 8px;
         gap: 6px;
         flex-shrink: 0;
         background: var(--color-sidebar-bg);
         -webkit-app-region: drag;
         min-width: max-content;
+        transition: height var(--transition-fast);
       }
+      :root.tabs-show-source .awfy-app-sidebar-top { height: 42px; }
       .awfy-app-sidebar-toggle {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         border: none;
         border-radius: var(--radius-sm);
         background: transparent;
@@ -269,25 +271,28 @@ export class TlApp extends HTMLElement {
         display: flex;
         align-items: center;
         flex-shrink: 0;
-        height: 42px;
+        height: 30px;
         box-sizing: border-box;
         background: var(--color-bg3);
         border-bottom: 1px solid var(--color-border);
-        padding: 1px 10px 0 6px;
-        gap: 4px;
+        padding: 0;
+        gap: 0;
         -webkit-app-region: drag;
+        transition: height var(--transition-fast);
       }
+      :root.tabs-show-source .awfy-app-header { height: 42px; }
       .awfy-app-header > .tab-bar {
         flex: 1;
         min-width: 0;
+        align-self: stretch;
       }
       /* Inline sidebar toggle (shown when sidebar is closed) */
       .awfy-app-inline-toggle {
         display: none;
         align-items: center;
         justify-content: center;
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         border: none;
         border-radius: var(--radius-sm);
         background: transparent;
@@ -305,6 +310,7 @@ export class TlApp extends HTMLElement {
       }
       .awfy-app-inline-toggle.visible {
         display: flex;
+        margin-left: 6px;
       }
       .awfy-app-main-area {
         flex: 1;
@@ -539,7 +545,9 @@ export class TlApp extends HTMLElement {
       }
 
       if (change.table === 'config') {
-        window.dispatchEvent(new CustomEvent('agentwfy:config-db-changed'))
+        window.dispatchEvent(new CustomEvent<{ key: string }>('agentwfy:config-db-changed', {
+          detail: { key: String(change.rowId) },
+        }))
       }
     })
   }

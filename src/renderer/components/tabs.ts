@@ -1,13 +1,22 @@
-import type { TabData, TabDataType, TabState } from '../ipc-types/index.js'
+import type { TabData, TabState } from '../ipc-types/index.js'
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
 const HIDDEN_TABS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
 
-const TAB_TYPE_ICONS: Record<TabDataType, string> = {
-  view: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`,
-  file: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
-  url: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+function formatTarget(tab: TabData): string {
+  if (tab.type === 'url') {
+    try {
+      const u = new URL(tab.target)
+      const host = u.host.replace(/^www\./, '')
+      const path = u.pathname === '/' ? '' : u.pathname
+      const search = u.search || ''
+      return host + path + search
+    } catch {
+      return tab.target
+    }
+  }
+  return tab.target
 }
 
 export class TlTabs extends HTMLElement {
@@ -81,6 +90,10 @@ export class TlTabs extends HTMLElement {
       }).catch(err => console.error('[tabs] getTabState failed:', err))
     }
 
+    // Load tab-source config flag and react to changes from anywhere
+    void this.loadConfig()
+    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+
     this.render()
   }
 
@@ -88,6 +101,30 @@ export class TlTabs extends HTMLElement {
     if (this.unsubscribeStateChanged) {
       this.unsubscribeStateChanged()
       this.unsubscribeStateChanged = null
+    }
+    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    document.documentElement.classList.remove('tabs-show-source')
+  }
+
+  private onConfigDbChanged = (e: Event) => {
+    const key = (e as CustomEvent<{ key?: string }>).detail?.key
+    if (key && key !== 'system.show-tab-source') return
+    void this.loadConfig()
+  }
+
+  private async loadConfig() {
+    const ipc = window.ipc
+    if (!ipc) return
+    try {
+      const rows = await ipc.sql.run({
+        target: 'agent',
+        sql: "SELECT value FROM config WHERE name = 'system.show-tab-source'",
+      }) as Array<{ value: string | null }>
+      const v = (rows?.[0]?.value || '').toLowerCase()
+      const next = v === 'true' || v === '1' || v === 'yes'
+      document.documentElement.classList.toggle('tabs-show-source', next)
+    } catch {
+      // ignore
     }
   }
 
@@ -116,8 +153,52 @@ export class TlTabs extends HTMLElement {
     return this.tabs.filter(t => !t.hidden)
   }
 
+  /** Build the inner DOM of a tab item. Pinned tabs render only the pin icon. */
+  private buildTabItemBody(tabItem: HTMLDivElement, tab: TabData) {
+    if (tab.pinned) {
+      const pin = document.createElement('span')
+      pin.className = 'tab-pin-icon'
+      pin.innerHTML = PIN_ICON_SVG
+      tabItem.appendChild(pin)
+      return
+    }
+
+    const row = document.createElement('div')
+    row.className = 'tab-row'
+
+    const title = document.createElement('span')
+    title.className = 'tab-title'
+    title.textContent = tab.title
+    row.appendChild(title)
+
+    const status = document.createElement('span')
+    status.className = 'tab-status'
+
+    const dot = document.createElement('span')
+    dot.className = 'tab-status-dot'
+    status.appendChild(dot)
+
+    const close = document.createElement('span')
+    close.className = 'tab-close'
+    close.textContent = '\u00d7'
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      window.ipc?.tabs.closeTab({ tabId: tab.id })
+    })
+    status.appendChild(close)
+
+    row.appendChild(status)
+    tabItem.appendChild(row)
+
+    const target = document.createElement('span')
+    target.className = 'tab-target'
+    target.textContent = formatTarget(tab)
+    tabItem.appendChild(target)
+  }
+
   private render() {
     if (!this.containerEl) return
+
     const visible = this.visibleTabs()
     const hasVisibleTabs = visible.length > 0
     this.panelContainerEl.style.display = hasVisibleTabs ? 'flex' : 'none'
@@ -137,9 +218,7 @@ export class TlTabs extends HTMLElement {
       this.hiddenTabsExpanded = false
     }
 
-    if (!hasVisibleTabs && !this.hiddenTabsExpanded) {
-      // Still need to manage panels for hidden tabs below
-    } else {
+    if (hasVisibleTabs || this.hiddenTabsExpanded) {
       const tabBar = this.tabBarEl
 
       visible.forEach((tab) => {
@@ -147,6 +226,7 @@ export class TlTabs extends HTMLElement {
         tabItem.className = 'tab-item'
         if (tab.id === this.selectedTabId) tabItem.classList.add('active')
         if (tab.pinned) tabItem.classList.add('pinned')
+        if (tab.viewChanged) tabItem.classList.add('changed')
         tabItem.draggable = true
 
         // Drag handlers — use index within all tabs for reorder
@@ -164,7 +244,6 @@ export class TlTabs extends HTMLElement {
           e.preventDefault()
           if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
 
-          // Check boundary constraint before showing indicators
           const fromPinned = this.dragFromIndex !== null && this.tabs[this.dragFromIndex]?.pinned === true
           const toPinned = tab.pinned
           if (this.dragFromIndex !== null && fromPinned !== toPinned) {
@@ -172,7 +251,6 @@ export class TlTabs extends HTMLElement {
             return
           }
 
-          // Remove old drag-over classes
           tabBar.querySelectorAll('.drag-over-left, .drag-over-right').forEach(el => {
             el.classList.remove('drag-over-left', 'drag-over-right')
           })
@@ -223,46 +301,9 @@ export class TlTabs extends HTMLElement {
           void this.showTabContextMenu(e, tab)
         })
 
-        if (tab.pinned) {
-          const pin = document.createElement('span')
-          pin.className = 'tab-pin-icon'
-          pin.innerHTML = PIN_ICON_SVG
-          tabItem.appendChild(pin)
-          if (tab.viewChanged) {
-            const dot = document.createElement('span')
-            dot.className = 'tab-changed-dot'
-            tabItem.appendChild(dot)
-          }
-        } else {
-          const icon = document.createElement('span')
-          icon.className = 'tab-type-icon'
-          icon.innerHTML = TAB_TYPE_ICONS[tab.type]
-          tabItem.appendChild(icon)
-
-          const title = document.createElement('span')
-          title.className = 'tab-title'
-          title.textContent = tab.title
-          tabItem.appendChild(title)
-
-          if (tab.viewChanged) {
-            const dot = document.createElement('span')
-            dot.className = 'tab-changed-dot'
-            tabItem.appendChild(dot)
-          }
-
-          const close = document.createElement('span')
-          close.className = 'tab-close'
-          close.textContent = '\u00d7'
-          close.addEventListener('click', (e) => {
-            e.stopPropagation()
-            window.ipc?.tabs.closeTab({ tabId: tab.id })
-          })
-          tabItem.appendChild(close)
-        }
+        this.buildTabItemBody(tabItem, tab)
 
         tabBar.insertBefore(tabItem, this.hiddenTabsBtnEl)
-
-
       })
 
       // Render expanded hidden tabs inline after the toggle button
@@ -274,25 +315,9 @@ export class TlTabs extends HTMLElement {
         for (const tab of hidden) {
           const tabItem = document.createElement('div')
           tabItem.className = 'hidden-tab-item'
+          if (tab.viewChanged) tabItem.classList.add('changed')
 
-          const icon = document.createElement('span')
-          icon.className = 'tab-type-icon'
-          icon.innerHTML = TAB_TYPE_ICONS[tab.type]
-          tabItem.appendChild(icon)
-
-          const title = document.createElement('span')
-          title.className = 'tab-title'
-          title.textContent = tab.title
-          tabItem.appendChild(title)
-
-          const close = document.createElement('span')
-          close.className = 'tab-close'
-          close.textContent = '\u00d7'
-          close.addEventListener('click', (e) => {
-            e.stopPropagation()
-            window.ipc?.tabs.closeTab({ tabId: tab.id })
-          })
-          tabItem.appendChild(close)
+          this.buildTabItemBody(tabItem, tab)
 
           tabItem.addEventListener('click', () => {
             window.ipc?.tabs.revealTab(tab.id)
@@ -416,27 +441,29 @@ export class TlTabs extends HTMLElement {
         overflow-x: auto;
         flex-shrink: 0;
         align-self: stretch;
-        align-items: center;
-        padding: 0 4px;
-        gap: 4px;
+        align-items: stretch;
+        padding: 0;
+        gap: 0;
         -webkit-app-region: drag;
         ${isWindows ? 'padding-right: 138px;' : ''}
       }
       .tab-bar::-webkit-scrollbar { display: none; }
+
+      /* Compact (single-line) is the default — flat segments with dividers */
       .tab-item {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 6px;
-        height: 28px;
-        padding: 0 10px;
+        gap: 8px;
+        align-self: stretch;
+        padding: 0 12px;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 12px;
         white-space: nowrap;
-        max-width: 200px;
+        max-width: 220px;
         flex-shrink: 0;
-        border-radius: var(--radius-md);
+        border-right: 1px solid var(--color-divider);
         position: relative;
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
@@ -458,69 +485,129 @@ export class TlTabs extends HTMLElement {
         color: var(--color-text4);
         background: var(--color-bg1);
         font-weight: 500;
-        box-shadow: 0 0 2px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.04);
       }
-      .tab-type-icon {
+
+      .tab-row {
         display: flex;
         align-items: center;
-        flex-shrink: 0;
-        width: 14px;
-        height: 14px;
-        opacity: 0.45;
-        transition: opacity var(--transition-fast);
-      }
-      .tab-item.active .tab-type-icon {
-        opacity: 0.75;
-      }
-      .tab-item:hover .tab-type-icon {
-        opacity: 0.65;
+        gap: 6px;
+        min-width: 0;
+        flex: 1 1 auto;
       }
       .tab-title {
+        flex: 1 1 auto;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
       }
+
+      /* Status slot — close × OR changed dot, mutually exclusive */
+      .tab-status {
+        position: relative;
+        flex: 0 0 14px;
+        width: 14px;
+        height: 14px;
+        display: grid;
+        place-items: center;
+        margin-right: -4px;
+      }
+      .tab-status-dot {
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--color-accent);
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+      }
       .tab-close {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 14px;
+        height: 14px;
         border-radius: var(--radius-sm);
         font-size: 14px;
         line-height: 1;
         color: var(--color-text2);
         opacity: 0;
-        flex-shrink: 0;
         cursor: pointer;
-        margin-right: -4px;
         transition: opacity var(--transition-fast), background var(--transition-fast);
       }
       .tab-close:hover {
         background: var(--color-item-hover);
         color: var(--color-text4);
+        opacity: 1;
       }
-      .tab-item:hover .tab-close,
-      .tab-item.active .tab-close { opacity: 1; }
+
+      /* Status priority: hover > changed > active-without-changes > nothing */
+      .tab-item.changed:not(:hover) .tab-status-dot { opacity: 1; }
+      .tab-item.active:not(.changed):not(:hover) .tab-close { opacity: 0.8; }
+      .tab-item:hover .tab-close { opacity: 0.8; }
+      .tab-item:hover .tab-status-dot { opacity: 0; }
+
+      /* Pinned tabs hide the status slot; the changed indicator is a corner badge */
+      .tab-item.pinned .tab-status,
+      .tab-item.pinned .tab-target,
+      .tab-item.pinned .tab-row { display: none; }
+      .tab-item.pinned.changed::after {
+        content: '';
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--color-accent);
+      }
+
       .tab-pin-icon {
         flex-shrink: 0;
         width: 14px;
         height: 14px;
         display: flex;
         align-items: center;
+        justify-content: center;
         opacity: 0.5;
       }
-      .tab-item.active .tab-pin-icon {
-        opacity: 0.85;
+      .tab-item.active .tab-pin-icon { opacity: 0.85; }
+      .tab-item:hover .tab-pin-icon { opacity: 0.7; }
+
+      /* Source target line — hidden by default, shown when show-source is on */
+      .tab-target {
+        display: none;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        line-height: 12px;
+        color: var(--color-text1);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
       }
-      .tab-item:hover .tab-pin-icon {
-        opacity: 0.7;
+
+      /* Show-source mode: two-line tabs. flex: 0 1 auto + min-width
+         keeps tabs at content size when there's room (so a single tab
+         doesn't stretch the bar) while still letting them shrink when
+         crowded. */
+      :root.tabs-show-source .tab-item:not(.pinned),
+      :root.tabs-show-source .hidden-tab-item {
+        flex-direction: column;
+        justify-content: center;
+        align-items: stretch;
+        gap: 1px;
+        padding: 4px 12px;
+        max-width: 320px;
+        flex: 0 1 auto;
+        min-width: 80px;
       }
-      .tab-changed-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--color-accent);
-        flex-shrink: 0;
+      :root.tabs-show-source .tab-target {
+        display: block;
+      }
+      :root.tabs-show-source .tab-item.active .tab-target {
+        color: var(--color-text2);
       }
 
       .tab-panel-container {
@@ -557,15 +644,15 @@ export class TlTabs extends HTMLElement {
       .hidden-tabs-btn {
         display: flex;
         align-items: center;
-        gap: 4px;
-        padding: 0 8px;
-        height: 28px;
+        gap: 5px;
+        padding: 0 10px;
+        align-self: stretch;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 11px;
         white-space: nowrap;
         flex-shrink: 0;
-        border-radius: var(--radius-md);
+        border-left: 1px solid var(--color-divider);
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
         margin-left: auto;
@@ -582,15 +669,20 @@ export class TlTabs extends HTMLElement {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 16px;
-        height: 16px;
+        min-width: 14px;
+        height: 14px;
         padding: 0 4px;
-        border-radius: 8px;
-        background: var(--color-accent);
-        color: #fff;
+        border-radius: 7px;
+        background: var(--color-bg3);
+        color: var(--color-text3);
         font-size: 10px;
         font-weight: 600;
         line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      .hidden-tabs-btn.active .hidden-tabs-count {
+        background: var(--color-text4);
+        color: var(--color-bg1);
       }
       .hidden-separator {
         width: 1px;
@@ -603,18 +695,21 @@ export class TlTabs extends HTMLElement {
       .hidden-tab-item {
         display: flex;
         align-items: center;
-        height: 28px;
-        padding: 0 10px;
+        justify-content: center;
+        gap: 8px;
+        align-self: stretch;
+        padding: 0 12px;
         cursor: pointer;
         color: var(--color-text2);
         font-size: 12px;
         white-space: nowrap;
-        max-width: 200px;
+        max-width: 220px;
         flex-shrink: 0;
-        gap: 6px;
-        border-radius: var(--radius-md);
+        border-right: 1px solid var(--color-divider);
+        position: relative;
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
+        background: transparent;
         opacity: 0.6;
       }
       .hidden-tab-item:hover {
@@ -622,7 +717,10 @@ export class TlTabs extends HTMLElement {
         color: var(--color-text3);
         background: var(--color-item-hover);
       }
-      .hidden-tab-item:hover .tab-close { opacity: 1; }
+      /* Hidden tabs reuse the same status-slot rules */
+      .hidden-tab-item.changed:not(:hover) .tab-status-dot { opacity: 1; }
+      .hidden-tab-item:hover .tab-close { opacity: 0.8; }
+      .hidden-tab-item:hover .tab-status-dot { opacity: 0; }
     `
   }
 }

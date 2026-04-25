@@ -126,6 +126,11 @@ export class CommandPaletteManager {
     }
   }
 
+  getView(): WebContentsView | null {
+    if (!this.view || this.view.webContents.isDestroyed()) return null;
+    return this.view;
+  }
+
   destroy(): void {
     if (!this.view || this.view.webContents.isDestroyed()) {
       this.view = null;

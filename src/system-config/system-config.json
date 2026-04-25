@@ -48,6 +48,10 @@
     "description": "Reasoning effort level: off, minimal, low, medium, high, xhigh (default: off)"
   },
   {
+    "name": "system.show-tab-source",
+    "description": "Show each tab's source (view name, file path, or URL) on a second line under the title (default: false)"
+  },
+  {
     "name": "system.shortcuts.toggle-command-palette",
     "description": "Shortcut for Command Palette (default: mod+k). Set to 'disabled' to unbind."
   },

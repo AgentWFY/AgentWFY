@@ -30,6 +30,11 @@ export class ConfirmationManager {
     return this.view.webContents
   }
 
+  getView(): WebContentsView | null {
+    if (!this.view || this.view.webContents.isDestroyed()) return null
+    return this.view
+  }
+
   isVisible(): boolean {
     return !!this.view && !this.view.webContents.isDestroyed() && this.view.getVisible()
   }

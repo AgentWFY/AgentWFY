@@ -86,6 +86,36 @@ export class PreviewCursorManager {
       height: VIEW_H,
     });
     this.bringToFront();
+    // Moving the overlay alone is purely visual; CSS :hover and JS
+    // hover listeners only fire when a real mouseMove is dispatched
+    // into the view.
+    this.dispatchMouseMove(x, y);
+  }
+
+  private dispatchMouseMove(x: number, y: number): void {
+    if (!this.window || this.window.isDestroyed()) return;
+    const children = this.window.contentView.children;
+    for (const child of children) {
+      if (!(child instanceof WebContentsView)) continue;
+      if (child === this.view) continue;
+      const wc = child.webContents;
+      if (wc.isDestroyed()) continue;
+      const b = child.getBounds();
+      // Inactive tab views are kept setVisible(true) at 0×0 bounds so
+      // captureTab keeps working; skip them so mouseMove only reaches
+      // the views actually under the cursor.
+      if (b.width <= 0 || b.height <= 0) continue;
+      if (x < b.x || x >= b.x + b.width || y < b.y || y >= b.y + b.height) continue;
+      try {
+        wc.sendInputEvent({
+          type: 'mouseMove',
+          x: Math.round(x - b.x),
+          y: Math.round(y - b.y),
+        });
+      } catch {
+        // View destroyed mid-call — fine.
+      }
+    }
   }
 
   setVisible(visible: boolean): void {
@@ -97,6 +127,11 @@ export class PreviewCursorManager {
     } else {
       this.stopTopTimer();
     }
+  }
+
+  getView(): WebContentsView | null {
+    if (!this.view || this.view.webContents.isDestroyed()) return null;
+    return this.view;
   }
 
   private startTopTimer(): void {

@@ -1,4 +1,4 @@
-import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
+import { BaseWindow, BrowserWindow, Menu, nativeTheme, View, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
@@ -204,6 +204,10 @@ interface TabViewManagerDeps {
   session: Electron.Session;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
+  // Views that must stay above the selected tab in the window's child
+  // stack (command palette, confirmation dialog, preview cursor).
+  // Invoked once per bringToFront; should be cheap.
+  getOverlayViews?: () => ReadonlyArray<WebContentsView>;
 }
 
 export class TabViewManager {
@@ -449,20 +453,34 @@ export class TabViewManager {
 
     const children = mainWindow.contentView.children;
     const currentIndex = children.indexOf(state.view);
-    // Skip the reorder when already on top — addChildView on an attached
-    // view tears down and rebuilds the RenderWidgetHostView, briefly
-    // blanking the tab.
-    if (currentIndex < 0 || currentIndex === children.length - 1) {
-      return;
-    }
+    if (currentIndex < 0) return;
 
-    // addChildView on an already-attached child appends a duplicate
-    // instead of reordering. Explicit remove + re-add forces the move.
+    const overlayViews = this.deps.getOverlayViews?.() ?? [];
+    const overlaySet = new Set<View>(overlayViews);
+
+    // Skip the reorder when the tab already sits at the top of the
+    // non-overlays — addChildView on an attached child tears down and
+    // rebuilds its RenderWidgetHostView, briefly blanking the renderer
+    // surface. This early-return keeps ResizeObserver-driven bounds
+    // updates (header height transitions, sidebar toggles, …) from
+    // ping-ponging the tab every animation frame.
+    const aboveTab = children.slice(currentIndex + 1);
+    if (aboveTab.every(c => overlaySet.has(c))) return;
+
+    // addChildView on an attached child appends a duplicate. Explicit
+    // remove + re-add is the only API that actually moves a child to
+    // the top. Re-add the tab first, then each overlay in its current
+    // relative order so overlays end up above the tab.
+    const overlaysOrdered = children.filter(c => overlaySet.has(c));
     try {
       mainWindow.contentView.removeChildView(state.view);
       mainWindow.contentView.addChildView(state.view);
+      for (const overlay of overlaysOrdered) {
+        mainWindow.contentView.removeChildView(overlay);
+        mainWindow.contentView.addChildView(overlay);
+      }
     } catch {
-      // defensive
+      // defensive: a view may have been detached concurrently
     }
   }
 
@@ -501,7 +519,6 @@ export class TabViewManager {
         this.selectedBounds = bounds;
         // Propagate to every background tab so the selected tab on top
         // occludes them exactly — otherwise sidebar/header would leak.
-        // bringToFront below handles the target's own bounds.
         for (const other of this.tabViewsByTabId.values()) {
           if (other !== state) other.view.setBounds(bounds);
         }

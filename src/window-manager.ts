@@ -56,6 +56,7 @@ class WindowManager {
       unregisterTabSender: (id) => this.orchestrator.unregisterTabSender(id),
       onRuntimeDbChange: (root, change) => this.orchestrator.onRuntimeDbChange(root, change),
       clientPath: this.clientPath,
+      getOverlayViews: () => this.collectOverlayViews(),
     });
 
     this.orchestrator = new AgentOrchestrator({
@@ -394,6 +395,23 @@ class WindowManager {
   getCommandPalette(): CommandPaletteManager { return this.commandPalette!; }
   getConfirmation(): ConfirmationManager { return this.confirmation!; }
   getPreviewCursor(): PreviewCursorManager | null { return this.previewCursor; }
+
+  // WebContentsViews the per-agent tab manager must keep above the
+  // selected tab when it reorders the window's child stack. Including
+  // the preview cursor here lets bringToFront's early-return correctly
+  // treat cursor-above-tab as "already in order" — without it, the
+  // cursor's 150ms top-asserting ticker defeats the early-return and
+  // every renderer bounds tick blanks the tab.
+  private collectOverlayViews(): WebContentsView[] {
+    const views: WebContentsView[] = [];
+    const palette = this.commandPalette?.getView();
+    if (palette) views.push(palette);
+    const confirmation = this.confirmation?.getView();
+    if (confirmation) views.push(confirmation);
+    const cursor = this.previewCursor?.getView();
+    if (cursor) views.push(cursor);
+    return views;
+  }
   getAllContexts() { return this.orchestrator.getAllContexts(); }
 
   getContextForSender(senderId: number) { return this.orchestrator.getContextForSender(senderId); }
