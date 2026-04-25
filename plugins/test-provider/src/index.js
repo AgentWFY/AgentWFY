@@ -90,6 +90,9 @@ class TestSession {
       case 'tools':
         yield* this._streamWithTools(signal, executeTool)
         break
+      case 'trace-demo':
+        yield* this._streamTraceDemo(signal, executeTool)
+        break
       case 'abort-tools':
         yield* this._streamAbortTools(signal, executeTool)
         break
@@ -185,6 +188,80 @@ class TestSession {
       timestamp: Date.now(),
     })
     this._partial = null
+    yield { type: 'state_changed' }
+  }
+
+  async *_streamTraceDemo(signal, executeTool) {
+    const intro = 'Let me explore the agent database — I will list views, count docs, and try one bad query to demonstrate error handling.'
+    yield* this._streamText(intro, signal, 8)
+
+    const code1 = `console.log('Step 1: list views')
+const views = await runSql({ target: 'agent', sql: "SELECT name, title FROM views ORDER BY name LIMIT 5" })
+console.log('Found', views.length, 'views')
+
+console.log('Step 2: list docs')
+const docs = await runSql({ target: 'agent', sql: "SELECT name FROM docs LIMIT 3" })
+console.log('Found', docs.length, 'docs')
+
+console.log('Step 3: try a bad query (this should fail)')
+try {
+  await runSql({ target: 'agent', sql: 'SELECT * FROM nonexistent_table' })
+} catch (e) {
+  console.log('Bad query failed as expected:', e.message)
+}
+
+return { views: views.length, docs: docs.length, status: 'completed' }`
+
+    const tool1 = {
+      id: 'trace-demo-' + Date.now() + '-1',
+      description: 'Inspect agent database — views, docs, and a bad query',
+      code: code1,
+    }
+    yield { type: 'exec_js', id: tool1.id, description: tool1.description, code: tool1.code }
+    const result1 = await executeTool(tool1)
+    this._messages.push({ role: 'assistant', content: intro, toolCall: tool1 })
+    this._messages.push({ role: 'tool', id: tool1.id, content: result1.content })
+    yield { type: 'state_changed' }
+
+    const between = '\n\nNow let me try a query against a missing table directly — this whole tool call should be marked as failed.'
+    yield* this._streamText(between, signal, 8)
+
+    const code2 = `// This will throw — the tool call as a whole fails
+const rows = await runSql({
+  target: 'agent',
+  sql: 'DELETE FROM views_test WHERE name = ?',
+  params: ['demo']
+})
+return rows`
+
+    const tool2 = {
+      id: 'trace-demo-' + Date.now() + '-2',
+      description: 'Delete from a missing table (will fail)',
+      code: code2,
+    }
+    yield { type: 'exec_js', id: tool2.id, description: tool2.description, code: tool2.code }
+    const result2 = await executeTool(tool2)
+    this._messages.push({ role: 'tool', id: tool2.id, content: result2.content })
+    yield { type: 'state_changed' }
+
+    const outro = '\n\nDone! Click any tool above to see the new tool-call popup, or open the function-trace panel from the toolbar to see all calls grouped by exec.'
+    yield* this._streamText(outro, signal, 8)
+
+    this._displayMessages.push({
+      role: 'assistant',
+      blocks: [
+        { type: 'text', text: intro },
+        { type: 'exec_js', id: tool1.id, description: tool1.description, code: tool1.code },
+        { type: 'exec_js_result', id: tool1.id, content: result1.content, isError: result1.isError },
+        { type: 'text', text: between },
+        { type: 'exec_js', id: tool2.id, description: tool2.description, code: tool2.code },
+        { type: 'exec_js_result', id: tool2.id, content: result2.content, isError: result2.isError },
+        { type: 'text', text: outro },
+      ],
+      timestamp: Date.now(),
+    })
+    this._partial = null
+    yield { type: 'status_line', text: 'Test Provider · trace-demo' }
     yield { type: 'state_changed' }
   }
 

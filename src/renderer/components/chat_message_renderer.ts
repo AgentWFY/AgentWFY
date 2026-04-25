@@ -113,14 +113,14 @@ function extractFilesFromResult(result: unknown): { files: Array<{ data: string;
   return { files, filteredResult: filtered }
 }
 
-interface ParsedResult {
+export interface ParsedResult {
   value?: string
   error?: { name: string; message: string }
   logs: Array<{ level: string; message: string }>
   files: Array<{ data: string; mimeType: string }>
 }
 
-function parseToolResult(result: unknown): ParsedResult {
+export function parseToolResult(result: unknown): ParsedResult {
   const { files, filteredResult } = extractFilesFromResult(result)
 
   // Extract text from content array
@@ -202,36 +202,91 @@ export function findToolPair(messages: DisplayMessage[], toolId: string): ToolPa
   return null
 }
 
-function tpSection(label: string, dotClass: string, meta: string, body: string): string {
-  const metaHtml = meta ? `<span class="tp-section-meta">${meta}</span>` : ''
-  return `<section class="tp-section"><div class="tp-section-label"><span class="tp-dot ${dotClass}"></span>${label}${metaHtml}</div>${body}</section>`
+function tpSection(opts: {
+  label: string
+  meta?: string
+  truncated?: boolean
+  copyKey?: string
+  body: string
+}): string {
+  const sideParts: string[] = []
+  if (opts.meta) sideParts.push(`<span class="tp-section-meta">${escapeHtml(opts.meta)}</span>`)
+  if (opts.truncated) sideParts.push(`<span class="tp-trunc-pill">truncated</span>`)
+  if (opts.copyKey) sideParts.push(`<button class="tp-copy" data-copy="${escapeHtml(opts.copyKey)}" type="button">Copy</button>`)
+  const side = sideParts.length > 0 ? `<span class="tp-section-side">${sideParts.join('')}</span>` : ''
+  return `<section class="tp-section"><div class="tp-section-label">${escapeHtml(opts.label)}${side}</div>${opts.body}</section>`
 }
 
-export function renderToolDetailsHtml(tool: ToolPair): string {
-  const parsed = parseToolResult(tool.result)
-  const hasError = tool.isError || !!parsed.error
-  const imageFiles = parsed.files.filter(f => f.mimeType.startsWith('image/'))
-  const nonImageFiles = parsed.files.filter(f => !f.mimeType.startsWith('image/'))
+export function renderToolStatusPillHtml(tool: ToolPair, parsed?: ParsedResult): string {
+  if (tool.result === null && !tool.isError) {
+    return `<span class="tp-status running"><span class="tp-status-dot"></span>running</span>`
+  }
+  const p = parsed ?? parseToolResult(tool.result)
+  const hasError = tool.isError || !!p.error
+  if (hasError) {
+    return `<span class="tp-status err"><span class="tp-status-dot"></span>error</span>`
+  }
+  return `<span class="tp-status ok" title="ok"><span class="tp-status-dot"></span></span>`
+}
 
-  const sections: string[] = []
+export function resolveToolCopyText(tool: ToolPair, key: string): string {
+  if (key === 'code') return tool.code
+  const parsed = parseToolResult(tool.result)
+  if (key === 'value') return parsed.value ?? ''
+  if (key === 'error') {
+    if (!parsed.error) return ''
+    return parsed.error.name + ': ' + parsed.error.message
+  }
+  if (key === 'logs') {
+    return parsed.logs.map(l => `[${l.level}] ${l.message}`).join('\n')
+  }
+  return ''
+}
+
+export function renderToolDetailsHtml(tool: ToolPair, parsed?: ParsedResult): string {
+  const p = parsed ?? parseToolResult(tool.result)
+  const hasError = tool.isError || !!p.error
+  const imageFiles = p.files.filter(f => f.mimeType.startsWith('image/'))
+  const nonImageFiles = p.files.filter(f => !f.mimeType.startsWith('image/'))
+
+  const parts: string[] = []
+
+  if (hasError && p.error) {
+    parts.push(`<div class="tp-error-card"><div class="tp-error-name">${escapeHtml(p.error.name)}</div><div class="tp-error-msg">${escapeHtml(p.error.message)}</div></div>`)
+  }
 
   if (tool.code) {
-    sections.push(tpSection('Code', 'tp-dot-code', '', `<pre class="tp-block tp-code">${escapeHtml(tool.code)}</pre>`))
+    parts.push(tpSection({
+      label: 'Code',
+      copyKey: 'code',
+      body: `<pre class="tp-block tp-code">${escapeHtml(tool.code)}</pre>`,
+    }))
   }
 
-  if (hasError && parsed.error) {
-    const body = `<div class="tp-error"><div class="tp-error-name">${escapeHtml(parsed.error.name)}</div><div class="tp-error-msg">${escapeHtml(parsed.error.message)}</div></div>`
-    sections.push(tpSection('Error', 'tp-dot-error', '', body))
-  } else if (parsed.value !== undefined) {
-    sections.push(tpSection('Return value', 'tp-dot-value', '', `<pre class="tp-block tp-value">${escapeHtml(parsed.value)}</pre>`))
-  } else if (tool.result === null) {
-    sections.push(tpSection('Result', 'tp-dot-value', '', '<div class="tp-empty-inline">Still running…</div>'))
+  if (!hasError) {
+    if (p.value !== undefined) {
+      parts.push(tpSection({
+        label: 'Return value',
+        copyKey: 'value',
+        body: `<pre class="tp-block tp-value">${escapeHtml(p.value)}</pre>`,
+      }))
+    } else if (tool.result === null) {
+      parts.push(tpSection({
+        label: 'Result',
+        body: '<div class="tp-empty-inline">Still running…</div>',
+      }))
+    }
   }
 
-  if (parsed.logs.length > 0) {
-    const rows = parsed.logs.map(renderLogEntry).join('')
-    const meta = `${parsed.logs.length} message${parsed.logs.length !== 1 ? 's' : ''}`
-    sections.push(tpSection('Console', 'tp-dot-log', meta, `<div class="tp-logs">${rows}</div>`))
+  if (p.logs.length > 0) {
+    const rows = p.logs.map(renderLogEntry).join('')
+    const meta = `${p.logs.length} message${p.logs.length !== 1 ? 's' : ''}`
+    parts.push(tpSection({
+      label: 'Console',
+      meta,
+      copyKey: 'logs',
+      body: `<div class="tp-logs">${rows}</div>`,
+    }))
   }
 
   if (imageFiles.length > 0) {
@@ -239,21 +294,28 @@ export function renderToolDetailsHtml(tool: ToolPair): string {
       const ext = f.mimeType.split('/')[1]?.toUpperCase() || 'IMG'
       return `<figure class="tp-img-wrap"><img src="${imageDataUrl(f.mimeType, f.data)}"><figcaption class="tp-img-meta"><span class="tp-img-pill">${escapeHtml(ext)}</span></figcaption></figure>`
     }).join('')
-    const meta = String(imageFiles.length)
     const label = imageFiles.length === 1 ? 'Image' : 'Images'
-    sections.push(tpSection(label, 'tp-dot-img', meta, `<div class="tp-images">${items}</div>`))
+    parts.push(tpSection({
+      label,
+      meta: String(imageFiles.length),
+      body: `<div class="tp-images">${items}</div>`,
+    }))
   }
 
   if (nonImageFiles.length > 0) {
     const badges = nonImageFiles.map(f => `<span class="tp-file-badge">${escapeHtml(f.mimeType)}</span>`).join('')
-    sections.push(tpSection('Files', 'tp-dot-file', '', `<div class="tp-files">${badges}</div>`))
+    parts.push(tpSection({
+      label: 'Files',
+      meta: String(nonImageFiles.length),
+      body: `<div class="tp-files">${badges}</div>`,
+    }))
   }
 
-  if (sections.length === 0) {
+  if (parts.length === 0) {
     return '<div class="tp-empty">No output</div>'
   }
 
-  return sections.join('')
+  return parts.join('')
 }
 
 // --- Incremental DOM rendering ---

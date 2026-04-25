@@ -3,9 +3,12 @@ import {
   updateMessagesEl,
   findToolPair,
   renderToolDetailsHtml,
+  renderToolStatusPillHtml,
+  resolveToolCopyText,
+  parseToolResult,
   type ToolPair,
 } from './chat_message_renderer.js'
-import { parseTabLink } from './chat_utils.js'
+import { parseTabLink, copyToButton, CLOSE_ICON_SVG } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
 import type { TlChatInput } from './chat_input.js'
 import type { TlTracePanel } from './trace_panel.js'
@@ -315,73 +318,79 @@ const STYLES = `
     background: var(--color-bg3);
     border-radius: var(--radius-sm);
   }
-  /* ── Tool details popup ── */
-  .tool-popup-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 50;
-    background: var(--color-modal-overlay);
-    backdrop-filter: blur(6px) saturate(120%);
-    -webkit-backdrop-filter: blur(6px) saturate(120%);
-    display: flex;
-    padding: 14px;
-    box-sizing: border-box;
-    animation: tp-overlay-fade 160ms ease-out;
-  }
-  .tool-popup-overlay[hidden] { display: none; }
-  @keyframes tp-overlay-fade {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
   .tool-popup {
     flex: 1;
     min-height: 0;
     min-width: 0;
-    background: var(--color-bg1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    background: transparent;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: var(--color-modal-shadow);
-    animation: tp-popup-rise 200ms cubic-bezier(0.2, 0.8, 0.25, 1);
+    animation: tp-fade 140ms ease-out;
   }
-  @keyframes tp-popup-rise {
-    from { transform: translateY(8px) scale(0.985); opacity: 0; }
-    to   { transform: translateY(0) scale(1); opacity: 1; }
+  .tool-popup[hidden] { display: none; }
+  @keyframes tp-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
   .tool-popup-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 10px 10px 16px;
+    gap: 8px;
+    padding: 6px 6px 6px 12px;
+    border-bottom: 1px solid var(--color-divider);
     flex-shrink: 0;
+    min-height: 28px;
   }
   .tool-popup-description {
     flex: 1;
     min-width: 0;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--color-text4);
     font-weight: 600;
     letter-spacing: -0.1px;
+    line-height: 1.35;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tool-popup-error-badge {
-    padding: 2px 8px;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    color: var(--color-red-fg);
-    background: var(--color-red-bg);
-    border-radius: 999px;
+  .tool-popup-pills {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
   }
+  /* Status: minimal text-only — no pill background */
+  .tp-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .tp-status.ok  { color: var(--color-text2); }
+  .tp-status.err { color: var(--color-red-fg); }
+  .tp-status .tp-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .tp-status.ok .tp-status-dot { background: var(--color-green-fg); }
+  .tp-status.running .tp-status-dot {
+    background: var(--color-text2);
+    animation: tp-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes tp-pulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+  }
   .tool-popup-close {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     border: none;
     background: transparent;
     color: var(--color-text2);
@@ -389,10 +398,9 @@ const STYLES = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
     line-height: 1;
     padding: 0;
-    border-radius: 7px;
+    border-radius: 4px;
     flex-shrink: 0;
     transition: background var(--transition-fast), color var(--transition-fast);
   }
@@ -400,108 +408,137 @@ const STYLES = `
     background: var(--color-item-hover);
     color: var(--color-text4);
   }
+  .tool-popup-close svg { display: block; }
   .tool-popup-body {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 4px 16px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+    padding: 10px 12px 14px;
     scrollbar-gutter: stable;
     user-select: text;
   }
-  .tp-section {
-    display: flex;
-    flex-direction: column;
+  /* Error: subtle, text-led — no card */
+  .tp-error-card {
+    margin: 0 0 12px;
+    padding: 6px 10px;
+    background: var(--color-red-bg);
+    border-left: 2px solid var(--color-red-fg);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   }
+  .tp-error-card .tp-error-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-red-fg);
+    margin-bottom: 2px;
+  }
+  .tp-error-card .tp-error-msg {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-red-fg);
+    line-height: 1.45;
+    word-break: break-word;
+    white-space: pre-wrap;
+    opacity: 0.9;
+  }
+  .tp-section {
+    margin-bottom: 12px;
+  }
+  .tp-section:last-child { margin-bottom: 0; }
   .tp-section-label {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 6px;
-    padding: 2px 2px 7px;
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    color: var(--color-text2);
-  }
-  .tp-section-meta {
-    margin-left: auto;
+    margin-bottom: 4px;
+    font-size: 11px;
     font-weight: 500;
-    letter-spacing: 0.2px;
-    text-transform: none;
-    font-size: 10.5px;
     color: var(--color-text2);
+    line-height: 1.3;
   }
-  .tp-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
+  .tp-section-side {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
   }
-  .tp-dot-code  { background: var(--color-text2); }
-  .tp-dot-value { background: var(--color-green-fg); }
-  .tp-dot-error { background: var(--color-red-fg); }
-  .tp-dot-log   { background: var(--color-accent); }
-  .tp-dot-img   { background: var(--color-accent); }
-  .tp-dot-file  { background: var(--color-text2); }
+  .tp-section:hover .tp-section-side,
+  .tp-section:focus-within .tp-section-side {
+    opacity: 1;
+  }
+  .tp-section-side .tp-trunc-pill { opacity: 1; }
+  .tp-section-meta {
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+    opacity: 1;
+  }
   .tp-block {
     margin: 0;
-    padding: 12px 14px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    word-break: break-word;
-    background: var(--color-code-bg);
-    color: var(--color-text4);
-    border-radius: var(--radius-md);
-    overflow: auto;
-    max-height: none;
-  }
-  .tp-block.tp-value { color: var(--color-text3); }
-  .tp-error {
-    padding: 12px 14px;
-    background: var(--color-red-bg);
-    color: var(--color-red-fg);
-    border-radius: 8px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-  .tp-error-name {
-    font-weight: 700;
-    margin-bottom: 3px;
-  }
-  .tp-error-msg {
-    word-break: break-word;
-    opacity: 0.92;
-  }
-  .tp-logs {
-    background: var(--color-bg2);
-    border-radius: 8px;
-    padding: 6px 0;
+    padding: 8px 10px;
     font-family: var(--font-mono);
     font-size: 11.5px;
-    line-height: 1.6;
-    max-height: none;
-    overflow: hidden;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--color-bg2);
+    color: var(--color-text4);
+    border: none;
+    border-radius: var(--radius-sm);
+    overflow: auto;
+    max-height: 280px;
+  }
+  .tp-block.tp-value { color: var(--color-text3); }
+  .tp-trunc-pill {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--color-text2);
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-style: italic;
+  }
+  .tp-copy {
+    font-size: 11px;
+    color: var(--color-text2);
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: var(--font-family);
+    line-height: 1.3;
+    transition: color var(--transition-fast);
+  }
+  .tp-copy:hover { color: var(--color-text4); }
+  .tp-copy.copied { color: var(--color-green-fg); }
+  .tp-logs {
+    background: var(--color-bg2);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 5px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.55;
+    max-height: 240px;
+    overflow: auto;
   }
   .tp-logs .log-entry {
-    padding: 1px 12px;
+    padding: 0 10px;
   }
   .tp-logs .log-level {
-    width: 36px;
+    width: 32px;
   }
   .tp-images {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
   .tp-img-wrap {
     margin: 0;
-    border-radius: 8px;
+    border: none;
+    border-radius: var(--radius-sm);
     overflow: hidden;
     background: var(--color-bg2);
   }
@@ -511,7 +548,7 @@ const STYLES = `
     max-width: 100%;
   }
   .tp-img-meta {
-    padding: 6px 10px;
+    padding: 5px 9px;
     font-size: 10px;
     color: var(--color-text2);
     background: var(--color-bg3);
@@ -533,27 +570,26 @@ const STYLES = `
   }
   .tp-file-badge {
     display: inline-block;
-    padding: 3px 8px;
-    font-size: 10px;
-    font-weight: 600;
+    padding: 2px 7px;
+    font-size: 11px;
     color: var(--color-text2);
     background: var(--color-bg2);
-    border-radius: 6px;
+    border: none;
+    border-radius: var(--radius-sm);
   }
   .tp-empty {
-    padding: 24px;
+    padding: 32px 16px;
     text-align: center;
     color: var(--color-text2);
-    font-style: italic;
     font-size: 12px;
   }
   .tp-empty-inline {
-    padding: 10px 14px;
+    padding: 8px 10px;
     background: var(--color-bg2);
     color: var(--color-text2);
-    border-radius: 8px;
-    font-style: italic;
-    font-size: 12px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
   }
   .block-custom {
     font-size: 12px;
@@ -811,12 +847,14 @@ export class TlAgentChat extends HTMLElement {
   private messagesEl: HTMLElement | null = null
   private containerEl!: HTMLDivElement
   private styleEl!: HTMLStyleElement
-  private _toolPopupOverlay: HTMLElement | null = null
+  private _toolPopupEl: HTMLElement | null = null
   private _toolPopupDescription: HTMLElement | null = null
-  private _toolPopupErrorBadge: HTMLElement | null = null
+  private _toolPopupPills: HTMLElement | null = null
   private _toolPopupBody: HTMLElement | null = null
   private _activeToolId: string | null = null
   private _activeToolSig: string | null = null
+  /** Single source of truth for which view owns the messages flex slot. */
+  private _inlineSlot: 'messages' | 'trace' | 'tool' = 'messages'
   private static readonly SCROLL_THRESHOLD = 4
   private userScrolledUp = false
   private _programmaticScrollCount = 0
@@ -1400,10 +1438,11 @@ export class TlAgentChat extends HTMLElement {
     this._scrollToBottomBtn = null
     this._traceBtn = null
     this._tracePanelEl = null
-    this._toolPopupOverlay = null
+    this._toolPopupEl = null
     this._toolPopupDescription = null
-    this._toolPopupErrorBadge = null
+    this._toolPopupPills = null
     this._toolPopupBody = null
+    this._inlineSlot = 'messages'
     this._activeToolId = null
     this._activeToolSig = null
   }
@@ -1480,6 +1519,16 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.appendChild(this._scrollToBottomBtn)
 
     container.appendChild(this.messagesEl)
+
+    // Inline panels share the messages flex slot — DOM order matters for the
+    // visual position when one of them takes over from messagesEl.
+    this.buildToolPopup(container)
+    this._tracePanelEl = document.createElement('awfy-trace-panel') as TlTracePanel
+    this._tracePanelEl.addEventListener('open', () => this.setInlineSlot('trace'))
+    this._tracePanelEl.addEventListener('close', () => {
+      if (this._inlineSlot === 'trace') this.setInlineSlot('messages')
+    })
+    container.appendChild(this._tracePanelEl)
 
     // Error banner
     this._errorBanner = document.createElement('div')
@@ -1566,21 +1615,13 @@ export class TlAgentChat extends HTMLElement {
 
     container.appendChild(inputArea)
 
-    this.buildToolPopup(container)
-
-    this._tracePanelEl = document.createElement('awfy-trace-panel') as TlTracePanel
-    container.appendChild(this._tracePanelEl)
-
     this.containerEl.appendChild(container)
   }
 
   private handleOpenTracePanel() {
     const panel = this._tracePanelEl
     if (!panel) return
-    if (panel.isOpen()) {
-      panel.close()
-      return
-    }
+    if (panel.isOpen()) { panel.close(); return }
     const s = agentSessionStore.state
     const sessionId = s.activeSessionId
     if (!sessionId) {
@@ -1588,16 +1629,26 @@ export class TlAgentChat extends HTMLElement {
       this.updateErrorBanner()
       return
     }
+    if (this._activeToolId) this.closeToolPopup()
     void panel.open(sessionId, s.label || '')
   }
 
-  private buildToolPopup(container: HTMLElement) {
-    const overlay = document.createElement('div')
-    overlay.className = 'tool-popup-overlay'
-    overlay.hidden = true
+  /** Owns visibility of messagesEl + the two inline panels. */
+  private setInlineSlot(slot: 'messages' | 'trace' | 'tool') {
+    if (this._inlineSlot === slot) return
+    this._inlineSlot = slot
+    const target = slot === 'messages' ? '' : 'none'
+    if (this.messagesEl && this.messagesEl.style.display !== target) {
+      this.messagesEl.style.display = target
+    }
+    if (this._toolPopupEl) this._toolPopupEl.hidden = slot !== 'tool'
+    // Trace panel manages its own `hidden` via open()/close().
+  }
 
+  private buildToolPopup(container: HTMLElement) {
     const popup = document.createElement('div')
     popup.className = 'tool-popup'
+    popup.hidden = true
 
     const header = document.createElement('div')
     header.className = 'tool-popup-header'
@@ -1605,43 +1656,45 @@ export class TlAgentChat extends HTMLElement {
     const description = document.createElement('div')
     description.className = 'tool-popup-description'
 
-    const errorBadge = document.createElement('span')
-    errorBadge.className = 'tool-popup-error-badge'
-    errorBadge.textContent = 'error'
-    errorBadge.style.display = 'none'
+    const pills = document.createElement('div')
+    pills.className = 'tool-popup-pills'
 
     const closeBtn = document.createElement('button')
     closeBtn.className = 'tool-popup-close'
     closeBtn.type = 'button'
     closeBtn.title = 'Close'
     closeBtn.setAttribute('aria-label', 'Close tool details')
-    closeBtn.textContent = '×'
+    closeBtn.innerHTML = CLOSE_ICON_SVG
     closeBtn.addEventListener('mousedown', (e) => {
       e.preventDefault()
       this.closeToolPopup()
     })
 
-    header.append(description, errorBadge, closeBtn)
+    header.append(description, pills, closeBtn)
 
     const body = document.createElement('div')
     body.className = 'tool-popup-body'
+    body.addEventListener('click', this.onToolPopupBodyClick)
 
     popup.append(header, body)
-    overlay.appendChild(popup)
+    container.appendChild(popup)
 
-    overlay.addEventListener('mousedown', (e) => {
-      if (e.target === overlay) {
-        e.preventDefault()
-        this.closeToolPopup()
-      }
-    })
-
-    container.appendChild(overlay)
-
-    this._toolPopupOverlay = overlay
+    this._toolPopupEl = popup
     this._toolPopupDescription = description
-    this._toolPopupErrorBadge = errorBadge
+    this._toolPopupPills = pills
     this._toolPopupBody = body
+  }
+
+  private onToolPopupBodyClick = (e: Event) => {
+    const target = e.target as HTMLElement
+    const copyBtn = target.closest('.tp-copy[data-copy]') as HTMLButtonElement | null
+    if (!copyBtn) return
+    e.preventDefault()
+    e.stopPropagation()
+    const key = copyBtn.dataset.copy
+    const tool = key ? this.findActiveTool() : null
+    if (!tool || !key) return
+    void copyToButton(copyBtn, resolveToolCopyText(tool, key))
   }
 
   private findActiveTool(): ToolPair | null {
@@ -1668,20 +1721,22 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private openToolPopup(toolId: string) {
+    if (this._tracePanelEl?.isOpen()) this._tracePanelEl.close()
     this._activeToolId = toolId
     const tool = this.findActiveTool()
     if (!tool) { this._activeToolId = null; return }
     this.renderToolPopup(tool, true)
-    if (this._toolPopupOverlay) this._toolPopupOverlay.hidden = false
+    this.setInlineSlot('tool')
   }
 
   private renderToolPopup(tool: ToolPair, resetScroll: boolean) {
-    if (!this._toolPopupDescription || !this._toolPopupErrorBadge || !this._toolPopupBody) return
+    if (!this._toolPopupDescription || !this._toolPopupPills || !this._toolPopupBody) return
+    // Parse once, share with both renderers — avoids re-parsing the result blob per paint.
+    const parsed = parseToolResult(tool.result)
     this._toolPopupDescription.textContent = tool.description
     this._toolPopupDescription.title = tool.description
-    this._toolPopupErrorBadge.textContent = 'error'
-    this._toolPopupErrorBadge.style.display = tool.isError ? '' : 'none'
-    this._toolPopupBody.innerHTML = renderToolDetailsHtml(tool)
+    this._toolPopupPills.innerHTML = renderToolStatusPillHtml(tool, parsed)
+    this._toolPopupBody.innerHTML = renderToolDetailsHtml(tool, parsed)
     if (resetScroll) this._toolPopupBody.scrollTop = 0
     this._activeToolSig = this.toolSignature(tool)
   }
@@ -1696,10 +1751,10 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private closeToolPopup() {
-    if (this._toolPopupOverlay) this._toolPopupOverlay.hidden = true
     if (this._toolPopupBody) this._toolPopupBody.innerHTML = ''
     this._activeToolId = null
     this._activeToolSig = null
+    this.setInlineSlot('messages')
   }
 
   private onPopupKeydown = (e: KeyboardEvent) => {
@@ -1737,9 +1792,11 @@ export class TlAgentChat extends HTMLElement {
   private updateMessages() {
     const s = agentSessionStore.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
+    const inlineActive = this._inlineSlot !== 'messages'
+    const target = (hasMessages && !inlineActive) ? '' : 'none'
 
-    if (this.messagesEl) {
-      this.messagesEl.style.display = hasMessages ? '' : 'none'
+    if (this.messagesEl && this.messagesEl.style.display !== target) {
+      this.messagesEl.style.display = target
     }
 
     if (!this.messagesEl || !hasMessages) return

@@ -1,12 +1,14 @@
-import { escapeHtml } from './chat_utils.js'
+import { escapeHtml, copyToButton, CLOSE_ICON_SVG, BACK_ICON_SVG } from './chat_utils.js'
 import type { TraceEvent, TraceExecEvent, TraceCallEvent } from '../ipc-types/index.js'
 
 interface ExecGroup {
   exec: TraceExecEvent | null
   execId: string
+  index: number
   calls: TraceCallEvent[]
   startedAt: number
-  totalDurationMs: number
+  endedAt: number
+  hasError: boolean
 }
 
 function formatDuration(ms: number): string {
@@ -35,24 +37,30 @@ function execHeaderText(exec: TraceExecEvent | null): string {
   return line.length > 140 ? line.slice(0, 139) + '…' : line
 }
 
-function groupEvents(events: TraceEvent[]): { groups: ExecGroup[]; totalStart: number; totalEnd: number; maxCallDurationMs: number } {
+function clampPct(v: number): string {
+  return Math.max(0, Math.min(100, v)).toFixed(2)
+}
+
+function groupEvents(events: TraceEvent[]): { groups: ExecGroup[]; totalStart: number; totalEnd: number; totalErrors: number } {
   const byExecId = new Map<string, ExecGroup>()
-  const execOnly: TraceExecEvent[] = []
 
   for (const ev of events) {
     if (ev.t === 'exec') {
-      execOnly.push(ev)
       const prev = byExecId.get(ev.id)
       if (prev) {
         prev.exec = ev
         prev.startedAt = Math.min(prev.startedAt, ev.startedAt)
+        prev.endedAt = Math.max(prev.endedAt, ev.startedAt + ev.durationMs)
+        if (!ev.ok) prev.hasError = true
       } else {
         byExecId.set(ev.id, {
           exec: ev,
           execId: ev.id,
+          index: 0,
           calls: [],
           startedAt: ev.startedAt,
-          totalDurationMs: ev.durationMs,
+          endedAt: ev.startedAt + ev.durationMs,
+          hasError: !ev.ok,
         })
       }
     }
@@ -65,9 +73,11 @@ function groupEvents(events: TraceEvent[]): { groups: ExecGroup[]; totalStart: n
         group = {
           exec: null,
           execId: ev.execId,
+          index: 0,
           calls: [],
           startedAt: ev.startedAt,
-          totalDurationMs: 0,
+          endedAt: ev.startedAt + ev.durationMs,
+          hasError: false,
         }
         byExecId.set(ev.execId, group)
       }
@@ -75,99 +85,77 @@ function groupEvents(events: TraceEvent[]): { groups: ExecGroup[]; totalStart: n
       if (group.startedAt === 0 || ev.startedAt < group.startedAt) {
         group.startedAt = ev.startedAt
       }
+      const callEnd = ev.startedAt + ev.durationMs
+      if (callEnd > group.endedAt) group.endedAt = callEnd
+      if (!ev.ok) group.hasError = true
     }
   }
 
   const groups = Array.from(byExecId.values())
-  for (const g of groups) {
-    g.calls.sort((a, b) => a.startedAt - b.startedAt)
-  }
+  for (const g of groups) g.calls.sort((a, b) => a.startedAt - b.startedAt)
   groups.sort((a, b) => a.startedAt - b.startedAt)
+  groups.forEach((g, i) => { g.index = i + 1 })
 
   let totalStart = Infinity
   let totalEnd = 0
-  let maxCallDurationMs = 1
+  let totalErrors = 0
   for (const g of groups) {
     totalStart = Math.min(totalStart, g.startedAt)
-    const execEnd = g.startedAt + g.totalDurationMs
-    totalEnd = Math.max(totalEnd, execEnd)
-    for (const c of g.calls) {
-      totalEnd = Math.max(totalEnd, c.startedAt + c.durationMs)
-      if (c.durationMs > maxCallDurationMs) maxCallDurationMs = c.durationMs
-    }
+    totalEnd = Math.max(totalEnd, g.endedAt)
+    if (g.hasError) totalErrors++
   }
-
   if (!isFinite(totalStart)) totalStart = 0
 
-  return { groups, totalStart, totalEnd, maxCallDurationMs }
+  return { groups, totalStart, totalEnd, totalErrors }
+}
+
+function formatJsonMaybe(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return text
+  const first = trimmed[0]
+  if (first !== '{' && first !== '[' && first !== '"') return text
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2)
+  } catch {
+    return text
+  }
 }
 
 const STYLES = `
   awfy-trace-panel {
     display: flex;
     flex-direction: column;
-    position: absolute;
-    inset: 0;
-    z-index: 50;
-    background: var(--color-modal-overlay);
-    backdrop-filter: blur(6px) saturate(120%);
-    -webkit-backdrop-filter: blur(6px) saturate(120%);
-    padding: 14px;
-    box-sizing: border-box;
-    animation: tr-fade 160ms ease-out;
-  }
-  awfy-trace-panel[hidden] { display: none; }
-  @keyframes tr-fade { from { opacity: 0; } to { opacity: 1; } }
-  .tr-card {
     flex: 1;
     min-height: 0;
     min-width: 0;
-    background: var(--color-bg1);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
-    box-shadow: var(--color-modal-shadow);
-    animation: tr-rise 200ms cubic-bezier(0.2, 0.8, 0.25, 1);
+    animation: tr-fade 140ms ease-out;
   }
-  @keyframes tr-rise {
-    from { transform: translateY(8px) scale(0.985); opacity: 0; }
-    to   { transform: translateY(0) scale(1); opacity: 1; }
-  }
-  .tr-head {
-    display: flex;
+  awfy-trace-panel[hidden] { display: none; }
+  @keyframes tr-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Shared atoms */
+  .tr-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+  .tr-dot.ok  { background: var(--color-green-fg); }
+  .tr-dot.err { background: var(--color-red-fg); }
+
+  .tr-status {
+    display: inline-flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 10px 10px 16px;
-    flex-shrink: 0;
-  }
-  .tr-title {
-    flex: 1;
-    min-width: 0;
-    font-size: 13px;
-    color: var(--color-text4);
-    font-weight: 600;
-    letter-spacing: -0.1px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    overflow: hidden;
-  }
-  .tr-title-label { flex-shrink: 0; }
-  .tr-title-meta {
+    gap: 5px;
     font-size: 11px;
-    font-weight: 500;
+    font-variant-numeric: tabular-nums;
     color: var(--color-text2);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
+    line-height: 1;
   }
-  .tr-close {
-    width: 26px;
-    height: 26px;
+  .tr-status.ok  { color: var(--color-text2); }
+  .tr-status.err { color: var(--color-red-fg); }
+  .tr-status .tr-dot { background: currentColor; }
+  .tr-status.ok .tr-dot { background: var(--color-green-fg); }
+
+  .tr-icon-btn {
+    width: 22px;
+    height: 22px;
     border: none;
     background: transparent;
     color: var(--color-text2);
@@ -175,25 +163,406 @@ const STYLES = `
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
     line-height: 1;
     padding: 0;
-    border-radius: 7px;
+    border-radius: 4px;
     flex-shrink: 0;
     transition: background var(--transition-fast), color var(--transition-fast);
   }
-  .tr-close:hover {
-    background: var(--color-item-hover);
-    color: var(--color-text4);
+  .tr-icon-btn:hover { background: var(--color-item-hover); color: var(--color-text4); }
+  .tr-icon-btn svg { display: block; }
+
+  /* List view header */
+  .tr-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 6px 6px 12px;
+    border-bottom: 1px solid var(--color-divider);
+    flex-shrink: 0;
+    min-height: 28px;
   }
+  .tr-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text4);
+    letter-spacing: -0.1px;
+    flex-shrink: 0;
+  }
+  .tr-stats {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+  }
+  .tr-stats span { white-space: nowrap; }
+  .tr-stats .n { color: var(--color-text3); }
+  .tr-stats .sep { opacity: 0.5; }
+
+  .tr-filters {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 5px 12px 6px;
+    border-bottom: 1px solid var(--color-divider);
+    flex-shrink: 0;
+  }
+  .tr-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 0;
+    border-radius: 0;
+    font-size: 11px;
+    color: var(--color-text2);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--transition-fast);
+    line-height: 1.4;
+  }
+  .tr-chip:hover { color: var(--color-text4); }
+  .tr-chip.active {
+    color: var(--color-text4);
+    font-weight: 600;
+    background: transparent;
+    border: none;
+  }
+  .tr-chip.err.active { color: var(--color-red-fg); }
+  .tr-chip-count {
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+  }
+  .tr-chip.active .tr-chip-count { color: var(--color-text2); }
+
   .tr-body {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 2px 6px 12px;
     scrollbar-gutter: stable;
     user-select: text;
   }
+  .tr-list { padding: 2px 0 12px; }
+
+  .tr-exec {
+    border-bottom: 1px solid var(--color-divider);
+    background: transparent;
+    overflow: hidden;
+  }
+  .tr-exec:last-child { border-bottom: none; }
+
+  .tr-exec-head {
+    padding: 7px 12px 7px 10px;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition-fast);
+  }
+  .tr-exec-head:hover { background: var(--color-item-hover); }
+
+  .tr-exec-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .tr-caret {
+    color: var(--color-text2);
+    font-size: 9px;
+    width: 8px;
+    flex-shrink: 0;
+    transition: transform 120ms ease;
+    text-align: center;
+    opacity: 0.6;
+  }
+  .tr-exec.collapsed .tr-caret { transform: rotate(-90deg); }
+  .tr-exec-desc {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.1px;
+  }
+  .tr-exec.errored .tr-exec-desc { color: var(--color-text4); }
+  .tr-exec-dur {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tr-wf {
+    position: relative;
+    height: 4px;
+    background: var(--color-bg3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-left: 14px;
+  }
+  .tr-wf > i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--color-text3);
+    border-radius: 2px;
+    min-width: 2px;
+    opacity: 0.55;
+  }
+  .tr-wf > i.err { background: var(--color-red-fg); opacity: 0.9; }
+
+  .tr-exec-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--color-text2);
+    margin-top: 4px;
+    margin-left: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tr-exec-meta .sep { opacity: 0.5; }
+
+  .tr-calls {
+    background: transparent;
+    padding: 0 0 6px;
+  }
+  .tr-exec.collapsed .tr-calls { display: none; }
+
+  .tr-call {
+    display: grid;
+    grid-template-columns: minmax(60px, 1fr) minmax(36px, 1.5fr) auto 10px;
+    gap: 10px;
+    align-items: center;
+    padding: 4px 12px 4px 32px;
+    border: none;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+  }
+  .tr-call:hover { background: var(--color-item-hover); }
+  .tr-call-method {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tr-call.errored .tr-call-method { color: var(--color-red-fg); }
+  .tr-mini {
+    position: relative;
+    height: 3px;
+    background: var(--color-bg3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .tr-mini > i {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--color-text3);
+    border-radius: 2px;
+    min-width: 2px;
+    opacity: 0.55;
+  }
+  .tr-call.errored .tr-mini > i { background: var(--color-red-fg); opacity: 0.9; }
+  .tr-call-dur {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--color-text2);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .tr-chev {
+    color: var(--color-text2);
+    font-size: 11px;
+    opacity: 0;
+    text-align: right;
+    transition: opacity var(--transition-fast);
+  }
+  .tr-call:hover .tr-chev { opacity: 0.6; }
+
+  /* Detail view */
+  .tr-det-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--color-divider);
+    flex-shrink: 0;
+    min-height: 28px;
+  }
+  .tr-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11.5px;
+    color: var(--color-text2);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: var(--font-family);
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .tr-back:hover { background: var(--color-item-hover); color: var(--color-text4); }
+  .tr-back svg { display: block; }
+  .tr-det-method {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text4);
+    margin-left: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .tr-det-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 10px 12px 14px;
+    user-select: text;
+    scrollbar-gutter: stable;
+  }
+
+  .tr-det-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text3);
+    margin-bottom: 10px;
+    letter-spacing: -0.05px;
+    line-height: 1.4;
+  }
+
+  .tr-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    font-size: 11px;
+    color: var(--color-text2);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+  }
+  .tr-badges .tr-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .tr-badges .tr-meta-item.ok  { color: var(--color-text2); }
+  .tr-badges .tr-meta-item.err { color: var(--color-red-fg); }
+  .tr-badges .tr-meta-item .tr-dot { width: 6px; height: 6px; }
+  .tr-badges .tr-meta-item.ok .tr-dot { background: var(--color-green-fg); }
+  .tr-badges .tr-meta-sep {
+    color: var(--color-text2);
+    opacity: 0.5;
+  }
+
+  .tr-error-card {
+    margin: 0 0 14px;
+    padding: 7px 10px;
+    background: var(--color-red-bg);
+    border-left: 2px solid var(--color-red-fg);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .tr-error-card .name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-red-fg);
+    margin-bottom: 2px;
+  }
+  .tr-error-card .msg {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-red-fg);
+    line-height: 1.45;
+    word-break: break-word;
+    white-space: pre-wrap;
+    opacity: 0.9;
+  }
+
+  .tr-section { margin-bottom: 12px; }
+  .tr-section h5 {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text2);
+    line-height: 1.3;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .tr-section h5 .side {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 8px;
+    align-items: baseline;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+  .tr-section:hover h5 .side,
+  .tr-section:focus-within h5 .side {
+    opacity: 1;
+  }
+  .tr-section h5 .side .tr-trunc-pill { opacity: 1; }
+  .tr-section pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--color-text4);
+    background: var(--color-bg2);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: none;
+  }
+
+  .tr-trunc-pill {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--color-text2);
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-style: italic;
+  }
+
+  .tr-copy {
+    font-size: 11px;
+    color: var(--color-text2);
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    cursor: pointer;
+    font-family: var(--font-family);
+    line-height: 1.3;
+    transition: color var(--transition-fast);
+  }
+  .tr-copy:hover { color: var(--color-text4); }
+  .tr-copy.copied { color: var(--color-green-fg); }
+
   .tr-empty {
     height: 100%;
     display: flex;
@@ -215,199 +584,15 @@ const STYLES = `
     color: var(--color-text2);
     font-size: 12px;
   }
-  .tr-group {
-    margin: 6px 0 10px;
-    border-radius: var(--radius-sm);
-  }
-  .tr-exec {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 8px 6px 4px;
-    cursor: pointer;
-    user-select: none;
-    border-radius: 5px;
-    transition: background var(--transition-fast);
-  }
-  .tr-exec:hover { background: var(--color-item-hover); }
-  .tr-caret {
-    width: 12px;
-    height: 12px;
-    flex-shrink: 0;
-    color: var(--color-text2);
-    transition: transform 120ms ease;
-  }
-  .tr-exec.collapsed .tr-caret { transform: rotate(-90deg); }
-  .tr-exec-desc {
-    flex: 1;
-    min-width: 0;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text4);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    letter-spacing: -0.1px;
-  }
-  .tr-exec-count {
-    flex-shrink: 0;
-    font-size: 10.5px;
-    color: var(--color-text2);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    letter-spacing: 0.2px;
-  }
-  .tr-exec-dur {
-    flex-shrink: 0;
-    font-size: 10.5px;
-    color: var(--color-text2);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-variant-numeric: tabular-nums;
-    min-width: 52px;
-    text-align: right;
-  }
-  .tr-exec.errored .tr-status { background: var(--color-red-fg); }
-  .tr-call-row.errored .tr-status { background: var(--color-red-fg); }
-  .tr-status {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color-green-fg);
-    flex-shrink: 0;
-  }
-  .tr-calls { display: flex; flex-direction: column; }
-  .tr-group.collapsed .tr-calls { display: none; }
-  .tr-call-row {
-    display: grid;
-    grid-template-columns: 16px minmax(100px, 1fr) minmax(60px, 1.6fr) 52px;
-    align-items: center;
-    gap: 8px;
-    padding: 3px 8px 3px 14px;
-    cursor: pointer;
-    border-radius: 4px;
-    user-select: none;
-    transition: background var(--transition-fast);
-  }
-  .tr-call-row:hover { background: var(--color-item-hover); }
-  .tr-call-row.selected { background: var(--color-item-hover); }
-  .tr-call-method {
-    font-size: 12px;
-    color: var(--color-text4);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .tr-call-row.errored .tr-call-method { color: var(--color-red-fg); }
-  .tr-bar-wrap {
-    position: relative;
-    height: 8px;
-    background: var(--color-bg2);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .tr-bar {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    background: var(--color-accent);
-    border-radius: 2px;
-    min-width: 2px;
-  }
-  .tr-call-row.errored .tr-bar { background: var(--color-red-fg); }
-  .tr-call-dur {
-    font-size: 10.5px;
-    color: var(--color-text2);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-  .tr-detail {
-    margin: 4px 0 12px 24px;
-    padding: 10px 12px;
-    background: var(--color-bg2);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .tr-detail[hidden] { display: none; }
-  .tr-detail-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11.5px;
-    color: var(--color-text3);
-    font-family: var(--font-mono, ui-monospace, monospace);
-  }
-  .tr-detail-method {
-    font-weight: 600;
-    color: var(--color-text4);
-  }
-  .tr-detail-meta {
-    color: var(--color-text2);
-    font-size: 10.5px;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .tr-detail-sep {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background: var(--color-text2);
-    opacity: 0.5;
-  }
-  .tr-section-label {
-    font-size: 9.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
-    color: var(--color-text2);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .tr-trunc-pill {
-    font-size: 9px;
-    font-weight: 600;
-    text-transform: none;
-    letter-spacing: 0.2px;
-    color: var(--color-text2);
-    background: var(--color-bg3);
-    padding: 1px 6px;
-    border-radius: 999px;
-  }
-  .tr-section-block {
-    margin: 4px 0 0;
-    padding: 8px 10px;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: var(--color-text4);
-    background: var(--color-code-bg);
-    border-radius: 5px;
-    max-height: 180px;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .tr-section-block.tr-error-block {
-    background: var(--color-red-bg);
-    color: var(--color-red-fg);
-  }
-  .tr-error-name { font-weight: 700; margin-bottom: 2px; }
 `
 
 type TraceLoadStatus = 'idle' | 'loading' | 'loaded' | 'error'
+type ViewState = 'list' | 'detail'
+type Filter = 'all' | 'errors'
 
 export class TlTracePanel extends HTMLElement {
   private styleEl!: HTMLStyleElement
-  private cardEl!: HTMLElement
-  private headMetaEl!: HTMLElement
-  private bodyEl!: HTMLElement
+  private bodyHost!: HTMLElement
 
   private sessionId: string | null = null
   private sessionLabel = ''
@@ -415,11 +600,14 @@ export class TlTracePanel extends HTMLElement {
   private groups: ExecGroup[] = []
   private totalStart = 0
   private totalEnd = 0
-  private maxCallDurationMs = 1
+  private totalErrors = 0
   private status: TraceLoadStatus = 'idle'
   private errorMessage = ''
   private expandedExecIds = new Set<string>()
+  private filter: Filter = 'all'
+  private view: ViewState = 'list'
   private selectedCallId: string | null = null
+  private listScrollTop = 0
 
   connectedCallback() {
     this.hidden = true
@@ -427,47 +615,10 @@ export class TlTracePanel extends HTMLElement {
     this.styleEl.textContent = STYLES
     this.appendChild(this.styleEl)
 
-    this.cardEl = document.createElement('div')
-    this.cardEl.className = 'tr-card'
-
-    const head = document.createElement('div')
-    head.className = 'tr-head'
-
-    const title = document.createElement('div')
-    title.className = 'tr-title'
-    const label = document.createElement('span')
-    label.className = 'tr-title-label'
-    label.textContent = 'Function trace'
-    this.headMetaEl = document.createElement('span')
-    this.headMetaEl.className = 'tr-title-meta'
-    title.append(label, this.headMetaEl)
-
-    const close = document.createElement('button')
-    close.className = 'tr-close'
-    close.type = 'button'
-    close.title = 'Close'
-    close.setAttribute('aria-label', 'Close trace panel')
-    close.textContent = '×'
-    close.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-      this.close()
-    })
-
-    head.append(title, close)
-
-    this.bodyEl = document.createElement('div')
-    this.bodyEl.className = 'tr-body'
-    this.bodyEl.addEventListener('click', this.onBodyClick)
-
-    this.cardEl.append(head, this.bodyEl)
-    this.appendChild(this.cardEl)
-
-    this.addEventListener('mousedown', (e) => {
-      if (e.target === this) {
-        e.preventDefault()
-        this.close()
-      }
-    })
+    this.bodyHost = document.createElement('div')
+    this.bodyHost.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;'
+    this.bodyHost.addEventListener('click', this.onCardClick)
+    this.appendChild(this.bodyHost)
 
     document.addEventListener('keydown', this.onKeydown, true)
   }
@@ -477,6 +628,7 @@ export class TlTracePanel extends HTMLElement {
   }
 
   async open(sessionId: string, sessionLabel: string): Promise<void> {
+    const wasHidden = this.hidden
     this.sessionId = sessionId
     this.sessionLabel = sessionLabel
     this.hidden = false
@@ -484,13 +636,17 @@ export class TlTracePanel extends HTMLElement {
     this.events = []
     this.groups = []
     this.selectedCallId = null
-    this.render()
+    this.view = 'list'
+    this.filter = 'all'
+    this.listScrollTop = 0
+    this.renderAll()
+    if (wasHidden) this.dispatchEvent(new CustomEvent('open', { bubbles: true }))
 
     const ipc = window.ipc
     if (!ipc?.traces) {
       this.status = 'error'
       this.errorMessage = 'Trace API not available'
-      this.render()
+      this.renderAll()
       return
     }
 
@@ -502,24 +658,26 @@ export class TlTracePanel extends HTMLElement {
       this.groups = grouped.groups
       this.totalStart = grouped.totalStart
       this.totalEnd = grouped.totalEnd
-      this.maxCallDurationMs = Math.max(1, grouped.maxCallDurationMs)
+      this.totalErrors = grouped.totalErrors
       this.expandedExecIds = new Set(this.groups.map(g => g.execId))
       this.status = 'loaded'
-      this.render()
+      this.renderAll()
     } catch (err) {
       this.status = 'error'
       this.errorMessage = err instanceof Error ? err.message : String(err)
-      this.render()
+      this.renderAll()
     }
   }
 
   close(): void {
+    if (this.hidden) return
     this.hidden = true
     this.sessionId = null
     this.events = []
     this.groups = []
     this.selectedCallId = null
-    this.bodyEl.innerHTML = ''
+    this.bodyHost.innerHTML = ''
+    this.dispatchEvent(new CustomEvent('close', { bubbles: true }))
   }
 
   isOpen(): boolean {
@@ -530,190 +688,290 @@ export class TlTracePanel extends HTMLElement {
     if (e.key === 'Escape' && !this.hidden) {
       e.preventDefault()
       e.stopPropagation()
-      this.close()
+      if (this.view === 'detail') this.toList()
+      else this.close()
     }
   }
 
-  private render(): void {
-    this.renderHeadMeta()
-    this.renderBody()
-  }
-
-  private renderHeadMeta(): void {
-    if (!this.headMetaEl) return
+  private renderAll(): void {
     if (this.status === 'loading') {
-      this.headMetaEl.textContent = this.sessionLabel ? '· ' + this.sessionLabel : ''
+      this.bodyHost.innerHTML = `<div class="tr-loading">Loading traces…</div>`
       return
     }
     if (this.status === 'error') {
-      this.headMetaEl.textContent = '· error'
+      this.bodyHost.innerHTML = `<div class="tr-empty"><div class="tr-empty-title">Failed to load traces</div><div class="tr-empty-sub">${escapeHtml(this.errorMessage)}</div></div>`
       return
     }
+    if (this.view === 'list') this.renderList()
+    else this.renderDetail()
+  }
 
+  private renderList(): void {
     const calls = this.events.filter(e => e.t === 'call').length
     const execs = this.groups.length
     const totalMs = this.totalEnd > this.totalStart ? this.totalEnd - this.totalStart : 0
-    const parts: string[] = []
-    if (execs > 0) parts.push(execs === 1 ? '1 exec' : execs + ' execs')
-    if (calls > 0) parts.push(calls === 1 ? '1 call' : calls + ' calls')
-    if (totalMs > 0) parts.push(formatDuration(totalMs))
-    if (this.sessionLabel) parts.push(this.sessionLabel)
+    const errors = this.totalErrors
 
-    this.headMetaEl.textContent = parts.length > 0 ? '· ' + parts.join(' · ') : ''
-  }
-
-  private renderBody(): void {
-    if (this.status === 'loading') {
-      this.bodyEl.innerHTML = '<div class="tr-loading">Loading traces…</div>'
-      return
-    }
-    if (this.status === 'error') {
-      this.bodyEl.innerHTML = `<div class="tr-empty"><div class="tr-empty-title">Failed to load traces</div><div class="tr-empty-sub">${escapeHtml(this.errorMessage)}</div></div>`
-      return
-    }
-    if (this.groups.length === 0) {
-      this.bodyEl.innerHTML = '<div class="tr-empty"><div class="tr-empty-title">No traces recorded</div><div class="tr-empty-sub">Function calls from execJs will appear here once the session runs code.</div></div>'
-      return
-    }
-
-    const parts: string[] = []
-    for (const group of this.groups) {
-      parts.push(this.renderGroup(group))
-    }
-    this.bodyEl.innerHTML = parts.join('')
-  }
-
-  private renderGroup(group: ExecGroup): string {
-    const expanded = this.expandedExecIds.has(group.execId)
-    const exec = group.exec
-    const ok = exec ? exec.ok : group.calls.every(c => c.ok)
-    const headerText = execHeaderText(exec)
-    const totalMs = exec ? exec.durationMs : group.calls.reduce((m, c) => Math.max(m, c.startedAt + c.durationMs - group.startedAt), 0)
-
-    const caret = `<svg class="tr-caret" viewBox="0 0 12 12" fill="currentColor"><path d="M3 4l3 4 3-4z"/></svg>`
-    const execClasses = ['tr-exec']
-    if (!expanded) execClasses.push('collapsed')
-    if (!ok) execClasses.push('errored')
-
-    let callsHtml = ''
-    if (expanded && group.calls.length > 0) {
-      const callRows = group.calls.map(c => this.renderCallRow(c, exec)).join('')
-      callsHtml = `<div class="tr-calls">${callRows}</div>`
-    }
-
-    const groupClasses = ['tr-group']
-    if (!expanded) groupClasses.push('collapsed')
-
-    const execCount = group.calls.length
-    const countLabel = execCount === 1 ? '1 call' : execCount + ' calls'
-
-    return `<div class="${groupClasses.join(' ')}" data-exec-id="${escapeHtml(group.execId)}">
-      <div class="${execClasses.join(' ')}" data-exec-toggle="${escapeHtml(group.execId)}">
-        ${caret}
-        <span class="tr-status"></span>
-        <span class="tr-exec-desc" title="${escapeHtml(headerText)}">${escapeHtml(headerText)}</span>
-        <span class="tr-exec-count">${countLabel}</span>
-        <span class="tr-exec-dur">${formatDuration(totalMs)}</span>
+    const titleTooltip = this.sessionLabel ? ` title="${escapeHtml(this.sessionLabel)}"` : ''
+    const headHtml = `
+      <div class="tr-head">
+        <span class="tr-title"${titleTooltip}>Function trace</span>
+        <span class="tr-stats">
+          <span><span class="n">${execs}</span> ${execs === 1 ? 'exec' : 'execs'}</span>
+          <span class="sep">·</span>
+          <span><span class="n">${calls}</span> ${calls === 1 ? 'call' : 'calls'}</span>
+          <span class="sep">·</span>
+          <span class="n">${formatDuration(totalMs)}</span>
+        </span>
+        <button class="tr-icon-btn" data-close type="button" title="Close" aria-label="Close trace panel">${CLOSE_ICON_SVG}</button>
       </div>
-      ${callsHtml}
-    </div>`
+    `
+
+    let filtersHtml = ''
+    if (errors > 0) {
+      const allActive = this.filter === 'all' ? 'active' : ''
+      const errActive = this.filter === 'errors' ? 'active' : ''
+      filtersHtml = `
+        <div class="tr-filters">
+          <span class="tr-chip ${allActive}" data-filter="all">All <span class="tr-chip-count">${calls}</span></span>
+          <span class="tr-chip err ${errActive}" data-filter="errors">Errors <span class="tr-chip-count">${errors}</span></span>
+        </div>
+      `
+    }
+
+    let bodyInner = ''
+    if (this.groups.length === 0) {
+      bodyInner = `<div class="tr-empty"><div class="tr-empty-title">No traces recorded</div><div class="tr-empty-sub">Function calls from execJs will appear here once the session runs code.</div></div>`
+    } else {
+      const visible = this.filter === 'errors' ? this.groups.filter(g => g.hasError) : this.groups
+      if (visible.length === 0) {
+        bodyInner = `<div class="tr-empty"><div class="tr-empty-title">No matches</div><div class="tr-empty-sub">No traces match the current filter.</div></div>`
+      } else {
+        bodyInner = `<div class="tr-list">${visible.map(g => this.renderExecCard(g)).join('')}</div>`
+      }
+    }
+
+    this.bodyHost.innerHTML = headHtml + filtersHtml + `<div class="tr-body" data-list-body>${bodyInner}</div>`
+    const body = this.bodyHost.querySelector<HTMLElement>('[data-list-body]')
+    if (body) body.scrollTop = this.listScrollTop
   }
 
-  private renderCallRow(call: TraceCallEvent, exec: TraceExecEvent | null): string {
-    const selected = this.selectedCallId === call.id
-    const classes = ['tr-call-row']
-    if (!call.ok) classes.push('errored')
-    if (selected) classes.push('selected')
+  private renderExecCard(g: ExecGroup): string {
+    const expanded = this.expandedExecIds.has(g.execId)
+    const exec = g.exec
+    const ok = !g.hasError
+    const desc = execHeaderText(exec)
+    const span = Math.max(1, g.endedAt - g.startedAt)
+    const totalMs = exec ? exec.durationMs : (g.endedAt - g.startedAt)
 
-    const barPct = Math.max(2, Math.min(100, (call.durationMs / this.maxCallDurationMs) * 100))
-    const method = shortenMethod(call.method)
-    const dur = formatDuration(call.durationMs)
-
-    const mainRow = `<div class="${classes.join(' ')}" data-call-id="${escapeHtml(call.id)}">
-      <span class="tr-status"></span>
-      <span class="tr-call-method" title="${escapeHtml(call.method)}">${escapeHtml(method)}</span>
-      <div class="tr-bar-wrap"><div class="tr-bar" style="width:${barPct.toFixed(2)}%"></div></div>
-      <span class="tr-call-dur">${dur}</span>
-    </div>`
-
-    if (!selected) return mainRow
-
-    return mainRow + this.renderCallDetail(call, exec)
-  }
-
-  private renderCallDetail(call: TraceCallEvent, exec: TraceExecEvent | null): string {
-    const baseTs = exec?.startedAt ?? call.startedAt
-    const metaParts: string[] = [
-      call.ok ? 'ok' : 'error',
-      formatDuration(call.durationMs),
-      formatTime(call.startedAt, baseTs),
-    ]
-    const meta = metaParts.map((p, i) => {
-      if (i === 0) return `<span>${escapeHtml(p)}</span>`
-      return `<span class="tr-detail-sep"></span><span>${escapeHtml(p)}</span>`
+    const wfBars = g.calls.map(c => {
+      const left = ((c.startedAt - g.startedAt) / span) * 100
+      const w = Math.max(2, (c.durationMs / span) * 100)
+      const cls = c.ok ? '' : 'err'
+      return `<i class="${cls}" style="left:${clampPct(left)}%;width:${clampPct(w)}%"></i>`
     }).join('')
 
+    const visibleCalls = this.filter === 'errors' ? g.calls.filter(c => !c.ok) : g.calls
+    const callRows = expanded && visibleCalls.length > 0
+      ? `<div class="tr-calls">${visibleCalls.map(c => this.renderCallRow(c, g)).join('')}</div>`
+      : ''
+
+    const dur = formatDuration(totalMs)
+    const offset = this.totalStart > 0 ? formatTime(g.startedAt, this.totalStart) : ''
+    const callCount = g.calls.length
+    const countLabel = callCount === 1 ? '1 call' : callCount + ' calls'
+
+    const metaParts = [`<span>${countLabel}</span>`]
+    if (offset && offset !== '+0ms') {
+      metaParts.push(`<span class="sep">·</span><span>${offset}</span>`)
+    }
+
+    const errorIndicator = ok ? '' : `<span class="tr-dot err" title="exec contains errors"></span>`
+    const errClass = ok ? '' : 'errored'
+
+    return `<div class="tr-exec ${expanded ? 'expanded' : 'collapsed'} ${errClass}" data-exec-id="${escapeHtml(g.execId)}">
+      <div class="tr-exec-head" data-exec-toggle="${escapeHtml(g.execId)}">
+        <div class="tr-exec-row">
+          <span class="tr-caret">▼</span>
+          ${errorIndicator}
+          <span class="tr-exec-desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>
+          <span class="tr-exec-dur">${dur}</span>
+        </div>
+        <div class="tr-wf">${wfBars}</div>
+        <div class="tr-exec-meta">${metaParts.join('')}</div>
+      </div>
+      ${callRows}
+    </div>`
+  }
+
+  private renderCallRow(c: TraceCallEvent, g: ExecGroup): string {
+    const span = Math.max(1, g.endedAt - g.startedAt)
+    const left = ((c.startedAt - g.startedAt) / span) * 100
+    const w = Math.max(2, (c.durationMs / span) * 100)
+    const errCls = c.ok ? '' : 'err'
+    const method = shortenMethod(c.method)
+    const dur = formatDuration(c.durationMs)
+    return `<div class="tr-call ${c.ok ? '' : 'errored'}" data-call-drill="${escapeHtml(c.id)}">
+      <span class="tr-call-method" title="${escapeHtml(c.method)}">${escapeHtml(method)}</span>
+      <div class="tr-mini"><i class="${errCls}" style="left:${clampPct(left)}%;width:${clampPct(w)}%"></i></div>
+      <span class="tr-call-dur">${dur}</span>
+      <span class="tr-chev">›</span>
+    </div>`
+  }
+
+  private renderDetail(): void {
+    const call = this.findCall(this.selectedCallId)
+    if (!call) {
+      this.toList()
+      return
+    }
+    const group = this.groups.find(g => g.execId === call.execId) ?? null
+    const exec = group?.exec ?? null
+    const offset = this.totalStart > 0 ? formatTime(call.startedAt, this.totalStart) : ''
+    const execIdx = group?.index ?? 0
+    const callsLabel = group ? (group.calls.length === 1 ? '1 call' : group.calls.length + ' calls') : ''
+    const desc = exec ? execHeaderText(exec) : ''
+
+    const headHtml = `
+      <div class="tr-det-head">
+        <button class="tr-back" data-back type="button">${BACK_ICON_SVG}<span>Back</span></button>
+        <span class="tr-det-method" title="${escapeHtml(call.method)}">${escapeHtml(call.method)}</span>
+        <button class="tr-icon-btn" data-close type="button" style="margin-left:auto;" title="Close" aria-label="Close trace panel">${CLOSE_ICON_SVG}</button>
+      </div>
+    `
+
+    const items: string[] = []
+    items.push(`<span class="tr-meta-item ${call.ok ? 'ok' : 'err'}"><span class="tr-dot"></span>${call.ok ? 'ok' : 'error'}</span>`)
+    items.push(`<span class="tr-meta-item">${formatDuration(call.durationMs)}</span>`)
+    if (offset) items.push(`<span class="tr-meta-item">${offset}</span>`)
+    if (execIdx > 0 && callsLabel) items.push(`<span class="tr-meta-item">exec #${execIdx} · ${escapeHtml(callsLabel)}</span>`)
+    const badges = items.join('<span class="tr-meta-sep">·</span>')
+
+    const errorCard = call.ok || !call.error ? '' : `
+      <div class="tr-error-card">
+        <div class="name">${escapeHtml(call.error.name)}</div>
+        <div class="msg">${escapeHtml(call.error.message)}</div>
+      </div>
+    `
+
     const sections: string[] = []
-    sections.push(`<div class="tr-detail-head">
-      <span class="tr-detail-method">${escapeHtml(call.method)}</span>
-      <span class="tr-detail-meta">${meta}</span>
-    </div>`)
-
-    const paramsLabel = this.sectionLabel('Params', call.paramsTruncated)
-    sections.push(`${paramsLabel}<pre class="tr-section-block">${escapeHtml(formatJsonMaybe(call.paramsPreview))}</pre>`)
-
-    if (call.ok) {
-      if (call.resultPreview !== null) {
-        const label = this.sectionLabel('Result', call.resultTruncated)
-        sections.push(`${label}<pre class="tr-section-block">${escapeHtml(formatJsonMaybe(call.resultPreview))}</pre>`)
-      }
-    } else if (call.error) {
-      sections.push(`<div class="tr-section-label">Error</div><div class="tr-section-block tr-error-block"><div class="tr-error-name">${escapeHtml(call.error.name)}</div>${escapeHtml(call.error.message)}</div>`)
+    sections.push(this.section('Params', call.paramsTruncated, `<pre>${escapeHtml(formatJsonMaybe(call.paramsPreview))}</pre>`, 'params'))
+    if (call.ok && call.resultPreview !== null) {
+      sections.push(this.section('Result', call.resultTruncated, `<pre>${escapeHtml(formatJsonMaybe(call.resultPreview))}</pre>`, 'result'))
     }
-
     if (exec) {
-      const codeLabel = this.sectionLabel('Called from execJs', exec.codeTruncated)
-      sections.push(`${codeLabel}<pre class="tr-section-block">${escapeHtml(exec.code)}</pre>`)
+      sections.push(this.section('Called from execJs', exec.codeTruncated, `<pre>${escapeHtml(exec.code)}</pre>`, 'code'))
     }
 
-    return `<div class="tr-detail">${sections.join('')}</div>`
+    const titleHtml = desc ? `<div class="tr-det-title">${escapeHtml(desc)}</div>` : ''
+
+    const body = `
+      <div class="tr-det-body">
+        ${titleHtml}
+        <div class="tr-badges">${badges}</div>
+        ${errorCard}
+        ${sections.join('')}
+      </div>
+    `
+
+    this.bodyHost.innerHTML = headHtml + body
+    const detBody = this.bodyHost.querySelector<HTMLElement>('.tr-det-body')
+    if (detBody) detBody.scrollTop = 0
   }
 
-  private sectionLabel(text: string, truncated: boolean): string {
-    const pill = truncated ? '<span class="tr-trunc-pill">truncated</span>' : ''
-    return `<div class="tr-section-label"><span>${escapeHtml(text)}</span>${pill}</div>`
+  private section(label: string, truncated: boolean, body: string, copyKey: string): string {
+    const truncPill = truncated ? `<span class="tr-trunc-pill">truncated</span>` : ''
+    return `<div class="tr-section">
+      <h5>${escapeHtml(label)}<span class="side">${truncPill}<button class="tr-copy" data-copy="${escapeHtml(copyKey)}" type="button">Copy</button></span></h5>
+      ${body}
+    </div>`
   }
 
-  private onBodyClick = (e: Event) => {
+  private toDetail(callId: string): void {
+    const body = this.bodyHost.querySelector<HTMLElement>('[data-list-body]')
+    if (body) this.listScrollTop = body.scrollTop
+    this.selectedCallId = callId
+    this.view = 'detail'
+    this.renderAll()
+  }
+
+  private toList(): void {
+    this.view = 'list'
+    this.selectedCallId = null
+    this.renderAll()
+  }
+
+  private findCall(callId: string | null): TraceCallEvent | null {
+    if (!callId) return null
+    for (const ev of this.events) {
+      if (ev.t === 'call' && ev.id === callId) return ev
+    }
+    return null
+  }
+
+  private onCardClick = (e: Event) => {
     const target = e.target as HTMLElement
-    const callRow = target.closest('.tr-call-row[data-call-id]') as HTMLElement | null
-    if (callRow) {
-      const id = callRow.dataset.callId
-      if (!id) return
-      this.selectedCallId = this.selectedCallId === id ? null : id
-      this.renderBody()
+    if (target.closest('[data-close]')) { e.preventDefault(); this.close(); return }
+    if (target.closest('[data-back]')) { e.preventDefault(); this.toList(); return }
+
+    const chip = target.closest('[data-filter]') as HTMLElement | null
+    if (chip) {
+      const f = chip.dataset.filter
+      if (f === 'all' || f === 'errors') {
+        this.filter = f
+        this.listScrollTop = 0
+        this.renderList()
+      }
       return
     }
 
-    const execToggle = target.closest('[data-exec-toggle]') as HTMLElement | null
-    if (execToggle) {
-      const id = execToggle.dataset.execToggle
-      if (!id) return
-      if (this.expandedExecIds.has(id)) this.expandedExecIds.delete(id)
-      else this.expandedExecIds.add(id)
-      this.renderBody()
+    const copyBtn = target.closest('[data-copy]') as HTMLButtonElement | null
+    if (copyBtn) { e.stopPropagation(); void this.handleCopy(copyBtn); return }
+
+    const callRow = target.closest('[data-call-drill]') as HTMLElement | null
+    if (callRow?.dataset.callDrill) {
+      e.preventDefault()
+      this.toDetail(callRow.dataset.callDrill)
+      return
+    }
+
+    const execHead = target.closest('[data-exec-toggle]') as HTMLElement | null
+    if (execHead?.dataset.execToggle) this.toggleExec(execHead.dataset.execToggle)
+  }
+
+  /** Toggle a single exec without re-rendering the whole list. */
+  private toggleExec(id: string): void {
+    const card = this.bodyHost.querySelector<HTMLElement>(`.tr-exec[data-exec-id="${CSS.escape(id)}"]`)
+    if (!card) return
+    if (this.expandedExecIds.has(id)) {
+      this.expandedExecIds.delete(id)
+      card.classList.remove('expanded')
+      card.classList.add('collapsed')
+      const calls = card.querySelector('.tr-calls')
+      if (calls) calls.remove()
+    } else {
+      this.expandedExecIds.add(id)
+      card.classList.remove('collapsed')
+      card.classList.add('expanded')
+      const group = this.groups.find(g => g.execId === id)
+      if (!group) return
+      const visible = this.filter === 'errors' ? group.calls.filter(c => !c.ok) : group.calls
+      if (visible.length === 0) return
+      const html = `<div class="tr-calls">${visible.map(c => this.renderCallRow(c, group)).join('')}</div>`
+      card.insertAdjacentHTML('beforeend', html)
     }
   }
-}
 
-function formatJsonMaybe(text: string): string {
-  const trimmed = text.trim()
-  if (!trimmed) return text
-  const first = trimmed[0]
-  if (first !== '{' && first !== '[' && first !== '"') return text
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2)
-  } catch {
-    return text
+  private async handleCopy(btn: HTMLButtonElement): Promise<void> {
+    const key = btn.dataset.copy
+    if (!key) return
+    const call = this.findCall(this.selectedCallId)
+    if (!call) return
+    const exec = this.groups.find(g => g.execId === call.execId)?.exec
+    let text = ''
+    if (key === 'params') text = call.paramsPreview
+    else if (key === 'result') text = call.resultPreview ?? ''
+    else if (key === 'code') text = exec?.code ?? ''
+    await copyToButton(btn, text)
   }
 }
