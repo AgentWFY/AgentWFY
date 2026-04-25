@@ -45,6 +45,7 @@ export class Agent {
   private resolveRunningPrompt?: () => void
   private retryAbortController: AbortController | null = null
   private toolAbortController: AbortController | null = null
+  private userAbortRequested = false
 
   sessionId?: string
 
@@ -103,6 +104,7 @@ export class Agent {
   }
 
   abort(): void {
+    this.userAbortRequested = true
     this.followUpQueue = []
     this.retryAbortController?.abort()
     this.toolAbortController?.abort()
@@ -301,6 +303,11 @@ export class Agent {
             clearInterval(watchdog)
             this._state.streamingMessage = null
 
+            if (this.userAbortRequested) {
+              this.finalizeUserAbort()
+              break
+            }
+
             // Check if error is retryable (duck typing for plugin errors)
             const category = (err as { category?: string })?.category as ErrorCategory | undefined
             const retryAfterMs = (err as { retryAfterMs?: number })?.retryAfterMs
@@ -326,12 +333,17 @@ export class Agent {
               try {
                 await this.retrySleep(delay)
               } catch {
-                // skipRetryDelay or user abort — continue to next attempt
+                // skipRetryDelay or abort — userAbortRequested distinguishes them below
               }
 
               // Sync display with provider's committed messages so completed
               // turns remain visible during the retry instead of disappearing.
               this._state.messages = session.getDisplayMessages()
+
+              if (this.userAbortRequested) {
+                this.finalizeUserAbort()
+                break
+              }
 
               this.emit({ type: 'retry_attempt', attempt: attempt + 1, maxAttempts: MAX_RETRY_ATTEMPTS })
               continue
@@ -367,11 +379,18 @@ export class Agent {
       this._state.retryState = null
       this._state.stalledSince = null
       this.toolAbortController = null
+      this.userAbortRequested = false
       this.emit({ type: 'agent_idle' })
       this.resolveRunningPrompt?.()
       this.runningPrompt = undefined
       this.resolveRunningPrompt = undefined
     }
+  }
+
+  private finalizeUserAbort(): void {
+    this._state.messages = this.providerSession.getDisplayMessages()
+    this._state.retryState = null
+    this.emit({ type: 'agent_end' })
   }
 
   private retrySleep(ms: number): Promise<void> {
