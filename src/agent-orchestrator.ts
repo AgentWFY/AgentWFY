@@ -21,6 +21,7 @@ export interface AgentOrchestratorDeps {
   getRendererWebContents: () => Electron.WebContents | null;
   isWindowAvailable: () => boolean;
   applyTheme: () => void;
+  applyTrafficLightPosition: () => void;
   pushProviderState: (agentRoot: string, providerRegistry: ProviderRegistry) => void;
   dispatchRendererEvent: (eventName: string, detail?: unknown) => void;
   getIsZenMode: () => boolean;
@@ -313,6 +314,9 @@ export class AgentOrchestrator {
       if (this.activeAgentRoot === agentRoot) {
         this.deps.applyTheme();
         const key = change.rowId as string;
+        if (key === 'system.show-tab-source') {
+          this.deps.applyTrafficLightPosition();
+        }
         if (key.startsWith('plugin.') || key === 'system.provider') {
           this.deps.pushProviderState(agentRoot, agentCtx.providerRegistry);
         }
