@@ -36,18 +36,19 @@ A new demo is always two files in a new subfolder: `driver.js` (the script) and 
 Once the preview is up:
 
 ```bash
-./scripts/record-demo <name> demos/<demo>
+./scripts/record-demo [--no-test-provider] <name> demos/<demo>
 ```
 
 `record-demo` handles the full orchestration:
 
 1. Wipes `/tmp/preview-config.json` so the starting theme / provider / whatever is the defaults.
 2. Restarts the app so the UI is in a known state.
-3. Inserts the `test-provider` plugin (demos drive a fake provider so they don't need real API keys).
-4. Shows the overlay cursor parked at the bottom-right.
-5. Starts `wf-recorder` writing to `/tmp/preview-recording.mp4` in the container.
-6. Runs `demos/<demo>/driver.js` with `PREVIEW_NAME` and `WORKTREE` in its env.
-7. Sends SIGINT to `wf-recorder` (so the MP4 `moov` atom flushes cleanly) and copies the file out to `demos/<demo>/demo.mp4`.
+3. **Wipes the agent's `plugins` table** so each recording starts from a known plugin slate (no carryover from earlier runs).
+4. Inserts the `test-provider` plugin (demos drive a fake provider so they don't need real API keys). **Skipped under `--no-test-provider`** for demos that install their own provider or want a from-empty starting state.
+5. Shows the overlay cursor parked at the bottom-right.
+6. Starts `wf-recorder` writing to `/tmp/preview-recording.mp4` in the container.
+7. Runs `demos/<demo>/driver.js` with `PREVIEW_NAME` and `WORKTREE` in its env.
+8. Sends SIGINT to `wf-recorder` (so the MP4 `moov` atom flushes cleanly) and copies the file out to `demos/<demo>/demo.mp4`.
 
 If the driver exits non-zero, the recorder is still stopped so the container isn't left with an orphaned `wf-recorder` process.
 
@@ -87,15 +88,28 @@ What `installCursorHelpers(name)` installs on `window.__demo` (persists across s
 
 Wrappers exported by `scripts/lib/demo.mjs`:
 
-- `evalMain(name, js)` — runs the expression in the **main renderer** (the `app://` page). `window.ipc` is the full IPC surface.
-- `evalPalette(name, js)` — runs in the **command palette's own** WebContentsView (`command_palette.html`). Use this to drive the palette's DOM directly (fill its searchInput, click its inner buttons, dispatch Escape to close).
-- `exec(name, ...cmd)` — arbitrary `docker exec` inside the container. Handy for `cat /tmp/preview-config.json` etc. during iteration.
-- `sleep(ms)`.
+| Helper | What it does |
+|---|---|
+| `evalMain(name, js)` | Eval in the **main renderer** (`app://`). `window.ipc` is the full IPC surface. |
+| `evalTab(name, frag, js)` | Eval in the tab/view whose URL contains `frag`. Generalizes `evalPalette` / `evalConfirm`. |
+| `evalPalette(name, js)` | Eval in the command palette's own WebContentsView (`command_palette.html`). |
+| `evalConfirm(name, js)` | Eval in the confirm-dialog view (`confirmation.html`). |
+| `tabBounds(name, frag)` | Look up a tab's main-process bounds via `window.ipc.tabs.describe()`. Returns `{ x, y, width, height }` or `null`. |
+| `rectInTab(name, frag, sel)` | Tab-local `getBoundingClientRect` for `sel`, returned as `{ x, y, w, h }`. |
+| `hoverInTab(name, frag, sel, opts?)` | Move the cursor to an element inside a tab. Translates tab-local rect → global cursor coords. Options: `dx`, `dy`, `dur`. |
+| `clickInTab(name, frag, sel, opts?)` | `hoverInTab` + cursor flash + dispatch `mousedown` / `mouseup` / `click` inside the tab. Options: `preClickDelay`, `postClickDelay`, plus `hoverInTab`'s. |
+| `waitInTab(name, frag, predicate, opts?)` | Async wait inside the tab — single CDP call regardless of poll count. `predicate` is the source of an arrow function. Options: `timeoutMs` (default 30000), `intervalMs` (default 150). |
+| `confirmDialog(name, action?, opts?)` | Wait for the confirm-dialog view, move cursor to its `Confirm`/`Cancel` button, click. `action` is `'confirm'` (default) or `'cancel'`. Options: `width`, `height`, `dur`, `preClickDelay`. |
+| `typeInPalette(name, text, perChar?)` | Type letter-by-letter into the palette's `#searchInput`. |
+| `clickInPalette(name, selector, opts?)` | Move cursor and click an element inside `command_palette.html`. Computes the palette view origin from the formula in `src/command-palette/manager.ts`. Options match `clickInTab`. |
+| `mark(label)` | Per-step timing on stderr: `[step] +1.23s (total 4.56s) <label>`. Use to spot slow steps. |
+| `sleep(ms)` | Plain promise-based sleep. |
 
-Preview-only extras that are already wired into `window.ipc` and that `installCursorHelpers` uses:
+Preview-only IPC wired to `window.ipc.previewCursor`:
 
-- `window.ipc.previewCursor.setPos(x, y)` — absolute viewport coords. Positions the Electron-level cursor overlay that renders above every tab view.
-- `window.ipc.previewCursor.setVisible(bool)`.
+- `setPos(x, y)` — absolute viewport coords. Positions the Electron-level cursor overlay that renders above every tab view.
+- `setVisible(bool)`.
+- `flash()` — fires the click-flash ripple at the cursor's current hotspot. Renders inside the cursor overlay's own view, so it shows above tab WebContentsViews. `clickInTab` and `confirmDialog` call this automatically; `state.ripple` (and therefore `state.clickEl` for main-renderer DOM) routes through it too.
 
 Everything else is normal app IPC.
 
@@ -108,6 +122,66 @@ Headless wlroots exposes no pointer device, so sway never renders a real cursor.
 **Clicks** are still two separate operations: animate the overlay over the target, then dispatch synthetic `mousedown` / `mouseup` / `click` events on the element. Several app handlers (provider card, tool header, popup close) listen on `mousedown` only — always dispatch the full sequence. `d.clickEl` does both.
 
 `installCursorHelpers` tracks the current cursor position on `window.__demo.{x,y}`. Because the main-renderer page persists across every `evalMain` call, subsequent segments read the last known position and continue motion from there without needing to restate it.
+
+### Driving tab content
+
+Each tab is its own WebContentsView. `clickInTab(name, viewName, selector)` hides the bookkeeping:
+
+```js
+import { clickInTab, hoverInTab, waitInTab } from '../../scripts/lib/demo.mjs';
+
+evalMain(NAME, `window.ipc.tabs.openTab({ viewName: 'system.plugins' })`);
+await sleep(1200);
+
+await clickInTab(NAME, 'system.plugins', '.tab-btn[data-tab="browse-plugins"]');
+
+// Single-call wait — predicate runs inside the tab.
+await waitInTab(NAME, 'system.plugins',
+  `() => !!document.querySelector('.btn-install[data-name="anthropic-provider"]')`,
+  { timeoutMs: 15000 });
+```
+
+Under the hood `clickInTab` looks up the tab's bounds via `window.ipc.tabs.describe()`, queries the element's tab-local rect with `getBoundingClientRect`, animates the global cursor to that point, fires the overlay's flash, and dispatches the click sequence in the tab. The `frag` arg matches `viewName` for `system.*` tabs (the URL contains the viewName).
+
+`hoverInTab` does only the cursor move — useful before a click to dwell on a hover state.
+
+`rectInTab(name, frag, sel)` is the underlying primitive if you need raw coordinates (e.g. to dispatch a non-click event at a specific point).
+
+### Confirmation dialogs
+
+Any `request*` IPC routed through `src/confirmation/` opens a separate WebContentsView at `file:///app/dist/confirmation.html`. Currently:
+
+- `requestInstallPlugin`
+- `requestTogglePlugin`
+- `requestUninstallPlugin`
+- `requestInstallAgent`
+
+Drive it through `confirmDialog(name, 'confirm' | 'cancel')`:
+
+```js
+await clickInTab(NAME, 'system.plugins', '.btn-install[data-name="anthropic-provider"]');
+await confirmDialog(NAME, 'confirm');
+```
+
+`confirmDialog` waits for `#confirmBtn` / `#cancelBtn` to appear, computes the WebContentsView's screen origin from the same formula in `src/confirmation/manager.ts` (420×300 dialog centered horizontally, top at `max(40, ch*0.25)`, view padded 40 px on each side for the drop shadow), moves the cursor over the button, and dispatches the click. Pass `{ width, height }` if a particular screen calls `setSize` to override the default.
+
+### Polling efficiently
+
+Every `--eval` is a `docker exec` round-trip (~300–600 ms). Polling from the host kills demo length: 100 iterations × (200 ms sleep + 500 ms eval) ≈ 70 s blocked on shell overhead.
+
+Always poll *inside* the renderer in a single eval. The `waitInTab` helper covers tabs; for the main renderer, use `state.waitFor` from `installCursorHelpers`, or inline an async loop:
+
+```js
+// Bad — pays a docker-exec roundtrip per iteration.
+for (let i = 0; i < 100; i++) {
+  const done = evalPlugins(`!!document.querySelector('.foo')`);
+  if (done) break;
+  await sleep(200);
+}
+
+// Good — one CDP call, polling happens in the renderer.
+await waitInTab(NAME, 'system.plugins', `() => !!document.querySelector('.foo')`);
+```
 
 ### Driving the command palette
 
@@ -133,6 +207,8 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 | Chat ↔ Tasks panel switcher | `.awfy-app-sidebar-switcher-btn[data-panel="tasks"]` / `[data-panel="agent-chat"]`. |
 | Tasks panel sub-tabs (Runs / Tasks / Triggers) | Shadow DOM. `document.querySelector('awfy-task-panel').shadowRoot.querySelector('.tab[data-tab="triggers"]')`. |
 | Collapse / re-open sidebar | `.awfy-app-sidebar-toggle` to collapse, `.awfy-app-inline-toggle` to restore. |
+| Confirm a `request*` IPC | `confirmDialog(name, 'confirm')` (or `'cancel'`). Covers plugin install/toggle/uninstall and agent install. |
+| Click inside a tab view | `clickInTab(name, viewName, selector)` — handles bounds translation, flash, and full mousedown/mouseup/click sequence. |
 
 ### Timing and pacing
 
@@ -156,6 +232,7 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 
 - **`demos/chat-and-trace/`** (~15 s) — provider selection, message send, tool trace popup open/close, Source Explorer tab via direct `openTab`, cursor drift over tab content.
 - **`demos/full-tour/`** (~36 s) — chat flow plus: Source Explorer via command palette (natively-typed filter), zen mode, chat ↔ tasks ↔ triggers panels, sidebar collapse/restore, and palette Settings flow (Global target, type `dark`, Save) with the live light→dark theme flip.
+- **`demos/install-plugin/`** (~30 s) — installs the `anthropic-provider` plugin from the public registry. Opens the command palette, types "plugin", clicks the *Plugins & Agents* result, switches to Browse Plugins, clicks Install on the registry row, confirms in the install dialog, and lands back on Installed Plugins with the new provider live in the chat sidebar. Demonstrates driving the palette view, a tab WebContentsView, and the confirm-dialog view from the same driver.
 
 ## Troubleshooting
 

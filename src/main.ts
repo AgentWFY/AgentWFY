@@ -344,6 +344,10 @@ ipcMain.handle(Channels.previewCursor.setVisible, (_event, visible: boolean) => 
   windowManager.getPreviewCursor()?.setVisible(!!visible);
 });
 
+ipcMain.handle(Channels.previewCursor.flash, () => {
+  windowManager.getPreviewCursor()?.flash();
+});
+
 // --- Menu ---
 
 function buildAndSetMenu() {

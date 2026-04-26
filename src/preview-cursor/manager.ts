@@ -7,24 +7,46 @@ import { BaseWindow, WebContentsView } from 'electron';
 // child view so a driven "cursor" stays visible regardless of what tab is
 // selected.
 
-// Overall view size. The cursor itself is 16x22; the extra room absorbs the
-// drop shadow and lets us animate without clipping.
-const VIEW_W = 32;
-const VIEW_H = 40;
+// Overall view size. The cursor itself is 16x22; the rest is room for the
+// click-flash ripple to animate outward from the hotspot without clipping
+// (and a small margin for the drop shadow).
+const VIEW_W = 80;
+const VIEW_H = 80;
 
-// Cursor hotspot within the view (aligns the arrow tip with (x,y)).
-const HOTSPOT_X = 4;
-const HOTSPOT_Y = 4;
+// Cursor hotspot within the view (aligns the arrow tip with (x,y)). Set
+// to the view's center so the ripple has equal room in every direction.
+const HOTSPOT_X = 40;
+const HOTSPOT_Y = 40;
 
 // macOS-style black arrow — filled black, thin white rim so it stays legible
-// on dark surfaces. Hotspot at (1,1) in the cursor path's local space which
-// we align to (HOTSPOT_X, HOTSPOT_Y) in the view. Drop-shadow is a separate
-// element so it can bleed outside the cursor path.
+// on dark surfaces. The cursor path starts at (HOTSPOT_X, HOTSPOT_Y) and
+// extends ~14×22 px down/right. The .ripple div animates outward from the
+// hotspot when window.flash() is called from main via executeJavaScript.
 const CURSOR_HTML = `<!DOCTYPE html>
 <html><head><style>
   html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
   body { width: 100vw; height: 100vh; }
-  svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  .ripple {
+    position: absolute;
+    left: ${HOTSPOT_X}px;
+    top: ${HOTSPOT_Y}px;
+    width: 6px;
+    height: 6px;
+    margin: -3px 0 0 -3px;
+    border: 2px solid #4a9dff;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+    box-sizing: border-box;
+  }
+  .ripple.active {
+    animation: ripple-fx 450ms ease-out;
+  }
+  @keyframes ripple-fx {
+    0%   { transform: scale(1);  opacity: 0.85; }
+    100% { transform: scale(9);  opacity: 0;    }
+  }
 </style></head><body>
 <svg viewBox="0 0 ${VIEW_W} ${VIEW_H}" xmlns="http://www.w3.org/2000/svg">
   <path d="M ${HOTSPOT_X} ${HOTSPOT_Y}
@@ -39,6 +61,16 @@ const CURSOR_HTML = `<!DOCTYPE html>
         paint-order="stroke fill"
         style="filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.45));"/>
 </svg>
+<div class="ripple" id="ripple"></div>
+<script>
+  window.flash = () => {
+    const el = document.getElementById('ripple');
+    if (!el) return;
+    el.classList.remove('active');
+    void el.offsetWidth;
+    el.classList.add('active');
+  };
+</script>
 </body></html>`;
 
 export class PreviewCursorManager {
@@ -127,6 +159,14 @@ export class PreviewCursorManager {
     } else {
       this.stopTopTimer();
     }
+  }
+
+  // Trigger the click-flash ripple at the cursor hotspot. Runs in the
+  // overlay's own document so the flash renders above tab WebContentsViews
+  // — a renderer-level DOM ripple is occluded by tab views above the page.
+  flash(): void {
+    if (!this.view || this.view.webContents.isDestroyed()) return;
+    this.view.webContents.executeJavaScript('window.flash && window.flash()').catch(() => {});
   }
 
   getView(): WebContentsView | null {
