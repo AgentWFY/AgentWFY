@@ -97,6 +97,17 @@ export class AgentContextFactory {
       execTabJs: (req: Parameters<TabViewManager['execTabJsById']>[0]) => tabViewManager.execTabJsById(req),
       sendInput: (req: Parameters<TabViewManager['sendInputById']>[0]) => tabViewManager.sendInputById(req),
       inspectElement: (req: Parameters<TabViewManager['inspectElementById']>[0]) => tabViewManager.inspectElementById(req),
+      tabDebuggerSend: (req) => tabViewManager.tabDebuggerSendById(req),
+      tabDebuggerSubscribe: async (req) => {
+        tabViewManager.tabDebuggerSubscribeById(req);
+      },
+      tabDebuggerPoll: (req) => tabViewManager.tabDebuggerPollById(req),
+      tabDebuggerUnsubscribe: async (req) => {
+        tabViewManager.tabDebuggerUnsubscribeById(req.subscriptionId);
+      },
+      tabDebuggerDetach: async (req) => {
+        tabViewManager.tabDebuggerDetachById(req.tabId);
+      },
     };
 
     registerAllBuiltInFunctions(functionRegistry, {

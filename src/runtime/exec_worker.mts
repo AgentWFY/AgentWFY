@@ -8,6 +8,8 @@ import type {
   WorkerToHostMessage,
   WorkerExecuteRequestMessage,
   WorkerHostResultMessage,
+  WorkerTabDebuggerBufferedEvent,
+  WorkerTabDebuggerPollResult,
 } from './types.js'
 
 // Inlined from timeout_utils.ts so the compiled worker has zero relative
@@ -289,6 +291,80 @@ function callHostMethod(
   })
 }
 
+type DebuggerHostCall = (method: string, params: unknown) => Promise<unknown>
+
+interface DebuggerSubscriptionHandle {
+  subscriptionId: string
+  [Symbol.asyncIterator](): AsyncIterator<WorkerTabDebuggerBufferedEvent>
+  close: () => Promise<void>
+}
+
+const DEBUGGER_POLL_BATCH = 100
+const DEBUGGER_POLL_WAIT_MS = 30_000
+
+function makeDebuggerSubscriptionHandle(
+  call: DebuggerHostCall,
+  subscriptionId: string,
+): DebuggerSubscriptionHandle {
+  let unsubscribed = false
+
+  const tryUnsubscribe = async (): Promise<void> => {
+    if (unsubscribed) return
+    unsubscribed = true
+    try {
+      await call('tabDebuggerUnsubscribe', { subscriptionId })
+    } catch {
+      // Subscription may already be gone (tab closed, host crashed); ignore.
+    }
+  }
+
+  async function* pump(): AsyncGenerator<WorkerTabDebuggerBufferedEvent, void, undefined> {
+    let pendingDropped = 0
+    try {
+      while (true) {
+        const result = (await call('tabDebuggerPoll', {
+          subscriptionId,
+          maxBatch: DEBUGGER_POLL_BATCH,
+          maxWaitMs: DEBUGGER_POLL_WAIT_MS,
+        })) as WorkerTabDebuggerPollResult
+
+        pendingDropped += result.dropped
+        for (const evt of result.events) {
+          if (pendingDropped > 0) {
+            evt.dropped = pendingDropped
+            pendingDropped = 0
+          }
+          yield evt
+        }
+        if (result.closed) return
+      }
+    } finally {
+      await tryUnsubscribe()
+    }
+  }
+
+  let iterator: AsyncGenerator<WorkerTabDebuggerBufferedEvent, void, undefined> | null = null
+
+  return {
+    subscriptionId,
+    [Symbol.asyncIterator]() {
+      if (!iterator) iterator = pump()
+      return iterator
+    },
+    async close() {
+      if (iterator && typeof iterator.return === 'function') {
+        try {
+          await iterator.return()
+        } catch {
+          // Generator return errors are non-fatal — finally runs unsubscribe.
+        }
+      } else {
+        await tryUnsubscribe()
+      }
+    },
+  }
+}
+
 // Security model: this worker runs as a Node.js utility process started with
 // `--permission` and no fs/child_process/worker/addons allowances. Even if
 // agent code reaches `process`, `require`, or `import('node:fs')`, the actual
@@ -334,6 +410,11 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
           'captureTab',
           (r) => ({ attached: true, mimeType: r.mimeType }),
         ))
+      } else if (method === 'tabDebuggerSubscribe') {
+        methodArgValues.push((params: unknown) => (async () => {
+          const result = await call('tabDebuggerSubscribe', params) as { subscriptionId: string }
+          return makeDebuggerSubscriptionHandle(call, result.subscriptionId)
+        })())
       } else if (method === 'read') {
         methodArgValues.push((params: unknown) => {
           const req = params as WorkerHostMethodMap['read']['params']

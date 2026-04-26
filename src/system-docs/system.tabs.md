@@ -26,6 +26,8 @@ The app uses a tab-based UI with three tab types:
   - `keyCode`: Electron accelerator key code (e.g. `'a'`, `'Enter'`, `'Tab'`, `'Backspace'`, `'ArrowDown'`)
   - Use `sendInput` over synthetic DOM events when testing real user interactions (clicking, dragging, resizing, typing). Synthetic `dispatchEvent()` skips hit-testing — it fires on whichever element you target in JS regardless of whether it's actually clickable at those coordinates.
 
+For low-level CDP access (network intercept, screencast, PDF, perf), see `@docs/system.tab-debugger`.
+
 Always `reloadTab` after updating view content via SQL.
 
 Clickable links in chat messages: `[text](agentview://view/<viewName>)` or `[text](agentview://file/<filePath>)`. Optional `?title=...` query param sets the tab title.

@@ -41,6 +41,18 @@ interface ReloadTabRequest {
   tabId: string
 }
 
+export interface DebuggerBufferedEvent {
+  method: string
+  params: unknown
+  sessionId?: string
+}
+
+export interface DebuggerPollResult {
+  events: DebuggerBufferedEvent[]
+  dropped: number
+  closed: boolean
+}
+
 export interface AgentTabTools {
   getTabs: () => Promise<GetTabsResult>
   openTab: (request: OpenTabRequest) => Promise<{ tabId: string }>
@@ -52,6 +64,11 @@ export interface AgentTabTools {
   execTabJs: (request: ExecTabJsRequest) => Promise<unknown>
   sendInput: (request: { tabId: string; type: string; x?: number; y?: number; button?: string; clickCount?: number; deltaX?: number; deltaY?: number; keyCode?: string; modifiers?: string[] }) => Promise<void>
   inspectElement: (request: { tabId: string; selector: string }) => Promise<unknown>
+  tabDebuggerSend: (request: { tabId: string; method: string; params?: unknown; sessionId?: string }) => Promise<unknown>
+  tabDebuggerSubscribe: (request: { tabId: string; subscriptionId: string; events: string[] }) => Promise<void>
+  tabDebuggerPoll: (request: { subscriptionId: string; maxBatch?: number; maxWaitMs?: number }) => Promise<DebuggerPollResult>
+  tabDebuggerUnsubscribe: (request: { subscriptionId: string }) => Promise<void>
+  tabDebuggerDetach: (request: { tabId: string }) => Promise<void>
 }
 
 function parseTabId(value: unknown): string {

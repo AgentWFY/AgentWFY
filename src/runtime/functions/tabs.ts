@@ -1,9 +1,15 @@
+import crypto from 'crypto'
 import type { AgentTabTools } from '../../ipc/tabs.js'
 import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
-import type { WorkerHostMethodMap, WorkerTabConsoleLogEntry, WorkerSendInputRequest } from '../types.js'
+import type {
+  WorkerHostMethodMap,
+  WorkerTabConsoleLogEntry,
+  WorkerSendInputRequest,
+} from '../types.js'
 
 const DOCS_HINT = 'Read `@docs/system.tabs` for the full function reference.'
+const DEBUGGER_DOCS_HINT = 'Read `@docs/system.tab-debugger` for the full function reference.'
 
 function resolveTabId(params: unknown): string {
   if (typeof params === 'string') {
@@ -18,7 +24,10 @@ function resolveTabId(params: unknown): string {
   return tabId
 }
 
-export function registerTabs(registry: FunctionRegistry, deps: { tabTools: AgentTabTools; agentRoot: string }): void {
+export function registerTabs(
+  registry: FunctionRegistry,
+  deps: { tabTools: AgentTabTools; agentRoot: string },
+): void {
   const { tabTools, agentRoot } = deps
 
   registry.register('getTabs', async () => {
@@ -149,5 +158,69 @@ export function registerTabs(registry: FunctionRegistry, deps: { tabTools: Agent
     }
 
     return tabTools.inspectElement({ tabId, selector: request.selector })
+  })
+
+  registry.register('tabDebuggerSend', async (params) => {
+    const request = params as WorkerHostMethodMap['tabDebuggerSend']['params']
+    const tabId = resolveTabId(request)
+    if (typeof request.method !== 'string' || !request.method.trim()) {
+      throw new Error(`tabDebuggerSend requires a CDP method name. ${DEBUGGER_DOCS_HINT}`)
+    }
+    return tabTools.tabDebuggerSend({
+      tabId,
+      method: request.method,
+      params: request.params,
+      sessionId: request.sessionId,
+    })
+  })
+
+  registry.register('tabDebuggerSubscribe', async (params) => {
+    const request = params as WorkerHostMethodMap['tabDebuggerSubscribe']['params']
+    const tabId = resolveTabId(request)
+    if (!Array.isArray(request.events) || request.events.length === 0) {
+      throw new Error(`tabDebuggerSubscribe requires a non-empty events array. ${DEBUGGER_DOCS_HINT}`)
+    }
+    for (const name of request.events) {
+      if (typeof name !== 'string' || !name.trim()) {
+        throw new Error(`tabDebuggerSubscribe events must be non-empty strings. ${DEBUGGER_DOCS_HINT}`)
+      }
+    }
+    const subscriptionId = `tabdbg-${crypto.randomBytes(8).toString('hex')}`
+    await tabTools.tabDebuggerSubscribe({
+      tabId,
+      subscriptionId,
+      events: request.events,
+    })
+    return { subscriptionId }
+  })
+
+  registry.register('tabDebuggerPoll', async (params) => {
+    const request = params as WorkerHostMethodMap['tabDebuggerPoll']['params']
+    if (!request || typeof request.subscriptionId !== 'string' || !request.subscriptionId.trim()) {
+      throw new Error(`tabDebuggerPoll requires a subscriptionId. ${DEBUGGER_DOCS_HINT}`)
+    }
+    return tabTools.tabDebuggerPoll({
+      subscriptionId: request.subscriptionId,
+      maxBatch: request.maxBatch,
+      maxWaitMs: request.maxWaitMs,
+    })
+  }, undefined, { hidden: true })
+
+  registry.register('tabDebuggerUnsubscribe', async (params) => {
+    let subscriptionId: string | undefined
+    if (typeof params === 'string') {
+      subscriptionId = params
+    } else {
+      subscriptionId = (params as { subscriptionId?: string } | undefined)?.subscriptionId
+    }
+    if (typeof subscriptionId !== 'string' || !subscriptionId.trim()) {
+      throw new Error(`tabDebuggerUnsubscribe requires a subscriptionId. ${DEBUGGER_DOCS_HINT}`)
+    }
+    await tabTools.tabDebuggerUnsubscribe({ subscriptionId })
+  }, undefined, { hidden: true })
+
+  registry.register('tabDebuggerDetach', async (params) => {
+    const tabId = resolveTabId(params)
+    await tabTools.tabDebuggerDetach({ tabId })
   })
 }

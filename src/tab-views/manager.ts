@@ -210,9 +210,41 @@ interface TabViewManagerDeps {
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
 }
 
+interface BufferedDebuggerEvent {
+  method: string;
+  params: unknown;
+  sessionId?: string;
+}
+
+interface DebuggerPollWaiter {
+  resolve: () => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+interface DebuggerSubscription {
+  subscriptionId: string;
+  tabId: string;
+  events: Set<string>;
+  buffer: BufferedDebuggerEvent[];
+  dropped: number;
+  closed: boolean;
+  waiter: DebuggerPollWaiter | null;
+}
+
+interface DebuggerAttachment {
+  messageHandler: (event: Electron.Event, method: string, params: unknown, sessionId: string) => void;
+  detachHandler: (event: Electron.Event, reason: string) => void;
+}
+
+const DEBUGGER_BUFFER_MAX = 1000;
+const DEBUGGER_POLL_MAX_WAIT_MS = 60_000;
+
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
+  private readonly debuggerAttachments = new Map<string, DebuggerAttachment>();
+  private readonly debuggerSubscriptions = new Map<string, DebuggerSubscription>();
+  private readonly debuggerSubscriptionsByTab = new Map<string, Set<string>>();
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
@@ -603,6 +635,8 @@ export class TabViewManager {
       return;
     }
 
+    this.cleanupDebuggerForTab(tabId);
+
     this.tabViewsByTabId.delete(tabId);
     this.removeTrackedViewWebContents(state.view.webContents.id);
 
@@ -632,6 +666,213 @@ export class TabViewManager {
     }
     this.tabs = [];
     this.selectedTabId = null;
+  }
+
+  // --- Debugger (Chrome DevTools Protocol) ---
+
+  private ensureDebuggerAttached(state: TabViewState): void {
+    const tabId = state.tabId;
+    if (this.debuggerAttachments.has(tabId)) {
+      return;
+    }
+
+    const dbg = state.view.webContents.debugger;
+    if (!dbg.isAttached()) {
+      // Throws if another client (DevTools, another caller) is attached.
+      // Surface the original error so the agent sees the real reason.
+      dbg.attach('1.3');
+    }
+
+    const messageHandler = (
+      _event: Electron.Event,
+      method: string,
+      params: unknown,
+      sessionId: string,
+    ) => {
+      const subIds = this.debuggerSubscriptionsByTab.get(tabId);
+      if (!subIds || subIds.size === 0) return;
+      for (const subId of subIds) {
+        const sub = this.debuggerSubscriptions.get(subId);
+        if (!sub || sub.closed) continue;
+        if (!sub.events.has('*') && !sub.events.has(method)) continue;
+        this.pushDebuggerEvent(sub, { method, params, sessionId: sessionId || undefined });
+      }
+    };
+
+    const detachHandler = (_event: Electron.Event, reason: string) => {
+      // External detach (DevTools opened, target crashed) — clean up so the
+      // next send/subscribe re-attaches and so pollers wake and exit.
+      console.warn(`[TabViewManager] debugger detached from tab "${tabId}": ${reason}`);
+      this.cleanupDebuggerForTab(tabId);
+    };
+
+    dbg.on('message', messageHandler);
+    dbg.on('detach', detachHandler);
+
+    this.debuggerAttachments.set(tabId, { messageHandler, detachHandler });
+  }
+
+  private pushDebuggerEvent(sub: DebuggerSubscription, evt: BufferedDebuggerEvent): void {
+    if (sub.buffer.length >= DEBUGGER_BUFFER_MAX) {
+      sub.buffer.shift();
+      sub.dropped++;
+    }
+    sub.buffer.push(evt);
+    this.wakeDebuggerPoller(sub);
+  }
+
+  private wakeDebuggerPoller(sub: DebuggerSubscription): void {
+    const w = sub.waiter;
+    if (!w) return;
+    sub.waiter = null;
+    if (w.timer) clearTimeout(w.timer);
+    w.resolve();
+  }
+
+  private closeDebuggerSubscription(sub: DebuggerSubscription): void {
+    if (sub.closed) return;
+    sub.closed = true;
+    this.wakeDebuggerPoller(sub);
+  }
+
+  private cleanupDebuggerForTab(tabId: string): void {
+    const subIds = this.debuggerSubscriptionsByTab.get(tabId);
+    if (subIds) {
+      for (const subId of subIds) {
+        const sub = this.debuggerSubscriptions.get(subId);
+        if (sub) this.closeDebuggerSubscription(sub);
+      }
+      // Subscriptions stay in the map so pending pollers can drain remaining
+      // buffered events; freed by the final poll once they see closed=true.
+      this.debuggerSubscriptionsByTab.delete(tabId);
+    }
+
+    const attachment = this.debuggerAttachments.get(tabId);
+    if (!attachment) return;
+    this.debuggerAttachments.delete(tabId);
+
+    const state = this.tabViewsByTabId.get(tabId);
+    if (!state) return;
+    const wc = state.view.webContents;
+    if (wc.isDestroyed()) return;
+
+    const dbg = wc.debugger;
+    dbg.removeListener('message', attachment.messageHandler);
+    dbg.removeListener('detach', attachment.detachHandler);
+    if (dbg.isAttached()) {
+      try {
+        dbg.detach();
+      } catch (err) {
+        console.warn(`[TabViewManager] debugger.detach failed for tab "${tabId}"`, err);
+      }
+    }
+  }
+
+  async tabDebuggerSendById(request: {
+    tabId: string;
+    method: string;
+    params?: unknown;
+    sessionId?: string;
+  }): Promise<unknown> {
+    const state = await this.resolveReadyTabViewState(request.tabId);
+    this.ensureDebuggerAttached(state);
+    const dbg = state.view.webContents.debugger;
+    // Electron typings declare params as object; CDP commands without params
+    // accept undefined at runtime.
+    const params = (request.params ?? {}) as Record<string, unknown>;
+    if (request.sessionId) {
+      return dbg.sendCommand(request.method, params, request.sessionId);
+    }
+    return dbg.sendCommand(request.method, params);
+  }
+
+  tabDebuggerSubscribeById(request: {
+    tabId: string;
+    subscriptionId: string;
+    events: string[];
+  }): void {
+    const state = this.resolveTabViewState(request.tabId);
+    this.ensureDebuggerAttached(state);
+
+    const sub: DebuggerSubscription = {
+      subscriptionId: request.subscriptionId,
+      tabId: request.tabId,
+      events: new Set(request.events),
+      buffer: [],
+      dropped: 0,
+      closed: false,
+      waiter: null,
+    };
+    this.debuggerSubscriptions.set(request.subscriptionId, sub);
+
+    let subIds = this.debuggerSubscriptionsByTab.get(request.tabId);
+    if (!subIds) {
+      subIds = new Set();
+      this.debuggerSubscriptionsByTab.set(request.tabId, subIds);
+    }
+    subIds.add(request.subscriptionId);
+  }
+
+  async tabDebuggerPollById(request: {
+    subscriptionId: string;
+    maxBatch?: number;
+    maxWaitMs?: number;
+  }): Promise<{ events: BufferedDebuggerEvent[]; dropped: number; closed: boolean }> {
+    const sub = this.debuggerSubscriptions.get(request.subscriptionId);
+    if (!sub) {
+      throw new Error(`Unknown debugger subscription "${request.subscriptionId}"`);
+    }
+    const maxBatch = Math.max(1, Math.min(1000, request.maxBatch ?? 100));
+    const maxWaitMs = Math.max(0, Math.min(DEBUGGER_POLL_MAX_WAIT_MS, request.maxWaitMs ?? 30_000));
+
+    if (sub.buffer.length === 0 && !sub.closed && maxWaitMs > 0) {
+      if (sub.waiter) {
+        throw new Error(`Concurrent poll on debugger subscription "${request.subscriptionId}" is not supported`);
+      }
+      await new Promise<void>((resolve) => {
+        const waiter: DebuggerPollWaiter = { resolve, timer: undefined };
+        sub.waiter = waiter;
+        waiter.timer = setTimeout(() => {
+          if (sub.waiter === waiter) {
+            sub.waiter = null;
+            resolve();
+          }
+        }, maxWaitMs);
+      });
+    }
+
+    const events = sub.buffer.splice(0, maxBatch);
+    const dropped = sub.dropped;
+    sub.dropped = 0;
+    const closed = sub.closed && sub.buffer.length === 0;
+
+    // Free fully-drained closed subscriptions so the id can't be polled again.
+    if (closed) {
+      this.debuggerSubscriptions.delete(request.subscriptionId);
+    }
+
+    return { events, dropped, closed };
+  }
+
+  tabDebuggerUnsubscribeById(subscriptionId: string): void {
+    const sub = this.debuggerSubscriptions.get(subscriptionId);
+    if (!sub) return;
+    this.closeDebuggerSubscription(sub);
+    // Drop from the per-tab index so a later attach doesn't revive it.
+    const subIds = this.debuggerSubscriptionsByTab.get(sub.tabId);
+    if (subIds) {
+      subIds.delete(subscriptionId);
+      if (subIds.size === 0) {
+        this.debuggerSubscriptionsByTab.delete(sub.tabId);
+      }
+    }
+    if (!sub.waiter) {
+      this.debuggerSubscriptions.delete(subscriptionId);
+    }
+  }
+
+  tabDebuggerDetachById(tabId: string): void {
+    this.cleanupDebuggerForTab(tabId);
   }
 
   // Brings this agent's selected tab above other agents' views on a switch.

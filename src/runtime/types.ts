@@ -178,6 +178,53 @@ export interface WorkerInspectElementRequest {
   selector: string
 }
 
+export interface WorkerTabDebuggerSendRequest {
+  id?: string
+  tabId?: string
+  method: string
+  params?: unknown
+  sessionId?: string
+}
+
+export interface WorkerTabDebuggerSubscribeRequest {
+  id?: string
+  tabId?: string
+  events: string[]
+}
+
+export interface WorkerTabDebuggerSubscribeResult {
+  subscriptionId: string
+}
+
+export interface WorkerTabDebuggerPollRequest {
+  subscriptionId: string
+  maxBatch?: number
+  maxWaitMs?: number
+}
+
+export interface WorkerTabDebuggerBufferedEvent {
+  method: string
+  params: unknown
+  sessionId?: string
+  /** Set on the first event of a poll batch when events were dropped before it. */
+  dropped?: number
+}
+
+export interface WorkerTabDebuggerPollResult {
+  events: WorkerTabDebuggerBufferedEvent[]
+  dropped: number
+  closed: boolean
+}
+
+export interface WorkerTabDebuggerUnsubscribeRequest {
+  subscriptionId: string
+}
+
+export interface WorkerTabDebuggerDetachRequest {
+  id?: string
+  tabId?: string
+}
+
 export interface WorkerTabConsoleLogEntry {
   level: 'verbose' | 'info' | 'warning' | 'error'
   message: string
@@ -269,6 +316,26 @@ export interface WorkerHostMethodMap {
   inspectElement: {
     params: WorkerInspectElementRequest
     result: unknown
+  }
+  tabDebuggerSend: {
+    params: WorkerTabDebuggerSendRequest
+    result: unknown
+  }
+  tabDebuggerSubscribe: {
+    params: WorkerTabDebuggerSubscribeRequest
+    result: WorkerTabDebuggerSubscribeResult
+  }
+  tabDebuggerPoll: {
+    params: WorkerTabDebuggerPollRequest
+    result: WorkerTabDebuggerPollResult
+  }
+  tabDebuggerUnsubscribe: {
+    params: WorkerTabDebuggerUnsubscribeRequest
+    result: void
+  }
+  tabDebuggerDetach: {
+    params: WorkerTabDebuggerDetachRequest
+    result: void
   }
   publish: {
     params: { topic: string; data: unknown }

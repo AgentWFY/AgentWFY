@@ -52,7 +52,7 @@ module.exports = {
 - `api.agentRoot` — absolute path to the agent's data directory.
 - `api.assetsDir` — path to `.agentwfy/plugin-assets/<name>/` for runtime files (binaries, caches).
 - `api.publish(topic, data)` — publish a message to the event bus.
-- `api.registerFunction(name, handler)` — register a function. `name` becomes the global function name in execJs / views.
+- `api.registerFunction(name, handler, opts?)` — register a function. `name` becomes the global function name in execJs / views. Pass `{ hidden: true }` to register a function that's callable via the runtime (e.g. from a custom binding the plugin exposes through another function's return value) but is *not* bound as an agent variable and does *not* appear in `getAvailableFunctions`. Use for internal plumbing — for example, a `connect()` that returns an async-iterable handle whose `next()` calls a hidden `_pollMyPluginQueue` under the hood.
 - `api.registerProvider(factory)` — register an LLM provider. See [Provider Plugins](#provider-plugins).
 - `api.getConfig(name, fallback?)` — read a config value from the agent's config table. Returns the parsed JSON value, or `fallback` if not set. Use this for reading plugin config (e.g. `api.getConfig('plugin.my-provider.apiKey', '')`).
 - `api.setConfig(name, value)` — write a config value to the agent's config table. The value is JSON-serialized. Use this for persisting plugin state from the main process (e.g. refreshed OAuth tokens).

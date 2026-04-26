@@ -18,11 +18,25 @@ export interface PluginManifest {
   version: string
 }
 
+export interface PluginRegisterFunctionOptions {
+  /**
+   * Hidden functions stay callable via host:call but are excluded from
+   * the agent's bound variables and from getAvailableFunctions. Use for
+   * internal plumbing (e.g. iterator pumps for streaming APIs) that the
+   * agent should not call directly.
+   */
+  hidden?: boolean
+}
+
 export interface PluginApi {
   agentRoot: string
   assetsDir: string
   publish: (topic: string, data: unknown) => void
-  registerFunction(name: string, handler: (params: unknown) => Promise<unknown>): void
+  registerFunction(
+    name: string,
+    handler: (params: unknown) => Promise<unknown>,
+    options?: PluginRegisterFunctionOptions,
+  ): void
   registerProvider(factory: { id: string; name: string; createSession(config: unknown): unknown; restoreSession(config: unknown, state: unknown): unknown }): void
   getConfig(name: string, fallback?: unknown): unknown
   setConfig(name: string, value: unknown): void
@@ -78,7 +92,7 @@ export class PluginRegistry {
         agentRoot: this.agentRoot,
         assetsDir,
         publish: this.publish,
-        registerFunction: (name: string, handler) => {
+        registerFunction: (name: string, handler, options?: PluginRegisterFunctionOptions) => {
           if (!this.functionRegistry) {
             console.warn(`[plugins] ${row.name}: cannot register '${name}' — function registry not available`)
             return
@@ -87,7 +101,7 @@ export class PluginRegistry {
             console.warn(`[plugins] ${row.name}: cannot register '${name}' — already registered`)
             return
           }
-          this.functionRegistry.register(name, handler, row.name)
+          this.functionRegistry.register(name, handler, row.name, { hidden: options?.hidden === true })
         },
         getConfig: (name: string, fallback?: unknown): unknown => {
           return getConfigValue(this.agentRoot, name, fallback)
