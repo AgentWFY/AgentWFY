@@ -301,6 +301,9 @@ if (isApp) {
       setVisible(visible: boolean): Promise<void> {
         return ipcRenderer.invoke(Channels.previewCursor.setVisible, visible);
       },
+      flash(): Promise<void> {
+        return ipcRenderer.invoke(Channels.previewCursor.flash);
+      },
     },
     zenMode: {
       toggle(): Promise<void> {

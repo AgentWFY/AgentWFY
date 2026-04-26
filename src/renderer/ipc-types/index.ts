@@ -59,6 +59,7 @@ export interface ZenModeApi {
 export interface PreviewCursorApi {
   setPos(x: number, y: number): Promise<void>
   setVisible(visible: boolean): Promise<void>
+  flash(): Promise<void>
 }
 
 export interface AgentSidebarApi {

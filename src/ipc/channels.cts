@@ -82,6 +82,7 @@ export const Channels = {
   previewCursor: {
     setPos: 'previewCursor:setPos',
     setVisible: 'previewCursor:setVisible',
+    flash: 'previewCursor:flash',
   },
   zenMode: {
     toggle: 'zenMode:toggle',

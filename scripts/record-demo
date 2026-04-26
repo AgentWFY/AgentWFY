@@ -21,11 +21,24 @@
 #      written into the same directory.
 set -euo pipefail
 
-NAME="${1:-}"
-DEMO_DIR="${2:-}"
+NO_TEST_PROVIDER=0
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-test-provider) NO_TEST_PROVIDER=1; shift ;;
+    -h|--help)
+      echo "usage: scripts/record-demo [--no-test-provider] <preview-name> <demo-dir>" >&2
+      exit 0 ;;
+    --) shift; POSITIONAL+=("$@"); break ;;
+    --*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+NAME="${POSITIONAL[0]:-}"
+DEMO_DIR="${POSITIONAL[1]:-}"
 
 if [ -z "$NAME" ] || [ -z "$DEMO_DIR" ]; then
-  echo "usage: scripts/record-demo <preview-name> <demo-dir>" >&2
+  echo "usage: scripts/record-demo [--no-test-provider] <preview-name> <demo-dir>" >&2
   exit 1
 fi
 
@@ -57,20 +70,30 @@ fi
 # in the wrong state, which makes a "flip to dark" step invisible.
 ./scripts/preview --exec "$NAME" bash -c 'echo "{}" > /tmp/preview-config.json' >/dev/null
 
-# Fresh app state so the demo starts from a known UI.
-./scripts/preview --restart "$NAME" >/dev/null
-sleep 2
-
-# Install the test-provider plugin — the demos drive a fake provider so
-# they don't need real API keys. CAST to TEXT: sqlite readfile() returns
-# a BLOB by default and better-sqlite3 would then give us a Buffer, which
-# `new Function(...buf)` stringifies wrong.
-./scripts/preview --sqlite "$NAME" "
+# All state mutations (plugin wipe + optional test-provider insert) go in
+# one SQL block, then a single restart picks up the result. The wipe
+# matches AgentDb.uninstallPlugin in src/db/agent-db.ts (plugins +
+# plugin.* rows in views/docs/modules/config) — a bare DELETE FROM
+# plugins leaves orphan rows that the palette would still surface as
+# results from a prior install. CAST to TEXT: sqlite readfile() returns
+# a BLOB by default and better-sqlite3 would then give us a Buffer,
+# which `new Function(...buf)` stringifies wrong.
+SQL="
+DELETE FROM plugins;
+DELETE FROM views WHERE name LIKE 'plugin.%';
+DELETE FROM docs WHERE name LIKE 'plugin.%';
+DELETE FROM modules WHERE name LIKE 'plugin.%';
+DELETE FROM config WHERE name LIKE 'plugin.%';
+"
+if [ "$NO_TEST_PROVIDER" -eq 0 ]; then
+  SQL="$SQL
 INSERT OR REPLACE INTO plugins (name, title, description, version, code, enabled)
 VALUES ('test-provider', 'Test Provider',
         'Test provider for demos and session-resilience tests', '1.0.0',
         CAST(readfile('/src/plugins/test-provider/src/index.js') AS TEXT), 1);
-" >/dev/null
+"
+fi
+./scripts/preview --sqlite "$NAME" "$SQL" >/dev/null
 ./scripts/preview --restart "$NAME" >/dev/null
 sleep 2
 
