@@ -49,7 +49,7 @@
   },
   {
     "name": "system.show-tab-source",
-    "description": "Show each tab's source (view name, file path, or URL) on a second line under the title (default: false)"
+    "description": "Show each tab's source (view name, file path, or URL) on a second line under the title (default: true)"
   },
   {
     "name": "system.shortcuts.toggle-command-palette",

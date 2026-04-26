@@ -129,7 +129,7 @@ export class TlTabs extends HTMLElement {
     try {
       const value = await ipc.getSetting('system.show-tab-source')
       const v = String(value ?? '').toLowerCase()
-      const next = v === 'true' || v === '1' || v === 'yes'
+      const next = v === '' ? true : !(v === 'false' || v === '0' || v === 'no')
       document.documentElement.classList.toggle('tabs-show-source', next)
     } catch {
       // ignore
