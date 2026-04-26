@@ -352,14 +352,16 @@ function makeDebuggerSubscriptionHandle(
       return iterator
     },
     async close() {
+      // Unsubscribe first so the host wakes any in-flight poll waiter; the
+      // generator then exits via `if (result.closed) return` instead of
+      // blocking up to maxWaitMs for a frame that won't arrive.
+      await tryUnsubscribe()
       if (iterator && typeof iterator.return === 'function') {
         try {
           await iterator.return()
         } catch {
-          // Generator return errors are non-fatal — finally runs unsubscribe.
+          // Generator return errors are non-fatal.
         }
-      } else {
-        await tryUnsubscribe()
       }
     },
   }
