@@ -9,7 +9,22 @@ import type {
   WorkerExecuteRequestMessage,
   WorkerHostResultMessage,
 } from './types.js'
-import { formatTimeoutError } from './timeout_utils.js'
+
+// Inlined from timeout_utils.ts so the compiled worker has zero relative
+// imports. The worker process runs under Node's permission model with no
+// `--allow-fs-read`, so any extra import would need to be loaded from disk
+// and would fail. The host (js_runtime) still imports timeout_utils for
+// `resolveTimeout`.
+function formatTimeoutError(
+  fnName: string,
+  timeoutMs: number,
+  wasDefault: boolean,
+  maxMs: number,
+): string {
+  const qualifier = wasDefault ? 'default ' : ''
+  return `${fnName} timed out after ${qualifier}${timeoutMs}ms (max ${maxMs}ms). ` +
+    'Pass a larger `timeoutMs` or reduce work (bound loops, avoid per-iteration awaits).'
+}
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -20,8 +35,6 @@ type PendingHostCall = {
   resolve: (value: unknown) => void
   reject: (error: unknown) => void
 }
-
-const parentPort = process.parentPort!
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
@@ -57,10 +70,10 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-// AsyncFunction adds 2 implicit lines (function signature) + our body wrapper adds 2
-// lines: `"use strict";\n` followed by either `return (\n` (expression form) or
-// `return await (async () => {\n` (body form). Both prefixes are 2 lines, so a single
-// offset works for either compilation path.
+// AsyncFunction adds 2 implicit lines (function signature) + our body wrapper
+// adds 2 lines: `"use strict";\n` followed by either `return (\n` (expression
+// form) or `return await (async () => {\n` (body form). Both prefixes are 2
+// lines, so a single offset works for either compilation path.
 const V8_LINE_OFFSET = 4
 
 function cleanStack(raw: string | undefined, codeLineCount?: number): string | undefined {
@@ -196,8 +209,11 @@ function withTimeoutAndAbort<T>(
   return Promise.race([promise, timeoutPromise, abortPromise])
 }
 
+// IPC over the channel set up by child_process.fork(serialization: 'advanced').
+// The host pairs this with `child.send(...)` and `child.on('message', ...)`.
+// `process.send!` is asserted because this entry point only runs as a forked child.
 function postToHost(message: WorkerToHostMessage): void {
-  parentPort.postMessage(message)
+  process.send!(message)
 }
 
 function rejectPendingCallsForRequest(requestId: string, error: Error): void {
@@ -273,6 +289,12 @@ function callHostMethod(
   })
 }
 
+// Security model: this worker runs as a Node.js utility process started with
+// `--permission` and no fs/child_process/worker/addons allowances. Even if
+// agent code reaches `process`, `require`, or `import('node:fs')`, the actual
+// dangerous syscalls (read/write files, spawn processes, load native code)
+// throw at the OS level. Network is reachable — `fetch` works — which is the
+// accepted trade-off for agents that need to call external APIs.
 async function executeRequest(message: WorkerExecuteRequestMessage): Promise<void> {
   const { requestId, code, timeoutMs, timeoutWasDefault, input, methods } = message
   const abortController = new AbortController()
@@ -285,16 +307,8 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     const signal = abortController.signal
 
     const call = (method: string, params: unknown) =>
-      callHostMethod('' + requestId, method, params, signal)
+      callHostMethod(requestId, method, params, signal)
 
-    // Shadow browser/Node globals
-    const shadowParamNames = [
-      'window', 'self', 'globalThis', 'document',
-      'require', 'global', 'module', '__filename', '__dirname', 'process',
-    ]
-    const shadowArgValues: unknown[] = Array(shadowParamNames.length).fill(undefined)
-
-    // Build method bindings from the methods list
     const methodParamNames: string[] = []
     const methodArgValues: Function[] = []
     const pendingAttachments: Promise<unknown>[] = []
@@ -345,15 +359,14 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
 
     // Try compiling as a bare expression first so agents can write
     // `await read({ path })` instead of `const x = await read({ path }); return x;`.
-    // If the expression wrap is a SyntaxError — e.g. code has statements, declarations,
-    // or its own `return` — fall back to the original async IIFE body.
+    // If the expression wrap is a SyntaxError — e.g. code has statements,
+    // declarations, or its own `return` — fall back to the async IIFE body.
     const expressionBody = `"use strict";\nreturn (\n${code}\n);`
     const iifeBody = `"use strict";\nreturn await (async () => {\n${code}\n})();`
 
     let fn: (...callArgs: unknown[]) => Promise<unknown>
     try {
       fn = new AsyncFunction(
-        ...shadowParamNames,
         ...methodParamNames,
         'input',
         expressionBody,
@@ -361,7 +374,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     } catch (compileErr) {
       if (!(compileErr instanceof SyntaxError)) throw compileErr
       fn = new AsyncFunction(
-        ...shadowParamNames,
         ...methodParamNames,
         'input',
         iifeBody,
@@ -370,7 +382,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
 
     const value = await withTimeoutAndAbort(
       fn(
-        ...shadowArgValues,
         ...methodArgValues,
         input,
       ),
@@ -431,9 +442,9 @@ function handleFatalError(error: unknown): void {
   process.stderr.write(`${serialized.stack ?? `${serialized.name}: ${serialized.message}`}\n`)
   // Best-effort IPC — may not be delivered before process exits
   try {
-    parentPort.postMessage({ type: 'worker:crash', error: serialized })
+    postToHost({ type: 'worker:crash', error: serialized })
   } catch {
-    // parentPort may already be unusable
+    // IPC channel may already be unusable
   }
   process.exit(1)
 }
@@ -441,8 +452,9 @@ function handleFatalError(error: unknown): void {
 process.on('uncaughtException', handleFatalError)
 process.on('unhandledRejection', handleFatalError)
 
-parentPort.on('message', (messageEvent: { data: HostToWorkerMessage }) => {
-  const message = messageEvent.data
+// child_process.fork delivers IPC messages directly via the 'message' event;
+// no { data } wrapping (that was an Electron parentPort idiom).
+process.on('message', (message: HostToWorkerMessage) => {
   if (!message || typeof message !== 'object' || typeof (message as unknown as Record<string, unknown>).type !== 'string') {
     return
   }

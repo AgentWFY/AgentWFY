@@ -25,7 +25,7 @@ The app runs as three Electron process types:
 
 - **Main process** (`src/main.ts`): Orchestrates the single app window, agent contexts, database, IPC, plugins, triggers
 - **Renderer process** (`src/renderer/`): UI built with plain Web Components (no framework), Shadow DOM scoping, custom EventBus pub/sub
-- **Utility processes** (`src/runtime/exec_worker.ts`): Per-session JS workers for agent code execution, spawned via `utilityProcess.fork()`
+- **Worker subprocesses** (`src/runtime/exec_worker.mts`): Per-session JS workers for agent code execution. Spawned via `child_process.fork()` with `ELECTRON_RUN_AS_NODE=1` and `--permission` so the worker runs under Node's permission model (no fs / child_process / worker_threads / native addons). `utilityProcess.fork` is intentionally not used because Electron's CLI-flag allowlist drops `--permission`.
 
 ### Build System
 

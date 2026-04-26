@@ -1,4 +1,4 @@
-import { utilityProcess } from 'electron'
+import { fork as forkChild, type ChildProcess } from 'node:child_process'
 import path from 'path'
 import crypto from 'crypto'
 import type {
@@ -37,10 +37,10 @@ type PendingExecution = {
 
 type ChildEntry = {
   sessionId: string
-  child: Electron.UtilityProcess
+  child: ChildProcess
   pendingExecutions: Map<string, PendingExecution>
   onMessage: (message: WorkerToHostMessage) => void
-  onExit: (code: number) => void
+  onExit: (code: number | null, signal: NodeJS.Signals | null) => void
   lastCrashError?: string
   stderrChunks: string[]
 }
@@ -90,10 +90,35 @@ export class JsRuntime {
       return
     }
 
-    const child = utilityProcess.fork(
-      path.join(import.meta.dirname, 'exec_worker.js'),
+    // Spawn the worker as a Node-mode subprocess of the current Electron
+    // binary. Why not utilityProcess.fork? Electron filters Node CLI flags via
+    // an allowlist (shell/common/node_bindings.cc — IsAllowedOption) and
+    // `--permission` is not on it, so the flag is silently dropped and the
+    // permission model never activates. ELECTRON_RUN_AS_NODE=1 makes the
+    // Electron binary behave as plain Node, skipping that filter entirely.
+    //
+    // Lock-down: --permission with no allowances. The worker can only:
+    //   - read its own entry script (auto-allowed by Node; no flag needed)
+    //   - reach the network (permission model has no net gate; `fetch` works)
+    // It cannot read/write the filesystem, spawn child processes, create
+    // worker threads, load native addons, or use WASI.
+    //
+    // The .mjs extension keeps this strict: Node skips the parent-dir
+    // package.json walk that .js triggers for ESM type detection.
+    //
+    // Trade-offs vs utilityProcess.fork: the worker no longer shows up as a
+    // named Electron service in the OS process list, and we lose the
+    // automatic crash-reporter integration. We still capture stderr.
+    const child = forkChild(
+      path.join(import.meta.dirname, 'exec_worker.mjs'),
       [],
-      { serviceName: 'exec-worker-' + normalizedSessionId, stdio: 'pipe' },
+      {
+        execPath: process.execPath,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        execArgv: ['--permission'],
+        serialization: 'advanced',
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      },
     )
 
     const entry: ChildEntry = {
@@ -121,12 +146,13 @@ export class JsRuntime {
       this.handleWorkerMessage(entry, message)
     }
 
-    entry.onExit = (code: number) => {
+    entry.onExit = (code, signal) => {
       let errorMessage: string
       if (code === 0) {
         errorMessage = `Session worker exited for ${normalizedSessionId}`
       } else {
-        errorMessage = `Session worker crashed with code ${code} for ${normalizedSessionId}`
+        const cause = signal ? `signal ${signal}` : `code ${code}`
+        errorMessage = `Session worker crashed with ${cause} for ${normalizedSessionId}`
         if (entry.lastCrashError) {
           errorMessage += `\n${entry.lastCrashError}`
         }
@@ -201,7 +227,7 @@ export class JsRuntime {
 
       if (signal) {
         const onAbort = () => {
-          entry.child.postMessage({
+          entry.child.send({
             type: 'exec:cancel',
             requestId,
           } satisfies HostToWorkerMessage)
@@ -215,7 +241,7 @@ export class JsRuntime {
 
       entry.pendingExecutions.set(requestId, pending)
 
-      entry.child.postMessage({
+      entry.child.send({
         type: 'exec:run',
         requestId,
         code,
@@ -276,7 +302,7 @@ export class JsRuntime {
     try {
       const value = await this.deps.functionRegistry.call(message.method, message.params)
       this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
-      entry.child.postMessage({
+      entry.child.send({
         type: 'host:result',
         requestId: message.requestId,
         callId: message.callId,
@@ -285,7 +311,7 @@ export class JsRuntime {
       } satisfies HostToWorkerMessage)
     } catch (error) {
       this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
-      entry.child.postMessage({
+      entry.child.send({
         type: 'host:result',
         requestId: message.requestId,
         callId: message.callId,
