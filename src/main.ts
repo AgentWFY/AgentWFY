@@ -35,16 +35,23 @@ import fs from 'fs';
 import { execFile } from 'child_process';
 import { pathToFileURL } from 'url';
 
-function devRebuild(): Promise<void> {
-  if (app.isPackaged) return Promise.resolve();
+async function devRebuild(): Promise<void> {
+  if (app.isPackaged) return;
   const root = path.join(import.meta.dirname, '..');
   const tsgo = path.join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo');
-  return new Promise((resolve) => {
+  const dist = path.join(root, 'dist');
+  await new Promise<void>((resolve) => {
     execFile(tsgo, [], { cwd: root }, (err) => {
       if (err) console.error('[dev-rebuild] build failed:', err.message);
       resolve();
     });
   });
+  try {
+    const { inlinePreload } = await import(pathToFileURL(path.join(root, 'scripts', 'lib', 'inline-preload.mjs')).href);
+    inlinePreload(dist);
+  } catch (err) {
+    console.error('[dev-rebuild] preload inline failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 app.commandLine.appendSwitch('disable-features', 'Autofill,AutofillServerCommunication');
