@@ -302,7 +302,7 @@ export class TlApp extends HTMLElement {
         padding: 0;
         transition: color var(--transition-fast), background var(--transition-fast);
         -webkit-app-region: no-drag;
-        margin-right: 4px;
+        margin-right: 8px;
       }
       .awfy-app-inline-toggle:hover {
         color: var(--color-text4);
@@ -310,7 +310,7 @@ export class TlApp extends HTMLElement {
       }
       .awfy-app-inline-toggle.visible {
         display: flex;
-        margin-left: 4px;
+        margin-left: 8px;
       }
       .awfy-app-main-area {
         flex: 1;
@@ -327,12 +327,12 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
         display: none !important;
       }
-      /* macOS traffic light padding when agent sidebar is hidden */
+      /* Traffic-light clearance: with trafficLightPosition x=13 the cluster ends ~x=65; place toggles at x=73 (8px gap). */
       .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top {
-        padding-left: 78px;
+        padding-left: 73px;
       }
       .awfy-app-root.agent-sidebar-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
-        padding-left: 74px;
+        padding-left: 65px;
       }
       /* Agent sidebar border when chat panel is closed */
       awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {

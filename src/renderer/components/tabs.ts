@@ -477,6 +477,9 @@ export class TlTabs extends HTMLElement {
         -webkit-app-region: no-drag;
         background: transparent;
       }
+      .tab-item:first-child {
+        border-left: 1px solid var(--color-divider);
+      }
       .tab-item.pinned {
         max-width: none;
         width: 28px;
