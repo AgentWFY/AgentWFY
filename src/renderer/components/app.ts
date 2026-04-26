@@ -338,6 +338,10 @@ export class TlApp extends HTMLElement {
       awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {
         border-right: 1px solid var(--color-border);
       }
+      /* When chat panel is open, its border-right already separates it from the tab bar — drop the first tab's left border so they don't double up. */
+      .awfy-app-body:has(> .awfy-app-sidebar:not(.closed)) .tab-item:first-child {
+        border-left: none;
+      }
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar {
         flex: 1;
         border-right: none;
