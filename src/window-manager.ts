@@ -17,6 +17,30 @@ import type { ProviderRegistry } from './providers/registry.js';
 
 export type { AgentContext } from './agent-context.js';
 
+// Header heights: 30px in compact mode, 36px when tab source is shown (see app.ts).
+// Visible cluster height ≈ 12px (colored dots, no halo). Y values align the cluster
+// with the visible 12×12 inner rect of the sidebar-toggle SVG icon.
+const TRAFFIC_LIGHT_X = 13;
+const TRAFFIC_LIGHT_Y_COMPACT = 7;
+const TRAFFIC_LIGHT_Y_SOURCE = 10;
+
+function trafficLightFor(showSource: boolean): { x: number; y: number } {
+  return { x: TRAFFIC_LIGHT_X, y: showSource ? TRAFFIC_LIGHT_Y_SOURCE : TRAFFIC_LIGHT_Y_COMPACT };
+}
+
+function parseShowTabSource(value: unknown): boolean {
+  const v = String(value ?? '').toLowerCase();
+  if (v === '') return true;
+  return !(v === 'false' || v === '0' || v === 'no');
+}
+
+function readShowTabSource(agentRoot?: string | null): boolean {
+  const raw = agentRoot
+    ? getConfigValue(agentRoot, 'system.show-tab-source')
+    : getGlobalValue('system.show-tab-source');
+  return parseShowTabSource(raw);
+}
+
 function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, action: string): string {
   const parts: string[] = [];
   if (streamingAgents > 0) parts.push(`${streamingAgents} agent${streamingAgents > 1 ? 's' : ''} streaming`);
@@ -65,6 +89,7 @@ class WindowManager {
       getRendererWebContents: () => this.rendererView?.webContents ?? null,
       isWindowAvailable: () => !!this.mainWindow && !this.mainWindow.isDestroyed(),
       applyTheme: () => this.applyTheme(),
+      applyTrafficLightPosition: () => this.applyTrafficLightPosition(),
       pushProviderState: (root, reg) => this.pushProviderState(root, reg),
       dispatchRendererEvent: (name, detail) => {
         this.rendererBridge?.dispatchRendererCustomEvent(name, detail);
@@ -97,7 +122,7 @@ class WindowManager {
       title: 'AgentWFY',
       titleBarStyle: 'hidden',
       ...(process.platform === 'darwin'
-        ? { trafficLightPosition: { x: 13, y: 12 } }
+        ? { trafficLightPosition: trafficLightFor(readShowTabSource()) }
         : {
             titleBarOverlay: {
               color: nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#f0f0f0',
@@ -279,6 +304,7 @@ class WindowManager {
     this.orchestrator.addPersistedAgent(initialAgentRoot);
     await this.orchestrator.initAgentContext(initialAgentRoot);
     this.orchestrator.activateFirstAgent(initialAgentRoot);
+    this.applyTrafficLightPosition();
 
     rwc.loadURL('app://index.html');
     if (!process.env.AGENTWFY_HEADLESS) window.show();
@@ -324,6 +350,14 @@ class WindowManager {
         symbolColor: dark ? '#808080' : '#999999',
       });
     }
+  }
+
+  applyTrafficLightPosition(): void {
+    if (process.platform !== 'darwin') return;
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) return;
+    const showSource = readShowTabSource(this.orchestrator.getActiveAgentRoot());
+    win.setWindowButtonPosition(trafficLightFor(showSource));
   }
 
   // --- Zen mode ---

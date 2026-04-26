@@ -178,7 +178,7 @@ export class TlApp extends HTMLElement {
         min-width: max-content;
         transition: height var(--transition-fast);
       }
-      :root.tabs-show-source .awfy-app-sidebar-top { height: 42px; }
+      :root.tabs-show-source .awfy-app-sidebar-top { height: 36px; }
       .awfy-app-sidebar-toggle {
         display: flex;
         align-items: center;
@@ -274,13 +274,23 @@ export class TlApp extends HTMLElement {
         height: 30px;
         box-sizing: border-box;
         background: var(--color-bg3);
-        border-bottom: 1px solid var(--color-border);
         padding: 0;
         gap: 0;
+        position: relative;
         -webkit-app-region: drag;
         transition: height var(--transition-fast);
       }
-      :root.tabs-show-source .awfy-app-header { height: 42px; }
+      .awfy-app-header::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 1px;
+        background: var(--color-border);
+        pointer-events: none;
+      }
+      :root.tabs-show-source .awfy-app-header { height: 36px; }
       .awfy-app-header > .tab-bar {
         flex: 1;
         min-width: 0;
