@@ -84,6 +84,8 @@ DELETE FROM views WHERE name LIKE 'plugin.%';
 DELETE FROM docs WHERE name LIKE 'plugin.%';
 DELETE FROM modules WHERE name LIKE 'plugin.%';
 DELETE FROM config WHERE name LIKE 'plugin.%';
+DELETE FROM triggers WHERE name LIKE 'plugin.%';
+DELETE FROM tasks WHERE name LIKE 'plugin.%';
 "
 if [ "$NO_TEST_PROVIDER" -eq 0 ]; then
   SQL="$SQL

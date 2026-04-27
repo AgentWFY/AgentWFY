@@ -442,6 +442,12 @@ class AgentDb {
       this.db.prepare(
         "DELETE FROM config WHERE name = ? OR name LIKE ?"
       ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.prepare(
+        "DELETE FROM triggers WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
+      this.db.prepare(
+        "DELETE FROM tasks WHERE name = ? OR name LIKE ?"
+      ).run(`plugin.${name}`, `plugin.${name}.%`);
       this.db.exec('COMMIT');
     });
   }
