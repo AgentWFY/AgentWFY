@@ -146,6 +146,7 @@ export class AgentOrchestrator {
 
     this.activeAgentRoot = agentRoot;
     this.deps.applyTheme();
+    this.deps.applyTrafficLightPosition();
 
     // Collapse outgoing agent's views to 0x0 before promoting incoming. If
     // the user then closes the incoming agent's last tab, nothing underneath
