@@ -241,7 +241,7 @@ Enter sends. Shift+Enter for newline.
 | Assistant text | `.assistant-text` |
 | Thinking text | `.thinking-text` |
 | Tool header (click to open popup) | `.tool-header` |
-| Tool details popup overlay | `.tool-popup-overlay` (click backdrop to close) |
+| Tool details inline panel | `.tool-popup` (close via ESC or close button) |
 | Tool popup close button | `.tool-popup-close` |
 | Error banner | `.error-banner` |
 | Retry banner | `.retry-banner` |
