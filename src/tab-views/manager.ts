@@ -912,8 +912,16 @@ export class TabViewManager {
     } else if (this.isActive && this.selectedBounds) {
       // Only the active agent's views should re-expand on zen exit; inactive
       // agents must stay at 0x0 or they'd unmask underneath the active agent.
-      for (const state of this.tabViewsByTabId.values()) {
-        state.view.setBounds(this.selectedBounds);
+      // Hidden tabs must also stay at 0x0 — the renderer's bounds-sync path
+      // skips them by design, so they'd otherwise remain full-size and show
+      // through once the visible selection goes away.
+      const hiddenTabIds = new Set(this.tabs.filter(t => t.hidden).map(t => t.id));
+      for (const [tabId, state] of this.tabViewsByTabId) {
+        if (hiddenTabIds.has(tabId)) {
+          state.view.setBounds(ZERO_BOUNDS);
+        } else {
+          state.view.setBounds(this.selectedBounds);
+        }
       }
       const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
       if (selected) this.bringToFront(selected);
@@ -1079,7 +1087,15 @@ export class TabViewManager {
 
   async selectTabHandler(request: { tabId: string }): Promise<void> {
     const tab = this.tabs.find(t => t.id === request.tabId);
-    if (!tab || this.selectedTabId === request.tabId) return;
+    if (!tab) return;
+    // Selecting a hidden tab must also reveal it — the renderer keeps hidden
+    // tabs at display:none regardless of selectedTabId, so without this the
+    // main-process selection silently desyncs from what the user sees.
+    if (tab.hidden) {
+      this.revealTab(request.tabId);
+      return;
+    }
+    if (this.selectedTabId === request.tabId) return;
     this.selectedTabId = request.tabId;
     // Promote the new selection to the top of the z-order immediately. The
     // renderer's MutationObserver-driven bounds sync fires reliably when
