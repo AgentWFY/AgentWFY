@@ -948,7 +948,7 @@ function showContent() {
       actions = '<button class="btn btn-green" onclick="runTask()">' + IC.play + ' Run</button>'
         + '<button class="btn" onclick="duplicateTask()">' + IC.copy + '</button>'
         + '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
-    } else if (s.type === 'docs' || s.type === 'modules') {
+    } else if (s.type === 'docs' || s.type === 'modules' || s.type === 'views') {
       actions = '<button class="btn btn-danger" onclick="deleteItem()">' + IC.trash + '</button>' + actions;
     }
     let desc = '';
