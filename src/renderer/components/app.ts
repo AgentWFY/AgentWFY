@@ -20,6 +20,8 @@ export class TlApp extends HTMLElement {
   private tabsEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
   private unlistenZenMode: (() => void) | null = null
+  private unlistenSettingChanged: (() => void) | null = null
+  private isPanelSwitcherHidden = false
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
@@ -472,6 +474,15 @@ export class TlApp extends HTMLElement {
     this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
+    // Three triggers: IPC settingChanged (global config writes),
+    // config-db-changed (agent-DB config writes), agent-switched (DB swap).
+    this.loadPanelSwitcherConfig()
+    this.unlistenSettingChanged = window.ipc?.onSettingChanged(({ key }) => {
+      if (key !== 'system.hide-panel-switcher') return
+      this.loadPanelSwitcherConfig()
+    }) ?? null
+    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
 
     // Sync initial sidebar state (open chat panel by default)
     this.updateSidebar()
@@ -485,7 +496,11 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-sidebar', this.onToggleAgentSidebar)
     this.unlistenZenMode?.()
     this.unlistenZenMode = null
+    this.unlistenSettingChanged?.()
+    this.unlistenSettingChanged = null
     window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
+    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
     this.unlistenAgentDbChanged?.()
@@ -523,6 +538,9 @@ export class TlApp extends HTMLElement {
       })
     }
 
+    // Hide switcher if configured
+    this.sidebarSwitcherEl.style.display = this.isPanelSwitcherHidden ? 'none' : ''
+
     // Switcher active state
     this.sidebarSwitcherEl.querySelectorAll('.awfy-app-sidebar-switcher-btn').forEach(btn => {
       const panel = (btn as HTMLElement).dataset.panel
@@ -530,6 +548,30 @@ export class TlApp extends HTMLElement {
     })
 
     window.dispatchEvent(new Event('resize'))
+  }
+
+  private async loadPanelSwitcherConfig() {
+    let next = false
+    try {
+      const value = await window.ipc?.getSetting('system.hide-panel-switcher')
+      const v = String(value ?? '').toLowerCase()
+      next = v === 'true' || v === '1' || v === 'yes'
+    } catch {
+      // ignore
+    }
+    if (next === this.isPanelSwitcherHidden) return
+    this.isPanelSwitcherHidden = next
+    this.updateSidebar()
+  }
+
+  private onConfigDbChanged = (e: Event) => {
+    const key = (e as CustomEvent<{ key?: string }>).detail?.key
+    if (key !== 'system.hide-panel-switcher') return
+    this.loadPanelSwitcherConfig()
+  }
+
+  private onAgentSwitched = () => {
+    this.loadPanelSwitcherConfig()
   }
 
   private subscribeToAgentDbChanges() {

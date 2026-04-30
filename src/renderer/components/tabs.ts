@@ -91,9 +91,12 @@ export class TlTabs extends HTMLElement {
       }).catch(err => console.error('[tabs] getTabState failed:', err))
     }
 
-    // Load tab-source config flag and react to changes from anywhere
+    // Load tab-source config flag and react to changes from anywhere.
+    // Three triggers: IPC settingChanged (global config writes),
+    // config-db-changed (agent-DB config writes), agent-switched (DB swap).
     void this.loadConfig()
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     if (ipc) {
       this.unsubscribeSettingChanged = ipc.onSettingChanged(({ key }) => {
         if (key !== 'system.show-tab-source') return
@@ -114,12 +117,17 @@ export class TlTabs extends HTMLElement {
       this.unsubscribeSettingChanged = null
     }
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
+    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     document.documentElement.classList.remove('tabs-show-source')
   }
 
   private onConfigDbChanged = (e: Event) => {
     const key = (e as CustomEvent<{ key?: string }>).detail?.key
     if (key && key !== 'system.show-tab-source') return
+    void this.loadConfig()
+  }
+
+  private onAgentSwitched = () => {
     void this.loadConfig()
   }
 
