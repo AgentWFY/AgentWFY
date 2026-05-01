@@ -150,5 +150,9 @@
   {
     "name": "system.hide-panel-switcher",
     "description": "Hide the Chat/Tasks buttons at the top of the sidebar panel (default: false)"
+  },
+  {
+    "name": "system.hide-panel-toggle",
+    "description": "Hide the sidebar panel open/close toggle button (default: false)"
   }
 ]

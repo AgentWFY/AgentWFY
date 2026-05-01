@@ -6,6 +6,13 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 </svg>`
 
 const AGENT_SIDEBAR_WIDTH = 78
+const HIDE_PANEL_SWITCHER_KEY = 'system.hide-panel-switcher'
+const HIDE_PANEL_TOGGLE_KEY = 'system.hide-panel-toggle'
+
+function isTruthyConfig(value: unknown): boolean {
+  const v = String(value ?? '').toLowerCase()
+  return v === 'true' || v === '1' || v === 'yes'
+}
 
 export class TlApp extends HTMLElement {
   private activeSidebarPanel: string | null = 'agent-chat'
@@ -22,6 +29,7 @@ export class TlApp extends HTMLElement {
   private unlistenZenMode: (() => void) | null = null
   private unlistenSettingChanged: (() => void) | null = null
   private isPanelSwitcherHidden = false
+  private isPanelToggleHidden = false
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
@@ -80,6 +88,7 @@ export class TlApp extends HTMLElement {
   private onToggleAgentSidebar = () => {
     this.isAgentSidebarVisible = !this.isAgentSidebarVisible
     this.agentSidebarEl.style.display = this.isAgentSidebarVisible ? '' : 'none'
+    this.rootEl.classList.toggle('agent-sidebar-visible', this.isAgentSidebarVisible)
     if (navigator.platform.includes('Mac')) {
       this.rootEl.classList.toggle('agent-sidebar-hidden', !this.isAgentSidebarVisible)
     }
@@ -346,12 +355,18 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.agent-sidebar-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
         padding-left: 65px;
       }
+      .awfy-app-root.agent-sidebar-hidden.panel-toggle-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
+        padding-left: 78px;
+      }
       /* Agent sidebar border when chat panel is closed */
       awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {
         border-right: 1px solid var(--color-border);
       }
       /* When chat panel is open, its border-right already separates it from the tab bar — drop the first tab's left border so they don't double up. */
       .awfy-app-body:has(> .awfy-app-sidebar:not(.closed)) .tab-item:first-child {
+        border-left: none;
+      }
+      .awfy-app-root.agent-sidebar-visible.panel-toggle-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) .tab-item:first-child {
         border-left: none;
       }
       .awfy-app-root.zen-mode > .awfy-app-body > .awfy-app-sidebar {
@@ -476,10 +491,10 @@ export class TlApp extends HTMLElement {
     this.subscribeToAgentDbChanges()
     // Three triggers: IPC settingChanged (global config writes),
     // config-db-changed (agent-DB config writes), agent-switched (DB swap).
-    this.loadPanelSwitcherConfig()
+    this.loadPanelChromeConfig()
     this.unlistenSettingChanged = window.ipc?.onSettingChanged(({ key }) => {
-      if (key !== 'system.hide-panel-switcher') return
-      this.loadPanelSwitcherConfig()
+      if (key !== HIDE_PANEL_SWITCHER_KEY && key !== HIDE_PANEL_TOGGLE_KEY) return
+      this.loadPanelChromeConfig()
     }) ?? null
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
@@ -525,7 +540,10 @@ export class TlApp extends HTMLElement {
       this.sidebarEl.style.width = `${this.sidebarWidth}px`
     }
     this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen || this.isZenMode)
-    this.inlineToggleBtnEl.classList.toggle('visible', !isOpen)
+    this.sidebarToggleBtnEl.style.display = this.isPanelToggleHidden ? 'none' : ''
+    this.inlineToggleBtnEl.classList.toggle('visible', !isOpen && !this.isPanelToggleHidden)
+    this.rootEl.classList.toggle('agent-sidebar-visible', this.isAgentSidebarVisible)
+    this.rootEl.classList.toggle('panel-toggle-hidden', this.isPanelToggleHidden)
 
     // Panel visibility
     const agentChatVisible = this.activeSidebarPanel === 'agent-chat'
@@ -550,28 +568,36 @@ export class TlApp extends HTMLElement {
     window.dispatchEvent(new Event('resize'))
   }
 
-  private async loadPanelSwitcherConfig() {
-    let next = false
+  private async loadPanelChromeConfig() {
+    let nextSwitcherHidden = false
+    let nextToggleHidden = false
     try {
-      const value = await window.ipc?.getSetting('system.hide-panel-switcher')
-      const v = String(value ?? '').toLowerCase()
-      next = v === 'true' || v === '1' || v === 'yes'
+      const [switcherValue, toggleValue] = await Promise.all([
+        window.ipc?.getSetting(HIDE_PANEL_SWITCHER_KEY),
+        window.ipc?.getSetting(HIDE_PANEL_TOGGLE_KEY),
+      ])
+      nextSwitcherHidden = isTruthyConfig(switcherValue)
+      nextToggleHidden = isTruthyConfig(toggleValue)
     } catch {
       // ignore
     }
-    if (next === this.isPanelSwitcherHidden) return
-    this.isPanelSwitcherHidden = next
+    if (
+      nextSwitcherHidden === this.isPanelSwitcherHidden
+      && nextToggleHidden === this.isPanelToggleHidden
+    ) return
+    this.isPanelSwitcherHidden = nextSwitcherHidden
+    this.isPanelToggleHidden = nextToggleHidden
     this.updateSidebar()
   }
 
   private onConfigDbChanged = (e: Event) => {
     const key = (e as CustomEvent<{ key?: string }>).detail?.key
-    if (key !== 'system.hide-panel-switcher') return
-    this.loadPanelSwitcherConfig()
+    if (key !== HIDE_PANEL_SWITCHER_KEY && key !== HIDE_PANEL_TOGGLE_KEY) return
+    this.loadPanelChromeConfig()
   }
 
   private onAgentSwitched = () => {
-    this.loadPanelSwitcherConfig()
+    this.loadPanelChromeConfig()
   }
 
   private subscribeToAgentDbChanges() {
