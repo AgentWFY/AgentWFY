@@ -62,6 +62,12 @@ generateSystemConfigKeys(src)
 const tsgo = join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo')
 execSync(`"${tsgo}"`, { cwd: root, stdio: 'inherit' })
 
+// The renderer is served via the `app://` protocol which roots at
+// dist/renderer/. Mirror system-config/keys.js into dist/renderer/ so
+// renderer modules can resolve `../../system-config/keys.js` at runtime.
+mkdirSync(join(dist, 'renderer', 'system-config'), { recursive: true })
+cpSync(join(dist, 'system-config', 'keys.js'), join(dist, 'renderer', 'system-config', 'keys.js'))
+
 // ── Preload bundling ──
 
 inlinePreload(dist)
