@@ -154,5 +154,9 @@
   {
     "name": "system.hide-panel-toggle",
     "description": "Hide the sidebar panel open/close toggle button (default: false)"
+  },
+  {
+    "name": "system.hide-status-line",
+    "description": "Hide the bottom status line (default: false)"
   }
 ]

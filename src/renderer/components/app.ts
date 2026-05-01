@@ -8,6 +8,7 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 const AGENT_SIDEBAR_WIDTH = 78
 const HIDE_PANEL_SWITCHER_KEY = 'system.hide-panel-switcher'
 const HIDE_PANEL_TOGGLE_KEY = 'system.hide-panel-toggle'
+const HIDE_STATUS_LINE_KEY = 'system.hide-status-line'
 
 function isTruthyConfig(value: unknown): boolean {
   const v = String(value ?? '').toLowerCase()
@@ -25,11 +26,13 @@ export class TlApp extends HTMLElement {
   private agentChatEl!: HTMLElement
   private taskPanelEl!: HTMLElement
   private tabsEl!: HTMLElement
+  private statusLineEl!: HTMLElement
   private unlistenAgentDbChanged: (() => void) | null = null
   private unlistenZenMode: (() => void) | null = null
   private unlistenSettingChanged: (() => void) | null = null
   private isPanelSwitcherHidden = false
   private isPanelToggleHidden = false
+  private isStatusLineHidden = false
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
@@ -469,8 +472,8 @@ export class TlApp extends HTMLElement {
     root.appendChild(body)
 
     // Status line
-    const statusLine = document.createElement('awfy-status-line')
-    root.appendChild(statusLine)
+    this.statusLineEl = document.createElement('awfy-status-line')
+    root.appendChild(this.statusLineEl)
 
     this.appendChild(root)
 
@@ -491,10 +494,14 @@ export class TlApp extends HTMLElement {
     this.subscribeToAgentDbChanges()
     // Three triggers: IPC settingChanged (global config writes),
     // config-db-changed (agent-DB config writes), agent-switched (DB swap).
-    this.loadPanelChromeConfig()
+    this.loadChromeConfig()
     this.unlistenSettingChanged = window.ipc?.onSettingChanged(({ key }) => {
-      if (key !== HIDE_PANEL_SWITCHER_KEY && key !== HIDE_PANEL_TOGGLE_KEY) return
-      this.loadPanelChromeConfig()
+      if (
+        key !== HIDE_PANEL_SWITCHER_KEY
+        && key !== HIDE_PANEL_TOGGLE_KEY
+        && key !== HIDE_STATUS_LINE_KEY
+      ) return
+      this.loadChromeConfig()
     }) ?? null
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
@@ -544,6 +551,7 @@ export class TlApp extends HTMLElement {
     this.inlineToggleBtnEl.classList.toggle('visible', !isOpen && !this.isPanelToggleHidden)
     this.rootEl.classList.toggle('agent-sidebar-visible', this.isAgentSidebarVisible)
     this.rootEl.classList.toggle('panel-toggle-hidden', this.isPanelToggleHidden)
+    this.statusLineEl.style.display = this.isStatusLineHidden ? 'none' : ''
 
     // Panel visibility
     const agentChatVisible = this.activeSidebarPanel === 'agent-chat'
@@ -568,36 +576,45 @@ export class TlApp extends HTMLElement {
     window.dispatchEvent(new Event('resize'))
   }
 
-  private async loadPanelChromeConfig() {
+  private async loadChromeConfig() {
     let nextSwitcherHidden = false
     let nextToggleHidden = false
+    let nextStatusLineHidden = false
     try {
-      const [switcherValue, toggleValue] = await Promise.all([
+      const [switcherValue, toggleValue, statusLineValue] = await Promise.all([
         window.ipc?.getSetting(HIDE_PANEL_SWITCHER_KEY),
         window.ipc?.getSetting(HIDE_PANEL_TOGGLE_KEY),
+        window.ipc?.getSetting(HIDE_STATUS_LINE_KEY),
       ])
       nextSwitcherHidden = isTruthyConfig(switcherValue)
       nextToggleHidden = isTruthyConfig(toggleValue)
+      nextStatusLineHidden = isTruthyConfig(statusLineValue)
     } catch {
       // ignore
     }
     if (
       nextSwitcherHidden === this.isPanelSwitcherHidden
       && nextToggleHidden === this.isPanelToggleHidden
+      && nextStatusLineHidden === this.isStatusLineHidden
     ) return
     this.isPanelSwitcherHidden = nextSwitcherHidden
     this.isPanelToggleHidden = nextToggleHidden
+    this.isStatusLineHidden = nextStatusLineHidden
     this.updateSidebar()
   }
 
   private onConfigDbChanged = (e: Event) => {
     const key = (e as CustomEvent<{ key?: string }>).detail?.key
-    if (key !== HIDE_PANEL_SWITCHER_KEY && key !== HIDE_PANEL_TOGGLE_KEY) return
-    this.loadPanelChromeConfig()
+    if (
+      key !== HIDE_PANEL_SWITCHER_KEY
+      && key !== HIDE_PANEL_TOGGLE_KEY
+      && key !== HIDE_STATUS_LINE_KEY
+    ) return
+    this.loadChromeConfig()
   }
 
   private onAgentSwitched = () => {
-    this.loadPanelChromeConfig()
+    this.loadChromeConfig()
   }
 
   private subscribeToAgentDbChanges() {
