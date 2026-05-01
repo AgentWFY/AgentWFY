@@ -8,6 +8,7 @@ import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
+import { SystemConfigKeys } from '../system-config/keys.js'
 import {
   readSessionFile,
   readSessionTitle,
@@ -426,7 +427,7 @@ export class AgentSessionManager {
     try {
       const parsed = parseRunSqlRequest({
         target: 'agent',
-        sql: "SELECT value FROM config WHERE name = 'system.provider'",
+        sql: `SELECT value FROM config WHERE name = '${SystemConfigKeys.provider}'`,
       })
       const rows = await routeSqlRequest(agentRoot, parsed) as Array<{ value: string }>
       if (rows[0]?.value) return rows[0].value

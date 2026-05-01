@@ -1,4 +1,5 @@
 import type { AgentDbChange } from '../ipc-types/index.js'
+import { SystemConfigKeys } from '../../system-config/keys.js'
 
 const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -6,10 +7,13 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 </svg>`
 
 const AGENT_SIDEBAR_WIDTH = 78
-const HIDE_PANEL_SWITCHER_KEY = 'system.hide-panel-switcher'
-const HIDE_PANEL_TOGGLE_KEY = 'system.hide-panel-toggle'
-const HIDE_STATUS_LINE_KEY = 'system.hide-status-line'
-const HIDE_TRAFFIC_LIGHTS_KEY = 'system.hide-traffic-lights'
+
+const CHROME_CONFIG_KEYS = new Set<string>([
+  SystemConfigKeys.hidePanelSwitcher,
+  SystemConfigKeys.hidePanelToggle,
+  SystemConfigKeys.hideStatusLine,
+  SystemConfigKeys.hideTrafficLights,
+])
 
 function isTruthyConfig(value: unknown): boolean {
   const v = String(value ?? '').toLowerCase()
@@ -502,12 +506,7 @@ export class TlApp extends HTMLElement {
     // config-db-changed (agent-DB config writes), agent-switched (DB swap).
     this.loadChromeConfig()
     this.unlistenSettingChanged = window.ipc?.onSettingChanged(({ key }) => {
-      if (
-        key !== HIDE_PANEL_SWITCHER_KEY
-        && key !== HIDE_PANEL_TOGGLE_KEY
-        && key !== HIDE_STATUS_LINE_KEY
-        && key !== HIDE_TRAFFIC_LIGHTS_KEY
-      ) return
+      if (!CHROME_CONFIG_KEYS.has(key)) return
       this.loadChromeConfig()
     }) ?? null
     window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
@@ -590,10 +589,10 @@ export class TlApp extends HTMLElement {
     let nextTrafficLightsHidden = false
     try {
       const [switcherValue, toggleValue, statusLineValue, trafficLightsValue] = await Promise.all([
-        window.ipc?.getSetting(HIDE_PANEL_SWITCHER_KEY),
-        window.ipc?.getSetting(HIDE_PANEL_TOGGLE_KEY),
-        window.ipc?.getSetting(HIDE_STATUS_LINE_KEY),
-        window.ipc?.getSetting(HIDE_TRAFFIC_LIGHTS_KEY),
+        window.ipc?.getSetting(SystemConfigKeys.hidePanelSwitcher),
+        window.ipc?.getSetting(SystemConfigKeys.hidePanelToggle),
+        window.ipc?.getSetting(SystemConfigKeys.hideStatusLine),
+        window.ipc?.getSetting(SystemConfigKeys.hideTrafficLights),
       ])
       nextSwitcherHidden = isTruthyConfig(switcherValue)
       nextToggleHidden = isTruthyConfig(toggleValue)
@@ -618,12 +617,7 @@ export class TlApp extends HTMLElement {
 
   private onConfigDbChanged = (e: Event) => {
     const key = (e as CustomEvent<{ key?: string }>).detail?.key
-    if (
-      key !== HIDE_PANEL_SWITCHER_KEY
-      && key !== HIDE_PANEL_TOGGLE_KEY
-      && key !== HIDE_STATUS_LINE_KEY
-      && key !== HIDE_TRAFFIC_LIGHTS_KEY
-    ) return
+    if (!key || !CHROME_CONFIG_KEYS.has(key)) return
     this.loadChromeConfig()
   }
 

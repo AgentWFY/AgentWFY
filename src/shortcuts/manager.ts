@@ -1,5 +1,6 @@
 import { getConfigValue } from '../settings/config.js';
-import { SHORTCUT_ACTIONS, SHORTCUT_CONFIG_PREFIX } from './actions.js';
+import { SHORTCUT_ACTIONS } from './actions.js';
+import { SHORTCUT_PREFIX } from '../system-config/keys.js';
 
 const IS_DARWIN = process.platform === 'darwin';
 
@@ -87,7 +88,7 @@ export class ShortcutManager {
     this.parsed.clear();
 
     for (const [actionId, action] of Object.entries(SHORTCUT_ACTIONS)) {
-      const configKey = SHORTCUT_CONFIG_PREFIX + actionId;
+      const configKey = SHORTCUT_PREFIX + actionId;
       const raw = getConfigValue(agentRoot, configKey, action.defaultKey) as string;
 
       if (raw === DISABLED) continue;

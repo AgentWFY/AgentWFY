@@ -13,6 +13,7 @@ import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { ActionDispatcher } from './action-dispatcher.js';
 import type { ProviderRegistry } from './providers/registry.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 
 
 export type { AgentContext } from './agent-context.js';
@@ -36,15 +37,15 @@ function parseShowTabSource(value: unknown): boolean {
 
 function readShowTabSource(agentRoot?: string | null): boolean {
   const raw = agentRoot
-    ? getConfigValue(agentRoot, 'system.show-tab-source')
-    : getGlobalValue('system.show-tab-source');
+    ? getConfigValue(agentRoot, SystemConfigKeys.showTabSource)
+    : getGlobalValue(SystemConfigKeys.showTabSource);
   return parseShowTabSource(raw);
 }
 
 function readHideTrafficLights(agentRoot?: string | null): boolean {
   const raw = agentRoot
-    ? getConfigValue(agentRoot, 'system.hide-traffic-lights')
-    : getGlobalValue('system.hide-traffic-lights');
+    ? getConfigValue(agentRoot, SystemConfigKeys.hideTrafficLights)
+    : getGlobalValue(SystemConfigKeys.hideTrafficLights);
   const v = String(raw ?? '').toLowerCase();
   return v === 'true' || v === '1' || v === 'yes';
 }
@@ -347,8 +348,8 @@ class WindowManager {
   applyTheme(): void {
     const agentRoot = this.orchestrator.getActiveAgentRoot();
     const value = agentRoot
-      ? getConfigValue(agentRoot, 'system.theme', 'system')
-      : getGlobalValue('system.theme') ?? 'system';
+      ? getConfigValue(agentRoot, SystemConfigKeys.theme, 'system')
+      : getGlobalValue(SystemConfigKeys.theme) ?? 'system';
     const source = (value === 'light' || value === 'dark') ? value : 'system';
     if (nativeTheme.themeSource !== source) {
       nativeTheme.themeSource = source;

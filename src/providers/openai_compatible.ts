@@ -17,6 +17,7 @@ import type {
 } from '../agent/provider_types.js'
 import { ProviderError } from '../agent/provider_types.js'
 import { parseSSE } from '../agent/streaming/sse.js'
+import { OPENAI_COMPATIBLE_PREFIX, SystemConfigKeys } from '../system-config/keys.js'
 
 // ── Context compaction ──
 
@@ -404,7 +405,7 @@ class OpenAICompatibleSession implements ProviderSession {
         // Auth errors
         if (response.status === 401 || response.status === 403) {
           throw new ProviderError(
-            `API key is missing or invalid. [Open Settings](agentview://view/${CONFIG_PREFIX}.settings-view) to add a valid API key.`,
+            `API key is missing or invalid. [Open Settings](agentview://view/${OPENAI_COMPATIBLE_PREFIX}.settings-view) to add a valid API key.`,
             'auth',
           )
         }
@@ -712,8 +713,6 @@ const OPENAI_COMPATIBLE_PROVIDER_ID = 'openai-compatible'
 const DEFAULT_MODEL_ID = 'deepseek/deepseek-v3.2'
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api'
 
-const CONFIG_PREFIX = 'system.openai-compatible-provider'
-
 interface ConfigAccessors {
   getConfig(key: string, fallback?: unknown): unknown
   setConfig(key: string, value: unknown): void
@@ -726,17 +725,17 @@ export function createOpenAICompatibleFactory(
 
   function readProviderConfig(): { baseUrl: string; modelId: string; apiKey: string; reasoning: string | undefined } {
     return {
-      baseUrl: (getConfig(`${CONFIG_PREFIX}.base-url`, DEFAULT_BASE_URL) as string),
-      modelId: (getConfig(`${CONFIG_PREFIX}.model-id`, DEFAULT_MODEL_ID) as string),
-      apiKey: (getConfig(`${CONFIG_PREFIX}.api-key`, '') as string),
-      reasoning: getConfig(`${CONFIG_PREFIX}.reasoning`, undefined) as string | undefined,
+      baseUrl: (getConfig(SystemConfigKeys.openaiCompatibleProviderBaseUrl, DEFAULT_BASE_URL) as string),
+      modelId: (getConfig(SystemConfigKeys.openaiCompatibleProviderModelId, DEFAULT_MODEL_ID) as string),
+      apiKey: (getConfig(SystemConfigKeys.openaiCompatibleProviderApiKey, '') as string),
+      reasoning: getConfig(SystemConfigKeys.openaiCompatibleProviderReasoning, undefined) as string | undefined,
     }
   }
 
   return {
     id: OPENAI_COMPATIBLE_PROVIDER_ID,
     name: 'OpenAI Compatible',
-    settingsView: `${CONFIG_PREFIX}.settings-view`,
+    settingsView: `${OPENAI_COMPATIBLE_PREFIX}.settings-view`,
 
     getStatusLine(): string {
       const config = readProviderConfig()

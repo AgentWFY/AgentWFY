@@ -9,6 +9,7 @@ import { installPackageData, uninstallPlugin, readValidatedPackage } from '../pl
 import { storeRemove } from '../ipc/store.js';
 import { getGlobalValue } from '../settings/config.js';
 import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
+import { SYSTEM_PREFIX, PLUGIN_PREFIX } from '../system-config/keys.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -266,9 +267,9 @@ export class CommandPaletteManager {
       const viewTitle = row.title || row.name;
       let displayTitle = viewTitle;
       let group: CommandPaletteItem['group'];
-      if (row.name.startsWith('system.')) {
+      if (row.name.startsWith(SYSTEM_PREFIX)) {
         group = 'System Views';
-      } else if (row.name.startsWith('plugin.')) {
+      } else if (row.name.startsWith(PLUGIN_PREFIX)) {
         group = 'Plugin Views';
         const pluginName = row.name.split('.')[1];
         if (pluginName) {
@@ -383,8 +384,8 @@ export class CommandPaletteManager {
     const rows = await listConfig(agentRoot);
     return rows.map((row) => {
       let group: CommandPaletteItem['group'];
-      if (row.name.startsWith('system.')) group = 'System';
-      else if (row.name.startsWith('plugin.')) group = 'Plugins';
+      if (row.name.startsWith(SYSTEM_PREFIX)) group = 'System';
+      else if (row.name.startsWith(PLUGIN_PREFIX)) group = 'Plugins';
       else group = 'Settings';
 
       const agentValue = row.value;
@@ -431,7 +432,7 @@ export class CommandPaletteManager {
 
   private clearAgentOverride(name: string): void {
     // system.* and plugin.* rows can't be deleted — set value to NULL instead
-    if (name.startsWith('system.') || name.startsWith('plugin.')) {
+    if (name.startsWith(SYSTEM_PREFIX) || name.startsWith(PLUGIN_PREFIX)) {
       this.deps.clearAgentConfig(name);
     } else {
       this.deps.removeAgentConfig(name);

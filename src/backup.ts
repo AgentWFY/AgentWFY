@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getConfigValue } from './settings/config.js';
 import { resolveAgentDbPath } from './db/paths.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 
 const BACKUP_DIR_NAME = 'backups';
 const META_FILE_NAME = 'backup-meta.json';
@@ -38,11 +39,11 @@ function getMetaPath(agentRoot: string): string {
 }
 
 function getIntervalHours(agentRoot: string): number {
-  return Number(getConfigValue(agentRoot, 'system.backup.interval-hours', '24'));
+  return Number(getConfigValue(agentRoot, SystemConfigKeys.backupIntervalHours, '24'));
 }
 
 function getMaxCount(agentRoot: string): number {
-  return Number(getConfigValue(agentRoot, 'system.backup.max-count', '5'));
+  return Number(getConfigValue(agentRoot, SystemConfigKeys.backupMaxCount, '5'));
 }
 
 function fileHash(filePath: string): string {

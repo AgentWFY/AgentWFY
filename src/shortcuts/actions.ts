@@ -33,4 +33,3 @@ export const SHORTCUT_ACTIONS: Record<string, ShortcutAction> = {
   'toggle-dev-tools':      { label: 'Toggle Developer Tools', defaultKey: 'alt+mod+i' },
 };
 
-export const SHORTCUT_CONFIG_PREFIX = 'system.shortcuts.';

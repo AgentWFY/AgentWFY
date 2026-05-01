@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { ensureVendor } from './lib/ensure-vendor.mjs'
 import { inlinePreload } from './lib/inline-preload.mjs'
+import { generateSystemConfigKeys } from './lib/generate-system-config-keys.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -50,6 +51,11 @@ writeFileSync(join(dist, 'system-views.json'), JSON.stringify(views))
 const configData = readFileSync(join(src, 'system-config', 'system-config.json'), 'utf-8')
 const configItems = JSON.parse(configData)
 writeFileSync(join(dist, 'system-config.json'), JSON.stringify(configItems))
+
+// Generate src/system-config/keys.ts from system-config.json (typed constants
+// for use across main + renderer). Must run before tsgo so the compiler sees
+// any updates.
+generateSystemConfigKeys(src)
 
 // ── TypeScript compilation ──
 

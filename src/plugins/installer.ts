@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import path from 'path'
 import fs from 'fs'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
+import { PLUGIN_PREFIX } from '../system-config/keys.js'
 
 const PLUGIN_NAME_RE = /^[a-z0-9][a-z0-9-]*$/
 const NAME_FORMAT_RE = /^[a-z0-9][a-z0-9._-]*$/
@@ -105,8 +106,8 @@ function validatePluginNames(
   errors: string[],
 ): void {
   for (const item of items) {
-    if (typeof item.name !== 'string' || !item.name.startsWith('plugin.')) {
-      errors.push(`${type} '${item.name}' must start with 'plugin.'`)
+    if (typeof item.name !== 'string' || !item.name.startsWith(PLUGIN_PREFIX)) {
+      errors.push(`${type} '${item.name}' must start with '${PLUGIN_PREFIX}'`)
       continue
     }
     if (!NAME_FORMAT_RE.test(item.name)) {

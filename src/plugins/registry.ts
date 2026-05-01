@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import { createRequire } from 'node:module'
 import { getConfigValue, setAgentConfig, clearAgentConfig } from '../settings/config.js'
+import { SystemConfigKeys } from '../system-config/keys.js'
 import { PluginResourceTracker } from './resource-tracker.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderFactory } from '../agent/provider_types.js'
@@ -184,8 +185,8 @@ export class PluginRegistry {
 
 function handleProviderFallback(agentRoot: string, removedProviders: string[]): void {
   if (removedProviders.length === 0) return
-  const currentProvider = getConfigValue(agentRoot, 'system.provider') as string | undefined
+  const currentProvider = getConfigValue(agentRoot, SystemConfigKeys.provider) as string | undefined
   if (currentProvider && removedProviders.includes(currentProvider)) {
-    clearAgentConfig(agentRoot, 'system.provider')
+    clearAgentConfig(agentRoot, SystemConfigKeys.provider)
   }
 }

@@ -29,6 +29,7 @@ import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updat
 import { getViewByName } from './db/views.js';
 import { getConfigValue } from './settings/config.js';
 import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from './settings/global-config.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
 import path from 'path';
 import fs from 'fs';
@@ -129,9 +130,9 @@ registerDialogSubscribers();
 windowManager.applyTheme();
 
 const handleConfigChange = (key: string, newValue: unknown) => {
-  if (key === 'system.theme') windowManager.applyTheme();
-  if (key === 'system.show-tab-source') windowManager.applyTrafficLightPosition();
-  if (key === 'system.hide-traffic-lights') windowManager.applyTrafficLightVisibility();
+  if (key === SystemConfigKeys.theme) windowManager.applyTheme();
+  if (key === SystemConfigKeys.showTabSource) windowManager.applyTrafficLightPosition();
+  if (key === SystemConfigKeys.hideTrafficLights) windowManager.applyTrafficLightVisibility();
   windowManager.broadcastSettingChanged(key, newValue);
 };
 onAnyChange(handleConfigChange);
@@ -246,7 +247,7 @@ ipcMain.handle(Channels.app.getDefaultView, async () => {
   try {
     const root = windowManager.getActiveAgentRoot();
     if (!root) return null;
-    const configValue = getConfigValue(root, 'system.default-view', 'home');
+    const configValue = getConfigValue(root, SystemConfigKeys.defaultView, 'home');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
     const viewName = trimmed || 'home';
     const view = await getViewByName(root, viewName);

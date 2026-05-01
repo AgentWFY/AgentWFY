@@ -24,6 +24,10 @@
     "description": "Delete task logs older than this many days, 0 = keep forever (default: 30)"
   },
   {
+    "name": "system.cleanup.trace-retention-days",
+    "description": "Delete agent traces older than this many days, 0 = keep forever (default: same as session retention)"
+  },
+  {
     "name": "system.http-api.port",
     "description": "Preferred port for the local HTTP API server, restart required (default: 9877)"
   },

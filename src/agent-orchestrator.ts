@@ -12,6 +12,7 @@ import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
 import { runCleanup } from './cleanup.js';
 import { getConfigValue } from './settings/config.js';
 import { getViewByName } from './db/views.js';
+import { SystemConfigKeys, PLUGIN_PREFIX } from './system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 
@@ -317,13 +318,13 @@ export class AgentOrchestrator {
       if (this.activeAgentRoot === agentRoot) {
         this.deps.applyTheme();
         const key = change.rowId as string;
-        if (key === 'system.show-tab-source') {
+        if (key === SystemConfigKeys.showTabSource) {
           this.deps.applyTrafficLightPosition();
         }
-        if (key === 'system.hide-traffic-lights') {
+        if (key === SystemConfigKeys.hideTrafficLights) {
           this.deps.applyTrafficLightVisibility();
         }
-        if (key.startsWith('plugin.') || key === 'system.provider') {
+        if (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider) {
           this.deps.pushProviderState(agentRoot, agentCtx.providerRegistry);
         }
       }
@@ -406,7 +407,7 @@ export class AgentOrchestrator {
 
   private async openDefaultViewForContext(ctx: AgentContext): Promise<void> {
     try {
-      const configValue = getConfigValue(ctx.agentRoot, 'system.default-view', 'home');
+      const configValue = getConfigValue(ctx.agentRoot, SystemConfigKeys.defaultView, 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
       const viewName = trimmed || 'home';
       const view = await getViewByName(ctx.agentRoot, viewName);

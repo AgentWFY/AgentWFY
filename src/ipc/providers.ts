@@ -3,6 +3,7 @@ import type { ProviderRegistry } from '../providers/registry.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
 import { Channels } from './channels.cjs'
 import { getConfigValue, setAgentConfig } from '../settings/config.js'
+import { SystemConfigKeys } from '../system-config/keys.js'
 
 export interface ProviderState {
   providerList: ProviderInfo[]
@@ -11,7 +12,7 @@ export interface ProviderState {
 }
 
 export function buildProviderState(agentRoot: string, registry: ProviderRegistry): ProviderState {
-  const defaultId = (getConfigValue(agentRoot, 'system.provider', 'openai-compatible') as string) || 'openai-compatible'
+  const defaultId = (getConfigValue(agentRoot, SystemConfigKeys.provider, 'openai-compatible') as string) || 'openai-compatible'
   const { providers, statusLines } = registry.listWithStatusLines()
   return { providerList: providers, defaultProviderId: defaultId, providerStatusLines: statusLines }
 }
@@ -39,7 +40,7 @@ export function registerProviderHandlers(
 
   ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
     const agentRoot = getAgentRoot(event)
-    setAgentConfig(agentRoot, 'system.provider', providerId)
+    setAgentConfig(agentRoot, SystemConfigKeys.provider, providerId)
     const state = buildProviderState(agentRoot, getRegistry(event))
     const wc = getRendererWebContents()
     if (wc) pushProviderState(wc, state)

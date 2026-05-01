@@ -1,4 +1,5 @@
 import { runAgentDbSql } from './db/sqlite.js';
+import { SHORTCUT_PREFIX } from './system-config/keys.js';
 
 const DEFAULT_HOME_VIEW = `<!doctype html>
 <html>
@@ -166,7 +167,7 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
     }
     (async () => {
       const shortcuts = { 'toggle-agent-chat': 'mod+i', 'toggle-command-palette': 'mod+k' };
-      const names = Object.keys(shortcuts).map(id => 'system.shortcuts.' + id);
+      const names = Object.keys(shortcuts).map(id => '${SHORTCUT_PREFIX}' + id);
       let configMap = {};
       try {
         const rows = await window.agentwfy.runSql({
@@ -177,7 +178,7 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
         for (const r of rows) configMap[r.name] = r.value;
       } catch {}
       const labels = Object.entries(shortcuts).map(([id, def]) =>
-        formatShortcutLabel(configMap['system.shortcuts.' + id], def)
+        formatShortcutLabel(configMap['${SHORTCUT_PREFIX}' + id], def)
       );
       const els = document.querySelectorAll('kbd.mod-shortcut');
       labels.forEach((label, i) => {

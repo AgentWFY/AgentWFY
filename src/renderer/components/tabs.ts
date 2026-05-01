@@ -1,4 +1,5 @@
 import type { TabData, TabState } from '../ipc-types/index.js'
+import { SystemConfigKeys } from '../../system-config/keys.js'
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
@@ -38,6 +39,7 @@ export class TlTabs extends HTMLElement {
   private unsubscribeStateChanged: (() => void) | null = null
   private unsubscribeSettingChanged: (() => void) | null = null
   private lastDispatchedSelectedTabId: string | null = null
+  private showTabSource: boolean | null = null
 
   connectedCallback() {
     this.style.display = 'block'
@@ -99,7 +101,7 @@ export class TlTabs extends HTMLElement {
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     if (ipc) {
       this.unsubscribeSettingChanged = ipc.onSettingChanged(({ key }) => {
-        if (key !== 'system.show-tab-source') return
+        if (key !== SystemConfigKeys.showTabSource) return
         void this.loadConfig()
       })
     }
@@ -119,11 +121,12 @@ export class TlTabs extends HTMLElement {
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     document.documentElement.classList.remove('tabs-show-source')
+    this.showTabSource = null
   }
 
   private onConfigDbChanged = (e: Event) => {
     const key = (e as CustomEvent<{ key?: string }>).detail?.key
-    if (key && key !== 'system.show-tab-source') return
+    if (key && key !== SystemConfigKeys.showTabSource) return
     void this.loadConfig()
   }
 
@@ -135,9 +138,11 @@ export class TlTabs extends HTMLElement {
     const ipc = window.ipc
     if (!ipc) return
     try {
-      const value = await ipc.getSetting('system.show-tab-source')
+      const value = await ipc.getSetting(SystemConfigKeys.showTabSource)
       const v = String(value ?? '').toLowerCase()
       const next = v === '' ? true : !(v === 'false' || v === '0' || v === 'no')
+      if (next === this.showTabSource) return
+      this.showTabSource = next
       document.documentElement.classList.toggle('tabs-show-source', next)
     } catch {
       // ignore

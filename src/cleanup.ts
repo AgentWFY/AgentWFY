@@ -3,6 +3,7 @@ import path from 'path';
 import { getConfigValue } from './settings/config.js';
 import { readSessionId } from './agent/session_persistence.js';
 import { isValidTraceSessionId } from './runtime/trace_types.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 
 const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 
@@ -116,9 +117,9 @@ async function deleteOldTracesByMtime(tracesDir: string, retentionDays: number):
 }
 
 export async function runCleanup(agentRoot: string): Promise<void> {
-  const sessionDays = Number(getConfigValue(agentRoot, 'system.cleanup.session-retention-days', '30'));
-  const taskLogDays = Number(getConfigValue(agentRoot, 'system.cleanup.task-log-retention-days', '30'));
-  const traceDays = Number(getConfigValue(agentRoot, 'system.cleanup.trace-retention-days', String(sessionDays)));
+  const sessionDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupSessionRetentionDays, '30'));
+  const taskLogDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupTaskLogRetentionDays, '30'));
+  const traceDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupTraceRetentionDays, String(sessionDays)));
 
   const sessionsDir = path.join(agentRoot, '.agentwfy', 'sessions');
   const tracesDir = path.join(agentRoot, '.agentwfy', 'traces');

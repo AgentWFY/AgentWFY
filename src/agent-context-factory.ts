@@ -16,6 +16,7 @@ import type { AgentDbChange } from './db/sqlite.js';
 import { closeAgentDb, getOrCreateAgentDb } from './db/agent-db.js';
 import { loadPlugins } from './plugins/loader.js';
 import { ProviderRegistry } from './providers/registry.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 import { FunctionRegistry } from './runtime/function_registry.js';
 import { registerAllBuiltInFunctions } from './runtime/functions/index.js';
 import { Channels } from './ipc/channels.cjs';
@@ -152,7 +153,7 @@ export class AgentContextFactory {
 
     const triggerEngine = new TriggerEngine({
       getAgentRoot: () => agentRoot,
-      getPreferredPort: () => Number(getConfigValue(agentRoot, 'system.http-api.port', '9877')),
+      getPreferredPort: () => Number(getConfigValue(agentRoot, SystemConfigKeys.httpApiPort, '9877')),
       startTask: async (taskName, input?, origin?) => {
         const runId = await taskRunner.startTask(taskName, input, origin as any);
         return { runId };
