@@ -40,11 +40,15 @@ Name format (enforced by the database): `views.name`, `modules.name`, `docs.name
 
 Returns an array of row objects. Use parameterized queries with `params` array.
 
+You can create your own tables, indexes, triggers, and SQLite views in the agent DB to store arbitrary data. Use `CREATE TABLE`, `CREATE INDEX`, etc. as normal.
+
 Restrictions:
-- **Schema modifications are blocked** — you cannot CREATE, ALTER, or DROP tables, indexes, triggers, or views.
+- The built-in tables above (`views`, `docs`, `tasks`, `triggers`, `config`, `plugins`, `modules`) cannot be created, altered, or dropped.
+- Table, index, trigger, and SQLite-view **names** starting with `system` or `plugin` (including `system.*` and `plugin.*`) are reserved and cannot be created or dropped.
 - **`system.*` and `plugin.*` namespaces are read-only** in `docs`, `views`, `modules`, `tasks`, and `triggers` tables (inserts, updates, and deletes are rejected).
 - **`system.*` and `plugin.*` config** cannot be inserted or deleted, but existing keys can be updated.
 - **`plugins` table is entirely read-only.**
+- `ATTACH`/`DETACH` are blocked.
 
 Everything outside these protected namespaces is freely writable.
 

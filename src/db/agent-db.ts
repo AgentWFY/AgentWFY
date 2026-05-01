@@ -1,10 +1,37 @@
-import { DatabaseSync, constants } from 'node:sqlite';
+import { DatabaseSync, StatementSync, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import { WRITE_RE, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
 
 const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules']);
+
+function isReservedNamespace(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return lower === 'system' || lower === 'plugin'
+    || lower.startsWith('system.') || lower.startsWith('plugin.');
+}
+
+function isProtectedSchemaName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return PROTECTED_TABLES.has(name.toLowerCase()) || isReservedNamespace(name);
+}
+
+const RESERVED_NAME_PREDICATE = `(
+  LOWER(name) IN ('system', 'plugin')
+  OR LOWER(name) LIKE 'system.%'
+  OR LOWER(name) LIKE 'plugin.%'
+)`;
+
+const RESERVED_SCHEMA_SCAN_SQL = `
+  SELECT type, name FROM sqlite_master WHERE ${RESERVED_NAME_PREDICATE}
+  UNION ALL
+  SELECT type, name FROM sqlite_temp_master WHERE ${RESERVED_NAME_PREDICATE}
+  LIMIT 1
+`;
+
+const DDL_SAVEPOINT = '_agent_ddl';
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
@@ -199,6 +226,10 @@ interface SystemDataSync<T extends { name: string }> {
 class AgentDb {
   private db: DatabaseSync;
   private changeListener: ((change: AgentDbChange) => void) | null = null;
+  // Set by the authorizer when prepare() encounters a DDL action code; read
+  // by run() to decide whether to wrap execution in a schema-guard savepoint.
+  private prepareSawDdl = false;
+  private reservedSchemaScan: StatementSync | null = null;
 
   constructor(opts: { dbPath: string; systemDocsPath: string; systemViewsPath: string; systemConfigPath: string }) {
     this.db = new DatabaseSync(opts.dbPath);
@@ -289,36 +320,36 @@ class AgentDb {
         // Table DDL — arg1 = table name
         case SQLITE_CREATE_TABLE:
         case SQLITE_DROP_TABLE:
-          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
+        case SQLITE_CREATE_TEMP_TABLE:
+        case SQLITE_DROP_TEMP_TABLE:
+          this.prepareSawDdl = true;
+          return isProtectedSchemaName(arg1) ? SQLITE_DENY : SQLITE_OK;
 
-        // ALTER TABLE — arg1 = db name, arg2 = table name
+        // ALTER TABLE — arg1 = db name, arg2 = table name (the new name in
+        // RENAME TO is not visible here; the post-DDL schema scan catches it)
         case SQLITE_ALTER_TABLE:
-          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
+          this.prepareSawDdl = true;
+          return isProtectedSchemaName(arg2) ? SQLITE_DENY : SQLITE_OK;
 
-        // Index/trigger DDL — arg2 = target table
+        // Index/trigger DDL — arg1 = object name, arg2 = target table
         case SQLITE_CREATE_INDEX:
         case SQLITE_DROP_INDEX:
         case SQLITE_CREATE_TRIGGER:
         case SQLITE_DROP_TRIGGER:
-          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
-
-        // Temp objects on protected tables
-        case SQLITE_CREATE_TEMP_TABLE:
-        case SQLITE_DROP_TEMP_TABLE:
-          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
-
         case SQLITE_CREATE_TEMP_INDEX:
         case SQLITE_DROP_TEMP_INDEX:
         case SQLITE_CREATE_TEMP_TRIGGER:
         case SQLITE_DROP_TEMP_TRIGGER:
-          return arg2 && PROTECTED_TABLES.has(arg2) ? SQLITE_DENY : SQLITE_OK;
+          this.prepareSawDdl = true;
+          return isProtectedSchemaName(arg1) || isProtectedSchemaName(arg2) ? SQLITE_DENY : SQLITE_OK;
 
         // SQLite views share namespace with tables
         case SQLITE_CREATE_VIEW:
         case SQLITE_DROP_VIEW:
         case SQLITE_CREATE_TEMP_VIEW:
         case SQLITE_DROP_TEMP_VIEW:
-          return arg1 && PROTECTED_TABLES.has(arg1) ? SQLITE_DENY : SQLITE_OK;
+          this.prepareSawDdl = true;
+          return isProtectedSchemaName(arg1) ? SQLITE_DENY : SQLITE_OK;
 
         // Plugins table is entirely read-only
         case SQLITE_INSERT:
@@ -468,21 +499,51 @@ class AgentDb {
   }
 
   run(request: SqlExecutionRequest): unknown[] {
-    const params = normalizeParams(request.params);
+    const params = normalizeParams(request.params) as (null | number | bigint | string)[];
     const trackChanges = this.changeListener && WRITE_RE.test(request.sql);
 
     if (trackChanges) {
       this.db.exec('DELETE FROM _changes;');
     }
 
+    this.prepareSawDdl = false;
     const statement = this.db.prepare(request.sql);
-    const rows = statement.all(...params as (null | number | bigint | string)[]);
 
+    if (this.prepareSawDdl) {
+      return this.runDdlGuarded(() => statement.all(...params));
+    }
+
+    const rows = statement.all(...params);
     if (trackChanges) {
       this.drainChanges();
     }
-
     return normalizeSqlRows(rows);
+  }
+
+  // The authorizer can't inspect the new name in `ALTER TABLE ... RENAME TO ...`
+  // (arg2 holds the old name) or distinguish RENAME from ADD COLUMN. Run DDL
+  // inside a savepoint and post-scan sqlite_master + sqlite_temp_master for
+  // any reserved-namespace object the authorizer couldn't see; rollback if so.
+  private runDdlGuarded(execute: () => unknown[]): unknown[] {
+    if (!this.reservedSchemaScan) {
+      this.reservedSchemaScan = this.db.prepare(RESERVED_SCHEMA_SCAN_SQL);
+    }
+    this.db.exec(`SAVEPOINT ${DDL_SAVEPOINT};`);
+    let released = false;
+    try {
+      const rows = execute();
+      const violation = this.reservedSchemaScan.get() as { type: string; name: string } | undefined;
+      if (violation) {
+        throw new Error(`Reserved namespace: ${violation.type} "${violation.name}" — names equal to or starting with "system" or "plugin" are reserved`);
+      }
+      this.db.exec(`RELEASE ${DDL_SAVEPOINT};`);
+      released = true;
+      return normalizeSqlRows(rows);
+    } finally {
+      if (!released) {
+        this.db.exec(`ROLLBACK TO ${DDL_SAVEPOINT}; RELEASE ${DDL_SAVEPOINT};`);
+      }
+    }
   }
 
   private drainChanges(): void {
