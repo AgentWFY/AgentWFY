@@ -158,5 +158,9 @@
   {
     "name": "system.hide-status-line",
     "description": "Hide the bottom status line (default: false)"
+  },
+  {
+    "name": "system.hide-traffic-lights",
+    "description": "Hide the macOS window traffic light buttons (default: false, macOS only)"
   }
 ]

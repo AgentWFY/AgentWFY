@@ -41,6 +41,9 @@ export class TlAgentSidebar extends HTMLElement {
         overflow-y: auto;
         overflow-x: hidden;
       }
+      :host-context(html.traffic-lights-hidden) .agent-list {
+        padding-top: 4px;
+      }
       .agent-list::-webkit-scrollbar {
         width: 0;
       }

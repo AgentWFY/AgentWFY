@@ -9,6 +9,7 @@ const AGENT_SIDEBAR_WIDTH = 78
 const HIDE_PANEL_SWITCHER_KEY = 'system.hide-panel-switcher'
 const HIDE_PANEL_TOGGLE_KEY = 'system.hide-panel-toggle'
 const HIDE_STATUS_LINE_KEY = 'system.hide-status-line'
+const HIDE_TRAFFIC_LIGHTS_KEY = 'system.hide-traffic-lights'
 
 function isTruthyConfig(value: unknown): boolean {
   const v = String(value ?? '').toLowerCase()
@@ -33,6 +34,7 @@ export class TlApp extends HTMLElement {
   private isPanelSwitcherHidden = false
   private isPanelToggleHidden = false
   private isStatusLineHidden = false
+  private isTrafficLightsHidden = false
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
@@ -361,6 +363,10 @@ export class TlApp extends HTMLElement {
       .awfy-app-root.agent-sidebar-hidden.panel-toggle-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
         padding-left: 78px;
       }
+      :root.traffic-lights-hidden .awfy-app-root.agent-sidebar-hidden > .awfy-app-body > .awfy-app-sidebar > .awfy-app-sidebar-top,
+      :root.traffic-lights-hidden .awfy-app-root.agent-sidebar-hidden > .awfy-app-body:has(> .awfy-app-sidebar.closed) > .awfy-app-main-column > .awfy-app-header {
+        padding-left: 0;
+      }
       /* Agent sidebar border when chat panel is closed */
       awfy-agent-sidebar:has(+ .awfy-app-sidebar.closed) {
         border-right: 1px solid var(--color-border);
@@ -500,6 +506,7 @@ export class TlApp extends HTMLElement {
         key !== HIDE_PANEL_SWITCHER_KEY
         && key !== HIDE_PANEL_TOGGLE_KEY
         && key !== HIDE_STATUS_LINE_KEY
+        && key !== HIDE_TRAFFIC_LIGHTS_KEY
       ) return
       this.loadChromeConfig()
     }) ?? null
@@ -580,15 +587,18 @@ export class TlApp extends HTMLElement {
     let nextSwitcherHidden = false
     let nextToggleHidden = false
     let nextStatusLineHidden = false
+    let nextTrafficLightsHidden = false
     try {
-      const [switcherValue, toggleValue, statusLineValue] = await Promise.all([
+      const [switcherValue, toggleValue, statusLineValue, trafficLightsValue] = await Promise.all([
         window.ipc?.getSetting(HIDE_PANEL_SWITCHER_KEY),
         window.ipc?.getSetting(HIDE_PANEL_TOGGLE_KEY),
         window.ipc?.getSetting(HIDE_STATUS_LINE_KEY),
+        window.ipc?.getSetting(HIDE_TRAFFIC_LIGHTS_KEY),
       ])
       nextSwitcherHidden = isTruthyConfig(switcherValue)
       nextToggleHidden = isTruthyConfig(toggleValue)
       nextStatusLineHidden = isTruthyConfig(statusLineValue)
+      nextTrafficLightsHidden = isTruthyConfig(trafficLightsValue)
     } catch {
       // ignore
     }
@@ -596,10 +606,13 @@ export class TlApp extends HTMLElement {
       nextSwitcherHidden === this.isPanelSwitcherHidden
       && nextToggleHidden === this.isPanelToggleHidden
       && nextStatusLineHidden === this.isStatusLineHidden
+      && nextTrafficLightsHidden === this.isTrafficLightsHidden
     ) return
     this.isPanelSwitcherHidden = nextSwitcherHidden
     this.isPanelToggleHidden = nextToggleHidden
     this.isStatusLineHidden = nextStatusLineHidden
+    this.isTrafficLightsHidden = nextTrafficLightsHidden
+    document.documentElement.classList.toggle('traffic-lights-hidden', nextTrafficLightsHidden)
     this.updateSidebar()
   }
 
@@ -609,6 +622,7 @@ export class TlApp extends HTMLElement {
       key !== HIDE_PANEL_SWITCHER_KEY
       && key !== HIDE_PANEL_TOGGLE_KEY
       && key !== HIDE_STATUS_LINE_KEY
+      && key !== HIDE_TRAFFIC_LIGHTS_KEY
     ) return
     this.loadChromeConfig()
   }

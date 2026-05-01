@@ -131,6 +131,7 @@ windowManager.applyTheme();
 const handleConfigChange = (key: string, newValue: unknown) => {
   if (key === 'system.theme') windowManager.applyTheme();
   if (key === 'system.show-tab-source') windowManager.applyTrafficLightPosition();
+  if (key === 'system.hide-traffic-lights') windowManager.applyTrafficLightVisibility();
   windowManager.broadcastSettingChanged(key, newValue);
 };
 onAnyChange(handleConfigChange);
@@ -279,7 +280,6 @@ ipcMain.handle(Channels.agentSidebar.getInstalled, () => {
 
 ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentRoot: string) => {
   await windowManager.switchAgent(agentRoot);
-  windowManager.applyTrafficLightPosition();
 });
 
 ipcMain.handle(Channels.agentSidebar.add, async () => {

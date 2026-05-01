@@ -41,6 +41,14 @@ function readShowTabSource(agentRoot?: string | null): boolean {
   return parseShowTabSource(raw);
 }
 
+function readHideTrafficLights(agentRoot?: string | null): boolean {
+  const raw = agentRoot
+    ? getConfigValue(agentRoot, 'system.hide-traffic-lights')
+    : getGlobalValue('system.hide-traffic-lights');
+  const v = String(raw ?? '').toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 function buildActiveWorkWarning(runningTasks: number, streamingAgents: number, action: string): string {
   const parts: string[] = [];
   if (streamingAgents > 0) parts.push(`${streamingAgents} agent${streamingAgents > 1 ? 's' : ''} streaming`);
@@ -90,6 +98,7 @@ class WindowManager {
       isWindowAvailable: () => !!this.mainWindow && !this.mainWindow.isDestroyed(),
       applyTheme: () => this.applyTheme(),
       applyTrafficLightPosition: () => this.applyTrafficLightPosition(),
+      applyTrafficLightVisibility: () => this.applyTrafficLightVisibility(),
       pushProviderState: (root, reg) => this.pushProviderState(root, reg),
       dispatchRendererEvent: (name, detail) => {
         this.rendererBridge?.dispatchRendererCustomEvent(name, detail);
@@ -305,6 +314,7 @@ class WindowManager {
     await this.orchestrator.initAgentContext(initialAgentRoot);
     this.orchestrator.activateFirstAgent(initialAgentRoot);
     this.applyTrafficLightPosition();
+    this.applyTrafficLightVisibility();
 
     rwc.loadURL('app://index.html');
     if (!process.env.AGENTWFY_HEADLESS) window.show();
@@ -358,6 +368,14 @@ class WindowManager {
     if (!win || win.isDestroyed()) return;
     const showSource = readShowTabSource(this.orchestrator.getActiveAgentRoot());
     win.setWindowButtonPosition(trafficLightFor(showSource));
+  }
+
+  applyTrafficLightVisibility(): void {
+    if (process.platform !== 'darwin') return;
+    const win = this.mainWindow;
+    if (!win || win.isDestroyed()) return;
+    const hide = readHideTrafficLights(this.orchestrator.getActiveAgentRoot());
+    win.setWindowButtonVisibility(!hide);
   }
 
   // --- Zen mode ---

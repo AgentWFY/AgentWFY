@@ -22,6 +22,7 @@ export interface AgentOrchestratorDeps {
   isWindowAvailable: () => boolean;
   applyTheme: () => void;
   applyTrafficLightPosition: () => void;
+  applyTrafficLightVisibility: () => void;
   pushProviderState: (agentRoot: string, providerRegistry: ProviderRegistry) => void;
   dispatchRendererEvent: (eventName: string, detail?: unknown) => void;
   getIsZenMode: () => boolean;
@@ -147,6 +148,7 @@ export class AgentOrchestrator {
     this.activeAgentRoot = agentRoot;
     this.deps.applyTheme();
     this.deps.applyTrafficLightPosition();
+    this.deps.applyTrafficLightVisibility();
 
     // Collapse outgoing agent's views to 0x0 before promoting incoming. If
     // the user then closes the incoming agent's last tab, nothing underneath
@@ -317,6 +319,9 @@ export class AgentOrchestrator {
         const key = change.rowId as string;
         if (key === 'system.show-tab-source') {
           this.deps.applyTrafficLightPosition();
+        }
+        if (key === 'system.hide-traffic-lights') {
+          this.deps.applyTrafficLightVisibility();
         }
         if (key.startsWith('plugin.') || key === 'system.provider') {
           this.deps.pushProviderState(agentRoot, agentCtx.providerRegistry);
