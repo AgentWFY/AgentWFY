@@ -28,6 +28,7 @@ const COMMAND_PALETTE_CHANNEL = {
   OPENED_AT_SCREEN: 'app:command-palette:opened-at-screen',
   CLEAR_TO_DEFAULT: 'app:command-palette:clear-to-default',
   LIST_TASKS: 'app:command-palette:list-tasks',
+  LIST_AGENTS: 'app:command-palette:list-agents',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
   LIST_TABS: 'app:command-palette:list-tabs',
   RESIZE: 'app:command-palette:resize',
@@ -75,6 +76,9 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   listTasks(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_TASKS);
+  },
+  listAgents(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_AGENTS);
   },
   listSessions(): Promise<CommandPaletteItem[]> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS);

@@ -46,6 +46,7 @@ export const SystemConfigKeys = {
   shortcutsOpenTabsList: "system.shortcuts.open-tabs-list",
   shortcutsOpenSettings: "system.shortcuts.open-settings",
   shortcutsToggleDevTools: "system.shortcuts.toggle-dev-tools",
+  hideAgentSidebar: "system.hide-agent-sidebar",
   hidePanelSwitcher: "system.hide-panel-switcher",
   hidePanelToggle: "system.hide-panel-toggle",
   hideStatusLine: "system.hide-status-line",

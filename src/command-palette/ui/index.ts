@@ -6,6 +6,7 @@ import { SettingsScreen } from './screens/settings.js'
 import { RestoreScreen } from './screens/restore.js'
 import { TaskDetailScreen } from './screens/task-detail.js'
 import type { TaskDetailParams } from './screens/task-detail.js'
+import { AgentsScreen } from './screens/agents.js'
 import { SessionsScreen } from './screens/sessions.js'
 import { TabsScreen } from './screens/tabs.js'
 import { AddAgentScreen } from './screens/add-agent.js'
@@ -21,6 +22,7 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
   'settings': (bridge, params) => new SettingsScreen(bridge, params),
   'restore': (bridge) => new RestoreScreen(bridge),
   'task-detail': (bridge, params) => new TaskDetailScreen(bridge, params as unknown as TaskDetailParams),
+  'agents': (bridge) => new AgentsScreen(bridge),
   'sessions': (bridge) => new SessionsScreen(bridge),
   'tabs': (bridge) => new TabsScreen(bridge),
   'add-agent': (bridge) => new AddAgentScreen(bridge),

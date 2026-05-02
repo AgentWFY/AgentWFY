@@ -4,6 +4,7 @@ import type { CommandPaletteItem } from '../../types.js'
 import { SettingsScreen } from './settings.js'
 import { RestoreScreen } from './restore.js'
 import { TasksScreen } from './tasks.js'
+import { AgentsScreen } from './agents.js'
 import { SessionsScreen } from './sessions.js'
 import { TabsScreen } from './tabs.js'
 import { AddAgentScreen } from './add-agent.js'
@@ -54,6 +55,10 @@ export class NormalScreen implements PaletteScreen {
 
     if (item.action.type === 'enter-tasks') {
       return { type: 'push', screen: new TasksScreen(this.bridge) }
+    }
+
+    if (item.action.type === 'enter-agents') {
+      return { type: 'push', screen: new AgentsScreen(this.bridge) }
     }
 
     if (item.action.type === 'enter-sessions') {

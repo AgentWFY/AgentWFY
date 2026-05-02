@@ -46,6 +46,10 @@ export function registerCommandPaletteHandlers(getCommandPalette: () => CommandP
     return getCommandPalette().buildTaskItems();
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_AGENTS, async () => {
+    return getCommandPalette().buildAgentItems();
+  });
+
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_SESSIONS, async () => {
     return getCommandPalette().buildSessionItems();
   });

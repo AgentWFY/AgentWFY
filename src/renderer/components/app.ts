@@ -9,6 +9,7 @@ const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none
 const AGENT_SIDEBAR_WIDTH = 78
 
 const CHROME_CONFIG_KEYS = new Set<string>([
+  SystemConfigKeys.hideAgentSidebar,
   SystemConfigKeys.hidePanelSwitcher,
   SystemConfigKeys.hidePanelToggle,
   SystemConfigKeys.hideStatusLine,
@@ -47,7 +48,7 @@ export class TlApp extends HTMLElement {
   private resizeStartWidth = 0
   private _resizeDispatchPending: number | null = null
   private isZenMode = false
-  private isAgentSidebarVisible = true
+  private isAgentSidebarHidden = false
 
   private openPanel(panel: string) {
     if (this.activeSidebarPanel !== panel) {
@@ -94,16 +95,6 @@ export class TlApp extends HTMLElement {
     this.updateSidebar()
   }
 
-  private onToggleAgentSidebar = () => {
-    this.isAgentSidebarVisible = !this.isAgentSidebarVisible
-    this.agentSidebarEl.style.display = this.isAgentSidebarVisible ? '' : 'none'
-    this.rootEl.classList.toggle('agent-sidebar-visible', this.isAgentSidebarVisible)
-    if (navigator.platform.includes('Mac')) {
-      this.rootEl.classList.toggle('agent-sidebar-hidden', !this.isAgentSidebarVisible)
-    }
-    window.dispatchEvent(new Event('resize'))
-  }
-
   private onFocusChatInput = () => {
     if (this.activeSidebarPanel === 'agent-chat') {
       requestAnimationFrame(() => {
@@ -126,7 +117,7 @@ export class TlApp extends HTMLElement {
   private onResizeMouseMove = (e: MouseEvent) => {
     if (!this.isResizing) return
     const delta = e.clientX - this.resizeStartX
-    const agentSidebarWidth = this.isAgentSidebarVisible ? AGENT_SIDEBAR_WIDTH : 0
+    const agentSidebarWidth = this.isAgentSidebarHidden ? 0 : AGENT_SIDEBAR_WIDTH
     const maxWidth = window.innerWidth - agentSidebarWidth - 4
     const newWidth = Math.min(Math.max(this.resizeStartWidth + delta, 200), maxWidth)
     this.sidebarWidth = newWidth
@@ -498,7 +489,6 @@ export class TlApp extends HTMLElement {
     window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.addEventListener('agentwfy:toggle-agent-sidebar', this.onToggleAgentSidebar)
     this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
     window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
     this.subscribeToAgentDbChanges()
@@ -521,7 +511,6 @@ export class TlApp extends HTMLElement {
     window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
     window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
     window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
-    window.removeEventListener('agentwfy:toggle-agent-sidebar', this.onToggleAgentSidebar)
     this.unlistenZenMode?.()
     this.unlistenZenMode = null
     this.unlistenSettingChanged?.()
@@ -555,7 +544,9 @@ export class TlApp extends HTMLElement {
     this.resizeHandleEl.classList.toggle('awfy-app-resize-handle-hidden', !isOpen || this.isZenMode)
     this.sidebarToggleBtnEl.style.display = this.isPanelToggleHidden ? 'none' : ''
     this.inlineToggleBtnEl.classList.toggle('visible', !isOpen && !this.isPanelToggleHidden)
-    this.rootEl.classList.toggle('agent-sidebar-visible', this.isAgentSidebarVisible)
+    this.agentSidebarEl.style.display = this.isAgentSidebarHidden ? 'none' : ''
+    this.rootEl.classList.toggle('agent-sidebar-visible', !this.isAgentSidebarHidden)
+    this.rootEl.classList.toggle('agent-sidebar-hidden', navigator.platform.includes('Mac') && this.isAgentSidebarHidden)
     this.rootEl.classList.toggle('panel-toggle-hidden', this.isPanelToggleHidden)
     this.statusLineEl.style.display = this.isStatusLineHidden ? 'none' : ''
 
@@ -583,17 +574,20 @@ export class TlApp extends HTMLElement {
   }
 
   private async loadChromeConfig() {
+    let nextAgentSidebarHidden = false
     let nextSwitcherHidden = false
     let nextToggleHidden = false
     let nextStatusLineHidden = false
     let nextTrafficLightsHidden = false
     try {
-      const [switcherValue, toggleValue, statusLineValue, trafficLightsValue] = await Promise.all([
+      const [agentSidebarValue, switcherValue, toggleValue, statusLineValue, trafficLightsValue] = await Promise.all([
+        window.ipc?.getSetting(SystemConfigKeys.hideAgentSidebar),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelSwitcher),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelToggle),
         window.ipc?.getSetting(SystemConfigKeys.hideStatusLine),
         window.ipc?.getSetting(SystemConfigKeys.hideTrafficLights),
       ])
+      nextAgentSidebarHidden = isTruthyConfig(agentSidebarValue)
       nextSwitcherHidden = isTruthyConfig(switcherValue)
       nextToggleHidden = isTruthyConfig(toggleValue)
       nextStatusLineHidden = isTruthyConfig(statusLineValue)
@@ -602,11 +596,13 @@ export class TlApp extends HTMLElement {
       // ignore
     }
     if (
-      nextSwitcherHidden === this.isPanelSwitcherHidden
+      nextAgentSidebarHidden === this.isAgentSidebarHidden
+      && nextSwitcherHidden === this.isPanelSwitcherHidden
       && nextToggleHidden === this.isPanelToggleHidden
       && nextStatusLineHidden === this.isStatusLineHidden
       && nextTrafficLightsHidden === this.isTrafficLightsHidden
     ) return
+    this.isAgentSidebarHidden = nextAgentSidebarHidden
     this.isPanelSwitcherHidden = nextSwitcherHidden
     this.isPanelToggleHidden = nextToggleHidden
     this.isStatusLineHidden = nextStatusLineHidden

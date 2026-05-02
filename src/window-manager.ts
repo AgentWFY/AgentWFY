@@ -175,6 +175,8 @@ class WindowManager {
       rendererBridge: this.rendererBridge,
       getTabViewManager: () => this.orchestrator.getActiveAgentContext()!.tabViewManager,
       addAgent: (root) => this.orchestrator.addAgent(root),
+      switchAgent: (root) => this.orchestrator.switchAgent(root),
+      getInstalledAgentsList: () => this.orchestrator.getInstalledAgentsList(),
       getPluginRegistry: () => this.orchestrator.getActiveAgentContext()?.pluginRegistry ?? null,
       getConfirmation: () => this.confirmation!,
       getSessionManager: () => this.orchestrator.getActiveAgentContext()!.sessionManager,

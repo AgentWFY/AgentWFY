@@ -156,6 +156,10 @@
     "description": "Shortcut for Toggle Developer Tools (default: alt+mod+i). Set to 'disabled' to unbind."
   },
   {
+    "name": "system.hide-agent-sidebar",
+    "description": "Hide the agent sidebar (default: false)"
+  },
+  {
     "name": "system.hide-panel-switcher",
     "description": "Hide the Chat/Tasks buttons at the top of the sidebar panel (default: false)"
   },

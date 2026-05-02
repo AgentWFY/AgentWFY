@@ -13,6 +13,7 @@ export interface CommandPaletteBridge {
   openSettingsFile(): Promise<void>
   listBackups(): Promise<CommandPaletteItem[]>
   listTasks(): Promise<CommandPaletteItem[]>
+  listAgents(): Promise<CommandPaletteItem[]>
   listSessions(): Promise<CommandPaletteItem[]>
   listTabs(): Promise<CommandPaletteItem[]>
   resize(size: { width?: number; height?: number }): Promise<void>

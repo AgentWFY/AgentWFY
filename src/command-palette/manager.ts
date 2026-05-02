@@ -33,6 +33,8 @@ export interface CommandPaletteManagerDeps {
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
   addAgent: (agentRoot: string) => Promise<void>;
+  switchAgent: (agentRoot: string) => Promise<void>;
+  getInstalledAgentsList: () => Array<{ path: string; name: string; active: boolean; initialized: boolean }>;
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
   getSessionManager: () => AgentSessionManager;
@@ -342,6 +344,13 @@ export class CommandPaletteManager {
         action: { type: 'enter-add-agent' },
       },
       {
+        id: 'action:enter-agents',
+        title: 'Agents',
+        expandable: true,
+        group: 'Actions',
+        action: { type: 'enter-agents' },
+      },
+      {
         id: 'agent:backup-db',
         title: 'Backup Agent Database',
         group: 'Actions',
@@ -492,6 +501,20 @@ export class CommandPaletteManager {
         },
       };
     });
+  }
+
+  buildAgentItems(): CommandPaletteItem[] {
+    return this.deps.getInstalledAgentsList().map((agent) => ({
+      id: `agent:${agent.path}`,
+      title: agent.name,
+      subtitle: agent.path,
+      group: 'Agents' as const,
+      settingValue: agent.active ? 'current' : undefined,
+      action: {
+        type: 'switch-agent' as const,
+        agentRoot: agent.path,
+      },
+    }));
   }
 
   async buildTabItems(): Promise<CommandPaletteItem[]> {
@@ -775,6 +798,12 @@ export class CommandPaletteManager {
         break;
       }
 
+      case 'switch-agent': {
+        const switchAgentAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
+        await this.deps.switchAgent(switchAgentAction.agentRoot);
+        break;
+      }
+
       case 'toggle-agent-chat':
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
         break;
@@ -805,6 +834,7 @@ export class CommandPaletteManager {
 
       case 'enter-settings':
       case 'enter-tasks':
+      case 'enter-agents':
       case 'enter-sessions':
       case 'enter-tabs':
         // Handled entirely in the palette UI
