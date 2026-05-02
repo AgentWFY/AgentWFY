@@ -42,6 +42,7 @@ export class TlApp extends HTMLElement {
   private isStatusLineHidden = false
   private isTabsHidden = false
   private isTrafficLightsHidden = false
+  private isInitialChromeConfigLoad = true
   private headerEl!: HTMLDivElement
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
@@ -584,14 +585,16 @@ export class TlApp extends HTMLElement {
     let nextStatusLineHidden = false
     let nextTabsHidden = false
     let nextTrafficLightsHidden = false
+    let nextHideChatPanelOnStartup = false
     try {
-      const [agentSidebarValue, switcherValue, toggleValue, statusLineValue, tabsValue, trafficLightsValue] = await Promise.all([
+      const [agentSidebarValue, switcherValue, toggleValue, statusLineValue, tabsValue, trafficLightsValue, hideChatPanelOnStartupValue] = await Promise.all([
         window.ipc?.getSetting(SystemConfigKeys.hideAgentSidebar),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelSwitcher),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelToggle),
         window.ipc?.getSetting(SystemConfigKeys.hideStatusLine),
         window.ipc?.getSetting(SystemConfigKeys.hideTabs),
         window.ipc?.getSetting(SystemConfigKeys.hideTrafficLights),
+        window.ipc?.getSetting(SystemConfigKeys.hideChatPanelOnStartup),
       ])
       nextAgentSidebarHidden = isTruthyConfig(agentSidebarValue)
       nextSwitcherHidden = isTruthyConfig(switcherValue)
@@ -599,11 +602,21 @@ export class TlApp extends HTMLElement {
       nextStatusLineHidden = isTruthyConfig(statusLineValue)
       nextTabsHidden = isTruthyConfig(tabsValue)
       nextTrafficLightsHidden = isTruthyConfig(trafficLightsValue)
+      nextHideChatPanelOnStartup = isTruthyConfig(hideChatPanelOnStartupValue)
     } catch {
       // ignore
     }
+    let activeSidebarPanelChanged = false
+    if (this.isInitialChromeConfigLoad) {
+      this.isInitialChromeConfigLoad = false
+      if (nextHideChatPanelOnStartup && this.activeSidebarPanel !== null) {
+        this.activeSidebarPanel = null
+        activeSidebarPanelChanged = true
+      }
+    }
     if (
-      nextAgentSidebarHidden === this.isAgentSidebarHidden
+      !activeSidebarPanelChanged
+      && nextAgentSidebarHidden === this.isAgentSidebarHidden
       && nextSwitcherHidden === this.isPanelSwitcherHidden
       && nextToggleHidden === this.isPanelToggleHidden
       && nextStatusLineHidden === this.isStatusLineHidden

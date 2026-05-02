@@ -176,6 +176,10 @@
     "description": "Hide the tab bar (default: false)"
   },
   {
+    "name": "system.hide-chat-panel-on-startup",
+    "description": "Hide the chat panel when the app starts; can still be toggled afterwards (default: false)"
+  },
+  {
     "name": "system.hide-traffic-lights",
     "description": "Hide the macOS window traffic light buttons (default: false, macOS only)"
   }

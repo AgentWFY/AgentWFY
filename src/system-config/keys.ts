@@ -51,6 +51,7 @@ export const SystemConfigKeys = {
   hidePanelToggle: "system.hide-panel-toggle",
   hideStatusLine: "system.hide-status-line",
   hideTabs: "system.hide-tabs",
+  hideChatPanelOnStartup: "system.hide-chat-panel-on-startup",
   hideTrafficLights: "system.hide-traffic-lights",
 } as const
 
