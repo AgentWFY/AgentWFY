@@ -50,6 +50,10 @@ export function registerCommandPaletteHandlers(getCommandPalette: () => CommandP
     return getCommandPalette().buildSessionItems();
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_TABS, async () => {
+    return getCommandPalette().buildTabItems();
+  });
+
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.RESIZE, async (_event, size: { width?: number; height?: number }) => {
     getCommandPalette().resizeTo(size);
   });

@@ -43,6 +43,7 @@ export const SystemConfigKeys = {
   shortcutsNextAgent: "system.shortcuts.next-agent",
   shortcutsPreviousAgent: "system.shortcuts.previous-agent",
   shortcutsSearchViews: "system.shortcuts.search-views",
+  shortcutsOpenTabsList: "system.shortcuts.open-tabs-list",
   shortcutsOpenSettings: "system.shortcuts.open-settings",
   shortcutsToggleDevTools: "system.shortcuts.toggle-dev-tools",
   hidePanelSwitcher: "system.hide-panel-switcher",

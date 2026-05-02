@@ -144,6 +144,10 @@
     "description": "Shortcut for Search Views (default: mod+p). Set to 'disabled' to unbind."
   },
   {
+    "name": "system.shortcuts.open-tabs-list",
+    "description": "Shortcut for Open Tabs List (default: mod+shift+p). Set to 'disabled' to unbind."
+  },
+  {
     "name": "system.shortcuts.open-settings",
     "description": "Shortcut for Open Settings (default: mod+,). Set to 'disabled' to unbind."
   },

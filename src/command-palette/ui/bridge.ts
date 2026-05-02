@@ -14,6 +14,7 @@ export interface CommandPaletteBridge {
   listBackups(): Promise<CommandPaletteItem[]>
   listTasks(): Promise<CommandPaletteItem[]>
   listSessions(): Promise<CommandPaletteItem[]>
+  listTabs(): Promise<CommandPaletteItem[]>
   resize(size: { width?: number; height?: number }): Promise<void>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
 }

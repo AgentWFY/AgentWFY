@@ -77,6 +77,13 @@ export type CommandPaletteAction =
   | {
     type: 'new-session'
   }
+  | {
+    type: 'open-tab'
+    tabId: string
+  }
+  | {
+    type: 'enter-tabs'
+  }
 
 export interface CommandPaletteItem {
   id: string
@@ -84,7 +91,7 @@ export interface CommandPaletteItem {
   subtitle?: string
   shortcut?: string
   expandable?: boolean
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Sessions' | 'Tabs'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -106,5 +113,6 @@ export const COMMAND_PALETTE_CHANNEL = {
   CLEAR_TO_DEFAULT: 'app:command-palette:clear-to-default',
   LIST_TASKS: 'app:command-palette:list-tasks',
   LIST_SESSIONS: 'app:command-palette:list-sessions',
+  LIST_TABS: 'app:command-palette:list-tabs',
   RESIZE: 'app:command-palette:resize',
 } as const

@@ -5,6 +5,7 @@ import { SettingsScreen } from './settings.js'
 import { RestoreScreen } from './restore.js'
 import { TasksScreen } from './tasks.js'
 import { SessionsScreen } from './sessions.js'
+import { TabsScreen } from './tabs.js'
 import { AddAgentScreen } from './add-agent.js'
 
 export class NormalScreen implements PaletteScreen {
@@ -57,6 +58,10 @@ export class NormalScreen implements PaletteScreen {
 
     if (item.action.type === 'enter-sessions') {
       return { type: 'push', screen: new SessionsScreen(this.bridge) }
+    }
+
+    if (item.action.type === 'enter-tabs') {
+      return { type: 'push', screen: new TabsScreen(this.bridge) }
     }
 
     if (item.action.type === 'enter-add-agent') {

@@ -374,6 +374,14 @@ export class CommandPaletteManager {
         group: 'Actions',
         action: { type: 'enter-sessions' },
       },
+      {
+        id: 'action:enter-tabs',
+        title: 'Tabs',
+        shortcut: ds('open-tabs-list'),
+        expandable: true,
+        group: 'Actions',
+        action: { type: 'enter-tabs' },
+      },
     ];
 
     return [...actionItems, ...viewItems];
@@ -484,6 +492,31 @@ export class CommandPaletteManager {
         },
       };
     });
+  }
+
+  async buildTabItems(): Promise<CommandPaletteItem[]> {
+    try {
+      const tabs = await this.deps.getTabViewManager().getTabsHandler() as Array<{
+        id: string;
+        title: string;
+        target: string | null;
+        selected: boolean;
+      }>;
+      return tabs.map((tab) => ({
+        id: `tab:${tab.id}`,
+        title: tab.title,
+        subtitle: tab.target || undefined,
+        group: 'Tabs' as const,
+        settingValue: tab.selected ? 'current' : undefined,
+        action: {
+          type: 'open-tab' as const,
+          tabId: tab.id,
+        },
+      }));
+    } catch (err) {
+      console.error('[command-palette] getTabsHandler failed:', err);
+      return [];
+    }
   }
 
   async buildSessionItems(): Promise<CommandPaletteItem[]> {
@@ -736,6 +769,12 @@ export class CommandPaletteManager {
         break;
       }
 
+      case 'open-tab': {
+        const openTabAction = action as Extract<CommandPaletteAction, { type: 'open-tab' }>;
+        await this.deps.getTabViewManager().selectTabHandler({ tabId: openTabAction.tabId });
+        break;
+      }
+
       case 'toggle-agent-chat':
         this.deps.rendererBridge.dispatchRendererWindowEvent('agentwfy:toggle-agent-chat');
         break;
@@ -767,6 +806,7 @@ export class CommandPaletteManager {
       case 'enter-settings':
       case 'enter-tasks':
       case 'enter-sessions':
+      case 'enter-tabs':
         // Handled entirely in the palette UI
         return;
 
