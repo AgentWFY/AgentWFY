@@ -5,6 +5,7 @@ type TaskOrigin =
   | { type: 'agent' }
   | { type: 'trigger'; triggerName: string; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
+  | { type: 'shortcut' }
 
 interface TaskLogHistoryItem {
   file: string
@@ -347,6 +348,7 @@ function originLabel(origin?: TaskOrigin): string {
     case 'agent': return 'agent'
     case 'trigger': return origin.triggerType
     case 'view': return 'view'
+    case 'shortcut': return 'shortcut'
     default: return ''
   }
 }

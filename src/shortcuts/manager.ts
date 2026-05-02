@@ -1,6 +1,6 @@
 import { getConfigValue } from '../settings/config.js';
-import { SHORTCUT_ACTIONS } from './actions.js';
 import { SHORTCUT_PREFIX } from '../system-config/keys.js';
+import type { ActionRegistry } from './registry.js';
 
 const IS_DARWIN = process.platform === 'darwin';
 
@@ -78,8 +78,10 @@ export class ShortcutManager {
   private keyMap = new Map<string, string>();
   // action ID → parsed shortcut (for display/accelerator without re-parsing)
   private parsed = new Map<string, ParsedShortcut>();
+  private readonly registry: ActionRegistry;
 
-  constructor(agentRoot: string) {
+  constructor(agentRoot: string, registry: ActionRegistry) {
+    this.registry = registry;
     this.reload(agentRoot);
   }
 
@@ -87,18 +89,18 @@ export class ShortcutManager {
     this.keyMap.clear();
     this.parsed.clear();
 
-    for (const [actionId, action] of Object.entries(SHORTCUT_ACTIONS)) {
-      const configKey = SHORTCUT_PREFIX + actionId;
-      const raw = getConfigValue(agentRoot, configKey, action.defaultKey) as string;
+    for (const action of this.registry.getAllForAgent(agentRoot)) {
+      const configKey = SHORTCUT_PREFIX + action.id;
+      const raw = getConfigValue(agentRoot, configKey, action.defaultKey ?? DISABLED) as string;
 
       if (raw === DISABLED) continue;
 
       const parsed = parseShortcut(raw);
       if (!parsed) continue;
 
-      this.parsed.set(actionId, parsed);
+      this.parsed.set(action.id, parsed);
       const combo = serializeCombo(parsed.meta, parsed.ctrl, parsed.shift, parsed.alt, parsed.key);
-      this.keyMap.set(combo, actionId);
+      this.keyMap.set(combo, action.id);
     }
   }
 

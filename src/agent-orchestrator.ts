@@ -15,6 +15,8 @@ import { getViewByName } from './db/views.js';
 import { SystemConfigKeys, PLUGIN_PREFIX } from './system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
+import type { ActionRegistry } from './shortcuts/registry.js';
+import { syncTaskActions } from './shortcuts/task-actions.js';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;
@@ -27,6 +29,7 @@ export interface AgentOrchestratorDeps {
   pushProviderState: (agentRoot: string, providerRegistry: ProviderRegistry) => void;
   dispatchRendererEvent: (eventName: string, detail?: unknown) => void;
   getIsZenMode: () => boolean;
+  actionRegistry: ActionRegistry;
 }
 
 export class AgentOrchestrator {
@@ -328,6 +331,14 @@ export class AgentOrchestrator {
           this.deps.pushProviderState(agentRoot, agentCtx.providerRegistry);
         }
       }
+    }
+
+    if (change.table === 'tasks') {
+      if (agentCtx.taskActionsReloadDebounceTimer) clearTimeout(agentCtx.taskActionsReloadDebounceTimer);
+      agentCtx.taskActionsReloadDebounceTimer = setTimeout(() => {
+        syncTaskActions(this.deps.actionRegistry, agentRoot, agentCtx.taskRunner);
+        agentCtx.shortcutManager.reload(agentRoot);
+      }, 500);
     }
 
     if (change.table === 'triggers') {

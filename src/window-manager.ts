@@ -11,7 +11,8 @@ import { Channels } from './ipc/channels.cjs';
 import type { PushMap } from './ipc/schema.js';
 import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
-import { ActionDispatcher } from './action-dispatcher.js';
+import { ActionRegistry } from './shortcuts/registry.js';
+import { registerBuiltInActions } from './shortcuts/built-in-actions.js';
 import type { ProviderRegistry } from './providers/registry.js';
 import { SystemConfigKeys } from './system-config/keys.js';
 
@@ -74,9 +75,20 @@ class WindowManager {
   // Internal modules (wired via late-binding deps so cross-references resolve at call time)
   private readonly factory: AgentContextFactory;
   private readonly orchestrator: AgentOrchestrator;
-  private readonly actionDispatcher: ActionDispatcher;
+  private readonly actionRegistry: ActionRegistry;
 
   constructor() {
+    this.actionRegistry = new ActionRegistry();
+    registerBuiltInActions(this.actionRegistry, {
+      getActiveAgentContext: () => this.orchestrator.getActiveAgentContext(),
+      getCommandPalette: () => this.commandPalette,
+      getRendererBridge: () => this.rendererBridge,
+      getRendererView: () => this.rendererView,
+      getIsZenMode: () => this.isZenMode,
+      toggleZenMode: () => this.toggleZenMode(),
+      switchToNextAgent: (dir) => this.orchestrator.switchToNextAgent(dir),
+    });
+
     this.factory = new AgentContextFactory({
       getMainWindow: () => this.mainWindow,
       getRendererWebContents: () => this.rendererView?.webContents ?? null,
@@ -90,6 +102,7 @@ class WindowManager {
       onRuntimeDbChange: (root, change) => this.orchestrator.onRuntimeDbChange(root, change),
       clientPath: this.clientPath,
       getOverlayViews: () => this.collectOverlayViews(),
+      actionRegistry: this.actionRegistry,
     });
 
     this.orchestrator = new AgentOrchestrator({
@@ -105,16 +118,7 @@ class WindowManager {
         this.rendererBridge?.dispatchRendererCustomEvent(name, detail);
       },
       getIsZenMode: () => this.isZenMode,
-    });
-
-    this.actionDispatcher = new ActionDispatcher({
-      getActiveAgentContext: () => this.orchestrator.getActiveAgentContext(),
-      getCommandPalette: () => this.commandPalette,
-      getRendererBridge: () => this.rendererBridge,
-      getRendererView: () => this.rendererView,
-      getIsZenMode: () => this.isZenMode,
-      toggleZenMode: () => this.toggleZenMode(),
-      switchToNextAgent: (dir) => this.orchestrator.switchToNextAgent(dir),
+      actionRegistry: this.actionRegistry,
     });
   }
 
@@ -438,7 +442,7 @@ class WindowManager {
   // --- Shortcut action dispatch ---
 
   handleShortcutAction(action: string): void {
-    this.actionDispatcher.handleShortcutAction(action);
+    this.actionRegistry.run(this.orchestrator.getActiveAgentRoot(), action);
   }
 
   // --- Delegation to orchestrator (preserves main.ts API surface) ---

@@ -3,6 +3,8 @@ import type { BaseWindow, WebContentsView } from 'electron';
 import { TabViewManager } from './tab-views/manager.js';
 import { getConfigValue, setAgentConfig } from './settings/config.js';
 import { ShortcutManager } from './shortcuts/manager.js';
+import type { ActionRegistry } from './shortcuts/registry.js';
+import { syncTaskActions } from './shortcuts/task-actions.js';
 import { createOpenAICompatibleFactory } from './providers/openai_compatible.js';
 import { TriggerEngine } from './triggers/engine.js';
 import { EventBus } from './event-bus.js';
@@ -38,6 +40,7 @@ export interface AgentContextFactoryDeps {
   onRuntimeDbChange: (agentRoot: string, change: AgentDbChange) => void;
   clientPath: string;
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
+  actionRegistry: ActionRegistry;
 }
 
 export class AgentContextFactory {
@@ -149,7 +152,8 @@ export class AgentContextFactory {
       },
     });
 
-    const shortcutManager = new ShortcutManager(agentRoot);
+    syncTaskActions(this.deps.actionRegistry, agentRoot, taskRunner);
+    const shortcutManager = new ShortcutManager(agentRoot, this.deps.actionRegistry);
 
     const triggerEngine = new TriggerEngine({
       getAgentRoot: () => agentRoot,
@@ -178,6 +182,7 @@ export class AgentContextFactory {
       agentStateStreamingCleanup: null,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
+      taskActionsReloadDebounceTimer: null,
       tabTools,
     };
 
@@ -201,11 +206,17 @@ export class AgentContextFactory {
       clearTimeout(ctx.triggerReloadDebounceTimer);
       ctx.triggerReloadDebounceTimer = null;
     }
+    if (ctx.taskActionsReloadDebounceTimer) {
+      clearTimeout(ctx.taskActionsReloadDebounceTimer);
+      ctx.taskActionsReloadDebounceTimer = null;
+    }
 
     ctx.pluginRegistry?.deactivateAll();
     ctx.tabViewManager.destroyAllTabViews();
     ctx.tabViewManager.clearTrackedViewWebContents();
     ctx.triggerEngine.stop();
+
+    this.deps.actionRegistry.clearAgent(agentRoot);
 
     stopBackupSchedulerForAgent(agentRoot);
     disposeRuntime(agentRoot);

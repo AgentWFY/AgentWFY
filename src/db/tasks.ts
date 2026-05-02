@@ -1,4 +1,5 @@
 import { runAgentDbSql } from './sqlite.js';
+import { getOrCreateAgentDb } from './agent-db.js';
 
 interface TaskCatalogRecord {
   name: string;
@@ -66,5 +67,12 @@ export async function listTasks(dataDir: string): Promise<TaskCatalogRecord[]> {
     sql: 'SELECT name, title, description, timeout_ms, updated_at FROM tasks ORDER BY updated_at DESC',
   });
 
+  return rows.map((row) => toCatalogRecord(row));
+}
+
+export function listTasksSync(dataDir: string): TaskCatalogRecord[] {
+  const rows = getOrCreateAgentDb(dataDir).run({
+    sql: 'SELECT name, title, description, timeout_ms, updated_at FROM tasks ORDER BY name ASC',
+  });
   return rows.map((row) => toCatalogRecord(row));
 }

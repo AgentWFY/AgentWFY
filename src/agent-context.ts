@@ -26,5 +26,6 @@ export interface AgentContext {
   agentStateStreamingCleanup: (() => void) | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
+  taskActionsReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   tabTools: AgentTabTools;
 }

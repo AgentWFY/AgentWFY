@@ -12,6 +12,7 @@ export type TaskOrigin =
   | { type: 'agent' }
   | { type: 'trigger'; triggerName: string; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
   | { type: 'view' }
+  | { type: 'shortcut' }
 
 interface TaskRun {
   runId: string
