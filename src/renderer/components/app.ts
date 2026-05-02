@@ -13,6 +13,7 @@ const CHROME_CONFIG_KEYS = new Set<string>([
   SystemConfigKeys.hidePanelSwitcher,
   SystemConfigKeys.hidePanelToggle,
   SystemConfigKeys.hideStatusLine,
+  SystemConfigKeys.hideTabs,
   SystemConfigKeys.hideTrafficLights,
 ])
 
@@ -39,7 +40,9 @@ export class TlApp extends HTMLElement {
   private isPanelSwitcherHidden = false
   private isPanelToggleHidden = false
   private isStatusLineHidden = false
+  private isTabsHidden = false
   private isTrafficLightsHidden = false
+  private headerEl!: HTMLDivElement
   private rootEl!: HTMLDivElement
   private agentSidebarEl!: HTMLElement
   private sidebarWidth = 380
@@ -451,22 +454,22 @@ export class TlApp extends HTMLElement {
     mainColumn.className = 'awfy-app-main-column'
 
     // Header (inline toggle + tab bar)
-    const headerEl = document.createElement('div')
-    headerEl.className = 'awfy-app-header'
+    this.headerEl = document.createElement('div')
+    this.headerEl.className = 'awfy-app-header'
 
     this.inlineToggleBtnEl = document.createElement('button')
     this.inlineToggleBtnEl.className = 'awfy-app-inline-toggle'
     this.inlineToggleBtnEl.title = 'Open sidebar'
     this.inlineToggleBtnEl.innerHTML = SIDEBAR_ICON
     this.inlineToggleBtnEl.addEventListener('click', this.toggleSidebar)
-    headerEl.appendChild(this.inlineToggleBtnEl)
+    this.headerEl.appendChild(this.inlineToggleBtnEl)
 
     this.tabsEl = document.createElement('awfy-tabs')
     const mainArea = document.createElement('div')
     mainArea.className = 'awfy-app-main-area'
     mainArea.appendChild(this.tabsEl)
 
-    mainColumn.appendChild(headerEl)
+    mainColumn.appendChild(this.headerEl)
     mainColumn.appendChild(mainArea)
 
     body.appendChild(mainColumn)
@@ -481,7 +484,7 @@ export class TlApp extends HTMLElement {
     // Reparent tab bar into the header (must be after DOM insertion so connectedCallback has fired)
     const tabsComponent = this.tabsEl as HTMLElement & { tabBarEl?: HTMLDivElement }
     if (tabsComponent.tabBarEl) {
-      headerEl.appendChild(tabsComponent.tabBarEl)
+      this.headerEl.appendChild(tabsComponent.tabBarEl)
     }
 
     // Event listeners
@@ -549,6 +552,7 @@ export class TlApp extends HTMLElement {
     this.rootEl.classList.toggle('agent-sidebar-hidden', navigator.platform.includes('Mac') && this.isAgentSidebarHidden)
     this.rootEl.classList.toggle('panel-toggle-hidden', this.isPanelToggleHidden)
     this.statusLineEl.style.display = this.isStatusLineHidden ? 'none' : ''
+    this.headerEl.style.display = this.isTabsHidden ? 'none' : ''
 
     // Panel visibility
     const agentChatVisible = this.activeSidebarPanel === 'agent-chat'
@@ -578,19 +582,22 @@ export class TlApp extends HTMLElement {
     let nextSwitcherHidden = false
     let nextToggleHidden = false
     let nextStatusLineHidden = false
+    let nextTabsHidden = false
     let nextTrafficLightsHidden = false
     try {
-      const [agentSidebarValue, switcherValue, toggleValue, statusLineValue, trafficLightsValue] = await Promise.all([
+      const [agentSidebarValue, switcherValue, toggleValue, statusLineValue, tabsValue, trafficLightsValue] = await Promise.all([
         window.ipc?.getSetting(SystemConfigKeys.hideAgentSidebar),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelSwitcher),
         window.ipc?.getSetting(SystemConfigKeys.hidePanelToggle),
         window.ipc?.getSetting(SystemConfigKeys.hideStatusLine),
+        window.ipc?.getSetting(SystemConfigKeys.hideTabs),
         window.ipc?.getSetting(SystemConfigKeys.hideTrafficLights),
       ])
       nextAgentSidebarHidden = isTruthyConfig(agentSidebarValue)
       nextSwitcherHidden = isTruthyConfig(switcherValue)
       nextToggleHidden = isTruthyConfig(toggleValue)
       nextStatusLineHidden = isTruthyConfig(statusLineValue)
+      nextTabsHidden = isTruthyConfig(tabsValue)
       nextTrafficLightsHidden = isTruthyConfig(trafficLightsValue)
     } catch {
       // ignore
@@ -600,12 +607,14 @@ export class TlApp extends HTMLElement {
       && nextSwitcherHidden === this.isPanelSwitcherHidden
       && nextToggleHidden === this.isPanelToggleHidden
       && nextStatusLineHidden === this.isStatusLineHidden
+      && nextTabsHidden === this.isTabsHidden
       && nextTrafficLightsHidden === this.isTrafficLightsHidden
     ) return
     this.isAgentSidebarHidden = nextAgentSidebarHidden
     this.isPanelSwitcherHidden = nextSwitcherHidden
     this.isPanelToggleHidden = nextToggleHidden
     this.isStatusLineHidden = nextStatusLineHidden
+    this.isTabsHidden = nextTabsHidden
     this.isTrafficLightsHidden = nextTrafficLightsHidden
     document.documentElement.classList.toggle('traffic-lights-hidden', nextTrafficLightsHidden)
     this.updateSidebar()

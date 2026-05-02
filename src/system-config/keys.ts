@@ -50,6 +50,7 @@ export const SystemConfigKeys = {
   hidePanelSwitcher: "system.hide-panel-switcher",
   hidePanelToggle: "system.hide-panel-toggle",
   hideStatusLine: "system.hide-status-line",
+  hideTabs: "system.hide-tabs",
   hideTrafficLights: "system.hide-traffic-lights",
 } as const
 
