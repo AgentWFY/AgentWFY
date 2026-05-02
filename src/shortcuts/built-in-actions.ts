@@ -46,6 +46,13 @@ export function registerBuiltInActions(registry: ActionRegistry, deps: BuiltInAc
   });
 
   registry.register({
+    id: 'open-tabs-list',
+    label: 'Open Tabs List',
+    defaultKey: 'mod+shift+p',
+    run: () => deps.getCommandPalette()?.show({ screen: 'tabs' }),
+  });
+
+  registry.register({
     id: 'toggle-agent-chat',
     label: 'Toggle AI Panel',
     defaultKey: 'mod+i',
