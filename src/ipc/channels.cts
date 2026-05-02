@@ -44,6 +44,7 @@ export const Channels = {
     writeLog: 'tasks:writeLog',
     runFinished: 'tasks:runFinished',
     runStarted: 'tasks:runStarted',
+    listShortcuts: 'tasks:listShortcuts',
   },
   providers: {
     list: 'provider:list',

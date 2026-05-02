@@ -3,6 +3,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import { assertPathAllowed } from '../security/path-policy.js';
 import { Channels } from '../ipc/channels.cjs';
+import { listTasks } from '../db/tasks.js';
+import { taskActionId } from '../shortcuts/task-actions.js';
+import type { ShortcutManager } from '../shortcuts/manager.js';
 import type { TaskRunner, TaskOrigin } from './task_runner.js';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
@@ -23,6 +26,7 @@ function normalizeTaskLogFileName(value: unknown): string {
 export function registerTaskRunnerHandlers(
   getRoot: (e: IpcMainInvokeEvent) => string,
   getTaskRunner: (e: IpcMainInvokeEvent) => TaskRunner,
+  getShortcutManager: (e: IpcMainInvokeEvent) => ShortcutManager,
 ): void {
   const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
@@ -51,6 +55,17 @@ export function registerTaskRunnerHandlers(
   ipcMain.handle(Channels.tasks.listRunning, async (event) => {
     const runner = getTaskRunner(event);
     return runner.listRunning();
+  });
+
+  ipcMain.handle(Channels.tasks.listShortcuts, async (event) => {
+    const sm = getShortcutManager(event);
+    const tasks = await listTasks(getRoot(event));
+    const out: Record<string, string> = {};
+    for (const t of tasks) {
+      const display = sm.getDisplayShortcut(taskActionId(t.name));
+      if (display) out[t.name] = display;
+    }
+    return out;
   });
 
   // --- Log persistence handlers ---

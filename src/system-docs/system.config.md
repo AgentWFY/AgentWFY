@@ -25,3 +25,11 @@ If `~/.agentwfy.json` does not exist, the app falls back to reading from the int
 Set `value = NULL` to revert a setting to the global/default.
 
 All values are stored as strings in the agent DB — no JSON encoding. Numbers and booleans are their string form (e.g. `'8080'`, `'true'`). The global config file uses standard JSON types.
+
+## Shortcuts
+
+Shortcut bindings live in the same table:
+- `system.shortcuts.<action-id>` — built-in actions (read-only namespace; values are user-editable).
+- `shortcuts.task.<task-name>` — runs the task with that name. Agent CRUD is allowed (no `system.*` guard).
+
+Values are key combos like `mod+shift+r` (mod = Cmd on macOS, Ctrl elsewhere) or `'disabled'` to unbind.

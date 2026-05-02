@@ -2,6 +2,7 @@ export interface ActionDef {
   id: string;
   label: string;
   defaultKey?: string;
+  configKey?: string;
   run: () => void | Promise<void>;
 }
 

@@ -10,4 +10,5 @@ export interface TasksApi {
   writeLog(logFileName: string, content: string): Promise<void>
   onRunFinished(callback: (payload: TaskRunFinishedPayload) => void): () => void
   onRunStarted(callback: (payload: TaskRunStartedPayload) => void): () => void
+  listShortcuts(): Promise<Record<string, string>>
 }

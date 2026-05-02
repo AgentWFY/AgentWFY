@@ -10,6 +10,7 @@ import { storeRemove } from '../ipc/store.js';
 import { getGlobalValue } from '../settings/config.js';
 import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
 import { SYSTEM_PREFIX, PLUGIN_PREFIX } from '../system-config/keys.js';
+import { taskActionId, taskShortcutConfigKey, TASK_SHORTCUT_KEY_PREFIX } from '../shortcuts/task-actions.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -398,12 +399,35 @@ export class CommandPaletteManager {
 
   async buildSettingsItems(): Promise<CommandPaletteItem[]> {
     const agentRoot = this.deps.getAgentRoot();
-    const rows = await listConfig(agentRoot);
+    const [tasks, allRows] = await Promise.all([listTasks(agentRoot), listConfig(agentRoot)]);
+
+    const taskShortcutDescription = new Map<string, string>();
+    for (const t of tasks) {
+      taskShortcutDescription.set(
+        taskShortcutConfigKey(t.name),
+        `Shortcut to run task: ${t.title || t.name}. Set to 'disabled' to unbind.`,
+      );
+    }
+
+    // Hide stale `shortcuts.task.*` rows for tasks that no longer exist.
+    const rows = allRows.filter(row =>
+      !row.name.startsWith(TASK_SHORTCUT_KEY_PREFIX) || taskShortcutDescription.has(row.name),
+    );
+
+    const existingNames = new Set(rows.map(r => r.name));
+    for (const [key, description] of taskShortcutDescription) {
+      if (!existingNames.has(key)) {
+        rows.push({ name: key, value: null, description });
+      }
+    }
+
     return rows.map((row) => {
       let group: CommandPaletteItem['group'];
       if (row.name.startsWith(SYSTEM_PREFIX)) group = 'System';
       else if (row.name.startsWith(PLUGIN_PREFIX)) group = 'Plugins';
       else group = 'Settings';
+
+      const description = taskShortcutDescription.get(row.name) ?? row.description;
 
       const agentValue = row.value;
       const globalValue = getGlobalValue(row.name);
@@ -423,7 +447,7 @@ export class CommandPaletteManager {
       return {
         id: `setting:${row.name}`,
         title: row.name,
-        subtitle: row.description,
+        subtitle: description,
         group,
         settingValue: effectiveValue,
         settingSource: source,
@@ -469,6 +493,7 @@ export class CommandPaletteManager {
         id: `task:${task.name}`,
         title: task.title,
         subtitle: task.description || undefined,
+        shortcut: this.deps.getDisplayShortcut(taskActionId(task.name)) ?? undefined,
         group: 'Tasks' as const,
         action: {
           type: 'run-task' as const,

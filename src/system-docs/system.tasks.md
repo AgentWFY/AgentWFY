@@ -36,3 +36,7 @@ publish({ topic: 'task:' + runId + ':config', data: { key: 'value' } })
 // inside task code
 const config = await waitFor({ topic: 'task:' + runId + ':config' })
 ```
+
+## Shortcuts
+
+A task can be bound to a keyboard shortcut by setting `shortcuts.task.<task-name>` in the `config` table to a key combo (e.g. `mod+shift+r`). See system.config for details.

@@ -158,6 +158,12 @@ const STYLES = `
     flex: 1; font-size: 12.5px; font-weight: 500; color: var(--color-text4);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .tc-shortcut {
+    font-size: 10px; font-family: var(--font-mono);
+    color: var(--color-text2); background: var(--color-surface);
+    border: 1px solid var(--color-border); border-radius: 3px;
+    padding: 1px 5px; flex-shrink: 0;
+  }
   .tc-run {
     padding: 2px 10px; font-size: 10px; border-radius: 3px;
     border: 1px solid var(--color-accent); color: var(--color-accent);
@@ -424,6 +430,7 @@ function formatInputValue(input: unknown): string {
 export class TlTaskPanel extends HTMLElement {
   private shadow: ShadowRoot
   private tasks: TaskItem[] = []
+  private taskShortcuts: Record<string, string> = {}
   private triggers: TriggerItem[] = []
   private logHistory: TaskLogHistoryItem[] = []
   private activeTab: ActiveTab = 'runs'
@@ -478,6 +485,7 @@ export class TlTaskPanel extends HTMLElement {
 
     window.addEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.addEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
+    window.addEventListener('agentwfy:config-db-changed', this.onConfigChanged as EventListener)
     window.addEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
     window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
   }
@@ -493,12 +501,16 @@ export class TlTaskPanel extends HTMLElement {
     }
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
+    window.removeEventListener('agentwfy:config-db-changed', this.onConfigChanged as EventListener)
     window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
   }
 
   private onTasksChanged = () => { this.loadTasks() }
   private onTriggersChanged = () => { this.loadTriggers() }
+  private onConfigChanged = (e: CustomEvent<{ key: string }>) => {
+    if (e.detail?.key?.startsWith('shortcuts.task.')) this.loadTaskShortcuts()
+  }
   private onAgentSwitched = () => {
     this.detailView = null
     this.loadTasks()
@@ -530,6 +542,15 @@ export class TlTaskPanel extends HTMLElement {
       }) as TaskItem[]
       this.tasks = Array.isArray(rows) ? rows : []
     } catch { this.tasks = [] }
+    this.loadTaskShortcuts()
+  }
+
+  private async loadTaskShortcuts() {
+    const ipc = window.ipc
+    if (!ipc) return
+    try {
+      this.taskShortcuts = await ipc.tasks.listShortcuts()
+    } catch { this.taskShortcuts = {} }
     this.updateContent()
   }
 
@@ -667,9 +688,11 @@ export class TlTaskPanel extends HTMLElement {
     for (const task of this.tasks) {
       const isExpanded = this.expandedTaskName === task.name
       const taskTriggers = this.triggers.filter(t => t.task_name === task.name && t.enabled)
+      const shortcut = this.taskShortcuts[task.name]
       html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-name="${escapeHtml(task.name)}">
         <div class="task-card-top">
           <span class="tc-name">${escapeHtml(task.title)}</span>
+          ${shortcut ? `<span class="tc-shortcut">${escapeHtml(shortcut)}</span>` : ''}
           <button class="tc-run" data-run-task="${escapeHtml(task.name)}">Run</button>
         </div>`
       if (task.description) {

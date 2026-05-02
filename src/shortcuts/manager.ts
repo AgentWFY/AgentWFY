@@ -90,7 +90,7 @@ export class ShortcutManager {
     this.parsed.clear();
 
     for (const action of this.registry.getAllForAgent(agentRoot)) {
-      const configKey = SHORTCUT_PREFIX + action.id;
+      const configKey = action.configKey ?? SHORTCUT_PREFIX + action.id;
       const raw = getConfigValue(agentRoot, configKey, action.defaultKey ?? DISABLED) as string;
 
       if (raw === DISABLED) continue;

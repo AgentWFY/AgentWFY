@@ -230,6 +230,9 @@ if (isApp) {
       onRunStarted(callback: (payload: PushMap['tasks:runStarted']) => void): () => void {
         return typedOn(Channels.tasks.runStarted, callback);
       },
+      listShortcuts(): Promise<Record<string, string>> {
+        return ipcRenderer.invoke(Channels.tasks.listShortcuts);
+      },
     },
     providers: {
       list(): Promise<Array<{ id: string; name: string; settingsView?: string }>> {

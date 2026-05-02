@@ -151,6 +151,7 @@ registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
   (e) => windowManager.getAgentRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
+  (e) => windowManager.getContextForSender(e.sender.id).shortcutManager,
 );
 registerRuntimeFunctionHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
