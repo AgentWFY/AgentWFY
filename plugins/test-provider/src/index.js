@@ -105,6 +105,9 @@ class TestSession {
       case 'multi-fail':
         yield* this._streamMultiFail(signal)
         break
+      case 'pick':
+        yield* this._streamPick(signal, executeTool)
+        break
       default:
         yield* this._streamEcho(command || 'Hello!', signal)
         break
@@ -362,6 +365,60 @@ return rows`
     yield* this._streamText(text, signal, 20)
 
     this._commitAssistant(text)
+    yield { type: 'state_changed' }
+  }
+
+  async *_streamPick(signal, executeTool) {
+    const intro = 'Let me ask you to choose from a few options.'
+    yield* this._streamText(intro, signal, 20)
+
+    const pickCode = [
+      "const chosen = await pickFromPalette({",
+      "  title: 'Pick a project',",
+      "  placeholder: 'Filter projects…',",
+      "  items: [",
+      "    { title: 'Web App',   subtitle: 'Full-stack web app', value: { type: 'web-app', path: '/repo/web' } },",
+      "    { title: 'Docs',      subtitle: 'Documentation site', value: { type: 'docs',    path: '/repo/docs' } },",
+      "    { title: 'API Server',subtitle: 'Backend API service', value: { type: 'api',     path: '/repo/api' } },",
+      "    { title: 'Mobile App',subtitle: 'React Native app',    value: { type: 'mobile',  path: '/repo/mobile' } },",
+      '  ]',
+      '})',
+      "return chosen ? 'User picked: ' + JSON.stringify(chosen) : 'User dismissed the picker'"
+    ].join('\n')
+
+    const toolCall = {
+      id: 'pick-demo-1',
+      description: 'Pick from palette demo',
+      code: pickCode,
+    }
+    yield { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code }
+
+    const result = await executeTool(toolCall)
+
+    this._messages.push({ role: 'assistant', content: intro, toolCall })
+    this._messages.push({ role: 'tool', id: toolCall.id, content: result.content })
+
+    yield { type: 'state_changed' }
+
+    const choiceText = result.content.map(c => c.type === 'text' ? c.text : '').join('')
+    const outro = choiceText.includes('dismissed')
+      ? '\n\nNo selection was made. The picker was dismissed.'
+      : `\n\n${choiceText}. Thanks for choosing!`
+
+    yield* this._streamText(outro, signal, 20)
+
+    const fullText = intro + outro
+    this._displayMessages.push({
+      role: 'assistant',
+      blocks: [
+        { type: 'text', text: intro },
+        { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code },
+        { type: 'exec_js_result', id: toolCall.id, content: result.content, isError: result.isError },
+        { type: 'text', text: outro },
+      ],
+      timestamp: Date.now(),
+    })
+    this._partial = null
     yield { type: 'state_changed' }
   }
 
