@@ -12,7 +12,7 @@ import { registerTabs } from './tabs.js'
 import { registerEvents } from './events.js'
 import { registerAgent } from './agent.js'
 import { registerTasks } from './tasks.js'
-import { registerPlugins } from './plugins.js'
+import { registerPalette } from './palette.js'
 
 interface BuiltInFunctionDeps {
   agentRoot: string
@@ -32,7 +32,7 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   registerEvents(registry, { eventBus: deps.eventBus })
   registerAgent(registry, { getSessionManager: deps.getSessionManager, rendererWebContents: deps.rendererWebContents })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
-  registerPlugins(registry, {
+  registerPalette(registry, {
     getCommandPalette: deps.getCommandPalette,
   })
 

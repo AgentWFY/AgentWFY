@@ -32,6 +32,8 @@ const COMMAND_PALETTE_CHANNEL = {
   LIST_SESSIONS: 'app:command-palette:list-sessions',
   LIST_TABS: 'app:command-palette:list-tabs',
   RESIZE: 'app:command-palette:resize',
+  LIST_PICK_ITEMS: 'app:command-palette:list-pick-items',
+  RESOLVE_PICK: 'app:command-palette:resolve-pick',
 } as const;
 
 contextBridge.exposeInMainWorld('commandPaletteBridge', {
@@ -88,6 +90,12 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
   },
   resize(size: { width?: number; height?: number }): Promise<void> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.RESIZE, size);
+  },
+  listPickItems(): Promise<CommandPaletteItem[]> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_PICK_ITEMS);
+  },
+  resolvePick(index: number): Promise<void> {
+    return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.RESOLVE_PICK, index);
   },
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void {
     const handler = (_event: Electron.IpcRendererEvent, detail: { key: string; value: unknown }) => callback(detail);

@@ -16,5 +16,6 @@ Send any of these as your message:
 - **`thinking`** — Simulates 15 seconds of server-side thinking before the first token. Tests the waiting indicator and verifies status_line keepalives prevent false watchdog triggers.
 - **`slow`** — Streams very slowly (1 token/second for 10 tokens). Tests that the watchdog doesn't false-trigger on slow streams.
 - **`multi-fail`** — Fails 3 times with network errors, then succeeds on the 4th attempt. Tests multi-retry recovery.
+- **`pick`** — Streams a response that includes an execJs tool call calling `pickFromPalette`. Tests the command palette picker flow (pickFromPalette runtime function).
 
 Any other message gets a simple echo response.

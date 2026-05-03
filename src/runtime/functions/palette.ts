@@ -4,7 +4,7 @@ import type { CommandPaletteManager } from '../../command-palette/manager.js'
 
 const DOCS_HINT = 'Read `@docs/system.plugins.guide` for the full function reference.'
 
-export function registerPlugins(
+export function registerPalette(
   registry: FunctionRegistry,
   deps: {
     getCommandPalette: () => CommandPaletteManager
@@ -34,5 +34,9 @@ export function registerPlugins(
       throw new Error(`requestUninstallPlugin requires a non-empty pluginName string. ${DOCS_HINT}`)
     }
     return getCommandPalette().requestPluginUninstall(request.pluginName)
+  })
+
+  registry.register('pickFromPalette', async (params) => {
+    return getCommandPalette().pickFromPalette(params as WorkerHostMethodMap['pickFromPalette']['params'])
   })
 }
