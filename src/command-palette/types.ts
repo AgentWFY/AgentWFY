@@ -91,6 +91,10 @@ export type CommandPaletteAction =
   | {
     type: 'enter-tabs'
   }
+  | {
+    type: 'pick-item'
+    index: number
+  }
 
 export interface CommandPaletteItem {
   id: string
@@ -98,7 +102,7 @@ export interface CommandPaletteItem {
   subtitle?: string
   shortcut?: string
   expandable?: boolean
-  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Agents' | 'Sessions' | 'Tabs'
+  group: 'Views' | 'Actions' | 'Tasks' | 'Settings' | 'Backup' | 'Plugins' | 'System' | 'System Views' | 'Plugin Views' | 'Agents' | 'Sessions' | 'Tabs' | 'Pick'
   action: CommandPaletteAction
   settingValue?: string
   settingSource?: string
@@ -123,4 +127,19 @@ export const COMMAND_PALETTE_CHANNEL = {
   LIST_SESSIONS: 'app:command-palette:list-sessions',
   LIST_TABS: 'app:command-palette:list-tabs',
   RESIZE: 'app:command-palette:resize',
+  LIST_PICK_ITEMS: 'app:command-palette:list-pick-items',
+  RESOLVE_PICK: 'app:command-palette:resolve-pick',
 } as const
+
+export interface PickItemInput {
+  title: string
+  subtitle?: string
+  value: unknown
+}
+
+export interface PickFromPaletteOptions {
+  items: PickItemInput[]
+  title?: string
+  placeholder?: string
+  timeoutMs?: number
+}

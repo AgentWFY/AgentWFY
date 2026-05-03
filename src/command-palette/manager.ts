@@ -24,7 +24,7 @@ import type { PluginRegistry } from '../plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
 import type { AgentSessionManager } from '../agent/session_manager.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
-import type { CommandPaletteAction, CommandPaletteItem } from './types.js';
+import type { CommandPaletteAction, CommandPaletteItem, PickFromPaletteOptions, PickItemInput } from './types.js';
 
 export { COMMAND_PALETTE_CHANNEL };
 
@@ -52,9 +52,16 @@ export interface CommandPaletteManagerDeps {
 /** Extra padding around the palette content for the CSS drop-shadow to render. */
 const VIEW_PADDING = 40;
 
+interface PendingPick {
+  items: PickItemInput[];
+  resolve: (value: unknown | null) => void;
+  timer: NodeJS.Timeout | null;
+}
+
 export class CommandPaletteManager {
   private view: WebContentsView | null = null;
   private readonly deps: CommandPaletteManagerDeps;
+  private pendingPick: PendingPick | null = null;
 
   constructor(deps: CommandPaletteManagerDeps) {
     this.deps = deps;
@@ -120,6 +127,8 @@ export class CommandPaletteManager {
   }
 
   hide(options?: { focusMain?: boolean }): void {
+    this.cancelPendingPick();
+
     if (!this.view || this.view.webContents.isDestroyed() || !this.view.getVisible()) {
       return;
     }
@@ -130,12 +139,82 @@ export class CommandPaletteManager {
     }
   }
 
+  private cancelPendingPick(): void {
+    const pending = this.pendingPick;
+    if (!pending) return;
+    this.pendingPick = null;
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.resolve(null);
+  }
+
+  pickFromPalette(options: PickFromPaletteOptions): Promise<unknown | null> {
+    if (!options || !Array.isArray(options.items) || options.items.length === 0) {
+      return Promise.reject(new Error('pickFromPalette requires a non-empty items array'));
+    }
+    for (const item of options.items) {
+      if (!item || typeof item.title !== 'string' || item.title.length === 0) {
+        return Promise.reject(new Error('pickFromPalette items must each have a non-empty title string'));
+      }
+    }
+
+    this.cancelPendingPick();
+
+    return new Promise<unknown | null>((resolve) => {
+      const pending: PendingPick = {
+        items: options.items,
+        resolve,
+        timer: null,
+      };
+      this.pendingPick = pending;
+
+      if (typeof options.timeoutMs === 'number' && options.timeoutMs > 0) {
+        pending.timer = setTimeout(() => {
+          if (this.pendingPick !== pending) return;
+          this.pendingPick = null;
+          this.hide({ focusMain: true });
+          resolve(null);
+        }, options.timeoutMs);
+      }
+
+      this.show({
+        screen: 'pick',
+        params: {
+          title: options.title ?? 'Pick',
+          placeholder: options.placeholder ?? 'Filter…',
+        },
+      });
+    });
+  }
+
+  getPickItems(): CommandPaletteItem[] {
+    if (!this.pendingPick) return [];
+    return this.pendingPick.items.map((item, index) => ({
+      id: `pick:${index}`,
+      title: item.title,
+      subtitle: item.subtitle,
+      group: 'Pick' as const,
+      action: { type: 'pick-item' as const, index },
+    }));
+  }
+
+  resolvePick(index: number): void {
+    const pending = this.pendingPick;
+    if (!pending) return;
+    const item = pending.items[index];
+    this.pendingPick = null;
+    if (pending.timer) clearTimeout(pending.timer);
+    this.hide({ focusMain: true });
+    pending.resolve(item ? item.value : null);
+  }
+
   getView(): WebContentsView | null {
     if (!this.view || this.view.webContents.isDestroyed()) return null;
     return this.view;
   }
 
   destroy(): void {
+    this.cancelPendingPick();
+
     if (!this.view || this.view.webContents.isDestroyed()) {
       this.view = null;
       return;
@@ -240,6 +319,7 @@ export class CommandPaletteManager {
   }
 
   show(options?: { screen?: string; params?: Record<string, unknown> }): void {
+    if (options?.screen !== 'pick') this.cancelPendingPick();
     if (options?.screen) {
       this.showAndNotify(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, options);
     } else {
@@ -248,6 +328,7 @@ export class CommandPaletteManager {
   }
 
   showFiltered(query: string): void {
+    this.cancelPendingPick();
     this.showAndNotify(COMMAND_PALETTE_CHANNEL.OPENED_WITH_FILTER, query);
   }
 

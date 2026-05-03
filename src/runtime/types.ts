@@ -377,6 +377,15 @@ export interface WorkerHostMethodMap {
     params: { pluginName: string }
     result: { uninstalled: boolean }
   }
+  pickFromPalette: {
+    params: {
+      items: Array<{ title: string; subtitle?: string; value: unknown }>
+      title?: string
+      placeholder?: string
+      timeoutMs?: number
+    }
+    result: unknown | null
+  }
   getAvailableFunctions: {
     params: Record<string, never>
     result: Array<{ name: string; source: string }>

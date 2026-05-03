@@ -18,4 +18,6 @@ export interface CommandPaletteBridge {
   listTabs(): Promise<CommandPaletteItem[]>
   resize(size: { width?: number; height?: number }): Promise<void>
   onSettingChanged(callback: (detail: { key: string; value: unknown }) => void): () => void
+  listPickItems(): Promise<CommandPaletteItem[]>
+  resolvePick(index: number): Promise<void>
 }

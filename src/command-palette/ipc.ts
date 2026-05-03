@@ -62,4 +62,12 @@ export function registerCommandPaletteHandlers(getCommandPalette: () => CommandP
     getCommandPalette().resizeTo(size);
   });
 
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.LIST_PICK_ITEMS, async () => {
+    return getCommandPalette().getPickItems();
+  });
+
+  ipcMain.handle(COMMAND_PALETTE_CHANNEL.RESOLVE_PICK, async (_event, index: number) => {
+    getCommandPalette().resolvePick(index);
+  });
+
 }
