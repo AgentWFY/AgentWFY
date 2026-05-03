@@ -472,11 +472,8 @@ export class PaletteController {
 
     window.addEventListener('keydown', (event) => {
       if (event.target === this.searchInput) return
-      if (event.target instanceof HTMLInputElement && event.target.classList.contains('settings-card-input')) {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          this.pop()
-        }
+      // Settings screen inline editor handles its own keys.
+      if (event.target instanceof HTMLInputElement && event.target.classList.contains('set-row-input')) {
         return
       }
       void this.handleKeyDown(event)
