@@ -131,6 +131,7 @@ function retrySleep(ms: number, signal?: AbortSignal): Promise<void> {
 interface InternalMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content?: unknown
+  reasoning_content?: string
   tool_calls?: unknown[]
   tool_call_id?: string
 }
@@ -521,6 +522,11 @@ class OpenAICompatibleSession implements ProviderSession {
     const assistantMsg: InternalMessage = { role: 'assistant' }
     if (assistantText) {
       assistantMsg.content = assistantText
+    }
+    // Some providers (e.g. DeepSeek thinking mode) require reasoning_content
+    // to be echoed back on subsequent requests.
+    if (thinkingText) {
+      assistantMsg.reasoning_content = thinkingText
     }
     if (toolCalls.size > 0) {
       assistantMsg.tool_calls = Array.from(toolCalls.values()).map(tc => ({
