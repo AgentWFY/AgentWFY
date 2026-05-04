@@ -174,6 +174,9 @@ export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
   private _storeUnsub: (() => void) | null = null
+  private _runningTasks: Array<{ runId: string; title: string }> = []
+  private _taskStartedUnsub: (() => void) | null = null
+  private _taskFinishedUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -210,6 +213,7 @@ export class TlStatusLine extends HTMLElement {
     this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
+    this.loadRunningTasks()
   }
 
   connectedCallback() {
@@ -220,9 +224,11 @@ export class TlStatusLine extends HTMLElement {
       window.ipc?.openAgentRoot()
     })
     this.subscribeToSnapshots()
+    this.subscribeToTaskRuns()
     this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
+    this.loadRunningTasks()
     this._clicksBound = true
     window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
     window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
@@ -232,6 +238,10 @@ export class TlStatusLine extends HTMLElement {
   disconnectedCallback() {
     this._storeUnsub?.()
     this._storeUnsub = null
+    this._taskStartedUnsub?.()
+    this._taskStartedUnsub = null
+    this._taskFinishedUnsub?.()
+    this._taskFinishedUnsub = null
     window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
     window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
     window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
@@ -284,6 +294,51 @@ export class TlStatusLine extends HTMLElement {
     } else {
       indicator.classList.remove('visible')
     }
+  }
+
+  private subscribeToTaskRuns() {
+    this._taskStartedUnsub = window.ipc?.tasks.onRunStarted((payload: any) => {
+      if (!payload?.runId) return
+      if (this._runningTasks.some(r => r.runId === payload.runId)) return
+      this._runningTasks.push({ runId: payload.runId, title: payload.title || payload.taskName || 'Task' })
+      this.updateTaskIndicator()
+    }) ?? null
+
+    this._taskFinishedUnsub = window.ipc?.tasks.onRunFinished((payload: any) => {
+      if (!payload?.runId) return
+      this._runningTasks = this._runningTasks.filter(r => r.runId !== payload.runId)
+      this.updateTaskIndicator()
+    }) ?? null
+  }
+
+  private async loadRunningTasks() {
+    try {
+      const runs = await window.ipc?.tasks.listRunning()
+      this._runningTasks = Array.isArray(runs)
+        ? runs.map(r => ({ runId: r.runId, title: r.title || r.taskName || 'Task' }))
+        : []
+    } catch {
+      this._runningTasks = []
+    }
+    this.updateTaskIndicator()
+  }
+
+  private updateTaskIndicator() {
+    const indicator = this.shadow.querySelector('#task-indicator')
+    const label = this.shadow.querySelector('#task-label')
+    if (!indicator || !label) return
+
+    const count = this._runningTasks.length
+    if (count === 0) {
+      indicator.classList.remove('visible')
+      return
+    }
+    if (count === 1) {
+      label.textContent = this._runningTasks[0].title
+    } else {
+      label.textContent = `${count} tasks running`
+    }
+    indicator.classList.add('visible')
   }
 
   private _clicksBound = false
