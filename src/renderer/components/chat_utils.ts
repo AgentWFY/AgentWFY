@@ -1,3 +1,5 @@
+import { normalizeAgentViewUrl, isViewHostname, isFileHostname, normalizeViewPathname } from '../../protocol/view-document.js'
+
 interface TabLinkRequest {
   viewName?: string
   filePath?: string
@@ -6,18 +8,11 @@ interface TabLinkRequest {
 }
 
 export function parseTabLink(href: string): TabLinkRequest | null {
-  if (!href.startsWith('agentview://')) return null
+  const url = normalizeAgentViewUrl(href)
+  if (!url) return null
 
-  let url: URL
-  try {
-    url = new URL(href)
-  } catch {
-    return null
-  }
-
-  const hostname = url.hostname
-  const rawPath = decodeURIComponent(url.pathname).replace(/^\/+/, '').trim()
-  if (!rawPath) return null
+  const target = normalizeViewPathname(url.pathname)
+  if (!target) return null
 
   const title = url.searchParams.get('title') || undefined
   const params: Record<string, string> = {}
@@ -26,13 +21,12 @@ export function parseTabLink(href: string): TabLinkRequest | null {
   })
   const hasParams = Object.keys(params).length > 0
 
-  if (hostname === 'view') {
-    return { viewName: rawPath, title, params: hasParams ? params : undefined }
+  if (isViewHostname(url.hostname)) {
+    return { viewName: target, title, params: hasParams ? params : undefined }
   }
-  if (hostname === 'file') {
-    return { filePath: rawPath, title, params: hasParams ? params : undefined }
+  if (isFileHostname(url.hostname)) {
+    return { filePath: target, title, params: hasParams ? params : undefined }
   }
-
   return null
 }
 

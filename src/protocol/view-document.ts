@@ -204,3 +204,24 @@ export function isViewDocumentRequest(url: URL): boolean {
 
   return true;
 }
+
+// Coerce agent-supplied URL strings to the canonical `agentview://view|file/...`
+// shape. Agents occasionally invent the scheme (`agentwfy://`) or pluralize
+// the host (`views`/`files`); both normally make tab-open silently fail.
+export function normalizeAgentViewUrl(href: string): URL | null {
+  const normalized = href.startsWith('agentwfy://')
+    ? 'agentview://' + href.slice('agentwfy://'.length)
+    : href;
+  if (!normalized.startsWith('agentview://')) return null;
+
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    return null;
+  }
+
+  if (url.hostname === 'views') url.hostname = 'view';
+  else if (url.hostname === 'files') url.hostname = 'file';
+  return url;
+}
