@@ -1014,12 +1014,24 @@ export class TabViewManager {
       // tab is already attached and selected, leaving a zombie tab that
       // occludes the previous one and hangs execTabJs/devtools. Validate up
       // front so callers get a synchronous error instead.
+      let parsed: URL;
       try {
-        new URL(target);
+        parsed = new URL(target);
       } catch {
         const looksLikePath = target.startsWith('/') || target.startsWith('./') || target.startsWith('file/');
         const hint = looksLikePath ? ' Did you mean to pass filePath instead of url?' : '';
         throw new Error(`openTab url must be an absolute URL with a scheme (got ${JSON.stringify(target)}).${hint}`);
+      }
+      // An unknown scheme (`view://`, `agent://`, …) parses fine but loadURL
+      // rejects with ERR_UNKNOWN_URL_SCHEME asynchronously — the catch on
+      // loadURL below merely logs it, so the agent sees a blank tab with no
+      // error. Reject up front with a hint pointing at the right field.
+      const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:', 'file:', 'agentview:']);
+      if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
+        const hint = parsed.protocol === 'view:'
+          ? ' Did you mean to pass viewName instead of url, or use the agentview://view/<viewName> form?'
+          : '';
+        throw new Error(`openTab url scheme "${parsed.protocol}" is not supported (got ${JSON.stringify(target)}). Use http(s):, file:, or agentview:.${hint}`);
       }
     } else if (type === 'file') {
       target = request.filePath!;
