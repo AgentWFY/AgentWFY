@@ -1,0 +1,866 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Finder</title>
+<style>
+:root {
+  --row-h: 24px;
+  --indent: 14px;
+  --sidebar-w: 196px;
+  --toolbar-h: 38px;
+  --preview-w: 50%;
+}
+html, body { height: 100%; }
+body {
+  display: grid;
+  grid-template-columns: 1fr 5px var(--preview-w);
+  grid-template-rows: var(--toolbar-h) 1fr;
+  grid-template-areas:
+    "toolbar toolbar  toolbar"
+    "tree    splitter preview";
+  height: 100vh;
+  font-size: 12.5px;
+  overflow: hidden;
+  color: var(--color-text3);
+  user-select: none;
+}
+.ic { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.78; }
+.ic-folder { color: var(--color-accent); opacity: 0.9; }
+
+/* Toolbar */
+.toolbar {
+  grid-area: toolbar;
+  background: var(--color-bg1);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 4px;
+}
+.nav-btn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  color: var(--color-text3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.nav-btn:hover:not(:disabled) { background: var(--color-bg3); }
+.nav-btn:disabled { opacity: 0.35; cursor: default; }
+.breadcrumb {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 6px;
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.crumb {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text3);
+  transition: background var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.crumb:hover { background: var(--color-bg3); color: var(--color-text4); }
+.crumb.last { color: var(--color-text4); font-weight: 500; cursor: default; }
+.crumb.last:hover { background: transparent; }
+.sep { color: var(--color-text1); opacity: 0.5; font-size: 11px; }
+.search-wrap { position: relative; display: flex; align-items: center; }
+.search-wrap .ic { position: absolute; left: 8px; pointer-events: none; opacity: 0.55; }
+.search {
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  padding: 4px 8px 4px 26px;
+  color: var(--color-text3);
+  font: inherit;
+  font-size: 12px;
+  width: 160px;
+  outline: none;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.search::placeholder { color: var(--color-placeholder); }
+.search:focus { border-color: var(--color-focus-border); background: var(--color-bg1); }
+
+/* Tree pane */
+.tree-pane {
+  grid-area: tree;
+  overflow: auto;
+  background: var(--color-bg1);
+  padding: 4px 0 24px;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--row-h);
+  padding-right: 12px;
+  cursor: default;
+  color: var(--color-text3);
+  position: relative;
+  white-space: nowrap;
+}
+.tree-row:hover { background: var(--color-item-hover); }
+.tree-row.selected {
+  background: var(--color-selection-bg);
+  color: var(--color-selection-fg);
+}
+.tree-row.selected .ic { opacity: 1; }
+.tree-row.selected .ic-folder { color: var(--color-selection-fg); }
+.tree-row .disclosure {
+  width: 14px; height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--color-text2);
+  transition: transform 120ms ease-out, color var(--transition-fast);
+  border-radius: 3px;
+}
+.tree-row .disclosure:hover { color: var(--color-text4); background: var(--color-bg3); }
+.tree-row .disclosure svg { width: 9px; height: 9px; }
+.tree-row.selected .disclosure { color: var(--color-selection-fg); opacity: 0.75; }
+.tree-row.selected .disclosure:hover { opacity: 1; background: rgba(255, 255, 255, 0.18); }
+.tree-row .disclosure.open { transform: rotate(90deg); }
+.tree-row .disclosure.placeholder { cursor: default; visibility: hidden; }
+.tree-row .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-weight: 450;
+  color: var(--color-text4);
+}
+.tree-row.selected .name { color: var(--color-selection-fg); }
+.tree-row .col-size,
+.tree-row .col-modified {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-text2);
+  flex-shrink: 0;
+  text-align: right;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+}
+.tree-row .col-size { width: 64px; }
+.tree-row .col-modified { width: 78px; margin-left: 4px; }
+.tree-row:hover .col-size, .tree-row:hover .col-modified { opacity: 0.95; }
+.tree-row.selected .col-size,
+.tree-row.selected .col-modified { color: var(--color-selection-fg); opacity: 0.95; }
+.tree-row.loading .name::after {
+  content: '…';
+  color: var(--color-text1);
+  margin-left: 6px;
+}
+.tree-row.error .name { color: var(--color-red-fg); }
+
+/* Splitter */
+.splitter {
+  grid-area: splitter;
+  background: transparent;
+  border-left: 1px solid var(--color-border);
+  cursor: col-resize;
+  position: relative;
+  z-index: 2;
+}
+.splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 -2px;
+}
+.splitter:hover { background: var(--color-accent); opacity: 0.5; }
+
+/* Preview pane */
+.preview {
+  grid-area: preview;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg2);
+  overflow: hidden;
+  min-width: 0;
+}
+.preview-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg2);
+  flex-shrink: 0;
+}
+.preview-header .filename {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-header .path {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-text2);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-header .meta-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text2);
+}
+.preview-header .meta-row span b {
+  color: var(--color-text3);
+  font-weight: 500;
+}
+.preview-body {
+  flex: 1;
+  overflow: auto;
+  background: var(--color-bg1);
+  user-select: text;
+}
+.preview-body pre {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--color-text3);
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+.preview-body img {
+  max-width: 100%;
+  display: block;
+  margin: 12px auto;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+.preview-empty, .preview-loading, .preview-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text2);
+  gap: 10px;
+}
+.preview-empty .ic, .preview-loading .ic { width: 32px; height: 32px; opacity: 0.4; }
+.preview-error { color: var(--color-red-fg); font-family: var(--font-mono); font-size: 11.5px; }
+.preview-folder-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--color-text2);
+}
+.preview-folder-info .ic-folder { width: 56px; height: 56px; opacity: 0.55; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text1); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-back" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M10 3.5 5.5 8 10 12.5"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M6 3.5 10.5 8 6 12.5"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 6 8 1.5 12.5 6 M8 1.5V14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-home" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M2.5 7 8 2.5 13.5 7v6.5H2.5V7Z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path fill="currentColor" d="M1.75 3.5A1.25 1.25 0 0 1 3 2.25h3.04a1.25 1.25 0 0 1 .87.35l.95.92c.23.22.54.34.87.34H13a1.25 1.25 0 0 1 1.25 1.25V12A1.25 1.25 0 0 1 13 13.25H3A1.25 1.25 0 0 1 1.75 12V3.5Z"/></symbol>
+  <symbol id="i-folder-o" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M1.75 4.5A1.25 1.25 0 0 1 3 3.25h3.04a1.25 1.25 0 0 1 .87.35l.95.92c.23.22.54.34.87.34H13a1.25 1.25 0 0 1 1.25 1.25V12A1.25 1.25 0 0 1 13 13.25H3A1.25 1.25 0 0 1 1.75 12V4.5Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M3.75 1.75h6L13 5v9.25H3.75V1.75Z M9.5 1.75v3.5h3.25"/></symbol>
+  <symbol id="i-code" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M3.75 1.75h6L13 5v9.25H3.75V1.75Z M9.5 1.75v3.5h3.25"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="m6.8 8.7-1.3 1.3 1.3 1.3 M9.2 8.7l1.3 1.3-1.3 1.3"/></symbol>
+  <symbol id="i-text" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M3.75 1.75h6L13 5v9.25H3.75V1.75Z M9.5 1.75v3.5h3.25"/><path stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M5.5 8.5h5 M5.5 10.5h5 M5.5 12h3"/></symbol>
+  <symbol id="i-image" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.25" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="7" r="1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="m2.5 11 3-3 2.5 2.5L11 7l3 3"/></symbol>
+  <symbol id="i-window" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.25" fill="none" stroke="currentColor" stroke-width="1.4"/><path stroke="currentColor" stroke-width="1.4" d="M2 6h12"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M5 2.5h2.25a.75.75 0 0 1 .75.75v.5a1.25 1.25 0 0 0 2.5 0v-.5a.75.75 0 0 1 .75-.75h2v3a.75.75 0 0 0 .75.75h.5a1.25 1.25 0 0 1 0 2.5h-.5a.75.75 0 0 0-.75.75v3h-3a.75.75 0 0 1-.75-.75v-.5a1.25 1.25 0 0 0-2.5 0v.5a.75.75 0 0 1-.75.75h-3v-3a.75.75 0 0 0-.75-.75h-.5a1.25 1.25 0 0 1 0-2.5h.5a.75.75 0 0 0 .75-.75V2.5Z"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M8 1.5v2 M8 12.5v2 M14.5 8h-2 M3.5 8h-2 M12.6 3.4l-1.4 1.4 M4.8 11.2l-1.4 1.4 M12.6 12.6l-1.4-1.4 M4.8 4.8 3.4 3.4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M3.75 1.75h6L13 5v9.25H3.75V1.75Z M9.5 1.75v3.5h3.25"/><path stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M5.75 8.25h4.5 M5.75 10.25h4.5 M5.75 12.25h2.5"/></symbol>
+  <symbol id="i-database" viewBox="0 0 16 16"><ellipse cx="8" cy="3.5" rx="5" ry="1.75" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M3 3.5v9c0 .97 2.24 1.75 5 1.75s5-.78 5-1.75v-9 M3 8c0 .97 2.24 1.75 5 1.75S13 8.97 13 8"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 8 8"><path d="M2.5 1.5 5.5 4 2.5 6.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+</svg>
+
+<header class="toolbar">
+  <button class="nav-btn" id="back" title="Back" aria-label="Back"><svg class="ic"><use href="#i-back"/></svg></button>
+  <button class="nav-btn" id="forward" title="Forward" aria-label="Forward"><svg class="ic"><use href="#i-fwd"/></svg></button>
+  <button class="nav-btn" id="up" title="Up one level" aria-label="Up"><svg class="ic"><use href="#i-up"/></svg></button>
+  <nav class="breadcrumb" id="breadcrumb"></nav>
+  <div class="search-wrap">
+    <svg class="ic"><use href="#i-search"/></svg>
+    <input type="text" class="search" id="search" placeholder="Filter" />
+  </div>
+</header>
+<div class="tree-pane" id="treePane"></div>
+<div class="splitter" id="splitter"></div>
+<aside class="preview" id="preview"></aside>
+<script>
+(function(){
+  const aw = window.agentwfy;
+
+  const TEXT_EXTS = new Set(['js','mjs','cjs','ts','tsx','jsx','json','jsonc','yaml','yml','toml','html','htm','css','scss','sass','less','sh','bash','zsh','fish','py','rb','go','rs','java','kt','swift','c','cpp','h','hpp','php','pl','lua','sql','md','txt','rst','markdown','log','xml','env','ini','conf','cfg','gitignore','gitattributes','editorconfig','dockerfile','makefile','tool-versions','lock']);
+  const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','ico','bmp','svg']);
+
+  // ─── State ──────────────────────────────────────────────────────────────
+  const state = {
+    rootCache: new Map(),
+    rootPath: null,
+    selected: null,    // node
+    filter: '',
+    history: [],       // root paths
+    historyIdx: -1,
+    preview: { kind: 'empty' },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const svg = (id, cls = 'ic') => '<svg class="' + cls + '"><use href="#' + id + '"/></svg>';
+
+  // ─── Tree node helpers ──────────────────────────────────────────────────
+  function makeNode({ name, fullPath, isDir, parent = null, expanded = false, size = null, mtime = null }) {
+    return {
+      name, fullPath, isDir, parent,
+      size, mtime,
+      children: isDir ? null : undefined, // null = unloaded
+      expanded, loading: false, error: null,
+    };
+  }
+
+  function classifyByName(name) {
+    const lower = name.toLowerCase();
+    const dot = lower.lastIndexOf('.');
+    const ext = dot >= 0 ? lower.slice(dot + 1) : '';
+    if (lower.startsWith('.') && dot === 0) return { kind: 'text', icon: 'i-text', label: lower.slice(1).toUpperCase() || 'File' };
+    if (IMAGE_EXTS.has(ext)) return { kind: 'image', icon: 'i-image', label: ext.toUpperCase() };
+    if (TEXT_EXTS.has(ext) || !ext) return { kind: 'text', icon: extIcon(ext), label: (ext || 'File').toUpperCase() };
+    return { kind: 'binary', icon: 'i-file', label: ext.toUpperCase() };
+  }
+  function extIcon(ext) {
+    if (['md','txt','rst','markdown','log'].includes(ext)) return 'i-text';
+    if (['json','jsonc','yaml','yml','toml','xml','ini','conf','cfg','env'].includes(ext)) return 'i-code';
+    if (['js','mjs','cjs','ts','tsx','jsx','sh','py','rb','go','rs','c','cpp','h','java','kt','swift','sql'].includes(ext)) return 'i-code';
+    if (['html','htm','css','scss','sass','less'].includes(ext)) return 'i-code';
+    return 'i-file';
+  }
+
+  async function loadEntries(path) {
+    if (path === '@') {
+      const items = await aw.ls({ path: '@' });
+      return items.map(t => ({ name: '@' + t.replace(/\/$/, ''), isDir: true, fullPath: '@' + t.replace(/\/$/, '') }));
+    }
+    const items = await aw.ls({ path });
+    const entries = items.map(name => {
+      const dir = name.endsWith('/');
+      const clean = dir ? name.slice(0, -1) : name;
+      let fullPath;
+      if (path.startsWith('@')) fullPath = path + '/' + clean;
+      else if (path === '.' || path === '') fullPath = clean;
+      else fullPath = path + '/' + clean;
+      return { name: clean, isDir: dir, fullPath };
+    });
+    // At the filesystem root, also include the @-tables as virtual folders
+    if (path === '.' || path === '') {
+      try {
+        const tables = await aw.ls({ path: '@' });
+        for (const t of tables) {
+          const clean = t.replace(/\/$/, '');
+          entries.push({ name: '@' + clean, isDir: true, fullPath: '@' + clean });
+        }
+      } catch {}
+    }
+    // Merge in size + modified time for each entry
+    try {
+      const stats = await fetchStats(path);
+      for (const e of entries) {
+        const s = stats.get(e.name);
+        if (s) { e.size = s.size; e.mtime = s.mtime; }
+      }
+    } catch {}
+    return entries;
+  }
+
+  // Built-in functions only expose size/mtime for DB-backed @table entries (via runSql).
+  // Filesystem files have no built-in stat API, so size/modified columns stay empty for them.
+  async function fetchStats(path) {
+    const map = new Map();
+    try {
+      if (!path || !path.startsWith('@') || path === '@') return map;
+      const parts = path.split('/');
+      const table = parts[0].slice(1);
+      const validTables = ['views', 'docs', 'modules', 'tasks', 'triggers', 'plugins', 'config'];
+      if (parts.length === 1 && validTables.includes(table)) {
+        const rows = await aw.runSql({
+          target: 'agent',
+          sql: 'SELECT name, length(content) AS size, updated_at AS mtime FROM ' + table,
+        });
+        for (const r of rows) map.set(r.name, { size: r.size, mtime: r.mtime });
+      }
+    } catch (e) { /* stats unavailable; columns will render empty */ }
+    return map;
+  }
+
+  function sortChildren(node) {
+    if (!node.children) return;
+    node.children.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      // Put @-prefixed virtual folders after regular folders
+      const aAt = a.name.startsWith('@'), bAt = b.name.startsWith('@');
+      if (aAt !== bAt) return aAt ? 1 : -1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+  }
+
+  async function loadChildren(node) {
+    if (!node.isDir || node.children !== null) return;
+    node.loading = true;
+    renderTree();
+    try {
+      const items = await loadEntries(node.fullPath);
+      node.children = items.map(it => makeNode({ ...it, parent: node }));
+      sortChildren(node);
+      node.error = null;
+    } catch (e) {
+      node.error = e.message || String(e);
+      node.children = [];
+    } finally {
+      node.loading = false;
+    }
+    renderTree();
+  }
+
+  async function toggle(node) {
+    if (!node.isDir) return;
+    if (!node.expanded && node.children === null) await loadChildren(node);
+    node.expanded = !node.expanded;
+    renderTree();
+  }
+
+  // ─── Breadcrumb ─────────────────────────────────────────────────────────
+  function renderBreadcrumb() {
+    const bc = $('breadcrumb');
+    bc.innerHTML = '';
+    const node = state.selected;
+    const chain = [];
+    if (state.rootPath) {
+      const root = state.rootCache.get(state.rootPath);
+      if (root) {
+        let cur = node || root;
+        const path = [];
+        while (cur) { path.unshift(cur); cur = cur.parent; }
+        for (const n of path) chain.push(n);
+      }
+    }
+    if (chain.length === 0) return;
+    chain.forEach((n, i) => {
+      if (i > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = '›';
+        bc.appendChild(sep);
+      }
+      const isLast = i === chain.length - 1;
+      const span = document.createElement('span');
+      span.className = 'crumb' + (isLast ? ' last' : '');
+      if (i === 0) {
+        const ic = state.rootPath === '.' ? 'i-home' : (state.rootPath.startsWith('@') ? iconForRoot(state.rootPath) : 'i-folder');
+        span.innerHTML = svg(ic) + '<span>' + escapeHtml(n.name) + '</span>';
+      } else {
+        span.textContent = n.name;
+      }
+      if (!isLast) span.addEventListener('click', () => selectNode(n));
+      bc.appendChild(span);
+    });
+  }
+  function iconForRoot(p) {
+    if (p === '@views') return 'i-window';
+    if (p === '@docs') return 'i-doc';
+    if (p === '@modules') return 'i-puzzle';
+    if (p === '@tasks') return 'i-cog';
+    return 'i-database';
+  }
+
+  // ─── Tree rendering ─────────────────────────────────────────────────────
+  function renderTree() {
+    const pane = $('treePane');
+    const scrollTop = pane.scrollTop;
+    pane.innerHTML = '';
+    const root = state.rootCache.get(state.rootPath);
+    if (!root) return;
+
+    const flat = [];
+    if (root.children) {
+      for (const c of root.children) walk(c, 0, flat);
+    }
+    const filter = state.filter.trim().toLowerCase();
+    const visible = filter
+      ? flat.filter(({ node }) => node.name.toLowerCase().includes(filter))
+      : flat;
+
+    for (const { node, depth } of visible) {
+      pane.appendChild(makeRow(node, depth));
+    }
+    pane.scrollTop = scrollTop;
+  }
+
+  function walk(node, depth, out) {
+    out.push({ node, depth });
+    if (node.isDir && node.expanded && node.children) {
+      for (const c of node.children) walk(c, depth + 1, out);
+    }
+  }
+
+  function makeRow(node, depth) {
+    const row = document.createElement('div');
+    row.className = 'tree-row';
+    if (state.selected === node) row.classList.add('selected');
+    if (node.loading) row.classList.add('loading');
+    if (node.error) row.classList.add('error');
+
+    const indent = depth * 14 + 6;
+    row.style.paddingLeft = indent + 'px';
+
+    // Disclosure
+    const disc = document.createElement('span');
+    disc.className = 'disclosure' + (node.expanded ? ' open' : '') + (node.isDir ? '' : ' placeholder');
+    disc.innerHTML = svg('i-chevron');
+    if (node.isDir) {
+      disc.addEventListener('click', (e) => { e.stopPropagation(); toggle(node); });
+    }
+    row.appendChild(disc);
+
+    // Icon
+    let iconId, iconCls = 'ic';
+    if (node.isDir) {
+      iconId = 'i-folder';
+      iconCls = 'ic ic-folder';
+    } else {
+      iconId = classifyByName(node.name).icon;
+    }
+    const ic = document.createElement('span');
+    ic.innerHTML = svg(iconId, iconCls);
+    row.appendChild(ic.firstElementChild);
+
+    // Name
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = node.name;
+    row.appendChild(nm);
+
+    // Size
+    const sz = document.createElement('span');
+    sz.className = 'col-size';
+    sz.textContent = (!node.isDir && node.size != null) ? fmtSize(node.size) : '';
+    row.appendChild(sz);
+
+    // Modified
+    const md = document.createElement('span');
+    md.className = 'col-modified';
+    md.textContent = node.mtime != null ? fmtModified(node.mtime) : '';
+    row.appendChild(md);
+
+    row.addEventListener('click', () => selectNode(node));
+    row.addEventListener('dblclick', () => {
+      if (node.isDir) toggle(node);
+      else openNodeExternal(node);
+    });
+    return row;
+  }
+
+  function selectNode(node) {
+    state.selected = node;
+    renderTree();
+    renderBreadcrumb();
+    loadPreview(node);
+  }
+
+  async function openNodeExternal(node) {
+    try {
+      if (node.fullPath.startsWith('@views/')) {
+        await aw.openTab({ viewName: node.fullPath.slice('@views/'.length) });
+      } else {
+        await aw.openTab({ filePath: node.fullPath });
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // ─── Preview ────────────────────────────────────────────────────────────
+  function setPreview(p) { state.preview = p; renderPreview(); }
+
+  async function loadPreview(node) {
+    if (!node) { setPreview({ kind: 'empty' }); return; }
+    if (node.isDir) {
+      // Make sure children are loaded for a count
+      if (node.children === null) {
+        setPreview({ kind: 'folder-loading', node });
+        await loadChildren(node);
+      }
+      setPreview({ kind: 'folder', node });
+      return;
+    }
+    const cls = classifyByName(node.name);
+    setPreview({ kind: 'loading', node });
+    try {
+      if (cls.kind === 'image' && !node.fullPath.startsWith('@')) {
+        if (cls.label === 'SVG') {
+          const text = await aw.read({ path: node.fullPath });
+          setPreview({ kind: 'image-svg', node, text });
+        } else {
+          const r = await aw.read({ path: node.fullPath, asBase64: true });
+          setPreview({ kind: 'image', node, mimeType: r.mimeType, base64: r.base64, size: r.size });
+        }
+      } else if (cls.kind === 'binary') {
+        // Try reading as text first; fall back to binary metadata
+        try {
+          const text = await aw.read({ path: node.fullPath });
+          setPreview({ kind: 'text', node, text, label: cls.label });
+        } catch {
+          const r = await aw.read({ path: node.fullPath, asBase64: true });
+          setPreview({ kind: 'binary', node, mimeType: r.mimeType, size: r.size, label: cls.label });
+        }
+      } else {
+        const text = await aw.read({ path: node.fullPath });
+        setPreview({ kind: 'text', node, text, label: cls.label });
+      }
+    } catch (e) {
+      setPreview({ kind: 'error', node, error: e.message || String(e) });
+    }
+  }
+
+  function fmtSize(n) {
+    if (n == null) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(2) + ' MB';
+  }
+
+  function fmtModified(ts) {
+    if (ts == null) return '';
+    const d = new Date(ts * 1000);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const sameDay = d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+    if (sameDay) {
+      return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthDay = months[d.getMonth()] + ' ' + d.getDate();
+    if (d.getFullYear() === now.getFullYear()) return monthDay;
+    return monthDay + ' ' + String(d.getFullYear()).slice(-2);
+  }
+
+  function renderPreview() {
+    const el = $('preview');
+    const p = state.preview;
+    if (p.kind === 'empty') {
+      el.innerHTML = '<div class="preview-empty">' + svg('i-eye', 'ic') + '<div>No selection</div><div style="font-size:11px;opacity:0.7">Choose a file to preview</div></div>';
+      return;
+    }
+    const node = p.node;
+    const headerIcon = node.isDir ? svg('i-folder', 'ic ic-folder') : svg(classifyByName(node.name).icon);
+    const header =
+      '<div class="preview-header">' +
+        '<div class="filename">' + headerIcon + '<span>' + escapeHtml(node.name) + '</span></div>' +
+        '<div class="path">' + escapeHtml(node.fullPath) + '</div>' +
+        previewMetaRow(p) +
+      '</div>';
+
+    let body = '';
+    if (p.kind === 'loading' || p.kind === 'folder-loading') {
+      body = '<div class="preview-loading">' + svg('i-eye', 'ic') + '<div>Loading…</div></div>';
+    } else if (p.kind === 'error') {
+      body = '<div class="preview-error">' + escapeHtml(p.error) + '</div>';
+    } else if (p.kind === 'folder') {
+      const n = node.children?.length ?? 0;
+      const dirs = node.children?.filter(c => c.isDir).length ?? 0;
+      const files = n - dirs;
+      body = '<div class="preview-folder-info">' +
+        svg('i-folder', 'ic ic-folder') +
+        '<div style="font-size:14px;color:var(--color-text4)">' + escapeHtml(node.name) + '</div>' +
+        '<div>' + n + ' item' + (n === 1 ? '' : 's') + '</div>' +
+        '<div style="font-size:11px;opacity:0.8">' + dirs + ' folder' + (dirs === 1 ? '' : 's') + ' · ' + files + ' file' + (files === 1 ? '' : 's') + '</div>' +
+        '</div>';
+    } else if (p.kind === 'text') {
+      body = '<div class="preview-body"><pre>' + escapeHtml(p.text || '') + '</pre></div>';
+    } else if (p.kind === 'image') {
+      body = '<div class="preview-body"><img src="data:' + p.mimeType + ';base64,' + p.base64 + '" alt="' + escapeHtml(node.name) + '"/></div>';
+    } else if (p.kind === 'image-svg') {
+      const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(p.text)));
+      body = '<div class="preview-body"><img src="' + dataUrl + '" alt="' + escapeHtml(node.name) + '"/></div>';
+    } else if (p.kind === 'binary') {
+      body = '<div class="preview-empty">' + svg('i-file', 'ic') + '<div>Binary file</div><div style="font-size:11px;opacity:0.8">' + escapeHtml(p.label || '') + ' · ' + fmtSize(p.size) + '</div></div>';
+    }
+    el.innerHTML = header + body;
+  }
+
+  function previewMetaRow(p) {
+    const node = p.node;
+    const items = [];
+    if (node.isDir) {
+      const n = node.children?.length;
+      if (n != null) items.push('<span><b>' + n + '</b> items</span>');
+      items.push('<span>Folder</span>');
+    } else {
+      const cls = classifyByName(node.name);
+      items.push('<span>' + escapeHtml(cls.label) + '</span>');
+      if (p.kind === 'text' && typeof p.text === 'string') {
+        items.push('<span><b>' + p.text.length.toLocaleString() + '</b> chars</span>');
+        const lines = (p.text.match(/\n/g) || []).length + 1;
+        items.push('<span><b>' + lines.toLocaleString() + '</b> lines</span>');
+      } else if ((p.kind === 'image' || p.kind === 'binary') && p.size != null) {
+        items.push('<span>' + fmtSize(p.size) + '</span>');
+      }
+    }
+    if (items.length === 0) return '';
+    return '<div class="meta-row">' + items.join('') + '</div>';
+  }
+
+  // ─── Navigation ─────────────────────────────────────────────────────────
+  async function setRoot(path, fromHistory = false) {
+    state.rootPath = path;
+    if (!state.rootCache.has(path)) {
+      let name = path === '.' ? 'Root' : path.split('/').pop() || path;
+      if (path === '@') name = 'Database';
+      const root = makeNode({ name, fullPath: path, isDir: true, expanded: true });
+      state.rootCache.set(path, root);
+      await loadChildren(root);
+    }
+    state.selected = state.rootCache.get(path);
+    if (!fromHistory) {
+      state.history = state.history.slice(0, state.historyIdx + 1);
+      state.history.push(path);
+      state.historyIdx = state.history.length - 1;
+    }
+    updateNavBtns();
+    renderTree();
+    renderBreadcrumb();
+    loadPreview(state.selected);
+  }
+
+  function updateNavBtns() {
+    $('back').disabled = state.historyIdx <= 0;
+    $('forward').disabled = state.historyIdx >= state.history.length - 1;
+    $('up').disabled = !(state.selected && state.selected.parent);
+  }
+
+  $('back').addEventListener('click', () => {
+    if (state.historyIdx > 0) {
+      state.historyIdx--;
+      setRoot(state.history[state.historyIdx], true);
+    }
+  });
+  $('forward').addEventListener('click', () => {
+    if (state.historyIdx < state.history.length - 1) {
+      state.historyIdx++;
+      setRoot(state.history[state.historyIdx], true);
+    }
+  });
+  $('up').addEventListener('click', () => {
+    if (state.selected && state.selected.parent) selectNode(state.selected.parent);
+  });
+
+  $('search').addEventListener('input', (e) => {
+    state.filter = e.target.value;
+    renderTree();
+  });
+
+  // ─── Keyboard ───────────────────────────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    const inSearch = document.activeElement && document.activeElement.id === 'search';
+    if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); $('search').focus(); return; }
+    if (inSearch) return;
+    const sel = state.selected;
+    if (!sel) return;
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (sel.isDir && !sel.expanded) toggle(sel);
+      else if (sel.isDir && sel.children?.length) selectNode(sel.children[0]);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (sel.isDir && sel.expanded) toggle(sel);
+      else if (sel.parent) selectNode(sel.parent);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSelection(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sel.isDir) toggle(sel);
+      else openNodeExternal(sel);
+    }
+  });
+
+  function moveSelection(delta) {
+    const root = state.rootCache.get(state.rootPath);
+    if (!root) return;
+    const flat = [];
+    if (root.children) for (const c of root.children) walk(c, 0, flat);
+    const visible = flat.map(x => x.node);
+    if (!visible.length) return;
+    const i = visible.indexOf(state.selected);
+    let j;
+    if (i === -1) j = delta > 0 ? 0 : visible.length - 1;
+    else j = Math.max(0, Math.min(visible.length - 1, i + delta));
+    if (visible[j]) selectNode(visible[j]);
+    requestAnimationFrame(() => {
+      const sel = document.querySelector('.tree-row.selected');
+      if (sel) sel.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  // ─── Splitter ───────────────────────────────────────────────────────────
+  (function setupSplitter(){
+    const sp = $('splitter');
+    let dragging = false;
+    sp.addEventListener('mousedown', (e) => {
+      dragging = true;
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const w = window.innerWidth - e.clientX;
+      const clamped = Math.min(Math.max(220, w), Math.max(280, window.innerWidth - 360));
+      document.body.style.setProperty('--preview-w', clamped + 'px');
+    });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+    });
+  })();
+
+  // ─── Init ───────────────────────────────────────────────────────────────
+  setRoot('.');
+})();
+</script>
+</body>
+</html>
