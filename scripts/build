@@ -63,10 +63,12 @@ const tsgo = join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 
 execSync(`"${tsgo}"`, { cwd: root, stdio: 'inherit' })
 
 // The renderer is served via the `app://` protocol which roots at
-// dist/renderer/. Mirror system-config/keys.js into dist/renderer/ so
-// renderer modules can resolve `../../system-config/keys.js` at runtime.
+// dist/renderer/. Mirror modules imported via `../../` paths into
+// dist/renderer/ so the URL resolution finds them at runtime.
 mkdirSync(join(dist, 'renderer', 'system-config'), { recursive: true })
 cpSync(join(dist, 'system-config', 'keys.js'), join(dist, 'renderer', 'system-config', 'keys.js'))
+mkdirSync(join(dist, 'renderer', 'protocol'), { recursive: true })
+cpSync(join(dist, 'protocol', 'view-document.js'), join(dist, 'renderer', 'protocol', 'view-document.js'))
 
 // ── Preload bundling ──
 

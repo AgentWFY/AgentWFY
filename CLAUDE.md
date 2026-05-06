@@ -31,6 +31,8 @@ The app runs as three Electron process types:
 
 tsgo (native TypeScript compiler) compiles all source files to `dist/`, preserving the `src/` directory structure. No bundling — each `.ts` file produces a corresponding `.js` file. Build script at `scripts/build`. System docs, views, and config are compiled from source files into `dist/` during build. Electron and tsgo binaries are downloaded to `vendor/` by `scripts/setup`.
 
+The renderer is served via the `app://` protocol rooted at `dist/renderer/`, so any **runtime** import in `src/renderer/**` from a sibling top-level dir (e.g. `../../protocol/foo.js`) needs that file mirrored into `dist/renderer/` by `scripts/build` — otherwise the browser hits `ERR_FILE_NOT_FOUND` and the renderer fails to load, leaving only tab content visible. Type-only imports (`import type`) are erased and don't need mirroring. See the existing `system-config/keys.js` and `protocol/view-document.js` mirrors in `scripts/build`.
+
 ### Key Subsystems
 
 **Agent (`src/agent/`)**: Core `Agent` class streams LLM responses via events (`agent_start`, `stream_update`, `agent_end`). The only tool agents can call is `execJs`. `AgentSessionManager` tracks active sessions in memory and lazy-loads idle sessions from disk (`.agentwfy/sessions/*.json`). Provider state (not display messages) is persisted; display state is rebuilt on restore.
