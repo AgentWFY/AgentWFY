@@ -1061,7 +1061,11 @@ export class TabViewManager {
     // waiting for a renderer round-trip (which is gated by requestAnimationFrame
     // and gets severely throttled when the window is in the background).
     const state = this.ensureTabViewState(tabId, target, { tabType: type });
-    this.applyTabViewPlacement(state, this.defaultContentBounds(), !isHidden);
+    // Use last-known content bounds as the placeholder; full-window bounds
+    // here would fully occlude the renderer's WebContentsView, and Windows
+    // Chromium pauses RAF for occluded contents — the renderer would then
+    // never run scheduleBoundsSync to report the correct rect.
+    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), !isHidden);
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {

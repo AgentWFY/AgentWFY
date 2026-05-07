@@ -15,6 +15,7 @@ export class TlTabView extends HTMLElement {
   private errorEl: HTMLDivElement | null = null
   private containerEl: HTMLDivElement | null = null
   private pendingBoundsAnimationFrame: number | null = null
+  private pendingBoundsFallbackTimeout: number | null = null
   private wrapperResizeObserver: ResizeObserver | null = null
   private parentVisibilityObserver: MutationObserver | null = null
   private unsubscribeTabViewEvents: (() => void) | null = null
@@ -89,6 +90,11 @@ export class TlTabView extends HTMLElement {
     if (this.pendingBoundsAnimationFrame !== null) {
       cancelAnimationFrame(this.pendingBoundsAnimationFrame)
       this.pendingBoundsAnimationFrame = null
+    }
+
+    if (this.pendingBoundsFallbackTimeout !== null) {
+      clearTimeout(this.pendingBoundsFallbackTimeout)
+      this.pendingBoundsFallbackTimeout = null
     }
 
     if (this.wrapperResizeObserver) {
@@ -251,14 +257,27 @@ export class TlTabView extends HTMLElement {
   }
 
   private scheduleBoundsSync() {
-    if (this.pendingBoundsAnimationFrame !== null) {
+    if (this.pendingBoundsAnimationFrame !== null || this.pendingBoundsFallbackTimeout !== null) {
       return
     }
 
-    this.pendingBoundsAnimationFrame = requestAnimationFrame(() => {
+    this.pendingBoundsAnimationFrame = requestAnimationFrame(() => this.runScheduledBoundsSync())
+    // Fallback for when RAF is throttled. Windows Chromium pauses RAF when
+    // the renderer is fully occluded by another WebContentsView, which would
+    // otherwise deadlock the bounds-sync loop. setTimeout still fires.
+    this.pendingBoundsFallbackTimeout = window.setTimeout(() => this.runScheduledBoundsSync(), 100)
+  }
+
+  private runScheduledBoundsSync() {
+    if (this.pendingBoundsAnimationFrame !== null) {
+      cancelAnimationFrame(this.pendingBoundsAnimationFrame)
       this.pendingBoundsAnimationFrame = null
-      this.syncTabViewBounds()
-    })
+    }
+    if (this.pendingBoundsFallbackTimeout !== null) {
+      clearTimeout(this.pendingBoundsFallbackTimeout)
+      this.pendingBoundsFallbackTimeout = null
+    }
+    this.syncTabViewBounds()
   }
 
   private syncTabViewBounds() {
