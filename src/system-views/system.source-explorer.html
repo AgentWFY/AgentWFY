@@ -558,7 +558,7 @@ function fmtDate(ts) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
-function fmtTimeout(ms) { return !ms ? 'default' : ms >= 60000 ? (ms / 60000) + 'm' : (ms / 1000) + 's'; }
+function fmtTimeout(ms) { return !ms ? 'no limit' : ms >= 60000 ? (ms / 60000) + 'm' : (ms / 1000) + 's'; }
 function lineNums(c) { const n = (c || '').split('\n').length; return Array.from({ length: n }, (_, i) => i + 1).join('\n'); }
 
 function detectLang(item) {

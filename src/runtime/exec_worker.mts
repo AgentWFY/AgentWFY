@@ -183,16 +183,6 @@ function withTimeoutAndAbort<T>(
   signal: AbortSignal,
   requestId: string,
 ): Promise<T> {
-  const timeoutPromise = new Promise<T>((_, reject) => {
-    const timerId = setTimeout(() => {
-      const base = formatTimeoutError('execJs', timeoutMs, wasDefault, MAX_EXEC_TIMEOUT_MS)
-      const inFlight = summarizeInFlightHostCalls(requestId, Date.now())
-      reject(new Error(inFlight ? `${base} ${inFlight}` : base))
-    }, timeoutMs)
-
-    promise.finally(() => clearTimeout(timerId)).catch(() => {})
-  })
-
   const abortPromise = new Promise<T>((_, reject) => {
     if (signal.aborted) {
       reject(new Error('JavaScript execution aborted'))
@@ -206,6 +196,23 @@ function withTimeoutAndAbort<T>(
       },
       { once: true }
     )
+  })
+
+  // timeoutMs <= 0 means the host opted this run out of timeouts (e.g. a task
+  // with timeout_ms = NULL such as a long-polling bot). Skip the timer entirely
+  // — abort + natural completion are the only ways the run can end.
+  if (timeoutMs <= 0) {
+    return Promise.race([promise, abortPromise])
+  }
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    const timerId = setTimeout(() => {
+      const base = formatTimeoutError('execJs', timeoutMs, wasDefault, MAX_EXEC_TIMEOUT_MS)
+      const inFlight = summarizeInFlightHostCalls(requestId, Date.now())
+      reject(new Error(inFlight ? `${base} ${inFlight}` : base))
+    }, timeoutMs)
+
+    promise.finally(() => clearTimeout(timerId)).catch(() => {})
   })
 
   return Promise.race([promise, timeoutPromise, abortPromise])

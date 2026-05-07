@@ -183,7 +183,7 @@ export class JsRuntime {
   async executeExecJs(
     sessionId: string,
     code: string,
-    timeoutMs?: number,
+    timeoutMs?: number | null,
     signal?: AbortSignal,
     input?: unknown,
     description?: string,
@@ -196,7 +196,11 @@ export class JsRuntime {
       throw new Error(`Failed to create session worker for ${normalizedSessionId}`)
     }
 
-    const { timeoutMs: timeout, wasDefault } = resolveTimeout(timeoutMs, DEFAULT_EXEC_TIMEOUT_MS)
+    // null = caller explicitly opts out of any timeout (long-running tasks
+    // like a Telegram poller). The worker treats timeoutMs <= 0 as "no timer".
+    const { timeoutMs: timeout, wasDefault } = timeoutMs === null
+      ? { timeoutMs: 0, wasDefault: false }
+      : resolveTimeout(timeoutMs, DEFAULT_EXEC_TIMEOUT_MS)
 
     if (signal?.aborted) {
       return {

@@ -80,9 +80,11 @@ export class TaskRunner {
 
     const task = rows[0]
     const runId = createRunId(taskName)
-    const timeoutMs = typeof task.timeout_ms === 'number' && task.timeout_ms > 0
+    // null = run forever (no timeout) — used for long-running tasks like a
+    // Telegram long-poller. A positive number caps the run at that many ms.
+    const timeoutMs: number | null = typeof task.timeout_ms === 'number' && task.timeout_ms > 0
       ? task.timeout_ms
-      : 0
+      : null
 
     const run: TaskRun = {
       runId,
@@ -132,7 +134,7 @@ export class TaskRunner {
     this._runs = []
   }
 
-  private async executeRun(run: TaskRun, code: string, timeoutMs: number, input?: unknown): Promise<void> {
+  private async executeRun(run: TaskRun, code: string, timeoutMs: number | null, input?: unknown): Promise<void> {
     const runtime = this.deps.getJsRuntime()
 
     try {
