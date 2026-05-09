@@ -22,6 +22,7 @@ type GetTabsResult = Array<Record<string, unknown>>
 
 interface OpenTabRequest {
   viewName?: string
+  view?: string
   filePath?: string
   url?: string
   title?: string
@@ -90,14 +91,18 @@ export function registerTabsHandlers(
       throw new Error('openTab requires a request object');
     }
 
+    const viewNameInput = typeof input.viewName === 'string' && input.viewName.length > 0
+      ? input.viewName
+      : (typeof input.view === 'string' && input.view.length > 0 ? input.view : undefined);
+
     // Validate viewName exists and resolve title
-    const hasViewName = typeof input.viewName === 'string' && input.viewName.length > 0;
-    let resolvedViewName = input.viewName;
+    const hasViewName = typeof viewNameInput === 'string' && viewNameInput.length > 0;
+    let resolvedViewName = viewNameInput;
     let resolvedTitle = input.title;
     if (hasViewName) {
-      const view = await getViewByName(getAgentRoot(event), input.viewName!);
+      const view = await getViewByName(getAgentRoot(event), viewNameInput!);
       if (!view) {
-        throw new Error(`View not found: ${input.viewName}`);
+        throw new Error(`View not found: ${viewNameInput}`);
       }
       resolvedViewName = view.name;
       if (typeof resolvedTitle !== 'string') {

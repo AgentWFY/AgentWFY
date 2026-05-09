@@ -117,6 +117,7 @@ export type WorkerGetTabsResult = Array<{
 
 export interface WorkerOpenTabRequest {
   viewName?: string
+  view?: string
   filePath?: string
   url?: string
   title?: string
