@@ -65,6 +65,10 @@ export function registerTabs(
     // the previously-selected tab's content show through. Reroute through
     // the viewName/filePath path so it gets a real protocol handler + tabId.
     const request = { ...original }
+    if (typeof request.viewName !== 'string' && typeof request.view === 'string') {
+      request.viewName = request.view
+    }
+    request.view = undefined
     const rewritten = typeof request.url === 'string' && request.url.length > 0
       ? rewriteAgentViewUrl(request.url)
       : null
