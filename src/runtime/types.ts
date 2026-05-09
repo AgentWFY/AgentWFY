@@ -1,3 +1,5 @@
+import type { DisplayMessage } from '../agent/provider_types.js'
+
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
 export interface ExecJsLogEntry {
@@ -356,6 +358,31 @@ export interface WorkerHostMethodMap {
   openSessionInChat: {
     params: { sessionId: string }
     result: void
+  }
+  listSessions: {
+    params: { limit?: number; offset?: number; since?: number; until?: number }
+    result: Array<{ sessionId: string; title: string; providerId: string; updatedAt: number }>
+  }
+  searchSessions: {
+    params: {
+      pattern: string
+      ignoreCase?: boolean
+      literal?: boolean
+      limit?: number
+      matchesPerSession?: number
+      since?: number
+      until?: number
+    }
+    result: Array<{
+      sessionId: string
+      title: string
+      updatedAt: number
+      matches: Array<{ messageIndex: number; role: 'user' | 'assistant'; snippet: string }>
+    }>
+  }
+  readSession: {
+    params: { sessionId: string }
+    result: { sessionId: string; title: string; providerId: string; updatedAt: number; messages: DisplayMessage[] }
   }
   startTask: {
     params: WorkerStartTaskRequest

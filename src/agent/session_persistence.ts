@@ -1,6 +1,8 @@
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
+import type { DisplayMessage, Block } from './provider_types.js'
+import type { TextContent } from './types.js'
 export const SESSION_VERSION = 1
 
 export interface StoredSession {
@@ -139,6 +141,90 @@ export async function ensureSessionsDir(sessionsDir: string): Promise<void> {
 export async function writeSessionFile(sessionsDir: string, fileName: string, content: string): Promise<void> {
   const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
   await fs.writeFile(filePath, content, 'utf-8')
+}
+
+export interface SessionMeta {
+  sessionId: string
+  providerId: string
+  title: string
+}
+
+export async function readSessionMeta(sessionsDir: string, fileName: string, byteCount = 8192): Promise<SessionMeta> {
+  const head = await readSessionHead(sessionsDir, fileName, byteCount)
+  if (!head) return { sessionId: '', providerId: '', title: '' }
+  return {
+    sessionId: extractStringFromHead(head, 'sessionId'),
+    providerId: extractStringFromHead(head, 'providerId'),
+    title: extractStringFromHead(head, 'title'),
+  }
+}
+
+export interface SearchableMessage {
+  messageIndex: number
+  role: 'user' | 'assistant'
+  text: string
+}
+
+export function stripBlockBinaries(messages: DisplayMessage[]): DisplayMessage[] {
+  return messages.map(msg => ({
+    ...msg,
+    blocks: msg.blocks.map(stripBlock),
+  }))
+}
+
+function stripBlock(block: Block): Block {
+  if (block.type === 'file') {
+    return { type: 'file', mimeType: block.mimeType, data: '' }
+  }
+  if (block.type === 'exec_js_result') {
+    return {
+      ...block,
+      content: block.content.map(item =>
+        item.type === 'file' ? { type: 'file', mimeType: item.mimeType, data: '' } : item,
+      ),
+    }
+  }
+  return block
+}
+
+export function displayMessagesToSearchText(messages: DisplayMessage[]): SearchableMessage[] {
+  const out: SearchableMessage[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const text = blocksToSearchText(messages[i].blocks)
+    if (text) out.push({ messageIndex: i, role: messages[i].role, text })
+  }
+  return out
+}
+
+function blocksToSearchText(blocks: Block[]): string {
+  const parts: string[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+      case 'thinking':
+      case 'error':
+        if (block.text) parts.push(block.text)
+        break
+      case 'attachment':
+        if (block.label) parts.push(block.label)
+        if (block.content) parts.push(block.content)
+        break
+      case 'exec_js':
+        if (block.description) parts.push(block.description)
+        if (block.code) parts.push(block.code)
+        break
+      case 'exec_js_result':
+        for (const item of block.content) {
+          if ((item as TextContent).type === 'text') {
+            parts.push((item as TextContent).text)
+          }
+        }
+        break
+      case 'file':
+        break
+    }
+  }
+  return parts.join('\n')
 }
 
 export async function listSessionFiles(sessionsDir: string): Promise<Array<{ name: string; updatedAt: number }>> {

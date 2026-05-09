@@ -1,5 +1,5 @@
 import { runAgentDbSql } from '../../db/sqlite.js'
-import { paginateText, applyTextEdits, truncateLine, GREP_MAX_LINE_LENGTH, DEFAULT_LS_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_GREP_LIMIT } from './text_utils.js'
+import { paginateText, applyTextEdits, truncateLine, escapeRegex, GREP_MAX_LINE_LENGTH, DEFAULT_LS_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_GREP_LIMIT } from './text_utils.js'
 
 export interface DbPath {
   table: string
@@ -207,7 +207,7 @@ export async function dbGrep(
   }
 
   const flags = ignoreCase ? 'i' : ''
-  const escapedPattern = literal ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : pattern
+  const escapedPattern = literal ? escapeRegex(pattern) : pattern
   const regex = new RegExp(escapedPattern, flags)
 
   const outputLines: string[] = []

@@ -12,9 +12,23 @@ import { SystemConfigKeys } from '../system-config/keys.js'
 import {
   readSessionFile,
   readSessionTitle,
+  readSessionMeta,
   listSessionFiles,
   parseStoredSession,
+  displayMessagesToSearchText,
+  stripBlockBinaries,
+  type StoredSession,
 } from './session_persistence.js'
+import { escapeRegex } from '../runtime/functions/text_utils.js'
+
+function makeSnippet(text: string, matchIndex: number, matchLength: number, contextChars = 80): string {
+  const start = Math.max(0, matchIndex - contextChars)
+  const end = Math.min(text.length, matchIndex + matchLength + contextChars)
+  let out = text.slice(start, end).replace(/\s+/g, ' ').trim()
+  if (start > 0) out = '…' + out
+  if (end < text.length) out = out + '…'
+  return out
+}
 
 function getTextFromDisplayMessage(msg: DisplayMessage): string {
   return msg.blocks
@@ -61,6 +75,49 @@ export interface SessionListItem {
   isStreaming: boolean
   file: string | null
   sessionId: string | null
+}
+
+export interface SessionSummary {
+  sessionId: string
+  title: string
+  providerId: string
+  updatedAt: number
+}
+
+export interface SessionMatch {
+  sessionId: string
+  title: string
+  updatedAt: number
+  matches: Array<{
+    messageIndex: number
+    role: 'user' | 'assistant'
+    snippet: string
+  }>
+}
+
+export interface SessionRead {
+  sessionId: string
+  title: string
+  providerId: string
+  updatedAt: number
+  messages: DisplayMessage[]
+}
+
+export interface ListSessionsRequest {
+  limit?: number
+  offset?: number
+  since?: number
+  until?: number
+}
+
+export interface SearchSessionsRequest {
+  pattern: string
+  ignoreCase?: boolean
+  literal?: boolean
+  limit?: number
+  matchesPerSession?: number
+  since?: number
+  until?: number
 }
 
 interface AgentSessionManagerDeps {
@@ -203,17 +260,7 @@ export class AgentSessionManager {
     const stored = parseStoredSession(raw, file)
 
     const providerId = stored.providerId || await this.readDefaultProviderId()
-    const factory = this.deps.providerRegistry.get(providerId)
-
-    let messages: DisplayMessage[] = []
-    if (factory && stored.providerState) {
-      const session = factory.restoreSession(
-        { sessionId: stored.sessionId, systemPrompt: '', tools: [] },
-        stored.providerState,
-      )
-      messages = session.getDisplayMessages()
-      session.dispose()
-    }
+    const messages = this.restoreMessages(stored, providerId)
 
     this._activeSessionFile = file
     this._activeSessionId = stored.sessionId || null
@@ -558,6 +605,123 @@ export class AgentSessionManager {
     this.sessions.delete(sessionId)
 
     this.notify()
+  }
+
+  async listSessions(request: ListSessionsRequest = {}): Promise<SessionSummary[]> {
+    const limit = request.limit ?? 20
+    const offset = request.offset ?? 0
+    if (!Number.isFinite(limit) || limit < 1) throw new Error('listSessions limit must be >= 1')
+    if (!Number.isFinite(offset) || offset < 0) throw new Error('listSessions offset must be >= 0')
+
+    const all = await listSessionFiles(this.sessionsDir)
+    const filtered = (request.since === undefined && request.until === undefined)
+      ? all
+      : all.filter((s) =>
+          (request.since === undefined || s.updatedAt >= request.since) &&
+          (request.until === undefined || s.updatedAt <= request.until))
+    const page = filtered.slice(offset, offset + limit)
+
+    return Promise.all(page.map(async (session) => {
+      const meta = await readSessionMeta(this.sessionsDir, session.name)
+      return {
+        sessionId: session.name,
+        title: meta.title,
+        providerId: meta.providerId,
+        updatedAt: session.updatedAt,
+      }
+    }))
+  }
+
+  async searchSessions(request: SearchSessionsRequest): Promise<SessionMatch[]> {
+    const limit = request.limit ?? 10
+    const matchesPerSession = request.matchesPerSession ?? 5
+    if (!Number.isFinite(limit) || limit < 1) throw new Error('searchSessions limit must be >= 1')
+    if (!Number.isFinite(matchesPerSession) || matchesPerSession < 1) {
+      throw new Error('searchSessions matchesPerSession must be >= 1')
+    }
+
+    const source = request.literal ? escapeRegex(request.pattern) : request.pattern
+    let regex: RegExp
+    try {
+      regex = new RegExp(source, request.ignoreCase ? 'i' : '')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(`Invalid regex: ${msg}`)
+    }
+
+    const all = await listSessionFiles(this.sessionsDir)
+    const results: SessionMatch[] = []
+
+    for (const session of all) {
+      if (request.since !== undefined && session.updatedAt < request.since) continue
+      if (request.until !== undefined && session.updatedAt > request.until) continue
+      const match = await this.searchSessionFile(session.name, session.updatedAt, regex, matchesPerSession)
+      if (match) results.push(match)
+      if (results.length >= limit) break
+    }
+
+    return results
+  }
+
+  private async searchSessionFile(
+    file: string,
+    updatedAt: number,
+    regex: RegExp,
+    matchesPerSession: number,
+  ): Promise<SessionMatch | null> {
+    let stored: StoredSession
+    try {
+      const raw = await readSessionFile(this.sessionsDir, file)
+      stored = parseStoredSession(raw, file)
+    } catch (err) {
+      console.warn('[AgentSessionManager] searchSessions: skipping', file, err)
+      return null
+    }
+
+    const messages = this.restoreMessages(stored, stored.providerId)
+    if (messages.length === 0) return null
+
+    const matches: SessionMatch['matches'] = []
+    for (const item of displayMessagesToSearchText(messages)) {
+      if (matches.length >= matchesPerSession) break
+      const m = regex.exec(item.text)
+      if (!m) continue
+      matches.push({
+        messageIndex: item.messageIndex,
+        role: item.role,
+        snippet: makeSnippet(item.text, m.index, m[0].length),
+      })
+    }
+    if (matches.length === 0) return null
+
+    return { sessionId: file, title: stored.title, updatedAt, matches }
+  }
+
+  async readSession(sessionId: string): Promise<SessionRead> {
+    const raw = await readSessionFile(this.sessionsDir, sessionId)
+    const stored = parseStoredSession(raw, sessionId)
+    const providerId = stored.providerId || await this.readDefaultProviderId()
+    return {
+      sessionId,
+      title: stored.title,
+      providerId,
+      updatedAt: stored.updatedAt,
+      messages: stripBlockBinaries(this.restoreMessages(stored, providerId)),
+    }
+  }
+
+  private restoreMessages(stored: StoredSession, providerId: string): DisplayMessage[] {
+    const factory = this.deps.providerRegistry.get(providerId)
+    if (!factory || !stored.providerState) return []
+    const session = factory.restoreSession(
+      { sessionId: stored.sessionId, systemPrompt: '', tools: [] },
+      stored.providerState,
+    )
+    try {
+      return session.getDisplayMessages()
+    } finally {
+      session.dispose()
+    }
   }
 
   async disposeSessionByFile(file: string): Promise<void> {

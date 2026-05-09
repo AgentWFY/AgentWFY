@@ -47,4 +47,25 @@ export function registerAgent(registry: FunctionRegistry, deps: { getSessionMana
       ).catch((err) => { console.warn('[agent-functions] executeJavaScript failed:', err) })
     }
   })
+
+  registry.register('listSessions', async (params) => {
+    const request = (params ?? {}) as WorkerHostMethodMap['listSessions']['params']
+    return getSessionManager().listSessions(request)
+  })
+
+  registry.register('searchSessions', async (params) => {
+    const request = params as WorkerHostMethodMap['searchSessions']['params']
+    if (!request || typeof request.pattern !== 'string' || request.pattern.length === 0) {
+      throw new Error(`searchSessions requires a non-empty pattern string. ${DOCS_HINT}`)
+    }
+    return getSessionManager().searchSessions(request)
+  })
+
+  registry.register('readSession', async (params) => {
+    const request = params as WorkerHostMethodMap['readSession']['params']
+    if (!request || typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0) {
+      throw new Error(`readSession requires a non-empty sessionId string. ${DOCS_HINT}`)
+    }
+    return getSessionManager().readSession(request.sessionId)
+  })
 }

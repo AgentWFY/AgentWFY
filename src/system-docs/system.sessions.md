@@ -40,6 +40,21 @@ console.log(r2)
 
 `openSessionInChat({ sessionId })` → void — opens a spawned session in the main chat panel. Works for both running and finished sessions.
 
+## Browsing Sessions
+
+- `listSessions({ limit?, offset?, since?, until? })` → `[{ sessionId, title, providerId, updatedAt }]` — recent sessions, newest first. `limit` defaults to 20. `since`/`until` filter by `updatedAt` (epoch ms).
+- `searchSessions({ pattern, ignoreCase?, literal?, limit?, matchesPerSession?, since?, until? })` → `[{ sessionId, title, updatedAt, matches: [{ messageIndex, role, snippet }] }]` — regex search across session content (same regex as `grep`). `literal: true` escapes regex metachars. `limit` defaults to 10 sessions, `matchesPerSession` to 5. Image/binary blocks are skipped.
+- `readSession({ sessionId })` → `{ sessionId, title, providerId, updatedAt, messages }` — full conversation. Each message is `{ role: 'user' | 'assistant', blocks: [...], timestamp }`. Binary payloads (image/file `data` fields) are blanked to keep the result small; `mimeType` is preserved so you can see what was attached.
+
+The `sessionId` is the same value `spawnSession` returns, so results compose with `sendToSession` / `openSessionInChat`.
+
+```javascript
+const hits = await searchSessions({ pattern: 'OOM in worker', ignoreCase: true })
+if (hits.length) {
+  const { messages } = await readSession({ sessionId: hits[0].sessionId })
+}
+```
+
 ## Providers
 
 `getAvailableProviders()` → `[{ id, name }]` — list registered LLM providers. Use with `spawnSession` to run a session on a specific provider.

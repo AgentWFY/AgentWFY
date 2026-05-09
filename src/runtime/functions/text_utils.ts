@@ -67,6 +67,10 @@ export function truncateLine(line: string, maxLen: number): string {
   return line.slice(0, maxLen) + '\u2026'
 }
 
+export function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 export function compileGlob(pattern: string): RegExp {
   const regex = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
