@@ -86,7 +86,6 @@ export interface ProviderSession {
   abort(): void
   getDisplayMessages(): DisplayMessage[]
   getState(): unknown
-  getTitle?(): string
   dispose(): void
 }
 

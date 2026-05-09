@@ -20,8 +20,6 @@ export interface AgentToolResult<T = unknown> {
   details: T
 }
 
-export type AgentToolUpdateCallback<T = unknown> = (partialResult: AgentToolResult<T>) => void
-
 export interface AgentTool<TDetails = unknown> {
   name: string
   label: string
@@ -31,7 +29,6 @@ export interface AgentTool<TDetails = unknown> {
     toolCallId: string,
     params: Record<string, unknown>,
     signal?: AbortSignal,
-    onUpdate?: AgentToolUpdateCallback<TDetails>,
   ) => Promise<AgentToolResult<TDetails>>
 }
 

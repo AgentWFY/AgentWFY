@@ -107,12 +107,7 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 429 || status === 529 || status >= 500
 }
 
-function getRetryDelay(attempt: number, headers?: Headers): number {
-  const retryAfter = headers?.get('retry-after')
-  if (retryAfter) {
-    const seconds = Number(retryAfter)
-    if (!isNaN(seconds) && seconds > 0 && seconds <= 60) return seconds * 1000
-  }
+function getRetryDelay(attempt: number): number {
   const base = INITIAL_DELAY_MS * Math.pow(2, attempt)
   return base + Math.random() * base * 0.5
 }
@@ -152,10 +147,6 @@ interface PendingToolCall {
 
 // ── OpenAI-compatible provider session ──
 
-function formatTokens(tokens: number): string {
-  if (tokens >= 1000) return (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
-  return String(tokens)
-}
 
 interface ProviderConfigSnapshot {
   baseUrl: string
@@ -170,23 +161,18 @@ class OpenAICompatibleSession implements ProviderSession {
   private abortController: AbortController | null = null
   private config: ProviderSessionConfig
   private providerConfig: ProviderConfigSnapshot
-  private lastInputTokens = 0
   private _partialDisplayMessage: DisplayMessage | null = null
-  private modelOverride: string | null = null
 
   constructor(
     config: ProviderSessionConfig,
     providerConfig: ProviderConfigSnapshot,
     initialMessages?: InternalMessage[],
     initialDisplayMessages?: DisplayMessage[],
-    modelOverride?: string | null,
   ) {
     this.config = config
     this.providerConfig = providerConfig
-    this.modelOverride = modelOverride ?? null
     if (initialMessages) {
       this.messages = [{ role: 'system', content: config.systemPrompt }, ...initialMessages]
-      this.repairOrphanedToolCalls()
     } else {
       this.messages.push({ role: 'system', content: config.systemPrompt })
     }
@@ -195,11 +181,7 @@ class OpenAICompatibleSession implements ProviderSession {
     }
   }
 
-  async *stream(input: UserInput, executeTool: ToolExecutor, providerOptions?: Record<string, unknown>): AsyncIterable<StreamEvent> {
-    // Store model override on first call (from spawnSession providerOptions)
-    if (typeof providerOptions?.model === 'string' && providerOptions.model) {
-      this.modelOverride = providerOptions.model
-    }
+  async *stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
     this.addUserMessage(input.text, input.files)
     yield* this.doStream(executeTool)
   }
@@ -222,7 +204,6 @@ class OpenAICompatibleSession implements ProviderSession {
     return {
       messages: this.messages.slice(1),
       displayMessages: this.displayMessages.slice(),
-      ...(this.modelOverride ? { modelOverride: this.modelOverride } : {}),
     }
   }
 
@@ -233,7 +214,7 @@ class OpenAICompatibleSession implements ProviderSession {
   // ── Private helpers ──
 
   private getEffectiveModelId(): string {
-    return this.modelOverride ?? this.providerConfig.modelId
+    return this.providerConfig.modelId
   }
 
   private buildStatusLine(): string {
@@ -241,14 +222,10 @@ class OpenAICompatibleSession implements ProviderSession {
     if (this.providerConfig.reasoning) {
       parts.push(this.providerConfig.reasoning)
     }
-    if (this.lastInputTokens > 0) {
-      parts.push(formatTokens(this.lastInputTokens))
-    }
     return parts.join(' · ')
   }
 
   private addUserMessage(text: string, files?: FileContent[]): void {
-    this.repairOrphanedToolCalls()
     // Build user content
     const content: unknown[] = [{ type: 'text', text }]
     if (files) {
@@ -367,7 +344,7 @@ class OpenAICompatibleSession implements ProviderSession {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (attempt > 0) {
         try {
-          await retrySleep(getRetryDelay(attempt - 1, response?.headers), signal)
+          await retrySleep(getRetryDelay(attempt - 1), signal)
         } catch {
           return // aborted during retry sleep
         }
@@ -557,7 +534,6 @@ class OpenAICompatibleSession implements ProviderSession {
 
     // Update status line with context size
     if (inputTokens > 0) {
-      this.lastInputTokens = inputTokens
       yield { type: 'status_line', text: this.buildStatusLine() }
     }
 
@@ -685,32 +661,7 @@ class OpenAICompatibleSession implements ProviderSession {
     return true
   }
 
-  private repairOrphanedToolCalls(): void {
-    for (let i = this.messages.length - 1; i >= 0; i--) {
-      const msg = this.messages[i]
-      if (msg.role !== 'assistant') continue
-      const toolCalls = msg.tool_calls as Array<{ id: string }> | undefined
-      if (!toolCalls || toolCalls.length === 0) return
 
-      const resolved = new Set<string>()
-      for (let j = i + 1; j < this.messages.length; j++) {
-        if (this.messages[j].role === 'tool' && this.messages[j].tool_call_id) {
-          resolved.add(this.messages[j].tool_call_id as string)
-        }
-      }
-
-      for (const tc of toolCalls) {
-        if (!resolved.has(tc.id)) {
-          this.messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: 'Tool execution was interrupted.',
-          })
-        }
-      }
-      return
-    }
-  }
 }
 
 // ── Provider config and factory ──
@@ -755,11 +706,10 @@ export function createOpenAICompatibleFactory(
     },
 
     restoreSession(config: ProviderSessionConfig, state: unknown): ProviderSession {
-      const stateObj = state as { messages?: InternalMessage[]; displayMessages?: DisplayMessage[]; modelOverride?: string } | null
+      const stateObj = state as { messages?: InternalMessage[]; displayMessages?: DisplayMessage[] } | null
       const apiMessages = stateObj?.messages && Array.isArray(stateObj.messages) ? stateObj.messages : []
       const displayMessages = stateObj?.displayMessages && Array.isArray(stateObj.displayMessages) ? stateObj.displayMessages : []
-      const modelOverride = typeof stateObj?.modelOverride === 'string' ? stateObj.modelOverride : null
-      return new OpenAICompatibleSession(config, readProviderConfig(), apiMessages, displayMessages, modelOverride)
+      return new OpenAICompatibleSession(config, readProviderConfig(), apiMessages, displayMessages)
     },
   }
 }

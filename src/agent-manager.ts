@@ -108,20 +108,6 @@ async function promptOpenExistingAgent(dirPath: string, parentWindow: BaseWindow
 /**
  * Install Agent flow: pick a directory, install default agent directly.
  */
-export async function showInstallAgentDialog(parentWindow: BaseWindow | null = null): Promise<string | null> {
-  const result = await showOpenDialog(parentWindow, {
-    properties: ['openDirectory', 'createDirectory'],
-    title: 'Choose Directory for Agent',
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-
-  const dirPath = result.filePaths[0];
-
-  if (isAgentDir(dirPath)) return promptOpenExistingAgent(dirPath, parentWindow);
-
-  await initAgent(dirPath);
-  return dirPath;
-}
 
 /**
  * Install Agent from File flow: pick a directory, then pick a .agent.awfy file.
