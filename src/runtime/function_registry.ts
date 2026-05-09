@@ -65,13 +65,10 @@ export class FunctionRegistry {
       .map(([name]) => name)
   }
 
-  getFunctionInfo(): Array<{ name: string; source: string }> {
+  getFunctionInfo(): Array<{ name: string }> {
     return Array.from(this.handlers.entries())
       .filter(([, entry]) => !entry.hidden)
-      .map(([name, entry]) => ({
-        name,
-        source: entry.source,
-      }))
+      .map(([name]) => ({ name }))
   }
 
   unregisterBySource(source: string): void {

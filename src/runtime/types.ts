@@ -388,7 +388,7 @@ export interface WorkerHostMethodMap {
   }
   getAvailableFunctions: {
     params: Record<string, never>
-    result: Array<{ name: string; source: string }>
+    result: Array<{ name: string; docs?: string[] }>
   }
   getAvailableProviders: {
     params: Record<string, never>

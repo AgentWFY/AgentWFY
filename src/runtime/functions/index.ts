@@ -6,6 +6,7 @@ import type { CommandPaletteManager } from '../../command-palette/manager.js'
 import type { EventBus } from '../../event-bus.js'
 import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
+import { runAgentDbSql } from '../../db/sqlite.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
 import { registerTabs } from './tabs.js'
@@ -25,6 +26,33 @@ interface BuiltInFunctionDeps {
   providerRegistry: ProviderRegistry
 }
 
+async function findDocsReferencingFunctions(
+  agentRoot: string,
+  functionNames: string[],
+): Promise<Map<string, string[]>> {
+  // Only docs whose name contains a dot are not preloaded into the system
+  // prompt — those are the ones worth surfacing as a hint.
+  const rows = (await runAgentDbSql(agentRoot, {
+    sql: "SELECT name, content FROM docs WHERE name LIKE '%.%' ORDER BY name ASC",
+  })) as Array<{ name: string; content: string }>
+
+  const result = new Map<string, string[]>()
+  for (const fn of functionNames) {
+    const callPat = `${fn}(`
+    const tickPat = '`' + fn + '`'
+    const tickCallPat = '`' + fn + '('
+    const matches: string[] = []
+    for (const row of rows) {
+      const c = row.content
+      if (c.includes(callPat) || c.includes(tickPat) || c.includes(tickCallPat)) {
+        matches.push(row.name)
+      }
+    }
+    if (matches.length > 0) result.set(fn, matches)
+  }
+  return result
+}
+
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { agentRoot: deps.agentRoot })
   registerSql(registry, { agentRoot: deps.agentRoot })
@@ -37,7 +65,15 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   })
 
   registry.register('getAvailableFunctions', async () => {
-    return registry.getFunctionInfo()
+    const functions = registry.getFunctionInfo()
+    const docsByFn = await findDocsReferencingFunctions(
+      deps.agentRoot,
+      functions.map((f) => f.name),
+    )
+    return functions.map((f) => {
+      const docs = docsByFn.get(f.name)
+      return docs ? { name: f.name, docs } : { name: f.name }
+    })
   })
 
   registry.register('getAvailableProviders', async () => {
