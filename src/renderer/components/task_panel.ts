@@ -57,6 +57,8 @@ interface DetailView {
 
 const COPY_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="width:12px;height:12px;flex-shrink:0;vertical-align:middle;"><rect x="5" y="2" width="9" height="11" rx="1.5"/><path d="M2 5.5v8a1.5 1.5 0 001.5 1.5h8"/></svg>'
 
+const TRASH_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.75 4.5h10.5"/><path d="M6.5 4.5V3.25A1.25 1.25 0 0 1 7.75 2h.5A1.25 1.25 0 0 1 9.5 3.25V4.5"/><path d="M4 4.5l.6 8.25A1.25 1.25 0 0 0 5.85 14h4.3a1.25 1.25 0 0 0 1.25-1.25L12 4.5"/><path d="M6.75 7.25v4M9.25 7.25v4"/></svg>'
+
 const STYLES = `
   :host {
     display: flex;
@@ -152,8 +154,9 @@ const STYLES = `
     cursor: pointer;
   }
   .task-card:hover { border-color: var(--color-text2); }
+  .task-card:hover .tc-icon { opacity: 1; }
   .task-card.expanded { border-color: var(--color-accent); }
-  .task-card-top { display: flex; align-items: center; gap: 8px; }
+  .task-card-top { display: flex; align-items: center; gap: 6px; }
   .tc-name {
     flex: 1; font-size: 12.5px; font-weight: 500; color: var(--color-text4);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -170,9 +173,23 @@ const STYLES = `
     background: transparent; cursor: pointer; font-family: inherit; flex-shrink: 0;
   }
   .tc-run:hover { background: var(--color-green-bg); }
+  .tc-icon {
+    width: 22px; height: 22px; padding: 0; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: var(--radius-sm, 4px);
+    background: transparent; color: var(--color-text2); cursor: pointer;
+    opacity: 0.55; transition: opacity 0.1s, color 0.1s, background 0.1s, border-color 0.1s;
+    font-family: inherit;
+  }
+  .tc-icon:hover { color: var(--color-red-fg); border-color: var(--color-red-fg); background: var(--color-red-bg); opacity: 1; }
+  .tc-icon svg { width: 13px; height: 13px; }
+  .tc-icon.confirm {
+    opacity: 1; width: auto; padding: 0 8px; font-size: 10.5px; font-weight: 600;
+    color: var(--color-red-fg); border-color: var(--color-red-fg); background: var(--color-red-bg);
+  }
   .tc-desc {
-    font-size: 11px; color: var(--color-text2); line-height: 1.4; margin-top: 4px;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    font-size: 11px; color: var(--color-text2); line-height: 1.45; margin-top: 4px;
+    white-space: pre-wrap; word-break: break-word;
   }
   .tc-footer {
     margin-top: 6px; display: flex; align-items: center; gap: 6px;
@@ -202,8 +219,11 @@ const STYLES = `
     border-radius: var(--radius-md, 6px); transition: border-color 0.1s;
   }
   .trig-card:hover { border-color: var(--color-text2); }
+  .trig-card:hover .tc-icon { opacity: 1; }
   .trig-card.disabled { opacity: 0.45; }
-  .trig-top { display: flex; align-items: center; gap: 8px; }
+  .trig-card.disabled:hover { opacity: 0.7; }
+  .trig-top { display: flex; align-items: center; gap: 6px; }
+  .trig-desc { font-size: 11px; color: var(--color-text2); line-height: 1.45; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
   .tb {
     font-size: 9px; font-family: var(--font-mono); font-weight: 600; text-transform: uppercase;
     padding: 1px 6px; border-radius: 3px; flex-shrink: 0;
@@ -227,7 +247,6 @@ const STYLES = `
   }
   .trig-toggle.off { background: var(--color-border); }
   .trig-toggle.off::after { left: 2px; }
-  .trig-desc { font-size: 11px; color: var(--color-text2); line-height: 1.4; margin-top: 4px; }
   .trig-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 10px; }
   .trig-kv { display: flex; gap: 4px; }
   .trig-k { color: var(--color-text2); }
@@ -435,6 +454,9 @@ export class TlTaskPanel extends HTMLElement {
   private logHistory: TaskLogHistoryItem[] = []
   private activeTab: ActiveTab = 'runs'
   private expandedTaskName: string | null = null
+  private pendingDeleteTaskName: string | null = null
+  private pendingDeleteTriggerName: string | null = null
+  private pendingDeleteResetTimer: ReturnType<typeof setTimeout> | null = null
   private detailView: DetailView | null = null
   private detailAutoScroll = true
   private activeRuns: Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
@@ -499,6 +521,10 @@ export class TlTaskPanel extends HTMLElement {
       clearInterval(this.runningTimer)
       this.runningTimer = null
     }
+    if (this.pendingDeleteResetTimer) {
+      clearTimeout(this.pendingDeleteResetTimer)
+      this.pendingDeleteResetTimer = null
+    }
     window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
     window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
     window.removeEventListener('agentwfy:config-db-changed', this.onConfigChanged as EventListener)
@@ -513,6 +539,7 @@ export class TlTaskPanel extends HTMLElement {
   }
   private onAgentSwitched = () => {
     this.detailView = null
+    this.clearPendingDelete()
     this.loadTasks()
     this.loadTriggers()
     this.loadLogHistory()
@@ -689,11 +716,13 @@ export class TlTaskPanel extends HTMLElement {
       const isExpanded = this.expandedTaskName === task.name
       const taskTriggers = this.triggers.filter(t => t.task_name === task.name && t.enabled)
       const shortcut = this.taskShortcuts[task.name]
+      const isDeletePending = this.pendingDeleteTaskName === task.name
       html += `<div class="task-card${isExpanded ? ' expanded' : ''}" data-task-name="${escapeHtml(task.name)}">
         <div class="task-card-top">
           <span class="tc-name">${escapeHtml(task.title)}</span>
           ${shortcut ? `<span class="tc-shortcut">${escapeHtml(shortcut)}</span>` : ''}
           <button class="tc-run" data-run-task="${escapeHtml(task.name)}">Run</button>
+          <button class="tc-icon${isDeletePending ? ' confirm' : ''}" data-delete-task="${escapeHtml(task.name)}" title="${isDeletePending ? 'Click again to confirm' : 'Delete task'}" aria-label="Delete task">${isDeletePending ? 'Confirm' : TRASH_SVG}</button>
         </div>`
       if (task.description) {
         html += `<div class="tc-desc">${escapeHtml(task.description)}</div>`
@@ -728,11 +757,13 @@ export class TlTaskPanel extends HTMLElement {
       const taskName = trigger.task_title || trigger.task_name
       const configKV = formatTriggerConfig(trigger.type, trigger.config)
 
+      const isDeletePending = this.pendingDeleteTriggerName === trigger.name
       html += `<div class="trig-card${disabled ? ' disabled' : ''}">
         <div class="trig-top">
           <span class="tb tb-${escapeHtml(trigger.type)}">${escapeHtml(trigger.type)}</span>
           <span class="trig-name">${escapeHtml(taskName)}</span>
           <button class="trig-toggle${disabled ? ' off' : ''}" data-trigger-toggle="${escapeHtml(trigger.name)}"></button>
+          <button class="tc-icon${isDeletePending ? ' confirm' : ''}" data-delete-trigger="${escapeHtml(trigger.name)}" title="${isDeletePending ? 'Click again to confirm' : 'Delete trigger'}" aria-label="Delete trigger">${isDeletePending ? 'Confirm' : TRASH_SVG}</button>
         </div>`
       if (trigger.description) {
         html += `<div class="trig-desc">${escapeHtml(trigger.description)}</div>`
@@ -832,6 +863,7 @@ export class TlTaskPanel extends HTMLElement {
     this.shadow.querySelectorAll('.tab[data-tab]').forEach(el => {
       el.addEventListener('click', () => {
         this.activeTab = (el as HTMLElement).dataset.tab as ActiveTab
+        this.clearPendingDelete()
         this.updateContent()
       })
     })
@@ -867,10 +899,38 @@ export class TlTaskPanel extends HTMLElement {
     // Task card expand/collapse
     this.shadow.querySelectorAll('.task-card[data-task-name]').forEach(el => {
       el.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.tc-run') || (e.target as HTMLElement).closest('.run-input') || (e.target as HTMLElement).closest('.run-input-btn')) return
+        const t = e.target as HTMLElement
+        if (t.closest('.tc-run') || t.closest('.run-input') || t.closest('.run-input-btn') || t.closest('[data-delete-task]')) return
         const taskName = (el as HTMLElement).dataset.taskName!
         this.expandedTaskName = this.expandedTaskName === taskName ? null : taskName
+        this.clearPendingDelete()
         this.updateContent()
+      })
+    })
+
+    // Delete task (two-click confirm)
+    this.shadow.querySelectorAll('[data-delete-task]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const taskName = (btn as HTMLElement).dataset.deleteTask!
+        if (this.pendingDeleteTaskName === taskName) {
+          this.deleteTask(taskName)
+        } else {
+          this.armPendingDelete('task', taskName)
+        }
+      })
+    })
+
+    // Delete trigger (two-click confirm)
+    this.shadow.querySelectorAll('[data-delete-trigger]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const triggerName = (btn as HTMLElement).dataset.deleteTrigger!
+        if (this.pendingDeleteTriggerName === triggerName) {
+          this.deleteTrigger(triggerName)
+        } else {
+          this.armPendingDelete('trigger', triggerName)
+        }
       })
     })
 
@@ -954,6 +1014,57 @@ export class TlTaskPanel extends HTMLElement {
   // ==========================================
   // ACTIONS
   // ==========================================
+
+  private armPendingDelete(kind: 'task' | 'trigger', name: string) {
+    this.pendingDeleteTaskName = kind === 'task' ? name : null
+    this.pendingDeleteTriggerName = kind === 'trigger' ? name : null
+    if (this.pendingDeleteResetTimer) clearTimeout(this.pendingDeleteResetTimer)
+    this.pendingDeleteResetTimer = setTimeout(() => {
+      this.clearPendingDelete()
+      this.updateContent()
+    }, 3000)
+    this.updateContent()
+  }
+
+  private clearPendingDelete() {
+    this.pendingDeleteTaskName = null
+    this.pendingDeleteTriggerName = null
+    if (this.pendingDeleteResetTimer) {
+      clearTimeout(this.pendingDeleteResetTimer)
+      this.pendingDeleteResetTimer = null
+    }
+  }
+
+  private async deleteTask(taskName: string) {
+    const ipc = window.ipc
+    if (!ipc) return
+    this.clearPendingDelete()
+    if (this.expandedTaskName === taskName) this.expandedTaskName = null
+    try {
+      await ipc.sql.run({
+        target: 'agent',
+        sql: 'DELETE FROM tasks WHERE name = ?',
+        params: [taskName],
+      })
+    } catch (err) {
+      console.error('[TlTaskPanel] delete task failed', err)
+    }
+  }
+
+  private async deleteTrigger(triggerName: string) {
+    const ipc = window.ipc
+    if (!ipc) return
+    this.clearPendingDelete()
+    try {
+      await ipc.sql.run({
+        target: 'agent',
+        sql: 'DELETE FROM triggers WHERE name = ?',
+        params: [triggerName],
+      })
+    } catch (err) {
+      console.error('[TlTaskPanel] delete trigger failed', err)
+    }
+  }
 
   private runWithInput(taskName: string) {
     if (!taskName) return
