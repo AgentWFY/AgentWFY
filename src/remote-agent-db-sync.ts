@@ -65,10 +65,19 @@ export class RemoteAgentDbSync {
     try {
       await this.syncFromServer();
     } catch (err) {
-      if (!hasLocalDb) {
-        throw new Error(`Remote agent database has not been synced yet: ${messageFromUnknown(err)}`);
-      }
-      console.warn('[remote-db-sync] initial sync failed; using existing local mirror:', err);
+      // Don't block initialization on an unreachable daemon. The status
+      // subscription above will call scheduleSync(0) when the WebSocket
+      // transitions to 'connected', so the first successful sync happens
+      // automatically once the daemon is reachable. Until then, reads
+      // against the (possibly empty) local mirror are safe — schema is
+      // lazily created — and writes round-trip through the daemon and
+      // will fail loudly on their own.
+      console.warn(
+        hasLocalDb
+          ? '[remote-db-sync] initial sync failed; using existing local mirror:'
+          : '[remote-db-sync] initial sync failed; agent database will sync when daemon connects:',
+        messageFromUnknown(err),
+      );
       this.reopenLocalDb();
     }
   }

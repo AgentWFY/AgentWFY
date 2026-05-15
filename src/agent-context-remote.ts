@@ -47,8 +47,13 @@ export async function createRemoteAgentContext(opts: {
   try {
     await remoteBackend.start()
   } catch (err) {
-    await remoteBackend.stop().catch(() => {})
-    throw err
+    // The backend's WsClient stays in reconnecting state on its own, and the
+    // orchestrator's status subscription will surface 'disconnected' / 'error'
+    // in the sidebar — keep the context alive so the app window can load.
+    console.warn(
+      '[agent-context-remote] backend.start failed; agent will operate in disconnected mode:',
+      err,
+    )
   }
 
   const eventBus = new EventBus()
