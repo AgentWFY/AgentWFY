@@ -54,7 +54,7 @@ function extractFirstUserMessage(messages: DisplayMessage[], maxLen: number): st
   return null
 }
 
-function sanitizeStreamingMessage(message: DisplayMessage | null): DisplayMessage | null {
+export function sanitizeStreamingMessage(message: DisplayMessage | null): DisplayMessage | null {
   if (!message) return null
   return stripBlockBinaries([message])[0] ?? null
 }
@@ -804,10 +804,18 @@ export class AgentSessionManager {
     }
   }
 
+  /** Returns the live agent state reference (not a clone). Callers that
+   *  serialize this must apply `stripBlockBinaries` / `sanitizeStreamingMessage`
+   *  themselves. Used by the hot streaming path which needs reference identity
+   *  on `state.messages` to detect when the committed-message array changed. */
   getSessionAgentState(sessionId: string): AgentState | null {
     const entry = this.findSessionEntry(sessionId)
-    if (!entry) return null
-    return sanitizeAgentState(entry.agent.state)
+    return entry?.agent.state ?? null
+  }
+
+  getSessionTitle(sessionId: string): string | null {
+    const entry = this.findSessionEntry(sessionId)
+    return entry?.label ?? null
   }
 
   private getLiveSessionState(sessionId: string): SessionStateRead | null {

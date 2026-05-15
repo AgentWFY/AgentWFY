@@ -7,10 +7,12 @@
 // This file may freely import Electron-touching code — it is the bridge
 // between Electron-bound AgentContext and the environment-neutral interface.
 
-import type { AgentWFYAgentEvent } from '../agent/create_agent.js'
-import type { AgentEvent as SessionStreamEvent } from '../agent/types.js'
+import type { AgentState } from '../agent/types.js'
+import type { DisplayMessage } from '../agent/provider_types.js'
 import type { EventBus } from '../event-bus.js'
 import type { AgentSessionManager } from '../agent/session_manager.js'
+import { sanitizeStreamingMessage } from '../agent/session_manager.js'
+import { stripBlockBinaries } from '../agent/session_persistence.js'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { TaskRunner } from '../task-runner/task_runner.js'
@@ -44,6 +46,7 @@ import {
   type TasksApi,
   type RunningTaskSummary,
   type SessionHandle,
+  type SessionLiveState,
   type SessionState,
   type SessionsApi,
   type StatusApi,
@@ -51,16 +54,19 @@ import {
   type Unsubscribe,
 } from './interface.js'
 
-// AgentWFYAgentEvent = AgentEvent | session_saved | session_loaded. The
-// session_saved/loaded variants are surfaced as bus events on known topics so
-// AgentBackendEvent['session'] stays exactly SessionStreamEvent.
 const SESSION_BUS_TOPICS = {
   saved:  'sessions.saved',
   loaded: 'sessions.loaded',
 } as const
 
-function isSessionStreamEvent(event: AgentWFYAgentEvent): event is SessionStreamEvent {
-  return event.type !== 'session_saved' && event.type !== 'session_loaded'
+function liveStateFromAgentState(state: AgentState): SessionLiveState {
+  return {
+    isStreaming: state.isStreaming,
+    streamingMessage: sanitizeStreamingMessage(state.streamingMessage),
+    statusLine: state.statusLine,
+    retryState: state.retryState ?? null,
+    stalledSince: state.stalledSince ?? null,
+  }
 }
 
 export class LocalBackend implements AgentBackend {
@@ -69,6 +75,8 @@ export class LocalBackend implements AgentBackend {
 
   private readonly ctx: LocalBackendContext
   private readonly subscribers = new Set<(event: AgentBackendEvent) => void>()
+  private readonly lastMessagesRef = new Map<string, DisplayMessage[]>()
+  private readonly lastTitle = new Map<string, string>()
   private busUnsubscribes: Array<() => void> = []
   private agentEventsUnsubscribe: (() => void) | null = null
   private started = false
@@ -92,31 +100,51 @@ export class LocalBackend implements AgentBackend {
       this.busUnsubscribes.push(off)
     }
 
-    // Per-session typed event stream: every tracked agent's events are
-    // forwarded with the owning sessionId attached. Stream events bubble up
-    // as { kind: 'session' }; session_saved/loaded become bus events.
+    // Per-session typed event stream: every tracked agent's events fan out as
+    // session:state (live always, messages only when the array reference
+    // changes). session_saved/loaded become bus events.
     this.agentEventsUnsubscribe = this.ctx.sessionManager.subscribeToAgentEvents(
       (sessionId, event) => {
         const publicSessionId = this.ctx.sessionManager.getSessionFileForSessionId(sessionId) ?? sessionId
-        if (isSessionStreamEvent(event)) {
-          this.emit({ kind: 'session', sessionId: publicSessionId, event })
-          const state = this.ctx.sessionManager.getSessionAgentState(sessionId)
-          if (state) {
-            this.emit({ kind: 'session:state', sessionId: publicSessionId, state })
-          }
-        } else if (event.type === 'session_saved') {
+
+        if (event.type === 'session_saved') {
           this.emit({
             kind: 'bus',
             topic: SESSION_BUS_TOPICS.saved,
             data: { sessionId: event.sessionId, sessionFile: event.sessionFile },
           })
-        } else {
+          return
+        }
+        if (event.type === 'session_loaded') {
           this.emit({
             kind: 'bus',
             topic: SESSION_BUS_TOPICS.loaded,
             data: { sessionId: event.sessionId, sessionFile: event.sessionFile },
           })
+          return
         }
+
+        const state = this.ctx.sessionManager.getSessionAgentState(sessionId)
+        if (!state) return
+
+        const messagesChanged = this.lastMessagesRef.get(sessionId) !== state.messages
+        if (messagesChanged) {
+          this.lastMessagesRef.set(sessionId, state.messages)
+        }
+
+        const title = this.ctx.sessionManager.getSessionTitle(sessionId) ?? ''
+        const titleChanged = this.lastTitle.get(sessionId) !== title
+        if (titleChanged) {
+          this.lastTitle.set(sessionId, title)
+        }
+
+        this.emit({
+          kind: 'session:state',
+          sessionId: publicSessionId,
+          live: liveStateFromAgentState(state),
+          ...(messagesChanged ? { messages: stripBlockBinaries(state.messages) } : {}),
+          ...(titleChanged ? { title } : {}),
+        })
       },
     )
   }
@@ -129,6 +157,8 @@ export class LocalBackend implements AgentBackend {
     this.agentEventsUnsubscribe?.()
     this.agentEventsUnsubscribe = null
     this.subscribers.clear()
+    this.lastMessagesRef.clear()
+    this.lastTitle.clear()
   }
 
   // ── sessions ───────────────────────────────────────────────────────────
@@ -147,7 +177,7 @@ export class LocalBackend implements AgentBackend {
         providerId: result.providerId,
         updatedAt: result.updatedAt,
         messages: result.messages,
-        state: result.state,
+        live: result.state ? liveStateFromAgentState(result.state) : null,
       }
     },
 

@@ -1,13 +1,16 @@
 // RemoteChatController — desktop chat controller for a remote-backed agent.
 //
 // The daemon owns sessions; the desktop owns which remote session is shown in
-// the chat panel. Chat changes are surfaced by subscribing to the backend's
-// session/status events and to the local `displayedSessionId` slot.
+// the chat panel. The controller keeps a local SessionState cache for the
+// displayed session: metadata is filled once via `sessions.get`, then folded
+// from pushed `session:state` events. `getSnapshot()` reads the cache and
+// never hits the network after that initial fetch.
 
 import type {
   AgentBackend,
   AgentBackendEvent,
   BackendStatusSnapshot,
+  SessionState,
   Unsubscribe,
 } from '#shared/backend/interface.js'
 import type {
@@ -21,6 +24,8 @@ import type { AgentSnapshot } from '#shared/agent/types.js'
 
 export class RemoteChatController implements AgentChatController {
   private displayedSessionId: string | null = null
+  private cachedState: SessionState | null = null
+  private cacheLoad: Promise<void> | null = null
   private readonly chatChangeHandlers = new Set<() => void>()
   private eventsUnsubscribe: Unsubscribe | null = null
   private statusUnsubscribe: Unsubscribe | null = null
@@ -34,7 +39,19 @@ export class RemoteChatController implements AgentChatController {
   async setDisplayedSessionId(sessionId: string | null): Promise<void> {
     if (this.displayedSessionId === sessionId) return
     this.displayedSessionId = sessionId
+    this.cachedState = null
+    this.cacheLoad = sessionId ? this.loadCachedState(sessionId) : null
     this.notifyChange()
+  }
+
+  private loadCachedState(sessionId: string): Promise<void> {
+    return this.backend.sessions.get({ sessionId }).then((state) => {
+      if (this.displayedSessionId !== sessionId) return
+      this.cachedState = state ?? null
+      this.notifyChange()
+    }).catch((err: unknown) => {
+      console.warn('[RemoteChatController] initial state fetch failed:', err)
+    })
   }
 
   async getSessionList(): Promise<SessionListItem[]> {
@@ -53,11 +70,16 @@ export class RemoteChatController implements AgentChatController {
     const backendStatus = statusLineForBackend(this.backend.status.get())
     const current = this.displayedSessionId
     if (!current) return emptySnapshot(backendStatus)
-    const state = await this.backend.sessions.get({ sessionId: current })
-    if (!state) return emptySnapshot(backendStatus)
-    const live = state.state ?? null
+
+    if (this.cacheLoad && !this.cachedState) {
+      await this.cacheLoad
+    }
+
+    const state = this.cachedState
+    if (!state || state.sessionId !== current) return emptySnapshot(backendStatus)
+    const live = state.live ?? null
     return {
-      messages: live?.messages ?? state.messages,
+      messages: state.messages,
       isStreaming: live?.isStreaming ?? false,
       label: state.title || '',
       streamingSessionsCount: live?.isStreaming ? 1 : 0,
@@ -75,16 +97,14 @@ export class RemoteChatController implements AgentChatController {
 
   async createSession(opts: ChatCreateSessionOpts): Promise<string | null> {
     if (!opts.prompt) {
-      this.displayedSessionId = null
-      this.notifyChange()
+      await this.setDisplayedSessionId(null)
       return null
     }
     const { sessionId } = await this.backend.sessions.spawn({
       prompt: opts.prompt,
       providerId: opts.providerId,
     })
-    this.displayedSessionId = sessionId
-    this.notifyChange()
+    await this.setDisplayedSessionId(sessionId)
     return sessionId
   }
 
@@ -96,8 +116,7 @@ export class RemoteChatController implements AgentChatController {
       return
     }
     const { sessionId } = await this.backend.sessions.spawn({ prompt: text })
-    this.displayedSessionId = sessionId
-    this.notifyChange()
+    await this.setDisplayedSessionId(sessionId)
   }
 
   async abort(): Promise<void> {
@@ -108,27 +127,23 @@ export class RemoteChatController implements AgentChatController {
   }
 
   async closeSession(): Promise<void> {
-    this.displayedSessionId = null
-    this.notifyChange()
+    await this.setDisplayedSessionId(null)
   }
 
   async loadSession(file: string): Promise<void> {
-    this.switchTo(file)
+    await this.switchTo(file)
   }
 
   async switchTo(sessionId: string): Promise<void> {
     if (typeof sessionId !== 'string' || sessionId.length === 0) return
-    if (this.displayedSessionId === sessionId) return
-    this.displayedSessionId = sessionId
-    this.notifyChange()
+    await this.setDisplayedSessionId(sessionId)
   }
 
   async disposeSessionByFile(file: string): Promise<void> {
     if (typeof file !== 'string' || file.trim().length === 0) return
     await this.backend.sessions.remove({ sessionId: file })
     if (this.displayedSessionId === file) {
-      this.displayedSessionId = null
-      this.notifyChange()
+      await this.setDisplayedSessionId(null)
     }
   }
 
@@ -148,13 +163,31 @@ export class RemoteChatController implements AgentChatController {
 
   private ensureBackendSubscriptions(): void {
     if (this.eventsUnsubscribe) return
+    let prevConnectionState: BackendStatusSnapshot['state'] = this.backend.status.get().state
     this.eventsUnsubscribe = this.backend.events.subscribe((evt: AgentBackendEvent) => {
-      if (evt.kind !== 'session' && evt.kind !== 'session:state') return
       if (this.displayedSessionId === null) return
+      if (evt.kind !== 'session:state') return
       if (evt.sessionId !== this.displayedSessionId) return
+      // Skip events that arrive before the initial fetch populates the cache:
+      // title/providerId come only from sessions.get.
+      const current = this.cachedState
+      if (!current || current.sessionId !== evt.sessionId) return
+      this.cachedState = {
+        ...current,
+        live: evt.live,
+        ...(evt.messages !== undefined ? { messages: evt.messages } : {}),
+        ...(evt.title !== undefined ? { title: evt.title } : {}),
+      }
       this.notifyChange()
     })
-    this.statusUnsubscribe = this.backend.status.subscribe(() => {
+    this.statusUnsubscribe = this.backend.status.subscribe((status) => {
+      const prev = prevConnectionState
+      prevConnectionState = status.state
+      // Re-fetch after reconnect: any events fired while we were offline
+      // never reached this client.
+      if (prev !== 'connected' && status.state === 'connected' && this.displayedSessionId) {
+        this.cacheLoad = this.loadCachedState(this.displayedSessionId)
+      }
       this.notifyChange()
     })
   }

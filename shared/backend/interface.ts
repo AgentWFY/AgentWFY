@@ -10,10 +10,7 @@
 // protocol used by RemoteBackend lives in ./protocol.ts.
 
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
-import type {
-  AgentEvent as SessionStreamEvent,
-  AgentState,
-} from '../agent/types.js'
+import type { RetryState } from '../agent/types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
 
 // ── Backend identity ─────────────────────────────────────────────────────
@@ -48,10 +45,21 @@ export interface SessionSummary {
   updatedAt: number
 }
 
+/** Streaming-frequency fields. Carried in every session:state event.
+ *  Excludes immutable agent metadata (systemPrompt/tools) and committed
+ *  messages — those flow separately so the conversation isn't re-serialized
+ *  per token. */
+export interface SessionLiveState {
+  isStreaming: boolean
+  streamingMessage: DisplayMessage | null
+  statusLine?: string
+  retryState?: RetryState | null
+  stalledSince?: number | null
+}
+
 export interface SessionState extends SessionSummary {
   messages: DisplayMessage[]
-  /** Latest snapshot of streaming/idle state for this session. */
-  state?: AgentState | null
+  live?: SessionLiveState | null
 }
 
 export interface SpawnSessionRequest {
@@ -128,13 +136,18 @@ export interface TasksApi {
 
 // ── Events (live stream from backend to subscribed clients) ──────────────
 
-// The session-level streaming events (agent_start, stream_update, etc.) are
-// imported as-is; backend wraps them with the owning sessionId so a single
-// subscription multiplexes all sessions.
+// Push-only: subscribers maintain a local cache and apply patches as events
+// arrive. `messages` and `title` are included only when they change, so the
+// conversation isn't shipped per streaming token.
 
 export type AgentBackendEvent =
-  | { kind: 'session'; sessionId: string; event: SessionStreamEvent }
-  | { kind: 'session:state'; sessionId: string; state: AgentState }
+  | {
+      kind: 'session:state'
+      sessionId: string
+      live: SessionLiveState
+      messages?: DisplayMessage[]
+      title?: string
+    }
   | { kind: 'session:created'; summary: SessionSummary }
   | { kind: 'session:removed'; sessionId: string }
   | { kind: 'bus'; topic: string; data: unknown }
