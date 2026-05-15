@@ -231,7 +231,6 @@ await runSql({
   sql: 'INSERT INTO views (name, title, content) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content',
   params: ['remote-sync-demo', 'Remote Sync Demo', html],
 });
-await new Promise(resolve => setTimeout(resolve, 1200));
 await openTab({ viewName: 'remote-sync-demo' });
 return 'created and opened remote-sync-demo';`
 

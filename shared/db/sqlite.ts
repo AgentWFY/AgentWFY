@@ -6,10 +6,36 @@ export interface SqlExecutionRequest {
   params?: unknown[];
 }
 
+/** Synthetic table name used for change-event markers that don't correspond
+ *  to a real row (full-DB notifications, post-snapshot markers). */
+export const SYNTHETIC_DB_TABLE = '_database' as const;
+
 export interface AgentDbChange {
   table: string;
   rowId: string | number;
   op: 'insert' | 'update' | 'delete';
+  /**
+   * Previous primary-key value for update events that changed the replicated
+   * row key. Mirrors use it to update the existing row instead of leaving the
+   * old key behind.
+   */
+  previousRowId?: string | number;
+  /**
+   * Monotonic per-AgentDb version assigned by the daemon when the change is
+   * drained. Increments by 1 for every emitted change (including synthetic
+   * ones). Mirrors use this to sequence incremental application and to detect
+   * gaps that require a full re-snapshot.
+   *
+   * Local agents (no remote mirror) just ignore it.
+   */
+  version: number;
+  /**
+   * Snapshot of the row at change time, for insert/update events on
+   * replicated tables. Absent for deletes, schema changes, and the
+   * synthetic `_database`/`sqlite_schema` markers. When absent and the
+   * change isn't a delete, mirrors fall back to a full snapshot.
+   */
+  row?: Record<string, unknown>;
 }
 
 export const WRITE_RE = /^\s*(INSERT|UPDATE|DELETE)\b/i;

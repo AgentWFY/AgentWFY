@@ -13,6 +13,7 @@
 
 import {
   DB_SNAPSHOT_PATH,
+  DB_SNAPSHOT_VERSION_HEADER,
   errorFromUnknown,
   formatAuthHeader,
   type ClientFunctionsInvokeRequest,
@@ -91,6 +92,10 @@ export interface RemoteDbSync {
   start(): Promise<void>
   stop(): void
   runSql(payload: unknown): Promise<unknown[]>
+  /** Called when the daemon sends a hello with the current DB version. The
+   *  mirror compares against its `localVersion` and triggers a snapshot
+   *  fetch if it's behind. */
+  onHello(dbVersion: number): void
 }
 
 export class RemoteBackend implements AgentBackend {
@@ -244,12 +249,17 @@ export class RemoteBackend implements AgentBackend {
     },
   }
 
-  getAgentDbSnapshotRequest(): { url: string; headers: Record<string, string> } {
+  getAgentDbSnapshotRequest(): {
+    url: string
+    headers: Record<string, string>
+    versionHeader: string
+  } {
     return {
       url: `${this.baseUrl}${DB_SNAPSHOT_PATH}`,
       headers: {
         authorization: formatAuthHeader(this.agentToken),
       },
+      versionHeader: DB_SNAPSHOT_VERSION_HEADER,
     }
   }
 
@@ -261,16 +271,21 @@ export class RemoteBackend implements AgentBackend {
   }
 
   async invokeRemoteFunction(req: FunctionsInvokeRequest): Promise<unknown> {
-    const { value } = await this.ws.rpc<FunctionsInvokeRequest, FunctionsInvokeResponse>(
-      'functions.invoke',
-      req,
-    )
+    const { value } = await this.invokeRemoteFunctionRaw(req)
     return value
+  }
+
+  /** Like {@link invokeRemoteFunction} but returns the full `{value, dbVersion}`
+   *  envelope so callers (currently only `RemoteAgentDbSync.runSql`) can wait
+   *  for the mirror to catch up to `dbVersion` before returning. */
+  async invokeRemoteFunctionRaw(req: FunctionsInvokeRequest): Promise<FunctionsInvokeResponse> {
+    return this.ws.rpc<FunctionsInvokeRequest, FunctionsInvokeResponse>('functions.invoke', req)
   }
 
   private async handleWsMessage(message: WsMessage): Promise<void> {
     switch (message.type) {
       case 'hello':
+        this.dbSync?.onHello(message.dbVersion)
         return
       case 'event':
         this.emit(message.event)

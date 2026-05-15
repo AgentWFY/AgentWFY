@@ -2,8 +2,15 @@ import { DatabaseSync, StatementSync, backup, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams } from './sqlite.js';
+import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams, SYNTHETIC_DB_TABLE } from './sqlite.js';
 import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
+
+export interface AgentDbSnapshotResult {
+  /** Version counter at the moment the snapshot read started — every change
+   *  with `version <= snapshotVersion` is in the snapshot, every change with
+   *  `version > snapshotVersion` is not. */
+  version: number;
+}
 
 const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules']);
 
@@ -115,31 +122,58 @@ BEGIN
   DELETE FROM modules WHERE name GLOB OLD.name || '.*';
 END;
 
-${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'].map(t => `
-CREATE TRIGGER IF NOT EXISTS ${t}_auto_updated_at AFTER UPDATE ON ${t}
-BEGIN
-  UPDATE ${t} SET updated_at = unixepoch() WHERE rowid = NEW.rowid;
-END;`).join('\n')}
+${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'].map(t => makeAutoUpdatedAtTriggerSql(t)).join('\n')}
 `;
 
-const CHANGE_TRACKED_TABLES = ['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'];
+export const CHANGE_TRACKED_TABLES = ['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'] as const;
+const CHANGE_TRACKED_TABLE_SET = new Set<string>(CHANGE_TRACKED_TABLES);
+
+function makeAutoUpdatedAtTriggerSql(table: string): string {
+  return `
+CREATE TRIGGER IF NOT EXISTS ${table}_auto_updated_at AFTER UPDATE ON ${table}
+BEGIN
+  UPDATE ${table} SET updated_at = unixepoch() WHERE rowid = NEW.rowid;
+END;`;
+}
+
+export function isReplicatedTable(table: string): boolean {
+  return CHANGE_TRACKED_TABLE_SET.has(table);
+}
+
+function isUserTableMutationTarget(table: string): boolean {
+  const lower = table.toLowerCase();
+  if (lower === '_changes' || lower.startsWith('sqlite_')) return false;
+  return !CHANGE_TRACKED_TABLE_SET.has(lower);
+}
+
+function sqlTargetsUntrackedTable(sql: string): boolean {
+  const stripped = sql.replace(/--.*$/gm, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ').trim();
+  const target =
+    stripped.match(/^(?:insert|replace)\s+(?:or\s+\w+\s+)?into\s+([`"\[]?[\w.-]+[`"\]]?)/i)?.[1]
+    ?? stripped.match(/^update\s+(?:or\s+\w+\s+)?([`"\[]?[\w.-]+[`"\]]?)/i)?.[1]
+    ?? stripped.match(/^delete\s+from\s+([`"\[]?[\w.-]+[`"\]]?)/i)?.[1];
+  if (!target) return false;
+  const table = target.split('.').pop()?.replace(/^[`"\[]|[`"\]]$/g, '');
+  return table ? isUserTableMutationTarget(table) : false;
+}
 
 const CHANGE_TRACKING_SQL = `
 CREATE TEMP TABLE IF NOT EXISTS _changes (
   table_name TEXT NOT NULL,
   row_id NOT NULL,
+  previous_row_id,
   op TEXT NOT NULL
 );
 
 ${CHANGE_TRACKED_TABLES.map(t => `
 CREATE TEMP TRIGGER IF NOT EXISTS _${t}_insert AFTER INSERT ON ${t} BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', NEW.name, 'insert');
+  INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', NEW.name, NULL, 'insert');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _${t}_update AFTER UPDATE ON ${t} BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', NEW.name, 'update');
+  INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', NEW.name, OLD.name, 'update');
 END;
 CREATE TEMP TRIGGER IF NOT EXISTS _${t}_delete AFTER DELETE ON ${t} BEGIN
-  INSERT INTO _changes (table_name, row_id, op) VALUES ('${t}', OLD.name, 'delete');
+  INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', OLD.name, OLD.name, 'delete');
 END;`).join('\n')}
 `;
 
@@ -241,7 +275,19 @@ class AgentDb {
   // Set by the authorizer when prepare() encounters a DDL action code; read
   // by run() to decide whether to wrap execution in a schema-guard savepoint.
   private prepareSawDdl = false;
+  // Set by the authorizer when a statement writes outside the built-in
+  // replicated table set. We still emit any built-in row changes, then append
+  // a synthetic full-DB marker so mirrors refresh user-defined tables too.
+  private prepareMutatedUntrackedTable = false;
   private reservedSchemaScan: StatementSync | null = null;
+  // Monotonic counter for emitted change events. Used by remote mirrors to
+  // sequence incremental application and detect gaps. The counter lives in
+  // memory only — on process restart it resets, and clients detect this by
+  // the WS connection dropping (they fetch a fresh snapshot on reconnect).
+  private versionCounter = 0;
+  // Row-fetch statements cached per replicated table. Built lazily because
+  // some tables don't exist yet when the AgentDb is first constructed.
+  private rowFetchStatements = new Map<string, StatementSync>();
 
   constructor(opts: {
     dbPath: string;
@@ -382,6 +428,9 @@ class AgentDb {
         case SQLITE_INSERT:
         case SQLITE_UPDATE:
         case SQLITE_DELETE:
+          if (arg1 && isUserTableMutationTarget(arg1)) {
+            this.prepareMutatedUntrackedTable = true;
+          }
           return arg1 === 'plugins' ? SQLITE_DENY : SQLITE_OK;
 
         // Block database attachment
@@ -511,6 +560,18 @@ class AgentDb {
   }
 
   private adminWrite(fn: () => void): void {
+    this.shieldedWrite(fn, { drain: true });
+  }
+
+  /**
+   * Execute `fn` with namespace guards + authorizer disabled. With
+   * `drain: true` (admin writes from the runtime), committed changes are
+   * drained through the change listener afterward. With `drain: false`
+   * (mirror writes replicated from a remote daemon), trigger-generated
+   * `_changes` rows are discarded — the caller forwards the original
+   * remote change to the UI so the mirror doesn't fabricate a duplicate.
+   */
+  private shieldedWrite(fn: () => void, opts: { drain: boolean }): void {
     if (this.authorizerAvailable) {
       this.db.setAuthorizer(null);
     }
@@ -518,13 +579,18 @@ class AgentDb {
     try {
       this.db.exec('DELETE FROM _changes;');
       fn();
+      if (!opts.drain) {
+        // Trigger-generated changes from the mirror write belong to the
+        // daemon's sequence, not the mirror's — discard them.
+        this.db.exec('DELETE FROM _changes;');
+      }
     } finally {
       for (const sql of ALL_GUARD_SQL) this.db.exec(sql);
       this.installAuthorizer();
     }
     // Drain after guards are restored — if fn() threw, this line is unreachable
     // so listeners only fire for committed writes.
-    this.drainChanges();
+    if (opts.drain) this.drainChanges();
   }
 
   run(request: SqlExecutionRequest): unknown[] {
@@ -533,6 +599,7 @@ class AgentDb {
 
     if (!this.authorizerAvailable) {
       guardSqlWithoutAuthorizer(request.sql);
+      this.prepareMutatedUntrackedTable = sqlTargetsUntrackedTable(request.sql);
     }
 
     if (trackChanges) {
@@ -540,6 +607,9 @@ class AgentDb {
     }
 
     this.prepareSawDdl = false;
+    if (this.authorizerAvailable) {
+      this.prepareMutatedUntrackedTable = false;
+    }
     const statement = this.db.prepare(request.sql);
 
     if (this.prepareSawDdl) {
@@ -552,7 +622,10 @@ class AgentDb {
 
     const rows = statement.all(...params);
     if (trackChanges) {
-      this.drainChanges({ table: '_database', rowId: 'main', op: 'update' });
+      this.drainChanges(
+        { table: SYNTHETIC_DB_TABLE, rowId: 'main', op: 'update' },
+        { alwaysEmitFallback: this.prepareMutatedUntrackedTable },
+      );
     }
     return normalizeSqlRows(rows);
   }
@@ -583,23 +656,118 @@ class AgentDb {
     }
   }
 
-  private drainChanges(fallback?: AgentDbChange): void {
-    if (!this.changeListener) return;
-    const changes = this.db.prepare('SELECT table_name, row_id, op FROM _changes').all();
+  private drainChanges(
+    fallback?: Omit<AgentDbChange, 'version'>,
+    opts: { alwaysEmitFallback?: boolean } = {},
+  ): void {
+    // We always drain the temp table to keep state clean even when no
+    // listener is attached (mirrors run without a listener — they emit
+    // manually after applying remote changes).
+    const changes = this.db.prepare('SELECT table_name, row_id, previous_row_id, op FROM _changes').all();
     if (changes.length > 0) {
       this.db.exec('DELETE FROM _changes;');
     }
+
+    if (!this.changeListener) return;
+
     if (changes.length === 0 && fallback) {
-      this.changeListener(fallback);
+      this.versionCounter += 1;
+      this.changeListener({ ...fallback, version: this.versionCounter });
       return;
     }
+
     for (const raw of changes) {
-      const change = raw as Record<string, unknown>;
-      this.changeListener({
-        table: change.table_name as string,
-        rowId: change.row_id as string | number,
-        op: change.op as 'insert' | 'update' | 'delete',
+      const record = raw as Record<string, unknown>;
+      const table = record.table_name as string;
+      const rowId = record.row_id as string | number;
+      const previousRowId = record.previous_row_id as string | number | null;
+      const op = record.op as 'insert' | 'update' | 'delete';
+      this.versionCounter += 1;
+      const change: AgentDbChange = { table, rowId, op, version: this.versionCounter };
+      if (op === 'update' && previousRowId !== null && previousRowId !== rowId) {
+        change.previousRowId = previousRowId;
+      }
+      if (op !== 'delete' && CHANGE_TRACKED_TABLE_SET.has(table)) {
+        const row = this.fetchRowByName(table, rowId);
+        if (row) change.row = row;
+      }
+      this.changeListener(change);
+    }
+
+    if (fallback && opts.alwaysEmitFallback) {
+      this.versionCounter += 1;
+      this.changeListener({ ...fallback, version: this.versionCounter });
+    }
+  }
+
+  private fetchRowByName(table: string, name: string | number): Record<string, unknown> | null {
+    let stmt = this.rowFetchStatements.get(table);
+    if (!stmt) {
+      // Table name comes from the hard-coded CHANGE_TRACKED_TABLES list (via
+      // the trigger) so it is safe to interpolate. Belt-and-suspenders: the
+      // set check above already restricts it.
+      stmt = this.db.prepare(`SELECT * FROM ${table} WHERE name = ?`);
+      this.rowFetchStatements.set(table, stmt);
+    }
+    const row = stmt.get(name as string) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return normalizeSqlRows([row])[0] as Record<string, unknown>;
+  }
+
+  getCurrentVersion(): number {
+    return this.versionCounter;
+  }
+
+  /**
+   * Apply a change received from a remote source to this mirror DB. Bypasses
+   * the namespace/format guard triggers so `system.*` and `plugin.*` rows
+   * replicated from the daemon can land on the mirror. Does NOT emit through
+   * the local change listener — the caller emits manually to the UI after
+   * applying, so remote-origin changes carry their original version.
+   */
+  applyMirrorChange(change: AgentDbChange): void {
+    if (!CHANGE_TRACKED_TABLE_SET.has(change.table)) {
+      throw new Error(`applyMirrorChange: untracked table ${change.table}`);
+    }
+    if (change.op === 'delete') {
+      this.shieldedWrite(() => {
+        this.db.prepare(`DELETE FROM ${change.table} WHERE name = ?`).run(change.rowId as string);
+      }, { drain: false });
+      return;
+    }
+
+    const row = change.row;
+    if (!row) {
+      throw new Error(`applyMirrorChange: missing row data for ${change.op} on ${change.table}`);
+    }
+    const cols = Object.keys(row);
+    if (cols.length === 0) {
+      throw new Error(`applyMirrorChange: empty row for ${change.op} on ${change.table}`);
+    }
+    const { sql, values } = buildUpsertByName(change.table, cols, row);
+    this.shieldedWrite(() => {
+      this.withoutAutoUpdatedAtTrigger(change.table, () => {
+        if (
+          change.op === 'update'
+          && change.previousRowId !== undefined
+          && change.previousRowId !== change.rowId
+        ) {
+          const update = buildUpdateByName(change.table, cols, row);
+          const result = this.db.prepare(update.sql).run(...update.values, change.previousRowId as string) as { changes?: number | bigint };
+          const changed = typeof result.changes === 'bigint' ? Number(result.changes) : result.changes;
+          if (changed && changed > 0) return;
+        }
+        this.db.prepare(sql).run(...values);
       });
+    }, { drain: false });
+  }
+
+  private withoutAutoUpdatedAtTrigger(table: string, fn: () => void): void {
+    this.db.exec(`DROP TRIGGER IF EXISTS ${table}_auto_updated_at;`);
+    try {
+      fn();
+    } finally {
+      this.db.exec(makeAutoUpdatedAtTriggerSql(table));
     }
   }
 
@@ -616,8 +784,18 @@ class AgentDb {
     }
   }
 
-  async writeSnapshotFile(snapshotPath: string): Promise<void> {
+  /**
+   * Stream a consistent copy of the DB to disk and return the version
+   * the snapshot reflects. We capture `version` BEFORE invoking backup() —
+   * concurrent writes that commit during backup may or may not appear in
+   * the snapshot, but they have version > the captured value and will be
+   * re-applied incrementally by mirrors. UPSERT semantics in
+   * `applyMirrorChange` make replays idempotent.
+   */
+  async writeSnapshotFile(snapshotPath: string): Promise<AgentDbSnapshotResult> {
+    const version = this.versionCounter;
     await backup(this.db, snapshotPath);
+    return { version };
   }
 
   close(): void {
@@ -627,6 +805,39 @@ class AgentDb {
       // Already closed
     }
   }
+}
+
+/** Build an `INSERT … ON CONFLICT(name) DO UPDATE SET …` for a row keyed on
+ *  `name`. Tables and columns come from the hard-coded replicated set
+ *  (caller has already validated against CHANGE_TRACKED_TABLE_SET), so
+ *  string interpolation here is safe. */
+function buildUpsertByName(
+  table: string,
+  cols: string[],
+  row: Record<string, unknown>,
+): { sql: string; values: (null | number | bigint | string)[] } {
+  const placeholders = cols.map(() => '?').join(', ');
+  const setClauses = cols
+    .filter((c) => c !== 'name')
+    .map((c) => `${c} = excluded.${c}`)
+    .join(', ');
+  const conflict = setClauses.length > 0
+    ? `ON CONFLICT(name) DO UPDATE SET ${setClauses}`
+    : `ON CONFLICT(name) DO NOTHING`;
+  const sql = `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ${conflict}`;
+  const values = cols.map((c) => row[c] as null | number | bigint | string);
+  return { sql, values };
+}
+
+function buildUpdateByName(
+  table: string,
+  cols: string[],
+  row: Record<string, unknown>,
+): { sql: string; values: (null | number | bigint | string)[] } {
+  const setClauses = cols.map((c) => `${c} = ?`).join(', ');
+  const sql = `UPDATE ${table} SET ${setClauses} WHERE name = ?`;
+  const values = cols.map((c) => row[c] as null | number | bigint | string);
+  return { sql, values };
 }
 
 // Module-level registry
@@ -679,10 +890,21 @@ export async function exportAgentDbSnapshot(dataDir: string): Promise<Buffer> {
   return getOrCreateAgentDb(dataDir).exportSnapshot();
 }
 
-export async function writeAgentDbSnapshotFile(dataDir: string, snapshotPath: string): Promise<void> {
+export async function writeAgentDbSnapshotFile(
+  dataDir: string,
+  snapshotPath: string,
+): Promise<AgentDbSnapshotResult> {
   fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
   fs.rmSync(snapshotPath, { force: true });
-  await getOrCreateAgentDb(dataDir).writeSnapshotFile(snapshotPath);
+  return getOrCreateAgentDb(dataDir).writeSnapshotFile(snapshotPath);
+}
+
+export function getAgentDbCurrentVersion(dataDir: string): number {
+  return getOrCreateAgentDb(dataDir).getCurrentVersion();
+}
+
+export function applyAgentDbMirrorChange(dataDir: string, change: AgentDbChange): void {
+  getOrCreateAgentDb(dataDir).applyMirrorChange(change);
 }
 
 export function replaceAgentDbSnapshot(dataDir: string, snapshot: Uint8Array): void {

@@ -13,6 +13,7 @@ import path from 'node:path'
 import {
   AUTH_HEADER,
   DB_SNAPSHOT_PATH,
+  DB_SNAPSHOT_VERSION_HEADER,
   formatAuthHeader,
   PROTOCOL_VERSION,
   WS_PATH,
@@ -126,7 +127,7 @@ async function dispatchBackendRpc(
     case 'functions.invoke': {
       const req = params as FunctionsInvokeRequest
       const value = await bundle.backend.functions.invoke(req)
-      return { value }
+      return { value, dbVersion: bundle.getDbVersion() }
     }
     case 'providers.list':
       return bundle.backend.providers.list()
@@ -265,6 +266,7 @@ function handleWebSocket(
     protocolVersion: PROTOCOL_VERSION,
     agentId: bundle.backend.id,
     capabilities: { tabs: true, clientFunctionProxy: true },
+    dbVersion: bundle.getDbVersion(),
   }))
   console.log('agentwfy-remote-server: client connected')
 }
@@ -301,12 +303,13 @@ async function sendDbSnapshot(
   }
 
   try {
-    await writeAgentDbSnapshotFile(bundle.backend.id, snapshotPath)
+    const { version } = await writeAgentDbSnapshotFile(bundle.backend.id, snapshotPath)
     const info = await stat(snapshotPath)
     res.writeHead(200, {
       'content-type': 'application/vnd.sqlite3',
       'content-length': String(info.size),
       'cache-control': 'no-store',
+      [DB_SNAPSHOT_VERSION_HEADER]: String(version),
     })
     const stream = createReadStream(snapshotPath)
     stream.on('error', (err) => {

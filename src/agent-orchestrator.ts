@@ -370,7 +370,11 @@ export class AgentOrchestrator {
     if (!this.deps.isWindowAvailable()) return;
 
     if (this.activeAgentId === agentId) {
-      this.deps.sendToRenderer(Channels.db.changed, change);
+      // Strip `row` before crossing the IPC boundary: it can hold large
+      // view-content blobs that the renderer doesn't consume (it only uses
+      // {table, rowId, op} for invalidation).
+      const { row: _row, ...envelope } = change;
+      this.deps.sendToRenderer(Channels.db.changed, envelope);
     }
 
     if (change.table === 'views' && (change.op === 'update' || change.op === 'delete')) {

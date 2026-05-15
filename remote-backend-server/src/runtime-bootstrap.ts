@@ -2,7 +2,7 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js'
 import { LocalBackend } from '#shared/backend/local.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
-import { getOrCreateAgentDb } from '#shared/db/agent-db.js'
+import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { installPackageData, readValidatedPackage, uninstallPlugin } from '#shared/plugins/installer.js'
 import path from 'node:path'
@@ -13,6 +13,9 @@ export interface RuntimeBundle {
   dbChanges: {
     subscribe(handler: (change: AgentDbChange) => void): () => void
   }
+  /** Current DB change-log version. Read after RPCs / on hello so remote
+   *  mirrors can sync their `localVersion`. */
+  getDbVersion(): number
   dispose(): Promise<void>
 }
 
@@ -82,6 +85,7 @@ export async function createAgentRuntime(
         }
       },
     },
+    getDbVersion: () => getAgentDbCurrentVersion(runtimeRoot),
     dispose,
   }
 }

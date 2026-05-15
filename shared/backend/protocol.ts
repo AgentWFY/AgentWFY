@@ -34,6 +34,10 @@ export const PROTOCOL_VERSION = 'v1' as const
 export const API_PREFIX = `/api/${PROTOCOL_VERSION}` as const
 export const WS_PATH = `${API_PREFIX}/ws` as const
 export const DB_SNAPSHOT_PATH = `${API_PREFIX}/db/snapshot` as const
+/** HTTP response header on `GET /api/v1/db/snapshot` carrying the change-log
+ *  version the snapshot reflects. Mirrors set their local version from this
+ *  and discard pending change events with `version <= snapshotVersion`. */
+export const DB_SNAPSHOT_VERSION_HEADER = 'x-agentwfy-db-version' as const
 
 export const AUTH_HEADER = 'authorization' as const
 export const AUTH_SCHEME = 'Bearer' as const
@@ -151,6 +155,10 @@ export interface WsHello {
     tabs: boolean
     clientFunctionProxy: boolean
   }
+  /** Current DB change-log version on the daemon at hello time. Mirrors use
+   *  this to decide whether they're caught up; if behind, they fetch a
+   *  fresh snapshot. */
+  dbVersion: number
 }
 
 export type WsMessage =
@@ -215,7 +223,13 @@ export type SessionsRemoveResponse = { ok: true }
 
 export type FunctionsListResponse = FunctionInfo[]
 export interface FunctionsInvokeRequest { name: string; params: unknown }
-export interface FunctionsInvokeResponse { value: unknown }
+export interface FunctionsInvokeResponse {
+  value: unknown
+  /** DB change-log version after the invocation. Set for every call so
+   *  mirrors can wait for `localVersion >= dbVersion` after a remote write
+   *  before treating the mirror as up-to-date. */
+  dbVersion: number
+}
 
 export interface ClientFunctionsInvokeRequest { name: string; params: unknown }
 export interface ClientFunctionsInvokeResponse { value: unknown }
