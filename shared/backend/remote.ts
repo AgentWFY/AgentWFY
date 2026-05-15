@@ -68,6 +68,7 @@ import type {
 } from './interface.js'
 import type { AgentDbChange } from '../db/sqlite.js'
 import { isClientRuntimeFunction } from '../runtime/client-functions.js'
+import { DAEMON_BUILT_IN_FUNCTIONS } from '../runtime/daemon-functions.js'
 import { WsClient, WsClientError, type WsClientConfig } from './ws_client.js'
 
 export { WsClientError as RemoteBackendError }
@@ -171,6 +172,13 @@ export class RemoteBackend implements AgentBackend {
         return this.desktopFunctions.call(req.name, req.params)
       }
       return this.invokeRemoteFunction(req)
+    },
+    getNamesSync: () => {
+      const names = new Set<string>(DAEMON_BUILT_IN_FUNCTIONS)
+      if (this.desktopFunctions) {
+        for (const name of this.desktopFunctions.getMethodNames()) names.add(name)
+      }
+      return [...names]
     },
   }
 

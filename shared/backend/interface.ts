@@ -82,6 +82,11 @@ export interface FunctionInfo {
 export interface FunctionsApi {
   list(): Promise<FunctionInfo[]>
   invoke(req: { name: string; params: unknown }): Promise<unknown>
+  /** Synchronous snapshot of visible function names. The Electron preload
+   *  bridge uses sendSync to populate `window.agentwfy` before any view JS
+   *  runs, so this must return without awaiting. Local backends read from
+   *  the in-process registry; remote backends return a static set. */
+  getNamesSync(): string[]
 }
 
 // ── Providers ───────────────────────────────────────────────────────────

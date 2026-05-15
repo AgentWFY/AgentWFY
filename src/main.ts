@@ -159,7 +159,6 @@ registerTaskRunnerHandlers(
 );
 registerRuntimeFunctionHandlers(
   (e) => windowManager.getBackendForSender(e.sender.id),
-  (e) => windowManager.getLocalContextForSender(e.sender.id).functionRegistry,
 );
 registerAgentHandlers(
   (e) => windowManager.getCacheRootForEvent(e),

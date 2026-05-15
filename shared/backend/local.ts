@@ -225,6 +225,9 @@ export class LocalBackend implements AgentBackend {
     invoke: async ({ name, params }) => {
       return this.ctx.functionRegistry.call(name, params)
     },
+    getNamesSync: () => {
+      return this.ctx.functionRegistry.getMethodNames()
+    },
   }
 
   readonly providers: ProvidersApi = {
