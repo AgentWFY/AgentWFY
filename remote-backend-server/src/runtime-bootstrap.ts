@@ -21,10 +21,20 @@ export async function createAgentRuntime(
   clientFunctionInvoker?: ClientFunctionInvoker,
 ): Promise<RuntimeBundle> {
   const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
+  let triggerReloadTimer: ReturnType<typeof setTimeout> | null = null
 
   const runtime = await createLocalAgentRuntime({
     runtimeRoot,
     onDbChange: (change) => {
+      if (change.table === 'triggers') {
+        if (triggerReloadTimer) clearTimeout(triggerReloadTimer)
+        triggerReloadTimer = setTimeout(() => {
+          triggerReloadTimer = null
+          runtime.triggerEngine.reload().catch(err => {
+            console.error('[triggers] Reload failed:', err)
+          })
+        }, 500)
+      }
       for (const handler of dbChangeSubscribers) {
         try {
           handler(change)
@@ -48,7 +58,15 @@ export async function createAgentRuntime(
     registerClientFunctionProxies(runtime.functionRegistry, clientFunctionInvoker)
   }
 
+  runtime.triggerEngine.start().catch(err => {
+    console.error('[triggers] Start failed:', err)
+  })
+
   const dispose = async (): Promise<void> => {
+    if (triggerReloadTimer) {
+      clearTimeout(triggerReloadTimer)
+      triggerReloadTimer = null
+    }
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
     dbChangeSubscribers.clear()
