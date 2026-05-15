@@ -80,20 +80,6 @@ export async function deleteSessionFile(sessionsDir: string, fileName: string): 
   }
 }
 
-/**
- * Read the first `byteCount` bytes of a session file and extract the top-level
- * `title` string without parsing the whole JSON. Session files can be tens of
- * megabytes, so full-file reads are too slow for a listing.
- *
- * Relies on JSON.stringify preserving property order: version, sessionId,
- * providerId, title, providerState, updatedAt — so the first `"title"` token
- * in the head of the file is always the top-level title.
- */
-export async function readSessionTitle(sessionsDir: string, fileName: string, byteCount = 8192): Promise<string> {
-  const head = await readSessionHead(sessionsDir, fileName, byteCount)
-  return head ? extractStringFromHead(head, 'title') : ''
-}
-
 export async function readSessionId(sessionsDir: string, fileName: string, byteCount = 2048): Promise<string> {
   const head = await readSessionHead(sessionsDir, fileName, byteCount)
   return head ? extractStringFromHead(head, 'sessionId') : ''

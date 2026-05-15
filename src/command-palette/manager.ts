@@ -663,17 +663,16 @@ export class CommandPaletteManager {
     try {
       const sessions = await chat.getSessionList();
       return sessions
-        .filter((s) => s.file)
         .map((s) => {
           const subtitle = s.isStreaming ? 'streaming' : new Date(s.updatedAt).toLocaleString();
           return {
-            id: `session:${s.file}`,
+            id: `session:${s.sessionId}`,
             title: s.label,
             subtitle,
             group: 'Sessions' as const,
             action: {
               type: 'load-session' as const,
-              file: s.file!,
+              sessionId: s.sessionId,
               label: s.label,
             },
           };
@@ -992,7 +991,7 @@ export class CommandPaletteManager {
         const loadAction = action as Extract<CommandPaletteAction, { type: 'load-session' }>;
         this.hide({ focusMain: true });
         this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:load-session', {
-          file: loadAction.file,
+          sessionId: loadAction.sessionId,
           label: loadAction.label,
         });
         return;

@@ -17,11 +17,6 @@ export const Channels = {
     toggleDevTools: 'tabs:toggleDevTools',
     describe: 'tabs:describe',
   },
-  sessions: {
-    list: 'sessions:list',
-    read: 'sessions:read',
-    write: 'sessions:write',
-  },
   store: {
     get: 'store:get',
     set: 'store:set',
@@ -69,9 +64,7 @@ export const Channels = {
     getSnapshot: 'agent:getSnapshot',
     snapshot: 'agent:snapshot',
     streaming: 'agent:streaming',
-    spawnSession: 'agent:spawnSession',
-    sendToSession: 'agent:sendToSession',
-    disposeSession: 'agent:disposeSession',
+    unloadSession: 'agent:unloadSession',
     retryNow: 'agent:retryNow',
   },
   agents: {

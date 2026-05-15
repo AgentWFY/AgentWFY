@@ -9,7 +9,6 @@ import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 import {
   readSessionFile,
-  readSessionTitle,
   readSessionMeta,
   listSessionFiles,
   parseStoredSession,
@@ -87,7 +86,6 @@ interface SessionEntry {
 export type AgentEventListener = (sessionId: string, event: AgentWFYAgentEvent) => void
 export interface SessionLifecycleEvent {
   sessionId: string
-  publicSessionId: string
 }
 export interface SessionLifecycleHandlers {
   onDisposed?: (event: SessionLifecycleEvent) => void
@@ -95,9 +93,9 @@ export interface SessionLifecycleHandlers {
 }
 
 interface SessionHistoryItem {
-  file: string
+  sessionId: string
   updatedAt: number
-  firstUserMessage: string
+  title: string
 }
 
 export interface SessionListItem {
@@ -105,8 +103,7 @@ export interface SessionListItem {
   updatedAt: number
   isActive: boolean
   isStreaming: boolean
-  file: string | null
-  sessionId: string | null
+  sessionId: string
 }
 
 export interface SessionSummary {
@@ -174,7 +171,6 @@ export class AgentSessionManager {
   private readonly sessionsDir: string
 
   // Cached state for the active (displayed) session
-  private _activeSessionFile: string | null = null
   private _activeSessionId: string | null = null
   private _activeMessages: DisplayMessage[] = []
   private _activeLabel: string = ''
@@ -184,10 +180,6 @@ export class AgentSessionManager {
   constructor(deps: AgentSessionManagerDeps) {
     this.deps = deps
     this.sessionsDir = `${deps.runtimeRoot}/${DEFAULT_SESSION_DIR}`
-  }
-
-  get activeSessionFile(): string | null {
-    return this._activeSessionFile
   }
 
   get activeAgent(): AgentWFYAgent | null {
@@ -222,7 +214,13 @@ export class AgentSessionManager {
     return count
   }
 
-  async createSession(opts: { label?: string; prompt: string; providerId?: string; files?: FileContent[] }): Promise<string> {
+  async createSession(opts: {
+    label?: string
+    prompt: string
+    providerId?: string
+    providerOptions?: Record<string, unknown>
+    files?: FileContent[]
+  }): Promise<string> {
     await this.newSession(opts.providerId)
 
     if (opts.label) {
@@ -232,7 +230,7 @@ export class AgentSessionManager {
     }
 
     const agent = this.activeAgent!
-    agent.prompt(opts.prompt, { files: opts.files }).catch((err) => {
+    agent.prompt(opts.prompt, { files: opts.files, providerOptions: opts.providerOptions }).catch((err) => {
       console.error('[AgentSessionManager] auto-prompt failed', err)
     })
 
@@ -240,7 +238,6 @@ export class AgentSessionManager {
   }
 
   resetActive(): void {
-    this._activeSessionFile = null
     this._activeSessionId = null
     this._activeMessages = []
     this._activeLabel = ''
@@ -259,15 +256,21 @@ export class AgentSessionManager {
     }
 
     // No agent in memory — create one on demand
-    if (!this._activeSessionFile) {
+    if (!this._activeSessionId) {
       throw new Error('No active session')
     }
 
-    // Only pass sessionFile if it exists on disk (has messages)
     const hasExistingSession = this._activeMessages.length > 0
+    const activeSessionFile = hasExistingSession
+      ? await this.findSessionFileById(this._activeSessionId)
+      : null
+    if (hasExistingSession && !activeSessionFile) {
+      throw new Error(`Session '${this._activeSessionId}' not found`)
+    }
+
     const agent = await this.createAgentInstance(
-      hasExistingSession
-        ? { sessionFile: this._activeSessionFile, providerId: this._activeProviderId || undefined }
+      activeSessionFile
+        ? { sessionFile: activeSessionFile, providerId: this._activeProviderId || undefined }
         : { providerId: this._activeProviderId || undefined }
     )
     const sessionId = agent.sessionId
@@ -276,7 +279,6 @@ export class AgentSessionManager {
     const entry = this.trackSession(sessionId, agent, this._activeLabel)
     entry.notifyOnFinish = this._activeNotifyOnFinish
     this._activeSessionId = sessionId
-    this._activeSessionFile = agent.sessionFile ?? this._activeSessionFile
 
     this.notify()
 
@@ -294,7 +296,7 @@ export class AgentSessionManager {
     if (agent) agent.agent.skipRetryDelay()
   }
 
-  async loadSessionFromDisk(file: string): Promise<void> {
+  private async loadSessionFromFile(file: string): Promise<void> {
     const sessionsDir = this.sessionsDir
     const raw = await readSessionFile(sessionsDir, file)
     const stored = parseStoredSession(raw, file)
@@ -302,7 +304,6 @@ export class AgentSessionManager {
     const providerId = stored.providerId || await this.readDefaultProviderId()
     const messages = this.restoreMessages(stored, providerId)
 
-    this._activeSessionFile = file
     this._activeSessionId = stored.sessionId || null
     this._activeMessages = messages
     this._activeLabel = stored.title || 'Session'
@@ -310,6 +311,12 @@ export class AgentSessionManager {
     this._activeProviderId = providerId
 
     this.notify()
+  }
+
+  async loadSession(sessionId: string): Promise<void> {
+    const sessionFile = await this.findSessionFileById(sessionId)
+    if (!sessionFile) throw new Error(`Session '${sessionId}' not found`)
+    await this.loadSessionFromFile(sessionFile)
   }
 
   async closeActiveSession(): Promise<void> {
@@ -335,7 +342,6 @@ export class AgentSessionManager {
     if (!entry) return
     // Switch to a currently-streaming session
     this._activeSessionId = sessionId
-    this._activeSessionFile = entry.agent.sessionFile ?? this._activeSessionFile
     this._activeLabel = entry.label
     this._activeNotifyOnFinish = entry.notifyOnFinish ?? false
     this._activeProviderId = entry.agent.providerId
@@ -359,14 +365,9 @@ export class AgentSessionManager {
     return () => this.sessionLifecycleListeners.delete(handlers)
   }
 
-  getSessionFileForSessionId(sessionId: string): string | null {
-    return this.sessions.get(sessionId)?.agent.sessionFile ?? null
-  }
-
   /** Abort a specific session by id. No-op if the session isn't tracked or isn't streaming. */
   async abortSession(sessionId: string): Promise<void> {
-    const entry = this.sessions.get(sessionId) ??
-      [...this.sessions.values()].find((candidate) => candidate.agent.sessionFile === sessionId)
+    const entry = this.sessions.get(sessionId)
     if (!entry) return
     if (entry.agent.isStreaming) {
       await entry.agent.abort()
@@ -375,29 +376,18 @@ export class AgentSessionManager {
 
   /** Dispose the in-memory session (if any) and delete its on-disk file. */
   async removeSession(sessionId: string): Promise<void> {
-    let entryId: string | null = this.sessions.has(sessionId) ? sessionId : null
-    let entry = entryId ? this.sessions.get(entryId) : undefined
-    if (!entry) {
-      for (const [id, candidate] of this.sessions) {
-        if (candidate.agent.sessionFile === sessionId) {
-          entryId = id
-          entry = candidate
-          break
-        }
-      }
-    }
-    const sessionFile = entry?.agent.sessionFile ?? sessionId
-    const removedEvent = {
-      sessionId: entryId ?? sessionId,
-      publicSessionId: sessionFile,
-    }
+    const entry = this.sessions.get(sessionId)
+    const sessionFile = entry?.agent.sessionFile ?? await this.findSessionFileById(sessionId)
     if (entry) {
-      await this.disposeSession(entryId!)
+      await this.disposeSession(sessionId)
     }
     if (sessionFile) {
       await deleteSessionFile(this.sessionsDir, sessionFile)
     }
-    this.emitSessionRemoved(removedEvent)
+    if (this._activeSessionId === sessionId) {
+      this.resetActive()
+    }
+    this.emitSessionRemoved({ sessionId })
   }
 
   async spawnSession(prompt: string, providerId?: string, providerOptions?: Record<string, unknown>): Promise<{ sessionId: string }> {
@@ -413,45 +403,47 @@ export class AgentSessionManager {
       console.error('[AgentSessionManager] spawn-prompt failed', err)
     })
 
-    return { sessionId: agent.sessionFile! }
+    return { sessionId }
   }
 
-  async sendToSession(sessionFile: string, message: string): Promise<void> {
+  async sendToSession(
+    sessionId: string,
+    message: string,
+    opts: { autoPublishResponse?: boolean } = {},
+  ): Promise<void> {
     // Check if this session is already in memory (streaming or idle)
-    for (const [, entry] of this.sessions) {
-      if (entry.agent.sessionFile === sessionFile) {
-        await entry.agent.prompt(message, { streamingBehavior: 'followUp' })
-        return
-      }
+    const existing = this.sessions.get(sessionId)
+    if (existing) {
+      await existing.agent.prompt(message, { streamingBehavior: 'followUp' })
+      return
     }
 
     // Load from disk and send
+    const sessionFile = await this.findSessionFileById(sessionId)
+    if (!sessionFile) throw new Error(`Session '${sessionId}' not found`)
     const agent = await this.createAgentInstance({ sessionFile })
-    const sessionId = agent.sessionId
-    this.deps.getJsRuntime().ensureWorker(sessionId)
+    this.deps.getJsRuntime().ensureWorker(agent.sessionId)
 
-    const entry = this.trackSession(sessionId, agent, 'sendToSession')
-    entry.autoPublishResponse = true
+    const entry = this.trackSession(agent.sessionId, agent, 'sendToSession')
+    entry.autoPublishResponse = opts.autoPublishResponse ?? true
     this.notify()
 
     await agent.prompt(message)
   }
 
-  async openSessionInChat(sessionFile: string): Promise<{ label: string }> {
+  async openSessionInChat(sessionId: string): Promise<{ label: string }> {
     // If it's currently streaming in memory, switch to it
-    for (const [id, entry] of this.sessions) {
-      if (entry.agent.sessionFile === sessionFile) {
-        this.switchTo(id)
-        return { label: entry.label }
-      }
+    const entry = this.sessions.get(sessionId)
+    if (entry) {
+      this.switchTo(sessionId)
+      return { label: entry.label }
     }
     // Otherwise load from disk
-    await this.loadSessionFromDisk(sessionFile)
+    await this.loadSession(sessionId)
     return { label: this._activeLabel }
   }
 
-  /** Create a new empty session (no prompt). Returns the session file. */
-  async newSession(providerId?: string): Promise<string | null> {
+  private async newSession(providerId?: string): Promise<string> {
     const pid = providerId || await this.readDefaultProviderId()
 
     const agent = await this.createAgentInstance({ providerId: pid })
@@ -459,7 +451,6 @@ export class AgentSessionManager {
     this.deps.getJsRuntime().ensureWorker(sessionId)
 
     this.trackSession(sessionId, agent, 'New session')
-    this._activeSessionFile = agent.sessionFile ?? null
     this._activeSessionId = sessionId
     this._activeMessages = []
     this._activeLabel = 'New session'
@@ -467,7 +458,7 @@ export class AgentSessionManager {
     this._activeProviderId = pid
 
     this.notify()
-    return agent.sessionFile ?? null
+    return sessionId
   }
 
   /** Returns true if the current active session has no messages (is empty/fresh). */
@@ -494,38 +485,33 @@ export class AgentSessionManager {
       history = []
     }
 
-    const activeFile = this._activeSessionFile
-    const streamingFiles = new Map<string, string>()
+    const activeSessionId = this._activeSessionId
+    const streamingSessionIds = new Set<string>()
     for (const [id, entry] of this.sessions) {
-      const file = entry.agent.sessionFile
-      if (file && entry.agent.isStreaming) streamingFiles.set(file, id)
+      if (entry.agent.isStreaming) streamingSessionIds.add(id)
     }
 
     const items: SessionListItem[] = []
 
     for (const h of history) {
-      const streamingId = streamingFiles.get(h.file)
-      const isAct = h.file === activeFile
+      const isStreaming = streamingSessionIds.has(h.sessionId)
       items.push({
-        label: h.firstUserMessage,
+        label: h.title,
         updatedAt: h.updatedAt,
-        isActive: isAct,
-        isStreaming: !!streamingId,
-        file: h.file,
-        sessionId: streamingId ?? null,
+        isActive: h.sessionId === activeSessionId,
+        isStreaming,
+        sessionId: h.sessionId,
       })
     }
 
     // Streaming sessions not yet saved to disk
     for (const [id, entry] of this.sessions) {
-      const file = entry.agent.sessionFile
-      if (entry.agent.isStreaming && (!file || !history.some(h => h.file === file))) {
+      if (entry.agent.isStreaming && !history.some(h => h.sessionId === id)) {
         items.push({
           label: entry.label || 'New session',
           updatedAt: Date.now(),
-          isActive: false,
+          isActive: id === activeSessionId,
           isStreaming: true,
-          file: null,
           sessionId: id,
         })
       }
@@ -539,10 +525,10 @@ export class AgentSessionManager {
 
   getSnapshot(): AgentSnapshot {
     const agent = this.activeAgent
-    const streamingFiles: string[] = []
-    for (const [, entry] of this.sessions) {
-      if (entry.agent.isStreaming && entry.agent.sessionFile) {
-        streamingFiles.push(entry.agent.sessionFile)
+    const streamingSessionIds: string[] = []
+    for (const [id, entry] of this.sessions) {
+      if (entry.agent.isStreaming) {
+        streamingSessionIds.push(id)
       }
     }
     return {
@@ -554,9 +540,8 @@ export class AgentSessionManager {
       streamingMessage: agent?.state.streamingMessage ?? null,
       statusLine: agent?.state.statusLine,
       providerId: this._activeProviderId,
-      activeSessionFile: this._activeSessionFile,
       activeSessionId: agent?.sessionId ?? this._activeSessionId,
-      streamingFiles,
+      streamingSessionIds,
       retryState: agent?.state.retryState ?? null,
       stalledSince: agent?.state.stalledSince ?? null,
     }
@@ -677,10 +662,7 @@ export class AgentSessionManager {
     if (entry.autoPublishResponse) {
       const lastMsg = getLastAssistantMessage(entry.agent.messages)
       const lastText = lastMsg ? getTextFromDisplayMessage(lastMsg) : ''
-      const sessionFile = entry.agent.sessionFile
-      if (sessionFile) {
-        this.deps.busPublish(`session:response:${sessionFile}`, { sessionId: sessionFile, response: lastText })
-      }
+      this.deps.busPublish(`session:response:${sessionId}`, { sessionId, response: lastText })
 
       // Dispose spawned/background sessions immediately
       void this.disposeSession(sessionId)
@@ -693,7 +675,6 @@ export class AgentSessionManager {
   private async disposeSession(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId)
     if (!entry) return
-    const publicSessionId = entry.agent.sessionFile ?? sessionId
 
     if (entry.agent.isStreaming) {
       await entry.agent.abort()
@@ -709,7 +690,7 @@ export class AgentSessionManager {
     entry.agentEventUnsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
-    this.emitSessionDisposed({ sessionId, publicSessionId })
+    this.emitSessionDisposed({ sessionId })
 
     this.notify()
   }
@@ -751,7 +732,7 @@ export class AgentSessionManager {
     return Promise.all(page.map(async (session) => {
       const meta = await readSessionMeta(this.sessionsDir, session.name)
       return {
-        sessionId: session.name,
+        sessionId: meta.sessionId || session.name,
         title: meta.title,
         providerId: meta.providerId,
         updatedAt: session.updatedAt,
@@ -821,15 +802,17 @@ export class AgentSessionManager {
     }
     if (matches.length === 0) return null
 
-    return { sessionId: file, title: stored.title, updatedAt, matches }
+    return { sessionId: stored.sessionId || file, title: stored.title, updatedAt, matches }
   }
 
   async readSession(sessionId: string): Promise<SessionRead> {
-    const raw = await readSessionFile(this.sessionsDir, sessionId)
-    const stored = parseStoredSession(raw, sessionId)
+    const sessionFile = await this.findSessionFileById(sessionId)
+    if (!sessionFile) throw new Error(`Session '${sessionId}' not found`)
+    const raw = await readSessionFile(this.sessionsDir, sessionFile)
+    const stored = parseStoredSession(raw, sessionFile)
     const providerId = stored.providerId || await this.readDefaultProviderId()
     return {
-      sessionId,
+      sessionId: stored.sessionId || sessionId,
       title: stored.title,
       providerId,
       updatedAt: stored.updatedAt,
@@ -861,12 +844,11 @@ export class AgentSessionManager {
   }
 
   private getLiveSessionState(sessionId: string): SessionStateRead | null {
-    const found = this.findSessionEntryWithId(sessionId)
-    if (!found) return null
-    const { publicSessionId, entry } = found
+    const entry = this.findSessionEntry(sessionId)
+    if (!entry) return null
     const agentState = sanitizeAgentState(entry.agent.state)
     return {
-      sessionId: publicSessionId,
+      sessionId,
       title: entry.label || extractFirstUserMessage(entry.agent.messages, 60) || 'New session',
       providerId: entry.agent.providerId,
       updatedAt: Date.now(),
@@ -876,20 +858,7 @@ export class AgentSessionManager {
   }
 
   private findSessionEntry(sessionId: string): SessionEntry | null {
-    return this.findSessionEntryWithId(sessionId)?.entry ?? null
-  }
-
-  private findSessionEntryWithId(sessionId: string): { publicSessionId: string; entry: SessionEntry } | null {
-    const direct = this.sessions.get(sessionId)
-    if (direct) {
-      return { publicSessionId: direct.agent.sessionFile ?? sessionId, entry: direct }
-    }
-    for (const [id, entry] of this.sessions) {
-      if (entry.agent.sessionFile === sessionId) {
-        return { publicSessionId: entry.agent.sessionFile ?? id, entry }
-      }
-    }
-    return null
+    return this.sessions.get(sessionId) ?? null
   }
 
   private restoreMessages(stored: StoredSession, providerId: string): DisplayMessage[] {
@@ -906,13 +875,8 @@ export class AgentSessionManager {
     }
   }
 
-  async disposeSessionByFile(file: string): Promise<void> {
-    for (const [id, entry] of this.sessions) {
-      if (entry.agent.sessionFile === file) {
-        await this.disposeSession(id)
-        return
-      }
-    }
+  async unloadSession(sessionId: string): Promise<void> {
+    await this.disposeSession(sessionId)
   }
 
   private _notifyScheduled = false
@@ -941,9 +905,13 @@ export class AgentSessionManager {
 
       const results = await Promise.all(sessions.map(async (session) => {
         if (!session.name.endsWith('.json')) return null
-        const title = await readSessionTitle(sessionsDir, session.name)
-        if (!title) return null
-        return { file: session.name, updatedAt: session.updatedAt, firstUserMessage: title }
+        const meta = await readSessionMeta(sessionsDir, session.name)
+        if (!meta.sessionId || !meta.title) return null
+        return {
+          sessionId: meta.sessionId,
+          updatedAt: session.updatedAt,
+          title: meta.title,
+        }
       }))
 
       const items: SessionHistoryItem[] = results.filter((r): r is SessionHistoryItem => r !== null)
@@ -952,5 +920,17 @@ export class AgentSessionManager {
     } catch {
       return []
     }
+  }
+
+  private async findSessionFileById(sessionId: string): Promise<string | null> {
+    const active = this.sessions.get(sessionId)
+    if (active?.agent.sessionFile) return active.agent.sessionFile
+
+    const sessions = await listSessionFiles(this.sessionsDir)
+    for (const session of sessions) {
+      const meta = await readSessionMeta(this.sessionsDir, session.name)
+      if (meta.sessionId === sessionId) return session.name
+    }
+    return null
   }
 }

@@ -106,13 +106,11 @@ export class LocalBackend implements AgentBackend {
     // changes). session_saved/loaded become bus events.
     this.agentEventsUnsubscribe = this.ctx.sessionManager.subscribeToAgentEvents(
       (sessionId, event) => {
-        const publicSessionId = this.ctx.sessionManager.getSessionFileForSessionId(sessionId) ?? sessionId
-
         if (event.type === 'session_saved') {
           this.emit({
             kind: 'bus',
             topic: SESSION_BUS_TOPICS.saved,
-            data: { sessionId: event.sessionId, sessionFile: event.sessionFile },
+            data: { sessionId: event.sessionId },
           })
           return
         }
@@ -120,7 +118,7 @@ export class LocalBackend implements AgentBackend {
           this.emit({
             kind: 'bus',
             topic: SESSION_BUS_TOPICS.loaded,
-            data: { sessionId: event.sessionId, sessionFile: event.sessionFile },
+            data: { sessionId: event.sessionId },
           })
           return
         }
@@ -141,7 +139,7 @@ export class LocalBackend implements AgentBackend {
 
         this.emit({
           kind: 'session:state',
-          sessionId: publicSessionId,
+          sessionId,
           live: liveStateFromAgentState(state),
           ...(messagesChanged ? { messages: stripBlockBinaries(state.messages) } : {}),
           ...(titleChanged ? { title } : {}),
@@ -154,10 +152,10 @@ export class LocalBackend implements AgentBackend {
         this.lastMessagesRef.delete(sessionId)
         this.lastTitle.delete(sessionId)
       },
-      onRemoved: ({ sessionId, publicSessionId }) => {
+      onRemoved: ({ sessionId }) => {
         this.lastMessagesRef.delete(sessionId)
         this.lastTitle.delete(sessionId)
-        this.emit({ kind: 'session:removed', sessionId: publicSessionId })
+        this.emit({ kind: 'session:removed', sessionId })
       },
     })
   }
@@ -197,19 +195,16 @@ export class LocalBackend implements AgentBackend {
     },
 
     spawn: async (req: SpawnSessionRequest): Promise<SessionHandle> => {
-      const result = (await this.ctx.functionRegistry.call('spawnSession', {
+      const sessionId = await this.ctx.sessionManager.createSession({
         prompt: req.prompt,
         providerId: req.providerId,
         providerOptions: req.providerOptions,
-      })) as { sessionId: string }
-      return { sessionId: result.sessionId }
+      })
+      return { sessionId }
     },
 
     send: async ({ sessionId, text }) => {
-      await this.ctx.functionRegistry.call('sendToSession', {
-        sessionId,
-        message: text,
-      })
+      await this.ctx.sessionManager.sendToSession(sessionId, text, { autoPublishResponse: false })
     },
 
     abort: async ({ sessionId }) => {

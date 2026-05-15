@@ -150,8 +150,8 @@ export class TlSessionTabs extends HTMLElement {
       e.preventDefault()
       const idx = parseInt(item.dataset.idx!, 10)
       const session = agentSessionStore.state.openSessions[idx]
-      if (session && session.file !== agentSessionStore.state.activeSessionFile) {
-        this.loadSession(session.file)
+      if (session && session.sessionId !== agentSessionStore.state.activeSessionId) {
+        this.loadSession(session.sessionId)
       }
     })
     this._listEl.addEventListener('auxclick', (e) => {
@@ -161,7 +161,7 @@ export class TlSessionTabs extends HTMLElement {
         e.preventDefault()
         const idx = parseInt(item.dataset.idx!, 10)
         const session = agentSessionStore.state.openSessions[idx]
-        if (session) agentSessionStore.removeOpenSession(session.file)
+        if (session) agentSessionStore.removeOpenSession(session.sessionId)
       }
     })
     this._listEl.addEventListener('contextmenu', (e) => {
@@ -170,7 +170,7 @@ export class TlSessionTabs extends HTMLElement {
       e.preventDefault()
       const idx = parseInt(item.dataset.idx!, 10)
       const session = agentSessionStore.state.openSessions[idx]
-      if (session) agentSessionStore.removeOpenSession(session.file)
+      if (session) agentSessionStore.removeOpenSession(session.sessionId)
     })
     this.appendChild(this._listEl)
 
@@ -196,8 +196,8 @@ export class TlSessionTabs extends HTMLElement {
 
   private subscribeToStore() {
     this._unsubs.push(agentSessionStore.select(s => s.openSessions, () => this.scheduleUpdate()))
-    this._unsubs.push(agentSessionStore.select(s => s.activeSessionFile, () => this.scheduleUpdate()))
-    this._unsubs.push(agentSessionStore.select(s => s.streamingFiles, () => this.scheduleUpdate()))
+    this._unsubs.push(agentSessionStore.select(s => s.activeSessionId, () => this.scheduleUpdate()))
+    this._unsubs.push(agentSessionStore.select(s => s.streamingSessionIds, () => this.scheduleUpdate()))
     this._unsubs.push(agentSessionStore.select(s => s.label, () => this.scheduleUpdate()))
   }
 
@@ -210,8 +210,8 @@ export class TlSessionTabs extends HTMLElement {
     this.style.display = open.length === 0 ? 'none' : ''
     if (open.length === 0) return
 
-    const activeFile = s.activeSessionFile
-    const streamingSet = new Set(s.streamingFiles)
+    const activeSessionId = s.activeSessionId
+    const streamingSet = new Set(s.streamingSessionIds)
     const collapseInactive = open.length > COLLAPSE_THRESHOLD
 
     const existing = Array.from(this._listEl.querySelectorAll('.awfy-st-tab')) as HTMLElement[]
@@ -228,8 +228,8 @@ export class TlSessionTabs extends HTMLElement {
 
     for (let i = 0; i < open.length; i++) {
       const item = existing[i]
-      const isActive = open[i].file === activeFile
-      const isStreaming = streamingSet.has(open[i].file)
+      const isActive = open[i].sessionId === activeSessionId
+      const isStreaming = streamingSet.has(open[i].sessionId)
       const labelText = isActive ? (s.label || 'New session') : open[i].label
       item.className = 'awfy-st-tab'
         + (isActive ? ' active' : '')
@@ -256,8 +256,8 @@ export class TlSessionTabs extends HTMLElement {
     })
   }
 
-  private loadSession(file: string) {
-    agentSessionStore.loadSession(file).catch(err => {
+  private loadSession(sessionId: string) {
+    agentSessionStore.loadSession(sessionId).catch(err => {
       this.dispatchEvent(new CustomEvent('session-error', {
         bubbles: true,
         detail: { message: err instanceof Error ? err.message : String(err) }

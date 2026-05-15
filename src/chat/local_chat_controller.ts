@@ -1,6 +1,7 @@
 // LocalChatController — desktop chat controller backed by an in-process
 // AgentSessionManager. The session manager already owns the "active session"
-// concept, so this is a thin pass-through.
+// concept, so this is a thin pass-through. The manager is read through a
+// getter because local reconnect replaces it in-place.
 
 import type { AgentSessionManager } from '#shared/agent/session_manager.js'
 import type {
@@ -13,7 +14,11 @@ import type {
 import type { AgentSnapshot } from '#shared/agent/types.js'
 
 export class LocalChatController implements AgentChatController {
-  constructor(private readonly sessionManager: AgentSessionManager) {}
+  constructor(private readonly getSessionManager: () => AgentSessionManager) {}
+
+  private get sessionManager(): AgentSessionManager {
+    return this.getSessionManager()
+  }
 
   getDisplayedSessionId(): string | null {
     return this.sessionManager.getSnapshot().activeSessionId
@@ -44,6 +49,7 @@ export class LocalChatController implements AgentChatController {
       prompt: opts.prompt,
       label: opts.label,
       providerId: opts.providerId,
+      providerOptions: opts.providerOptions,
       files: opts.files,
     })
   }
@@ -60,16 +66,16 @@ export class LocalChatController implements AgentChatController {
     await this.sessionManager.closeActiveSession()
   }
 
-  async loadSession(file: string): Promise<void> {
-    await this.sessionManager.openSessionInChat(file)
+  async loadSession(sessionId: string): Promise<void> {
+    await this.sessionManager.openSessionInChat(sessionId)
   }
 
   async switchTo(sessionId: string): Promise<void> {
     this.sessionManager.switchTo(sessionId)
   }
 
-  async disposeSessionByFile(file: string): Promise<void> {
-    await this.sessionManager.disposeSessionByFile(file)
+  async unloadSession(sessionId: string): Promise<void> {
+    await this.sessionManager.unloadSession(sessionId)
   }
 
   async setNotifyOnFinish(value: boolean): Promise<void> {

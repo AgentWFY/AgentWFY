@@ -11,11 +11,12 @@ export function registerAgentSessionHandlers(
   getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
   getChat: (e: IpcMainInvokeEvent) => AgentChatController,
 ): void {
-  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string; files?: FileContent[] }) => {
+  ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string; providerOptions?: Record<string, unknown>; files?: FileContent[] }) => {
     return getChat(event).createSession({
       label: opts?.label,
       prompt: opts?.prompt,
       providerId: opts?.providerId,
+      providerOptions: opts?.providerOptions,
       files: opts?.files,
     })
   })
@@ -32,8 +33,8 @@ export function registerAgentSessionHandlers(
     await getChat(event).closeSession()
   })
 
-  ipcMain.handle(Channels.agent.loadSession, async (event, file: string) => {
-    await getChat(event).loadSession(file)
+  ipcMain.handle(Channels.agent.loadSession, async (event, sessionId: string) => {
+    await getChat(event).loadSession(sessionId)
   })
 
   ipcMain.handle(Channels.agent.switchTo, async (event, sessionId: string) => {
@@ -64,30 +65,9 @@ export function registerAgentSessionHandlers(
     return getChat(event).getSnapshot()
   })
 
-  ipcMain.handle(Channels.agent.spawnSession, async (event, prompt: string, providerId?: string, providerOptions?: Record<string, unknown>) => {
-    if (typeof prompt !== 'string' || prompt.trim().length === 0) {
-      throw new Error('spawnSession requires a non-empty prompt string')
-    }
-    const result = await getBackend(event).sessions.spawn({ prompt, providerId, providerOptions })
-    // Pin the new session to the chat panel so its events flow through to the renderer.
-    await getChat(event).setDisplayedSessionId(result.sessionId)
-    return result
-  })
-
-  ipcMain.handle(Channels.agent.sendToSession, async (event, sessionId: string, message: string) => {
-    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
-      throw new Error('sendToSession requires a non-empty sessionId string')
-    }
-    if (typeof message !== 'string' || message.trim().length === 0) {
-      throw new Error('sendToSession requires a non-empty message string')
-    }
-    await getChat(event).setDisplayedSessionId(sessionId)
-    await getBackend(event).sessions.send({ sessionId, text: message })
-  })
-
-  ipcMain.handle(Channels.agent.disposeSession, async (event, file: string) => {
-    if (typeof file !== 'string' || file.trim().length === 0) return
-    await getChat(event).disposeSessionByFile(file)
+  ipcMain.handle(Channels.agent.unloadSession, async (event, sessionId: string) => {
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) return
+    await getChat(event).unloadSession(sessionId)
   })
 
   ipcMain.handle(Channels.agent.retryNow, async (event) => {

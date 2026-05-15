@@ -77,7 +77,7 @@ export type CommandPaletteAction =
   }
   | {
     type: 'load-session'
-    file: string
+    sessionId: string
     label: string
   }
   | {

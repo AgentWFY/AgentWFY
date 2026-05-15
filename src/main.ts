@@ -5,7 +5,6 @@ import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
-import { registerSessionsHandlers } from './ipc/sessions.js';
 import { registerTabViewHandlers } from './tab-views/ipc.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
 import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
@@ -151,10 +150,6 @@ registerTabsHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).tabTools,
   (e) => windowManager.getCacheRootForEvent(e),
 );
-registerSessionsHandlers(
-  (e) => windowManager.getCacheRootForEvent(e),
-  (e) => windowManager.getBackendForSender(e.sender.id),
-);
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
@@ -191,7 +186,7 @@ const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
   });
   ctx.sessionManager = newMgr;
   // Rebuild the chat pump so it subscribes to the new manager through
-  // the chat controller, which reads ctx.sessionManager dynamically.
+  // the chat controller.
   const rwc = windowManager.getRendererWebContents();
   if (rwc) {
     ctx.chatPump = setupAgentChatPump(

@@ -42,9 +42,9 @@ export function getElectronExternalLauncher(): ExternalLauncher {
 /** RendererPush is per-window. Create one bound to the active WebContents. */
 export function createElectronRendererPush(wc: WebContents): RendererPush {
   return {
-    openSessionInChat: ({ file, label }) => {
+    openSessionInChat: ({ sessionId, label }) => {
       if (wc.isDestroyed()) return
-      const detail = JSON.stringify({ file, label }).replace(/</g, '\\u003c')
+      const detail = JSON.stringify({ sessionId, label }).replace(/</g, '\\u003c')
       wc.executeJavaScript(
         `window.dispatchEvent(new CustomEvent('agentwfy:open-session-in-chat', { detail: ${detail} }));`,
         true,

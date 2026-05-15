@@ -1,6 +1,5 @@
 export type { SqlApi } from './sql.js'
 export type { TabsApi, TabViewBounds, UpdateTabViewBoundsRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent, TabData, TabDataType, TabState } from './tabs.js'
-export type { SessionsApi } from './sessions.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
 export type { DbApi, AgentDbChange } from './db.js'
@@ -9,7 +8,6 @@ export type { TracesApi, TraceEvent, TraceExecEvent, TraceCallEvent } from './tr
 
 import type { SqlApi } from './sql.js'
 import type { TabsApi } from './tabs.js'
-import type { SessionsApi } from './sessions.js'
 import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
@@ -34,11 +32,11 @@ export interface ProvidersApi {
 }
 
 export interface AgentApi {
-  createSession(opts?: { label?: string; prompt?: string; providerId?: string; files?: FileContent[] }): Promise<string>
+  createSession(opts?: { label?: string; prompt?: string; providerId?: string; providerOptions?: Record<string, unknown>; files?: FileContent[] }): Promise<string>
   sendMessage(text: string, options?: { streamingBehavior?: 'followUp'; files?: FileContent[] }): Promise<void>
   abort(): Promise<void>
   closeSession(): Promise<void>
-  loadSession(file: string): Promise<void>
+  loadSession(sessionId: string): Promise<void>
   switchTo(sessionId: string): Promise<void>
   getSessionList(): Promise<unknown[]>
   setNotifyOnFinish(value: boolean): Promise<void>
@@ -46,7 +44,7 @@ export interface AgentApi {
   getSnapshot(): Promise<AgentSnapshot>
   onSnapshot(callback: (snapshot: AgentSnapshot) => void): () => void
   onStreaming(callback: (data: SessionLivePatch) => void): () => void
-  disposeSession(file: string): Promise<void>
+  unloadSession(sessionId: string): Promise<void>
   retryNow(): Promise<void>
 }
 
@@ -77,7 +75,6 @@ export interface AppIpc {
   sql: SqlApi
   agentId: string | null
   tabs: TabsApi
-  sessions: SessionsApi
   store: StoreApi
   dialog: DialogApi
   db: DbApi

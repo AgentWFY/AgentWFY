@@ -19,9 +19,8 @@ export interface AgentSessionState {
   notifyOnFinish: boolean
   statusLine: string
   providerId: string
-  activeSessionFile: string | null
   activeSessionId: string | null
-  streamingFiles: string[]
+  streamingSessionIds: string[]
   retryState: RetryState | null
   stalledSince: number | null
 
@@ -51,9 +50,8 @@ function defaultState(): AgentSessionState {
     notifyOnFinish: false,
     statusLine: '',
     providerId: '',
-    activeSessionFile: null,
     activeSessionId: null,
-    streamingFiles: [],
+    streamingSessionIds: [],
     retryState: null,
     stalledSince: null,
     openSessions: [],
@@ -206,8 +204,8 @@ class AgentSessionStore {
     await window.ipc?.agent.createSession()
   }
 
-  async loadSession(file: string): Promise<void> {
-    await window.ipc?.agent.loadSession(file)
+  async loadSession(sessionId: string): Promise<void> {
+    await window.ipc?.agent.loadSession(sessionId)
   }
 
   async closeSession(): Promise<void> {
@@ -238,23 +236,23 @@ class AgentSessionStore {
 
   // ── Open sessions ──
 
-  addOpenSession(file: string, label: string): void {
+  addOpenSession(sessionId: string, label: string): void {
     const sessions = this._state.openSessions
-    if (sessions.some(s => s.file === file)) return
-    this.setState({ openSessions: [...sessions, { file, label }] })
+    if (sessions.some(s => s.sessionId === sessionId)) return
+    this.setState({ openSessions: [...sessions, { sessionId, label }] })
   }
 
-  removeOpenSession(file: string): void {
-    const wasCurrent = file === this._state.activeSessionFile
-    const filtered = this._state.openSessions.filter(s => s.file !== file)
+  removeOpenSession(sessionId: string): void {
+    const wasCurrent = sessionId === this._state.activeSessionId
+    const filtered = this._state.openSessions.filter(s => s.sessionId !== sessionId)
     this.setState({ openSessions: filtered })
 
-    void window.ipc?.agent.disposeSession(file)
+    void window.ipc?.agent.unloadSession(sessionId)
 
     if (wasCurrent) {
       const next = filtered[0]
       if (next) {
-        this.loadSession(next.file)
+        this.loadSession(next.sessionId)
       } else {
         this.createSession()
       }
@@ -300,9 +298,8 @@ class AgentSessionStore {
       notifyOnFinish: s.notifyOnFinish,
       statusLine: s.statusLine || '',
       providerId: s.providerId,
-      activeSessionFile: s.activeSessionFile ?? null,
       activeSessionId: s.activeSessionId ?? null,
-      streamingFiles: s.streamingFiles ?? [],
+      streamingSessionIds: s.streamingSessionIds ?? [],
       retryState: s.retryState ?? null,
       stalledSince: s.stalledSince ?? null,
       ready: true,
@@ -313,12 +310,12 @@ class AgentSessionStore {
     }
 
     // Merge open-session add + label update into the same patch to avoid double notify
-    if (s.activeSessionFile && (s.messages.length > 0 || s.isStreaming)) {
+    if (s.activeSessionId && (s.messages.length > 0 || s.isStreaming)) {
       const sessions = this._state.openSessions
-      const existingIdx = sessions.findIndex(os => os.file === s.activeSessionFile)
+      const existingIdx = sessions.findIndex(os => os.sessionId === s.activeSessionId)
       const label = s.label || 'New session'
       if (existingIdx < 0) {
-        patch.openSessions = [...sessions, { file: s.activeSessionFile, label }]
+        patch.openSessions = [...sessions, { sessionId: s.activeSessionId, label }]
       } else if (sessions[existingIdx].label !== label) {
         const updated = sessions.slice()
         updated[existingIdx] = { ...updated[existingIdx], label }

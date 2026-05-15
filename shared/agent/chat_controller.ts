@@ -9,6 +9,7 @@ export interface ChatCreateSessionOpts {
   label?: string
   prompt?: string
   providerId?: string
+  providerOptions?: Record<string, unknown>
   files?: FileContent[]
 }
 
@@ -31,9 +32,9 @@ export interface AgentChatController {
   sendMessage(text: string, opts?: ChatSendOpts): Promise<void>
   abort(): Promise<void>
   closeSession(): Promise<void>
-  loadSession(file: string): Promise<void>
+  loadSession(sessionId: string): Promise<void>
   switchTo(sessionId: string): Promise<void>
-  disposeSessionByFile(file: string): Promise<void>
+  unloadSession(sessionId: string): Promise<void>
 
   setNotifyOnFinish(value: boolean): Promise<void>
   skipRetryDelay(): Promise<void>

@@ -117,17 +117,6 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.tabs.describe);
       },
     },
-    sessions: {
-      list(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
-        return ipcRenderer.invoke(Channels.sessions.list, limit);
-      },
-      read(sessionFileName: string): Promise<string> {
-        return ipcRenderer.invoke(Channels.sessions.read, sessionFileName);
-      },
-      write(sessionFileName: string, content: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.sessions.write, sessionFileName, content);
-      },
-    },
     store: {
       get<T = unknown>(key: string): Promise<T> {
         return ipcRenderer.invoke(Channels.store.get, key) as Promise<T>;
@@ -249,7 +238,7 @@ if (isApp) {
       },
     },
     agent: {
-      createSession(opts?: { label?: string; prompt?: string; providerId?: string; files?: Array<{ type: 'file'; data: string; mimeType: string }> }): Promise<string> {
+      createSession(opts?: { label?: string; prompt?: string; providerId?: string; providerOptions?: Record<string, unknown>; files?: Array<{ type: 'file'; data: string; mimeType: string }> }): Promise<string> {
         return ipcRenderer.invoke(Channels.agent.createSession, opts);
       },
       sendMessage(text: string, options?: { streamingBehavior?: 'followUp'; files?: Array<{ type: 'file'; data: string; mimeType: string }> }): Promise<void> {
@@ -261,8 +250,8 @@ if (isApp) {
       closeSession(): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.closeSession);
       },
-      loadSession(file: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.agent.loadSession, file);
+      loadSession(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.loadSession, sessionId);
       },
       switchTo(sessionId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.switchTo, sessionId);
@@ -285,8 +274,8 @@ if (isApp) {
       onStreaming(callback: (data: PushMap['agent:streaming']) => void): () => void {
         return typedOn(Channels.agent.streaming, callback);
       },
-      disposeSession(file: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.agent.disposeSession, file);
+      unloadSession(sessionId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.unloadSession, sessionId);
       },
       retryNow(): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.retryNow);

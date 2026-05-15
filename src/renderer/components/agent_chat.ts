@@ -893,7 +893,7 @@ export class TlAgentChat extends HTMLElement {
   // Per-session scroll cache — only populated when the user scrolled up;
   // at-bottom is represented by absence (auto-scroll handles it).
   private _sessionScrollCache = new Map<string, { scrollTop: number }>()
-  private _currentSessionFile: string | null = null
+  private _currentSessionId: string | null = null
   private _pendingScrollTarget: number | null = null
 
   connectedCallback() {
@@ -945,18 +945,18 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private onOpenSessionInChat = (e: Event) => {
-    const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
-    if (file) {
-      agentSessionStore.addOpenSession(file, label || 'Session')
+    const { sessionId, label } = (e as CustomEvent<{ sessionId: string; label: string }>).detail
+    if (sessionId) {
+      agentSessionStore.addOpenSession(sessionId, label || 'Session')
     }
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
   private onLoadSession = (e: Event) => {
-    const { file, label } = (e as CustomEvent<{ file: string; label: string }>).detail
-    if (!file) return
-    agentSessionStore.addOpenSession(file, label || 'Session')
-    this.loadSession(file)
+    const { sessionId, label } = (e as CustomEvent<{ sessionId: string; label: string }>).detail
+    if (!sessionId) return
+    agentSessionStore.addOpenSession(sessionId, label || 'Session')
+    this.loadSession(sessionId)
     window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
   }
 
@@ -995,8 +995,8 @@ export class TlAgentChat extends HTMLElement {
 
   private onCloseCurrentSession = () => {
     const s = agentSessionStore.state
-    if (s.activeSessionFile) {
-      agentSessionStore.removeOpenSession(s.activeSessionFile)
+    if (s.activeSessionId) {
+      agentSessionStore.removeOpenSession(s.activeSessionId)
     }
   }
 
@@ -1005,8 +1005,8 @@ export class TlAgentChat extends HTMLElement {
     const open = agentSessionStore.state.openSessions
     if (index >= 0 && index < open.length) {
       const session = open[index]
-      if (session.file !== agentSessionStore.state.activeSessionFile) {
-        this.loadSession(session.file)
+      if (session.sessionId !== agentSessionStore.state.activeSessionId) {
+        this.loadSession(session.sessionId)
       }
     }
   }
@@ -1015,12 +1015,12 @@ export class TlAgentChat extends HTMLElement {
     const { direction } = (e as CustomEvent<{ direction: number }>).detail
     const open = agentSessionStore.state.openSessions
     if (open.length <= 1) return
-    const activeFile = agentSessionStore.state.activeSessionFile
-    const currentIdx = open.findIndex(s => s.file === activeFile)
+    const activeSessionId = agentSessionStore.state.activeSessionId
+    const currentIdx = open.findIndex(s => s.sessionId === activeSessionId)
     const nextIdx = (currentIdx + direction + open.length) % open.length
     const session = open[nextIdx]
-    if (session && session.file !== activeFile) {
-      this.loadSession(session.file)
+    if (session && session.sessionId !== activeSessionId) {
+      this.loadSession(session.sessionId)
     }
   }
 
@@ -1063,8 +1063,8 @@ export class TlAgentChat extends HTMLElement {
 
   private subscribeToStore() {
     this._unsubs.push(agentSessionStore.select(
-      s => s.activeSessionFile,
-      (newFile) => this.onActiveSessionFileChanged(newFile)
+      s => s.activeSessionId,
+      (newSessionId) => this.onActiveSessionChanged(newSessionId)
     ))
 
     this._unsubs.push(agentSessionStore.select(
@@ -1288,8 +1288,8 @@ export class TlAgentChat extends HTMLElement {
 
   // ── Session actions ──
 
-  private loadSession(file: string) {
-    agentSessionStore.loadSession(file).catch(err => {
+  private loadSession(sessionId: string) {
+    agentSessionStore.loadSession(sessionId).catch(err => {
       this.error = err instanceof Error ? err.message : String(err)
       this.updateErrorBanner()
     })
@@ -1327,24 +1327,24 @@ export class TlAgentChat extends HTMLElement {
 
   // ── Scroll management ──
 
-  private onActiveSessionFileChanged(newFile: string | null): void {
-    const openFiles = new Set(agentSessionStore.state.openSessions.map(s => s.file))
+  private onActiveSessionChanged(newSessionId: string | null): void {
+    const openSessionIds = new Set(agentSessionStore.state.openSessions.map(s => s.sessionId))
     // DOM still reflects the previous session here (messages re-render on rAF).
-    if (this._currentSessionFile && this.messagesEl) {
-      if (this.userScrolledUp && openFiles.has(this._currentSessionFile)) {
-        this._sessionScrollCache.set(this._currentSessionFile, {
+    if (this._currentSessionId && this.messagesEl) {
+      if (this.userScrolledUp && openSessionIds.has(this._currentSessionId)) {
+        this._sessionScrollCache.set(this._currentSessionId, {
           scrollTop: this.messagesEl.scrollTop,
         })
       } else {
-        this._sessionScrollCache.delete(this._currentSessionFile)
+        this._sessionScrollCache.delete(this._currentSessionId)
       }
     }
     for (const key of this._sessionScrollCache.keys()) {
-      if (!openFiles.has(key)) this._sessionScrollCache.delete(key)
+      if (!openSessionIds.has(key)) this._sessionScrollCache.delete(key)
     }
-    this._currentSessionFile = newFile
+    this._currentSessionId = newSessionId
     this._tracePanelEl?.close()
-    const cached = newFile ? this._sessionScrollCache.get(newFile) : null
+    const cached = newSessionId ? this._sessionScrollCache.get(newSessionId) : null
     if (cached) {
       this.userScrolledUp = true
       this._pendingScrollTarget = cached.scrollTop

@@ -47,7 +47,7 @@ export function registerAgent(
 
     // The renderer push is best-effort — if no host (e.g. running in the
     // headless daemon), the chat-panel surface simply doesn't exist.
-    rendererPush?.openSessionInChat({ file: request.sessionId, label })
+    rendererPush?.openSessionInChat({ sessionId: request.sessionId, label })
   })
 
   registry.register('listSessions', async (params) => {

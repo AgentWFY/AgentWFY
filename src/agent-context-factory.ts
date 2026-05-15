@@ -151,7 +151,7 @@ export class AgentContextFactory {
       jsRuntime: runtime.jsRuntime,
       shortcutManager,
       backend: runtime.backend,
-      chat: new LocalChatController(runtime.sessionManager),
+      chat: new LocalChatController(() => agentCtx.sessionManager),
       chatPump: null,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,

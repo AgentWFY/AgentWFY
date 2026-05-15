@@ -4,7 +4,7 @@ export type { RetryState } from '#shared/agent/types.js'
 export type { AgentSnapshot } from '../../ipc/schema.js'
 
 export interface OpenSession {
-  file: string
+  sessionId: string
   label: string
 }
 

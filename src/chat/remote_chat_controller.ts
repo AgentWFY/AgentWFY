@@ -10,6 +10,7 @@ import type {
   AgentBackend,
   AgentBackendEvent,
   BackendStatusSnapshot,
+  SessionLivePatch,
   SessionState,
   Unsubscribe,
 } from '#shared/backend/interface.js'
@@ -25,6 +26,7 @@ import type { AgentSnapshot } from '#shared/agent/types.js'
 export class RemoteChatController implements AgentChatController {
   private displayedSessionId: string | null = null
   private cachedState: SessionState | null = null
+  private readonly liveStates = new Map<string, SessionLivePatch>()
   private cacheLoad: Promise<void> | null = null
   private readonly chatChangeHandlers = new Set<() => void>()
   private eventsUnsubscribe: Unsubscribe | null = null
@@ -66,6 +68,7 @@ export class RemoteChatController implements AgentChatController {
       const state = await this.backend.sessions.get({ sessionId })
       if (this.displayedSessionId !== sessionId) return
       this.cachedState = state ?? null
+      if (state?.live) this.liveStates.set(sessionId, state.live)
     } catch (err) {
       console.warn('[RemoteChatController] initial state fetch failed:', err)
     }
@@ -77,8 +80,7 @@ export class RemoteChatController implements AgentChatController {
       label: s.title,
       updatedAt: s.updatedAt,
       isActive: this.displayedSessionId === s.sessionId,
-      isStreaming: false,
-      file: s.sessionId,
+      isStreaming: this.liveStates.get(s.sessionId)?.isStreaming ?? false,
       sessionId: s.sessionId,
     }))
   }
@@ -86,23 +88,23 @@ export class RemoteChatController implements AgentChatController {
   getSnapshot(): AgentSnapshot {
     const backendStatus = statusLineForBackend(this.backend.status.get())
     const current = this.displayedSessionId
-    if (!current) return emptySnapshot(backendStatus)
+    if (!current) return emptySnapshot(backendStatus, this.streamingSessionIds())
 
     const state = this.cachedState
-    if (!state || state.sessionId !== current) return emptySnapshot(backendStatus)
+    if (!state || state.sessionId !== current) return emptySnapshot(backendStatus, this.streamingSessionIds())
     const live = state.live ?? null
+    const streamingSessionIds = this.streamingSessionIds()
     return {
       messages: state.messages,
       isStreaming: live?.isStreaming ?? false,
       label: state.title || '',
-      streamingSessionsCount: live?.isStreaming ? 1 : 0,
+      streamingSessionsCount: streamingSessionIds.length,
       notifyOnFinish: false,
       streamingMessage: live?.streamingMessage ?? null,
       statusLine: live?.statusLine ?? backendStatus,
       providerId: state.providerId,
-      activeSessionFile: state.sessionId,
       activeSessionId: state.sessionId,
-      streamingFiles: live?.isStreaming ? [state.sessionId] : [],
+      streamingSessionIds,
       retryState: live?.retryState ?? null,
       stalledSince: live?.stalledSince ?? null,
     }
@@ -116,6 +118,7 @@ export class RemoteChatController implements AgentChatController {
     const { sessionId } = await this.backend.sessions.spawn({
       prompt: opts.prompt,
       providerId: opts.providerId,
+      providerOptions: opts.providerOptions,
     })
     await this.setDisplayedSessionId(sessionId)
     return sessionId
@@ -143,8 +146,8 @@ export class RemoteChatController implements AgentChatController {
     await this.setDisplayedSessionId(null)
   }
 
-  async loadSession(file: string): Promise<void> {
-    await this.switchTo(file)
+  async loadSession(sessionId: string): Promise<void> {
+    await this.switchTo(sessionId)
   }
 
   async switchTo(sessionId: string): Promise<void> {
@@ -152,10 +155,9 @@ export class RemoteChatController implements AgentChatController {
     await this.setDisplayedSessionId(sessionId)
   }
 
-  async disposeSessionByFile(file: string): Promise<void> {
-    if (typeof file !== 'string' || file.trim().length === 0) return
-    await this.backend.sessions.remove({ sessionId: file })
-    if (this.displayedSessionId === file) {
+  async unloadSession(sessionId: string): Promise<void> {
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) return
+    if (this.displayedSessionId === sessionId) {
       await this.setDisplayedSessionId(null)
     }
   }
@@ -178,8 +180,8 @@ export class RemoteChatController implements AgentChatController {
     if (this.eventsUnsubscribe) return
     let prevConnectionState: BackendStatusSnapshot['state'] = this.backend.status.get().state
     this.eventsUnsubscribe = this.backend.events.subscribe((evt: AgentBackendEvent) => {
-      if (this.displayedSessionId === null) return
       if (evt.kind === 'session:removed') {
+        this.liveStates.delete(evt.sessionId)
         if (evt.sessionId !== this.displayedSessionId) return
         this.displayedSessionId = null
         this.cachedState = null
@@ -188,7 +190,11 @@ export class RemoteChatController implements AgentChatController {
         return
       }
       if (evt.kind !== 'session:state') return
-      if (evt.sessionId !== this.displayedSessionId) return
+      this.liveStates.set(evt.sessionId, evt.live)
+      if (evt.sessionId !== this.displayedSessionId) {
+        this.notifyChange()
+        return
+      }
       // Skip events that arrive before the initial fetch populates the cache:
       // title/providerId come only from sessions.get.
       const current = this.cachedState
@@ -232,6 +238,12 @@ export class RemoteChatController implements AgentChatController {
       }
     }
   }
+
+  private streamingSessionIds(): string[] {
+    return [...this.liveStates.entries()]
+      .filter(([, item]) => item.isStreaming)
+      .map(([sessionId]) => sessionId)
+  }
 }
 
 function statusLineForBackend(status: BackendStatusSnapshot): string | undefined {
@@ -239,19 +251,18 @@ function statusLineForBackend(status: BackendStatusSnapshot): string | undefined
   return status.message || 'Remote agent is not connected'
 }
 
-function emptySnapshot(statusLine?: string | undefined): AgentSnapshot {
+function emptySnapshot(statusLine?: string | undefined, streamingSessionIds: string[] = []): AgentSnapshot {
   return {
     messages: [],
     isStreaming: false,
     label: '',
-    streamingSessionsCount: 0,
+    streamingSessionsCount: streamingSessionIds.length,
     notifyOnFinish: false,
     streamingMessage: null,
     statusLine,
     providerId: '',
-    activeSessionFile: null,
     activeSessionId: null,
-    streamingFiles: [],
+    streamingSessionIds,
     retryState: null,
     stalledSince: null,
   }

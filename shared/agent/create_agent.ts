@@ -48,11 +48,9 @@ export interface AgentWFYAgentPromptOptions {
 export type AgentWFYAgentEvent = AgentEvent | {
   type: 'session_saved'
   sessionId: string
-  sessionFile: string
 } | {
   type: 'session_loaded'
   sessionId: string
-  sessionFile: string
 }
 
 export type AgentWFYAgentEventListener = (event: AgentWFYAgentEvent) => void
@@ -123,12 +121,8 @@ export class AgentWFYAgent {
   private readonly unsubscribeFromAgent: () => void
   private readonly sessionsDir: string
   private readonly persistSessionsToDisk: boolean
-  private readonly sessionIdRef: { current: string }
-  private readonly createProviderSession: ProviderSessionFactory
-  private readonly restoreProviderSession: ProviderSessionRestorer
   readonly providerId: string
 
-  private systemPrompt: string
   private sessionWritePromise: Promise<void> = Promise.resolve()
   private disposed = false
 
@@ -140,25 +134,16 @@ export class AgentWFYAgent {
     sessionsDir: string,
     sessionFile: string | undefined,
     sessionId: string,
-    sessionIdRef: { current: string },
     persistSessions: boolean,
-    systemPrompt: string,
-    createProviderSession: ProviderSessionFactory,
-    restoreProviderSession: ProviderSessionRestorer,
     providerId: string,
   ) {
     this.agent = agent
     this.sessionsDir = sessionsDir
     this.persistSessionsToDisk = persistSessions
-    this.sessionIdRef = sessionIdRef
     this._sessionFile = sessionFile
     this._sessionId = sessionId
-    this.systemPrompt = systemPrompt
-    this.createProviderSession = createProviderSession
-    this.restoreProviderSession = restoreProviderSession
     this.providerId = providerId
 
-    this.sessionIdRef.current = this._sessionId
     this.agent.sessionId = this._sessionId
 
     this.unsubscribeFromAgent = this.agent.subscribe((event) => {
@@ -179,7 +164,8 @@ export class AgentWFYAgent {
       await ensureSessionsDir(sessionsDir)
     }
 
-    const sessionId = createSessionId()
+    const freshSessionId = createSessionId()
+    let sessionId = freshSessionId
     const sessionIdRef = { current: sessionId }
     const systemPrompt = await loadSystemPrompt(runtimeRoot)
     const tools = createTools(sessionIdRef, options.getJsRuntime)
@@ -195,9 +181,11 @@ export class AgentWFYAgent {
     if (options.sessionFile) {
       const stored = options.storedSession
         ?? parseStoredSession(await readSessionFile(sessionsDir, normalizeSessionFileName(options.sessionFile)), options.sessionFile)
+      sessionId = stored.sessionId || freshSessionId
+      sessionIdRef.current = sessionId
 
       providerSession = await options.restoreProviderSession({
-        sessionId: stored.sessionId || sessionId,
+        sessionId,
         systemPrompt,
       }, stored.providerState)
 
@@ -224,12 +212,8 @@ export class AgentWFYAgent {
       agent,
       sessionsDir,
       sessionFile,
-      options.sessionFile ? (initialMessages.length > 0 ? sessionId : createSessionId()) : sessionId,
-      sessionIdRef,
+      sessionId,
       persistSessions,
-      systemPrompt,
-      options.createProviderSession,
-      options.restoreProviderSession,
       options.providerId,
     )
 
@@ -237,10 +221,7 @@ export class AgentWFYAgent {
       instance.emit({
         type: 'session_loaded',
         sessionId: instance._sessionId,
-        sessionFile: sessionFile!,
       })
-    } else {
-      await instance.persistSession()
     }
 
     return instance
@@ -299,65 +280,6 @@ export class AgentWFYAgent {
     return () => this.listeners.delete(listener)
   }
 
-  async newSession(): Promise<boolean> {
-    await this.abort()
-    this.agent.providerSession.dispose()
-    this.agent.reset()
-
-    const newId = createSessionId()
-    this.updateSessionId(newId)
-
-    // Create a fresh provider session
-    const providerSession = await this.createProviderSession({
-      sessionId: newId,
-      systemPrompt: this.systemPrompt,
-    })
-    this.agent.setProviderSession(providerSession)
-
-    if (this.persistSessionsToDisk) {
-      this._sessionFile = createSessionFileName()
-      await this.persistSession()
-    } else {
-      this._sessionFile = undefined
-    }
-
-    return true
-  }
-
-  async switchSession(sessionPath: string): Promise<boolean> {
-    if (!sessionPath || !sessionPath.trim()) {
-      throw new Error('Session path cannot be empty')
-    }
-
-    await this.abort()
-    this.agent.providerSession.dispose()
-
-    const sessionFileName = normalizeSessionFileName(sessionPath)
-    const rawSession = await readSessionFile(this.sessionsDir, sessionFileName)
-    const stored = parseStoredSession(rawSession, sessionFileName)
-
-    const restoredSessionId = stored.sessionId || createSessionId()
-    const providerSession = await this.restoreProviderSession({
-      sessionId: restoredSessionId,
-      systemPrompt: this.systemPrompt,
-    }, stored.providerState)
-    this.agent.setProviderSession(providerSession)
-
-    // Provider is the source of truth for display messages
-    this.agent.replaceMessages(providerSession.getDisplayMessages())
-
-    this._sessionFile = sessionFileName
-    this.updateSessionId(restoredSessionId)
-
-    this.emit({
-      type: 'session_loaded',
-      sessionId: this._sessionId,
-      sessionFile: sessionFileName
-    })
-
-    return true
-  }
-
   async abort(): Promise<void> {
     this.agent.abort()
     await this.agent.waitForIdle()
@@ -377,12 +299,6 @@ export class AgentWFYAgent {
     this.agent.providerSession.dispose()
     this.listeners.clear()
     this.unsubscribeFromAgent()
-  }
-
-  private updateSessionId(newId: string): void {
-    this._sessionId = newId
-    this.agent.sessionId = newId
-    this.sessionIdRef.current = newId
   }
 
   private emit(event: AgentWFYAgentEvent): void {
@@ -423,7 +339,6 @@ export class AgentWFYAgent {
         this.emit({
           type: 'session_saved',
           sessionId: this._sessionId,
-          sessionFile: this._sessionFile
         })
       })
       .catch((error) => {

@@ -18,7 +18,7 @@ export interface RendererPush {
    * Used by the openSessionInChat runtime function. The actual data work is
    * performed by AgentSessionManager — this is just the UI nudge.
    */
-  openSessionInChat(detail: { file: string; label: string }): void
+  openSessionInChat(detail: { sessionId: string; label: string }): void
 }
 
 export interface ExternalLauncher {
