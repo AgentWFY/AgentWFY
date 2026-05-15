@@ -2,7 +2,7 @@ import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '#shared/agent/session_manager.js'
 import type { AgentBackend } from '#shared/backend/interface.js'
 import type { AgentChatController } from '#shared/agent/chat_controller.js'
-import type { AgentSnapshot, FileContent } from '#shared/agent/types.js'
+import type { AgentSnapshot, FileContent, SessionLivePatch } from '#shared/agent/types.js'
 import { Channels } from './channels.cjs'
 import type { PushMap } from './schema.js'
 
@@ -131,7 +131,7 @@ export function setupAgentChatPump(
   let prevIsStreaming = false
   let prevMessages: unknown = null
   let prevNotifyOnFinish = false
-  let pendingSnapshotFetch = false
+  let latestStreamingUpdate: SessionLivePatch | null = null
   let stopped = false
 
   const send = <C extends keyof PushMap>(channel: C, data: PushMap[C]) => {
@@ -145,13 +145,21 @@ export function setupAgentChatPump(
     prevNotifyOnFinish = snapshot.notifyOnFinish
   }
 
-  const tickHeartbeat = async () => {
+  const streamingUpdateFromSnapshot = (snapshot: AgentSnapshot): SessionLivePatch => ({
+    streamingMessage: snapshot.streamingMessage,
+    statusLine: snapshot.statusLine,
+    isStreaming: snapshot.isStreaming,
+    retryState: snapshot.retryState,
+    stalledSince: snapshot.stalledSince,
+  })
+
+  const tickHeartbeat = () => {
     if (stopped || wc.isDestroyed()) return
     if (!heartbeatDirty) return
     if (isActive && !isActive()) return
     heartbeatDirty = false
     try {
-      const snapshot = await chat.getSnapshot()
+      const snapshot = chat.getSnapshot()
       if (stopped || wc.isDestroyed()) return
       pushFullSnapshot(snapshot)
     } catch (err) {
@@ -159,20 +167,15 @@ export function setupAgentChatPump(
     }
   }
 
-  const handleChange = async () => {
+  const handleChange = () => {
     if (stopped || wc.isDestroyed()) return
-    if (pendingSnapshotFetch) return
-    pendingSnapshotFetch = true
 
     let snapshot: AgentSnapshot
     try {
-      snapshot = await chat.getSnapshot()
+      snapshot = chat.getSnapshot()
     } catch (err) {
-      pendingSnapshotFetch = false
       console.warn('[chat-pump] getSnapshot failed:', err)
       return
-    } finally {
-      pendingSnapshotFetch = false
     }
 
     if (stopped || wc.isDestroyed()) return
@@ -190,24 +193,15 @@ export function setupAgentChatPump(
     if (isActive && !isActive()) return
 
     if (snapshot.isStreaming) {
+      latestStreamingUpdate = streamingUpdateFromSnapshot(snapshot)
       // Lightweight streaming payload — debounced to ~60fps.
       if (!streamingDebounce) {
-        streamingDebounce = setTimeout(async () => {
+        streamingDebounce = setTimeout(() => {
           streamingDebounce = null
           if (stopped || wc.isDestroyed()) return
           if (isActive && !isActive()) return
-          try {
-            const current = await chat.getSnapshot()
-            send(Channels.agent.streaming, {
-              message: current.streamingMessage,
-              statusLine: current.statusLine,
-              isStreaming: current.isStreaming,
-              retryState: current.retryState,
-              stalledSince: current.stalledSince,
-            })
-          } catch (err) {
-            console.warn('[chat-pump] streaming snapshot failed:', err)
-          }
+          if (!latestStreamingUpdate) return
+          send(Channels.agent.streaming, latestStreamingUpdate)
         }, 16)
       }
       // Send a full snapshot on transitions to-streaming and on message changes mid-stream.
@@ -215,11 +209,12 @@ export function setupAgentChatPump(
         pushFullSnapshot(snapshot)
       }
     } else {
+      latestStreamingUpdate = null
       pushFullSnapshot(snapshot)
     }
   }
 
-  const onChange = (): void => { void handleChange() }
+  const onChange = (): void => { handleChange() }
   const unsubscribe = chat.subscribe(onChange)
 
   return {

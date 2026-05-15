@@ -31,7 +31,7 @@ export class LocalChatController implements AgentChatController {
     return this.sessionManager.getSessionList()
   }
 
-  async getSnapshot(): Promise<AgentSnapshot> {
+  getSnapshot(): AgentSnapshot {
     return this.sessionManager.getSnapshot()
   }
 

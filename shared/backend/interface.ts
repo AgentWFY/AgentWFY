@@ -10,7 +10,7 @@
 // protocol used by RemoteBackend lives in ./protocol.ts.
 
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
-import type { RetryState } from '../agent/types.js'
+import type { SessionLivePatch } from '../agent/types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
 
 // ── Backend identity ─────────────────────────────────────────────────────
@@ -45,21 +45,11 @@ export interface SessionSummary {
   updatedAt: number
 }
 
-/** Streaming-frequency fields. Carried in every session:state event.
- *  Excludes immutable agent metadata (systemPrompt/tools) and committed
- *  messages — those flow separately so the conversation isn't re-serialized
- *  per token. */
-export interface SessionLiveState {
-  isStreaming: boolean
-  streamingMessage: DisplayMessage | null
-  statusLine?: string
-  retryState?: RetryState | null
-  stalledSince?: number | null
-}
+export type { SessionLivePatch } from '../agent/types.js'
 
 export interface SessionState extends SessionSummary {
   messages: DisplayMessage[]
-  live?: SessionLiveState | null
+  live?: SessionLivePatch | null
 }
 
 export interface SpawnSessionRequest {
@@ -144,7 +134,7 @@ export type AgentBackendEvent =
   | {
       kind: 'session:state'
       sessionId: string
-      live: SessionLiveState
+      live: SessionLivePatch
       messages?: DisplayMessage[]
       title?: string
     }

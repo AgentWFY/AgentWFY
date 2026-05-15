@@ -25,7 +25,7 @@ export interface AgentChatController {
   setDisplayedSessionId(sessionId: string | null): Promise<void>
 
   getSessionList(): Promise<SessionListItem[]>
-  getSnapshot(): Promise<AgentSnapshot>
+  getSnapshot(): AgentSnapshot
 
   createSession(opts: ChatCreateSessionOpts): Promise<string | null>
   sendMessage(text: string, opts?: ChatSendOpts): Promise<void>

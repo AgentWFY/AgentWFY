@@ -46,7 +46,7 @@ import {
   type TasksApi,
   type RunningTaskSummary,
   type SessionHandle,
-  type SessionLiveState,
+  type SessionLivePatch,
   type SessionState,
   type SessionsApi,
   type StatusApi,
@@ -59,7 +59,7 @@ const SESSION_BUS_TOPICS = {
   loaded: 'sessions.loaded',
 } as const
 
-function liveStateFromAgentState(state: AgentState): SessionLiveState {
+function liveStateFromAgentState(state: AgentState): SessionLivePatch {
   return {
     isStreaming: state.isStreaming,
     streamingMessage: sanitizeStreamingMessage(state.streamingMessage),
@@ -79,6 +79,7 @@ export class LocalBackend implements AgentBackend {
   private readonly lastTitle = new Map<string, string>()
   private busUnsubscribes: Array<() => void> = []
   private agentEventsUnsubscribe: (() => void) | null = null
+  private sessionLifecycleUnsubscribe: (() => void) | null = null
   private started = false
 
   constructor(ctx: LocalBackendContext) {
@@ -147,6 +148,18 @@ export class LocalBackend implements AgentBackend {
         })
       },
     )
+
+    this.sessionLifecycleUnsubscribe = this.ctx.sessionManager.subscribeToSessionLifecycle({
+      onDisposed: ({ sessionId }) => {
+        this.lastMessagesRef.delete(sessionId)
+        this.lastTitle.delete(sessionId)
+      },
+      onRemoved: ({ sessionId, publicSessionId }) => {
+        this.lastMessagesRef.delete(sessionId)
+        this.lastTitle.delete(sessionId)
+        this.emit({ kind: 'session:removed', sessionId: publicSessionId })
+      },
+    })
   }
 
   async stop(): Promise<void> {
@@ -156,6 +169,8 @@ export class LocalBackend implements AgentBackend {
     this.busUnsubscribes = []
     this.agentEventsUnsubscribe?.()
     this.agentEventsUnsubscribe = null
+    this.sessionLifecycleUnsubscribe?.()
+    this.sessionLifecycleUnsubscribe = null
     this.subscribers.clear()
     this.lastMessagesRef.clear()
     this.lastTitle.clear()

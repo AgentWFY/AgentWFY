@@ -56,6 +56,15 @@ export interface AgentState {
   stalledSince?: number | null
 }
 
+/** Streaming-frequency fields shared by backend events and renderer IPC. */
+export interface SessionLivePatch {
+  isStreaming: boolean
+  streamingMessage: DisplayMessage | null
+  statusLine: string | undefined
+  retryState: RetryState | null
+  stalledSince: number | null
+}
+
 // Snapshot of the chat-UI-facing session manager state.
 // Lives here (not in ipc/schema.ts) so portable runtime code can reference it.
 export interface AgentSnapshot {
@@ -70,14 +79,6 @@ export interface AgentSnapshot {
   activeSessionFile: string | null
   activeSessionId: string | null
   streamingFiles: string[]
-  retryState: RetryState | null
-  stalledSince: number | null
-}
-
-export interface AgentStreamingUpdate {
-  message: DisplayMessage | null
-  statusLine: string | undefined
-  isStreaming: boolean
   retryState: RetryState | null
   stalledSince: number | null
 }

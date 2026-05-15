@@ -5,7 +5,7 @@ import type {
   AgentSnapshot,
   RetryState,
 } from './types.js'
-import type { AgentStreamingUpdate } from '../../ipc/schema.js'
+import type { SessionLivePatch } from '../../ipc/schema.js'
 import type { ProviderState } from '../../ipc/providers.js'
 import type { FileContent } from '#shared/agent/types.js'
 
@@ -112,8 +112,8 @@ class AgentSessionStore {
       this.applySnapshot(snapshot)
     })
 
-    this._streamingUnsub = ipc.agent.onStreaming((d: AgentStreamingUpdate) => {
-      const patch: Partial<AgentSessionState> = { streamingMessage: d.message }
+    this._streamingUnsub = ipc.agent.onStreaming((d: SessionLivePatch) => {
+      const patch: Partial<AgentSessionState> = { streamingMessage: d.streamingMessage }
       if (d.statusLine !== undefined) patch.statusLine = d.statusLine
       if (d.isStreaming !== undefined) patch.isStreaming = d.isStreaming
       if (d.retryState !== undefined) patch.retryState = d.retryState

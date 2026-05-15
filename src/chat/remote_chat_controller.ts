@@ -37,21 +37,38 @@ export class RemoteChatController implements AgentChatController {
   }
 
   async setDisplayedSessionId(sessionId: string | null): Promise<void> {
-    if (this.displayedSessionId === sessionId) return
+    if (this.displayedSessionId === sessionId) {
+      if (this.cacheLoad) await this.cacheLoad
+      return
+    }
     this.displayedSessionId = sessionId
     this.cachedState = null
-    this.cacheLoad = sessionId ? this.loadCachedState(sessionId) : null
-    this.notifyChange()
+    if (!sessionId) {
+      this.cacheLoad = null
+      this.notifyChange()
+      return
+    }
+
+    await this.startCacheLoad(sessionId)
+    if (this.displayedSessionId === sessionId) this.notifyChange()
   }
 
-  private loadCachedState(sessionId: string): Promise<void> {
-    return this.backend.sessions.get({ sessionId }).then((state) => {
+  private startCacheLoad(sessionId: string): Promise<void> {
+    const load = this.loadCachedState(sessionId).finally(() => {
+      if (this.cacheLoad === load) this.cacheLoad = null
+    })
+    this.cacheLoad = load
+    return load
+  }
+
+  private async loadCachedState(sessionId: string): Promise<void> {
+    try {
+      const state = await this.backend.sessions.get({ sessionId })
       if (this.displayedSessionId !== sessionId) return
       this.cachedState = state ?? null
-      this.notifyChange()
-    }).catch((err: unknown) => {
+    } catch (err) {
       console.warn('[RemoteChatController] initial state fetch failed:', err)
-    })
+    }
   }
 
   async getSessionList(): Promise<SessionListItem[]> {
@@ -66,14 +83,10 @@ export class RemoteChatController implements AgentChatController {
     }))
   }
 
-  async getSnapshot(): Promise<AgentSnapshot> {
+  getSnapshot(): AgentSnapshot {
     const backendStatus = statusLineForBackend(this.backend.status.get())
     const current = this.displayedSessionId
     if (!current) return emptySnapshot(backendStatus)
-
-    if (this.cacheLoad && !this.cachedState) {
-      await this.cacheLoad
-    }
 
     const state = this.cachedState
     if (!state || state.sessionId !== current) return emptySnapshot(backendStatus)
@@ -166,6 +179,14 @@ export class RemoteChatController implements AgentChatController {
     let prevConnectionState: BackendStatusSnapshot['state'] = this.backend.status.get().state
     this.eventsUnsubscribe = this.backend.events.subscribe((evt: AgentBackendEvent) => {
       if (this.displayedSessionId === null) return
+      if (evt.kind === 'session:removed') {
+        if (evt.sessionId !== this.displayedSessionId) return
+        this.displayedSessionId = null
+        this.cachedState = null
+        this.cacheLoad = null
+        this.notifyChange()
+        return
+      }
       if (evt.kind !== 'session:state') return
       if (evt.sessionId !== this.displayedSessionId) return
       // Skip events that arrive before the initial fetch populates the cache:
@@ -186,7 +207,10 @@ export class RemoteChatController implements AgentChatController {
       // Re-fetch after reconnect: any events fired while we were offline
       // never reached this client.
       if (prev !== 'connected' && status.state === 'connected' && this.displayedSessionId) {
-        this.cacheLoad = this.loadCachedState(this.displayedSessionId)
+        const sessionId = this.displayedSessionId
+        void this.startCacheLoad(sessionId).then(() => {
+          if (this.displayedSessionId === sessionId) this.notifyChange()
+        })
       }
       this.notifyChange()
     })

@@ -17,9 +17,9 @@ import type { TasksApi } from './tasks.js'
 import type { TracesApi } from './traces.js'
 import type { FileContent } from '#shared/agent/types.js'
 import type { ProviderState } from '../../ipc/providers.js'
-import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
+import type { AgentSnapshot, InstalledAgent, SessionLivePatch, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
 
-export type { ProviderState, AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
+export type { ProviderState, AgentSnapshot, SessionLivePatch, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
 
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>
@@ -45,7 +45,7 @@ export interface AgentApi {
   reconnect(): Promise<void>
   getSnapshot(): Promise<AgentSnapshot>
   onSnapshot(callback: (snapshot: AgentSnapshot) => void): () => void
-  onStreaming(callback: (data: AgentStreamingUpdate) => void): () => void
+  onStreaming(callback: (data: SessionLivePatch) => void): () => void
   disposeSession(file: string): Promise<void>
   retryNow(): Promise<void>
 }

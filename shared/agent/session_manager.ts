@@ -85,6 +85,14 @@ interface SessionEntry {
 }
 
 export type AgentEventListener = (sessionId: string, event: AgentWFYAgentEvent) => void
+export interface SessionLifecycleEvent {
+  sessionId: string
+  publicSessionId: string
+}
+export interface SessionLifecycleHandlers {
+  onDisposed?: (event: SessionLifecycleEvent) => void
+  onRemoved?: (event: SessionLifecycleEvent) => void
+}
 
 interface SessionHistoryItem {
   file: string
@@ -161,6 +169,7 @@ export class AgentSessionManager {
   private sessions = new Map<string, SessionEntry>()
   private listeners = new Set<() => void>()
   private agentEventListeners = new Set<AgentEventListener>()
+  private sessionLifecycleListeners = new Set<SessionLifecycleHandlers>()
   private readonly deps: AgentSessionManagerDeps
   private readonly sessionsDir: string
 
@@ -344,6 +353,12 @@ export class AgentSessionManager {
     return () => this.agentEventListeners.delete(listener)
   }
 
+  /** Subscribe to in-memory disposal and persisted-session removal events. */
+  subscribeToSessionLifecycle(handlers: SessionLifecycleHandlers): () => void {
+    this.sessionLifecycleListeners.add(handlers)
+    return () => this.sessionLifecycleListeners.delete(handlers)
+  }
+
   getSessionFileForSessionId(sessionId: string): string | null {
     return this.sessions.get(sessionId)?.agent.sessionFile ?? null
   }
@@ -372,12 +387,17 @@ export class AgentSessionManager {
       }
     }
     const sessionFile = entry?.agent.sessionFile ?? sessionId
+    const removedEvent = {
+      sessionId: entryId ?? sessionId,
+      publicSessionId: sessionFile,
+    }
     if (entry) {
       await this.disposeSession(entryId!)
     }
     if (sessionFile) {
       await deleteSessionFile(this.sessionsDir, sessionFile)
     }
+    this.emitSessionRemoved(removedEvent)
   }
 
   async spawnSession(prompt: string, providerId?: string, providerOptions?: Record<string, unknown>): Promise<{ sessionId: string }> {
@@ -673,6 +693,7 @@ export class AgentSessionManager {
   private async disposeSession(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId)
     if (!entry) return
+    const publicSessionId = entry.agent.sessionFile ?? sessionId
 
     if (entry.agent.isStreaming) {
       await entry.agent.abort()
@@ -688,8 +709,29 @@ export class AgentSessionManager {
     entry.agentEventUnsubscribe()
     entry.agent.dispose()
     this.sessions.delete(sessionId)
+    this.emitSessionDisposed({ sessionId, publicSessionId })
 
     this.notify()
+  }
+
+  private emitSessionDisposed(event: SessionLifecycleEvent): void {
+    for (const handlers of this.sessionLifecycleListeners) {
+      try {
+        handlers.onDisposed?.(event)
+      } catch (err) {
+        console.error('[AgentSessionManager] session dispose listener threw:', err)
+      }
+    }
+  }
+
+  private emitSessionRemoved(event: SessionLifecycleEvent): void {
+    for (const handlers of this.sessionLifecycleListeners) {
+      try {
+        handlers.onRemoved?.(event)
+      } catch (err) {
+        console.error('[AgentSessionManager] session remove listener threw:', err)
+      }
+    }
   }
 
   async listSessions(request: ListSessionsRequest = {}): Promise<SessionSummary[]> {
