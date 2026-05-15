@@ -26,7 +26,6 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
 import { LocalChatController } from './chat/local_chat_controller.js';
 import { getAgentMeta } from './agent-meta.js';
 import { createRemoteAgentContext, destroyRemoteAgentContext } from './agent-context-remote.js';
-import { SubscriptionBag } from './subscription-bag.js';
 
 export interface AgentContextFactoryDeps {
   getMainWindow: () => BaseWindow | null;
@@ -79,7 +78,6 @@ export class AgentContextFactory {
       shortcutManager,
       tabViewManager,
       tabTools,
-      subscriptions: new SubscriptionBag(),
       getCommandPalette: () => this.deps.getCommandPalette(),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
     });
@@ -152,7 +150,6 @@ export class AgentContextFactory {
       taskRunner: runtime.taskRunner,
       jsRuntime: runtime.jsRuntime,
       shortcutManager,
-      subscriptions: new SubscriptionBag(),
       backend: runtime.backend,
       chat: new LocalChatController(runtime.sessionManager),
       chatPump: null,
@@ -170,7 +167,8 @@ export class AgentContextFactory {
     if (ctx.mode === 'remote') {
       ctx.chatPump?.stop();
       ctx.chatPump = null;
-      ctx.subscriptions.dispose();
+      ctx.statusUnsubscribe?.();
+      ctx.statusUnsubscribe = null;
       ctx.tabViewManager.destroyAllTabViews();
       ctx.tabViewManager.clearTrackedViewWebContents();
       destroyRemoteAgentContext(ctx).catch((err) => {
@@ -187,7 +185,6 @@ export class AgentContextFactory {
 
     ctx.chatPump?.stop();
     ctx.chatPump = null;
-    ctx.subscriptions.dispose();
     ctx.backend.stop().catch((err) => {
       console.warn('[AgentContextFactory] backend.stop failed:', err);
     });

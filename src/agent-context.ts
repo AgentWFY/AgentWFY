@@ -12,7 +12,6 @@ import type { TabHost } from '#shared/runtime/hosts.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { AgentChatPump } from './ipc/agent-sessions.js';
 import type { RemoteAgentConfig } from './agent-meta.js';
-import type { SubscriptionBag } from './subscription-bag.js';
 import type { AgentChatController } from '#shared/agent/chat_controller.js';
 
 interface AgentContextBase {
@@ -31,8 +30,6 @@ interface AgentContextBase {
   backend: AgentBackend;
   /** Desktop chat-panel controller for this agent. */
   chat: AgentChatController;
-  /** Per-agent desktop subscriptions that should be torn down with the context. */
-  subscriptions: SubscriptionBag;
   /** Renderer snapshot/streaming pump. One implementation for both backends —
    *  see setupAgentChatPump. Null between construction and pump setup. */
   chatPump: AgentChatPump | null;
@@ -60,6 +57,8 @@ export interface LocalAgentContext extends AgentContextBase {
 export interface RemoteAgentContext extends AgentContextBase {
   mode: 'remote';
   remoteConfig: RemoteAgentConfig;
+  /** Disposer for the backend.status subscription wired by the orchestrator. */
+  statusUnsubscribe: (() => void) | null;
 }
 
 export type AgentContext = LocalAgentContext | RemoteAgentContext;

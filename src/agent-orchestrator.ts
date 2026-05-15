@@ -99,12 +99,12 @@ export class AgentOrchestrator {
    *   - Status changes should refresh the sidebar (to update the connection
    *     dot) and re-push provider state on reconnect. */
   private wireRemoteSidebarAndProviders(agentCtx: RemoteAgentContext): void {
-    agentCtx.subscriptions.add(agentCtx.backend.status.subscribe((status) => {
+    agentCtx.statusUnsubscribe = agentCtx.backend.status.subscribe((status) => {
       if (this.deps.isWindowAvailable()) this.broadcastSidebarState();
       if (status.state === 'connected' && this.activeAgentId === agentCtx.agentId) {
         void this.pushProviderState(agentCtx);
       }
-    }));
+    });
   }
 
   private destroyAgentContext(agentId: string): void {

@@ -13,7 +13,6 @@ import { registerTabs } from '#shared/runtime/functions/tabs.js'
 import { registerPalette } from '#shared/runtime/functions/palette.js'
 import { registerOpenExternal } from '#shared/runtime/functions/index.js'
 import { getElectronExternalLauncher } from './runtime/hosts-electron.js'
-import type { SubscriptionBag } from './subscription-bag.js'
 
 export async function createRemoteAgentContext(opts: {
   agentId: string
@@ -22,11 +21,10 @@ export async function createRemoteAgentContext(opts: {
   shortcutManager: ShortcutManager
   tabViewManager: TabViewManager
   tabTools: TabHost
-  subscriptions: SubscriptionBag
   getCommandPalette?: () => PaletteHost
   onLocalDbChange?: (change: AgentDbChange) => void
 }): Promise<RemoteAgentContext> {
-  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools, subscriptions } = opts
+  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools } = opts
 
   const clientFunctionRegistry = createClientFunctionRegistry({
     cacheRoot,
@@ -62,7 +60,7 @@ export async function createRemoteAgentContext(opts: {
     eventBus,
     backend: remoteBackend,
     chat: new RemoteChatController(remoteBackend),
-    subscriptions,
+    statusUnsubscribe: null,
     chatPump: null,
     dbChangeDebounceTimer: null,
     triggerReloadDebounceTimer: null,
