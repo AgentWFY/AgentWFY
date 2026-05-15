@@ -12,11 +12,17 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
+    "paths": {
+      "*": ["./*"],
+      "#shared/*.js": ["./shared/*.ts"],
+      "#shared/*.mjs": ["./shared/*.mts"]
+    },
     "typeRoots": ["types"]
   },
   "include": [
     "src/**/*",
+    "shared/**/*",
     "types/**/*"
   ]
 }

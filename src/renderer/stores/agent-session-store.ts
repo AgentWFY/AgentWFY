@@ -7,7 +7,7 @@ import type {
 } from './types.js'
 import type { AgentStreamingUpdate } from '../../ipc/schema.js'
 import type { ProviderState } from '../../ipc/providers.js'
-import type { FileContent } from '../../agent/types.js'
+import type { FileContent } from '#shared/agent/types.js'
 
 export interface AgentSessionState {
   // From IPC snapshots
@@ -73,7 +73,7 @@ class AgentSessionStore {
   private _streamingUnsub: (() => void) | null = null
   private _providerStateUnsub: (() => void) | null = null
   private _stateCache = new Map<string, AgentSessionState>()
-  private _currentAgentRoot: string | null = null
+  private _currentAgentId: string | null = null
 
   get state(): Readonly<AgentSessionState> {
     return this._state
@@ -114,7 +114,7 @@ class AgentSessionStore {
 
     this._streamingUnsub = ipc.agent.onStreaming((d: AgentStreamingUpdate) => {
       const patch: Partial<AgentSessionState> = { streamingMessage: d.message }
-      if (d.statusLine) patch.statusLine = d.statusLine
+      if (d.statusLine !== undefined) patch.statusLine = d.statusLine
       if (d.isStreaming !== undefined) patch.isStreaming = d.isStreaming
       if (d.retryState !== undefined) patch.retryState = d.retryState
       if (d.stalledSince !== undefined) patch.stalledSince = d.stalledSince
@@ -132,7 +132,7 @@ class AgentSessionStore {
       this.applyProviderState(state)
     }) ?? null
 
-    this._currentAgentRoot = window.ipc?.agentRoot ?? null
+    this._currentAgentId = window.ipc?.agentId ?? null
 
     window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
@@ -140,19 +140,19 @@ class AgentSessionStore {
   /** Save current state per-agent and restore cached state for the new agent. */
   private _onAgentSwitched = (e: Event) => {
     const detail = (e as CustomEvent).detail
-    const newAgentRoot: string | null = detail?.agentRoot ?? null
-    const agents: Array<{ path: string }> | undefined = detail?.agents
+    const newAgentId: string | null = detail?.agentId ?? null
+    const agents: Array<{ agentId: string }> | undefined = detail?.agents
 
     // Skip if the agent hasn't actually changed (e.g. broadcastSidebarState after trigger start)
-    if (newAgentRoot === this._currentAgentRoot) return
+    if (newAgentId === this._currentAgentId) return
 
     // Save current state for the previous agent
-    if (this._currentAgentRoot) {
-      this._stateCache.set(this._currentAgentRoot, { ...this._state })
+    if (this._currentAgentId) {
+      this._stateCache.set(this._currentAgentId, { ...this._state })
     }
 
     // Restore cached state or use default
-    const cached = newAgentRoot ? this._stateCache.get(newAgentRoot) : null
+    const cached = newAgentId ? this._stateCache.get(newAgentId) : null
     if (cached) {
       this._state = { ...cached, ready: false }
     } else {
@@ -161,13 +161,13 @@ class AgentSessionStore {
 
     // Clean up cache entries for removed agents
     if (agents) {
-      const activePaths = new Set(agents.map(a => a.path))
+      const activeIds = new Set(agents.map(a => a.agentId))
       for (const key of this._stateCache.keys()) {
-        if (!activePaths.has(key)) this._stateCache.delete(key)
+        if (!activeIds.has(key)) this._stateCache.delete(key)
       }
     }
 
-    this._currentAgentRoot = newAgentRoot
+    this._currentAgentId = newAgentId
     this.notify()
   }
 

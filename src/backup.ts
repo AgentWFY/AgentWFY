@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { getConfigValue } from './settings/config.js';
-import { resolveAgentDbPath } from './db/paths.js';
-import { SystemConfigKeys } from './system-config/keys.js';
+import { getConfigValue } from '#shared/settings/config.js';
+import { resolveAgentDbPath } from '#shared/db/paths.js';
+import { SystemConfigKeys } from '#shared/system-config/keys.js';
 
 const BACKUP_DIR_NAME = 'backups';
 const META_FILE_NAME = 'backup-meta.json';
@@ -30,20 +30,20 @@ interface BackupVersionInfo {
 
 // --- Helpers ---
 
-function getBackupDir(agentRoot: string): string {
-  return path.join(agentRoot, '.agentwfy', BACKUP_DIR_NAME);
+function getBackupDir(runtimeRoot: string): string {
+  return path.join(runtimeRoot, '.agentwfy', BACKUP_DIR_NAME);
 }
 
-function getMetaPath(agentRoot: string): string {
-  return path.join(agentRoot, '.agentwfy', META_FILE_NAME);
+function getMetaPath(runtimeRoot: string): string {
+  return path.join(runtimeRoot, '.agentwfy', META_FILE_NAME);
 }
 
-function getIntervalHours(agentRoot: string): number {
-  return Number(getConfigValue(agentRoot, SystemConfigKeys.backupIntervalHours, '24'));
+function getIntervalHours(runtimeRoot: string): number {
+  return Number(getConfigValue(runtimeRoot, SystemConfigKeys.backupIntervalHours, '24'));
 }
 
-function getMaxCount(agentRoot: string): number {
-  return Number(getConfigValue(agentRoot, SystemConfigKeys.backupMaxCount, '5'));
+function getMaxCount(runtimeRoot: string): number {
+  return Number(getConfigValue(runtimeRoot, SystemConfigKeys.backupMaxCount, '5'));
 }
 
 function fileHash(filePath: string): string {
@@ -55,8 +55,8 @@ function fileHash(filePath: string): string {
   }
 }
 
-function readMeta(agentRoot: string): BackupMetadata {
-  const metaPath = getMetaPath(agentRoot);
+function readMeta(runtimeRoot: string): BackupMetadata {
+  const metaPath = getMetaPath(runtimeRoot);
   try {
     const raw = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     if (typeof raw.nextVersion === 'number' && raw.versions && typeof raw.versions === 'object') {
@@ -66,8 +66,8 @@ function readMeta(agentRoot: string): BackupMetadata {
   return { nextVersion: 1, versions: {} };
 }
 
-function writeMeta(agentRoot: string, meta: BackupMetadata): void {
-  const metaPath = getMetaPath(agentRoot);
+function writeMeta(runtimeRoot: string, meta: BackupMetadata): void {
+  const metaPath = getMetaPath(runtimeRoot);
   fs.mkdirSync(path.dirname(metaPath), { recursive: true });
   fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
 }
@@ -78,12 +78,12 @@ function getVersionNumbers(meta: BackupMetadata): number[] {
 
 // --- Public API ---
 
-function getCurrentDbHash(agentRoot: string): string {
-  return fileHash(path.join(agentRoot, '.agentwfy', 'agent.db'));
+function getCurrentDbHash(runtimeRoot: string): string {
+  return fileHash(path.join(runtimeRoot, '.agentwfy', 'agent.db'));
 }
 
-export function getBackupStatus(agentRoot: string): BackupStatus {
-  const meta = readMeta(agentRoot);
+export function getBackupStatus(runtimeRoot: string): BackupStatus {
+  const meta = readMeta(runtimeRoot);
   const versions = getVersionNumbers(meta);
 
   if (versions.length === 0) {
@@ -92,7 +92,7 @@ export function getBackupStatus(agentRoot: string): BackupStatus {
 
   const latest = versions[versions.length - 1];
   const latestEntry = meta.versions[String(latest)];
-  const currentHash = getCurrentDbHash(agentRoot);
+  const currentHash = getCurrentDbHash(runtimeRoot);
 
   // Find which version matches current DB (check latest first, then others)
   let matchedVersion: number | null = null;
@@ -114,9 +114,9 @@ export function getBackupStatus(agentRoot: string): BackupStatus {
   };
 }
 
-export function listAllBackups(agentRoot: string): BackupVersionInfo[] {
-  const meta = readMeta(agentRoot);
-  const currentHash = getCurrentDbHash(agentRoot);
+export function listAllBackups(runtimeRoot: string): BackupVersionInfo[] {
+  const meta = readMeta(runtimeRoot);
+  const currentHash = getCurrentDbHash(runtimeRoot);
   const versions = getVersionNumbers(meta);
 
   return versions
@@ -131,17 +131,17 @@ export function listAllBackups(agentRoot: string): BackupVersionInfo[] {
     .reverse();
 }
 
-export async function backupAgentDb(agentRoot: string): Promise<{ created: boolean; skipped: boolean; version?: number; error?: string }> {
-  const dbPath = await resolveAgentDbPath(agentRoot);
+export async function backupAgentDb(runtimeRoot: string): Promise<{ created: boolean; skipped: boolean; version?: number; error?: string }> {
+  const dbPath = await resolveAgentDbPath(runtimeRoot);
   if (!fs.existsSync(dbPath)) {
     return { created: false, skipped: true, error: 'Agent database does not exist' };
   }
 
-  const backupDir = getBackupDir(agentRoot);
+  const backupDir = getBackupDir(runtimeRoot);
   fs.mkdirSync(backupDir, { recursive: true });
 
-  const meta = readMeta(agentRoot);
-  const currentHash = getCurrentDbHash(agentRoot);
+  const meta = readMeta(runtimeRoot);
+  const currentHash = getCurrentDbHash(runtimeRoot);
 
   // Skip if any existing version already has this hash
   if (currentHash) {
@@ -163,7 +163,7 @@ export async function backupAgentDb(agentRoot: string): Promise<{ created: boole
     meta.nextVersion = version + 1;
 
     // Prune oldest versions beyond maxCount
-    const maxCount = getMaxCount(agentRoot);
+    const maxCount = getMaxCount(runtimeRoot);
     const sorted = getVersionNumbers(meta);
     if (sorted.length > maxCount) {
       const toRemove = sorted.slice(0, sorted.length - maxCount);
@@ -175,7 +175,7 @@ export async function backupAgentDb(agentRoot: string): Promise<{ created: boole
       }
     }
 
-    writeMeta(agentRoot, meta);
+    writeMeta(runtimeRoot, meta);
     console.log(`[backup] Created: v${version}`);
     return { created: true, skipped: false, version };
   } catch (error) {
@@ -188,16 +188,16 @@ export async function backupAgentDb(agentRoot: string): Promise<{ created: boole
   }
 }
 
-export async function restoreFromBackup(agentRoot: string, version: number): Promise<{ success: boolean; restoredVersion: number; error?: string }> {
-  const meta = readMeta(agentRoot);
+export async function restoreFromBackup(runtimeRoot: string, version: number): Promise<{ success: boolean; restoredVersion: number; error?: string }> {
+  const meta = readMeta(runtimeRoot);
   const entry = meta.versions[String(version)];
   if (!entry) {
     return { success: false, restoredVersion: version, error: `Version v${version} not found` };
   }
 
-  const backupDir = getBackupDir(agentRoot);
+  const backupDir = getBackupDir(runtimeRoot);
   const backupPath = path.join(backupDir, `agent_v${version}.db`);
-  const dbPath = await resolveAgentDbPath(agentRoot);
+  const dbPath = await resolveAgentDbPath(runtimeRoot);
 
   if (!fs.existsSync(backupPath)) {
     return { success: false, restoredVersion: version, error: 'Backup file missing from disk' };
@@ -205,7 +205,7 @@ export async function restoreFromBackup(agentRoot: string, version: number): Pro
 
   try {
     // Auto-backup current state first (will skip if unchanged)
-    await backupAgentDb(agentRoot);
+    await backupAgentDb(runtimeRoot);
 
     // Verify backup is valid SQLite
     const testDb = new DatabaseSync(backupPath);
@@ -224,41 +224,41 @@ export async function restoreFromBackup(agentRoot: string, version: number): Pro
 
 const schedulerIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
-function clearSchedulerForAgent(agentRoot: string): void {
-  const interval = schedulerIntervals.get(agentRoot);
+function clearSchedulerForAgent(runtimeRoot: string): void {
+  const interval = schedulerIntervals.get(runtimeRoot);
   if (interval) {
     clearInterval(interval);
-    schedulerIntervals.delete(agentRoot);
+    schedulerIntervals.delete(runtimeRoot);
   }
 }
 
-function startSchedulerInterval(agentRoot: string): void {
-  const hours = getIntervalHours(agentRoot);
+function startSchedulerInterval(runtimeRoot: string): void {
+  const hours = getIntervalHours(runtimeRoot);
   const ms = hours * 60 * 60 * 1000;
 
   const interval = setInterval(() => {
-    backupAgentDb(agentRoot).catch((err) => {
+    backupAgentDb(runtimeRoot).catch((err) => {
       console.error('[backup] Scheduled backup failed:', err);
     });
   }, ms);
-  schedulerIntervals.set(agentRoot, interval);
+  schedulerIntervals.set(runtimeRoot, interval);
 }
 
-export async function scheduleBackup(agentRoot: string): Promise<void> {
-  clearSchedulerForAgent(agentRoot);
-  await backupAgentDb(agentRoot);
-  startSchedulerInterval(agentRoot);
+export async function scheduleBackup(runtimeRoot: string): Promise<void> {
+  clearSchedulerForAgent(runtimeRoot);
+  await backupAgentDb(runtimeRoot);
+  startSchedulerInterval(runtimeRoot);
 }
 
-export function rescheduleBackupForAgent(agentRoot: string): void {
-  if (schedulerIntervals.has(agentRoot)) {
-    clearSchedulerForAgent(agentRoot);
-    startSchedulerInterval(agentRoot);
+export function rescheduleBackupForAgent(runtimeRoot: string): void {
+  if (schedulerIntervals.has(runtimeRoot)) {
+    clearSchedulerForAgent(runtimeRoot);
+    startSchedulerInterval(runtimeRoot);
   }
 }
 
-export function stopBackupSchedulerForAgent(agentRoot: string): void {
-  clearSchedulerForAgent(agentRoot);
+export function stopBackupSchedulerForAgent(runtimeRoot: string): void {
+  clearSchedulerForAgent(runtimeRoot);
 }
 
 export function stopBackupScheduler(): void {

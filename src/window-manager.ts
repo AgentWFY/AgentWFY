@@ -3,18 +3,17 @@ import path from 'path';
 import { RendererBridge } from './renderer-bridge.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { PreviewCursorManager } from './preview-cursor/manager.js';
-import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from './settings/config.js';
+import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '#shared/settings/config.js';
 import { ConfirmationManager } from './confirmation/manager.js';
-import { buildProviderState } from './ipc/providers.js';
 import { storeGet } from './ipc/store.js';
 import { Channels } from './ipc/channels.cjs';
 import type { PushMap } from './ipc/schema.js';
+import { isLocalAgentContext } from './agent-context.js';
 import { AgentContextFactory } from './agent-context-factory.js';
 import { AgentOrchestrator } from './agent-orchestrator.js';
 import { ActionRegistry } from './shortcuts/registry.js';
 import { registerBuiltInActions } from './shortcuts/built-in-actions.js';
-import type { ProviderRegistry } from './providers/registry.js';
-import { SystemConfigKeys } from './system-config/keys.js';
+import { SystemConfigKeys } from '#shared/system-config/keys.js';
 
 
 export type { AgentContext } from './agent-context.js';
@@ -36,16 +35,16 @@ function parseShowTabSource(value: unknown): boolean {
   return !(v === 'false' || v === '0' || v === 'no');
 }
 
-function readShowTabSource(agentRoot?: string | null): boolean {
-  const raw = agentRoot
-    ? getConfigValue(agentRoot, SystemConfigKeys.showTabSource)
+function readShowTabSource(cacheRoot?: string | null): boolean {
+  const raw = cacheRoot
+    ? getConfigValue(cacheRoot, SystemConfigKeys.showTabSource)
     : getGlobalValue(SystemConfigKeys.showTabSource);
   return parseShowTabSource(raw);
 }
 
-function readHideTrafficLights(agentRoot?: string | null): boolean {
-  const raw = agentRoot
-    ? getConfigValue(agentRoot, SystemConfigKeys.hideTrafficLights)
+function readHideTrafficLights(cacheRoot?: string | null): boolean {
+  const raw = cacheRoot
+    ? getConfigValue(cacheRoot, SystemConfigKeys.hideTrafficLights)
     : getGlobalValue(SystemConfigKeys.hideTrafficLights);
   const v = String(raw ?? '').toLowerCase();
   return v === 'true' || v === '1' || v === 'yes';
@@ -96,7 +95,7 @@ class WindowManager {
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
       getCommandPalette: () => this.commandPalette!,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
-      getActiveAgentRoot: () => this.orchestrator.getActiveAgentRoot(),
+      getActiveAgentId: () => this.orchestrator.getActiveAgentId(),
       registerTabSender: (id, root) => this.orchestrator.registerTabSender(id, root),
       unregisterTabSender: (id) => this.orchestrator.unregisterTabSender(id),
       onRuntimeDbChange: (root, change) => this.orchestrator.onRuntimeDbChange(root, change),
@@ -113,7 +112,6 @@ class WindowManager {
       applyTheme: () => this.applyTheme(),
       applyTrafficLightPosition: () => this.applyTrafficLightPosition(),
       applyTrafficLightVisibility: () => this.applyTrafficLightVisibility(),
-      pushProviderState: (root, reg) => this.pushProviderState(root, reg),
       dispatchRendererEvent: (name, detail) => {
         this.rendererBridge?.dispatchRendererCustomEvent(name, detail);
       },
@@ -124,9 +122,9 @@ class WindowManager {
 
   // --- Window creation ---
 
-  async createMainWindow(initialAgentRoot: string): Promise<void> {
+  async createMainWindow(initialAgentId: string): Promise<void> {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      await this.orchestrator.addAgent(initialAgentRoot);
+      await this.orchestrator.addAgent(initialAgentId);
       return;
     }
 
@@ -171,15 +169,16 @@ class WindowManager {
 
     this.commandPalette = new CommandPaletteManager({
       getMainWindow: () => this.mainWindow!,
-      getAgentRoot: () => this.orchestrator.getActiveAgentRoot()!,
+      getCacheRoot: () => this.orchestrator.getActiveCacheRoot()!,
       rendererBridge: this.rendererBridge,
       getTabViewManager: () => this.orchestrator.getActiveAgentContext()!.tabViewManager,
-      addAgent: (root) => this.orchestrator.addAgent(root),
-      switchAgent: (root) => this.orchestrator.switchAgent(root),
+      addAgent: (id) => this.orchestrator.addAgent(id),
+      switchAgent: (id) => this.orchestrator.switchAgent(id),
       getInstalledAgentsList: () => this.orchestrator.getInstalledAgentsList(),
-      getPluginRegistry: () => this.orchestrator.getActiveAgentContext()?.pluginRegistry ?? null,
+      getPluginRegistry: () => this.orchestrator.getActiveLocalAgentContext()?.pluginRegistry ?? null,
       getConfirmation: () => this.confirmation!,
-      getSessionManager: () => this.orchestrator.getActiveAgentContext()!.sessionManager,
+      getChat: () => this.orchestrator.getActiveAgentContext()?.chat ?? null,
+      getBackend: () => this.orchestrator.getActiveAgentContext()?.backend ?? null,
       getDisplayShortcut: (actionId) => this.orchestrator.getActiveAgentContext()?.shortcutManager.getDisplayShortcut(actionId) ?? null,
       matchShortcut: (key, meta, ctrl, shift, alt) => this.orchestrator.getActiveAgentContext()?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
@@ -187,18 +186,34 @@ class WindowManager {
         const wc = this.rendererView?.webContents;
         if (wc && !wc.isDestroyed()) wc.reload();
       },
-      setAgentConfig: (name, value) => {
-        setAgentConfig(this.orchestrator.getActiveAgentRoot()!, name, value);
+      setAgentConfig: async (name, value) => {
+        const ctx = this.orchestrator.getActiveAgentContext();
+        if (ctx) {
+          await ctx.backend.config.set(name, value);
+          return;
+        }
+        setAgentConfig(this.orchestrator.getActiveCacheRoot()!, name, value);
       },
-      clearAgentConfig: (name) => {
-        clearAgentConfig(this.orchestrator.getActiveAgentRoot()!, name);
+      clearAgentConfig: async (name) => {
+        const ctx = this.orchestrator.getActiveAgentContext();
+        if (ctx) {
+          await ctx.backend.config.clear(name);
+          return;
+        }
+        clearAgentConfig(this.orchestrator.getActiveCacheRoot()!, name);
       },
-      removeAgentConfig: (name) => {
-        removeAgentConfig(this.orchestrator.getActiveAgentRoot()!, name);
+      removeAgentConfig: async (name) => {
+        const ctx = this.orchestrator.getActiveAgentContext();
+        if (ctx) {
+          await ctx.backend.config.remove(name);
+          return;
+        }
+        removeAgentConfig(this.orchestrator.getActiveCacheRoot()!, name);
       },
       pushProviderState: () => {
-        const ctx = this.orchestrator.getActiveAgentContext();
-        if (ctx) this.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
+        void this.pushActiveProviderState().catch((err) => {
+          console.error('[providers] Provider state failed:', err);
+        });
       },
     });
 
@@ -317,9 +332,9 @@ class WindowManager {
       this.handleShortcutAction(action);
     });
 
-    this.orchestrator.addPersistedAgent(initialAgentRoot);
-    await this.orchestrator.initAgentContext(initialAgentRoot);
-    this.orchestrator.activateFirstAgent(initialAgentRoot);
+    this.orchestrator.addPersistedAgent(initialAgentId);
+    await this.orchestrator.initAgentContext(initialAgentId);
+    this.orchestrator.activateFirstAgent(initialAgentId);
     this.applyTrafficLightPosition();
     this.applyTrafficLightVisibility();
 
@@ -341,8 +356,10 @@ class WindowManager {
     }
   }
 
-  private pushProviderState(agentRoot: string, providerRegistry: ProviderRegistry): void {
-    this.sendToRenderer(Channels.providers.stateChanged, buildProviderState(agentRoot, providerRegistry));
+  private async pushActiveProviderState(): Promise<void> {
+    const ctx = this.orchestrator.getActiveAgentContext();
+    if (!ctx) return;
+    this.sendToRenderer(Channels.providers.stateChanged, await ctx.backend.providers.getState());
   }
 
   getRendererWebContents(): Electron.WebContents | null {
@@ -352,9 +369,9 @@ class WindowManager {
   // --- Theme ---
 
   applyTheme(): void {
-    const agentRoot = this.orchestrator.getActiveAgentRoot();
-    const value = agentRoot
-      ? getConfigValue(agentRoot, SystemConfigKeys.theme, 'system')
+    const cacheRoot = this.orchestrator.getActiveCacheRoot();
+    const value = cacheRoot
+      ? getConfigValue(cacheRoot, SystemConfigKeys.theme, 'system')
       : getGlobalValue(SystemConfigKeys.theme) ?? 'system';
     const source = (value === 'light' || value === 'dark') ? value : 'system';
     if (nativeTheme.themeSource !== source) {
@@ -373,7 +390,7 @@ class WindowManager {
     if (process.platform !== 'darwin') return;
     const win = this.mainWindow;
     if (!win || win.isDestroyed()) return;
-    const showSource = readShowTabSource(this.orchestrator.getActiveAgentRoot());
+    const showSource = readShowTabSource(this.orchestrator.getActiveCacheRoot());
     win.setWindowButtonPosition(trafficLightFor(showSource));
   }
 
@@ -381,7 +398,7 @@ class WindowManager {
     if (process.platform !== 'darwin') return;
     const win = this.mainWindow;
     if (!win || win.isDestroyed()) return;
-    const hide = readHideTrafficLights(this.orchestrator.getActiveAgentRoot());
+    const hide = readHideTrafficLights(this.orchestrator.getActiveCacheRoot());
     win.setWindowButtonVisibility(!hide);
   }
 
@@ -444,13 +461,14 @@ class WindowManager {
   // --- Shortcut action dispatch ---
 
   handleShortcutAction(action: string): void {
-    this.actionRegistry.run(this.orchestrator.getActiveAgentRoot(), action);
+    this.actionRegistry.run(this.orchestrator.getActiveAgentId(), action);
   }
 
   // --- Delegation to orchestrator (preserves main.ts API surface) ---
 
   getMainWindow(): BaseWindow | null { return this.mainWindow; }
-  getActiveAgentRoot(): string | null { return this.orchestrator.getActiveAgentRoot(); }
+  getActiveAgentId(): string | null { return this.orchestrator.getActiveAgentId(); }
+  getActiveCacheRoot(): string | null { return this.orchestrator.getActiveCacheRoot(); }
   getActiveHttpApiPort(): number | null { return this.orchestrator.getActiveHttpApiPort(); }
   getCommandPalette(): CommandPaletteManager { return this.commandPalette!; }
   getConfirmation(): ConfirmationManager { return this.confirmation!; }
@@ -476,12 +494,23 @@ class WindowManager {
 
   getContextForSender(senderId: number) { return this.orchestrator.getContextForSender(senderId); }
   tryGetContextForSender(senderId: number) { return this.orchestrator.tryGetContextForSender(senderId); }
-  getAgentRootForEvent(event: IpcMainInvokeEvent) { return this.orchestrator.getAgentRootForEvent(event); }
+  /** Returns the LocalAgentContext for this sender; throws if the sender's agent is remote.
+   *  IPC handlers should prefer typed backend APIs and only reach for local runtime
+   *  fields when the operation is genuinely local-only (file IO, in-process runtime). */
+  getLocalContextForSender(senderId: number) {
+    const ctx = this.orchestrator.getContextForSender(senderId);
+    if (!isLocalAgentContext(ctx)) {
+      throw new Error('Operation requires a local agent context; sender belongs to a remote agent');
+    }
+    return ctx;
+  }
+  getBackendForSender(senderId: number) { return this.orchestrator.getBackendForSender(senderId); }
+  getCacheRootForEvent(event: IpcMainInvokeEvent) { return this.orchestrator.getCacheRootForEvent(event); }
 
-  addPersistedAgent(agentRoot: string) { this.orchestrator.addPersistedAgent(agentRoot); }
-  addAgent(agentRoot: string) { return this.orchestrator.addAgent(agentRoot); }
-  switchAgent(agentRoot: string) { return this.orchestrator.switchAgent(agentRoot); }
-  removeAgent(agentRoot: string) { return this.orchestrator.removeAgent(agentRoot); }
+  addPersistedAgent(agentId: string) { this.orchestrator.addPersistedAgent(agentId); }
+  addAgent(agentId: string) { return this.orchestrator.addAgent(agentId); }
+  switchAgent(agentId: string) { return this.orchestrator.switchAgent(agentId); }
+  removeAgent(agentId: string) { return this.orchestrator.removeAgent(agentId); }
   reorderAgents(fromIndex: number, toIndex: number) { this.orchestrator.reorderAgents(fromIndex, toIndex); }
   getInstalledAgentsList() { return this.orchestrator.getInstalledAgentsList(); }
 
@@ -489,7 +518,7 @@ class WindowManager {
 
 export const windowManager = new WindowManager();
 
-export function getPersistedAgentRoots(): string[] {
+export function getPersistedAgentIds(): string[] {
   const val = storeGet('installedAgents');
   return Array.isArray(val) ? val.filter(v => typeof v === 'string') : [];
 }

@@ -2,10 +2,11 @@ import fs from 'fs/promises'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { Channels } from './channels.cjs'
 import { getOrCreateTraceWriter } from './exec-js.js'
-import { isValidTraceSessionId, type TraceEvent } from '../runtime/trace_types.js'
+import { isValidTraceSessionId, type TraceEvent } from '#shared/runtime/trace_types.js'
+import type { AgentBackend } from '#shared/backend/interface.js'
 
 export interface TracesApiForSender {
-  agentRoot: string
+  runtimeRoot: string
 }
 
 async function readTraceFile(filePath: string): Promise<TraceEvent[]> {
@@ -34,12 +35,14 @@ async function readTraceFile(filePath: string): Promise<TraceEvent[]> {
 }
 
 export function registerTraceHandlers(
-  getAgentRoot: (e: IpcMainInvokeEvent) => string,
+  getCacheRoot: (e: IpcMainInvokeEvent) => string,
+  getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
 ): void {
   ipcMain.handle(Channels.traces.list, async (event, sessionId?: string) => {
     if (typeof sessionId !== 'string' || !isValidTraceSessionId(sessionId)) return []
-    const agentRoot = getAgentRoot(event)
-    const writer = getOrCreateTraceWriter(agentRoot)
+    if (getBackend(event).kind !== 'local') return []
+    const runtimeRoot = getCacheRoot(event)
+    const writer = getOrCreateTraceWriter(runtimeRoot)
     await writer.flush(sessionId)
     const filePath = writer.filePathFor(sessionId)
     if (!filePath) return []

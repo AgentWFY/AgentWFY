@@ -48,6 +48,15 @@ export type CommandPaletteAction =
     type: 'import-agent-from-file'
   }
   | {
+    type: 'enter-add-remote-agent'
+  }
+  | {
+    type: 'add-remote-agent'
+    agentId: string
+    baseUrl: string
+    agentToken: string
+  }
+  | {
     type: 'backup-agent-db'
   }
   | {
@@ -79,7 +88,7 @@ export type CommandPaletteAction =
   }
   | {
     type: 'switch-agent'
-    agentRoot: string
+    agentId: string
   }
   | {
     type: 'enter-agents'

@@ -1,6 +1,7 @@
 import type { PaletteScreen, ScreenResult } from '../screen.js'
 import type { CommandPaletteBridge } from '../bridge.js'
 import type { CommandPaletteItem } from '../../types.js'
+import { AddRemoteAgentScreen } from './add-remote-agent.js'
 
 const ITEMS: CommandPaletteItem[] = [
   {
@@ -24,10 +25,22 @@ const ITEMS: CommandPaletteItem[] = [
     group: 'Actions',
     action: { type: 'import-agent-from-file' },
   },
+  {
+    id: 'add-agent:remote',
+    title: 'Add Remote Agent',
+    subtitle: 'Connect to an agentwfy-remote-server instance over the network',
+    expandable: true,
+    group: 'Actions',
+    action: { type: 'enter-add-remote-agent' },
+  },
 ]
 
 export class AddAgentScreen implements PaletteScreen {
-  constructor(_bridge: CommandPaletteBridge) {}
+  private readonly bridge: CommandPaletteBridge
+
+  constructor(bridge: CommandPaletteBridge) {
+    this.bridge = bridge
+  }
 
   readonly id = 'add-agent'
   readonly breadcrumb = 'Add Agent'
@@ -47,6 +60,9 @@ export class AddAgentScreen implements PaletteScreen {
 
   async onEnter(ctx: { selectedItem: CommandPaletteItem | null }): Promise<ScreenResult> {
     if (!ctx.selectedItem) return { type: 'none' }
+    if (ctx.selectedItem.action.type === 'enter-add-remote-agent') {
+      return { type: 'push', screen: new AddRemoteAgentScreen(this.bridge) }
+    }
     return { type: 'action', action: ctx.selectedItem.action }
   }
 }

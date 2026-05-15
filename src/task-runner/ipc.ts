@@ -1,12 +1,13 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import { assertPathAllowed } from '../security/path-policy.js';
+import { assertPathAllowed } from '#shared/security/path-policy.js';
 import { Channels } from '../ipc/channels.cjs';
-import { listTasks } from '../db/tasks.js';
+import { listTasks } from '#shared/db/tasks.js';
 import { taskActionId } from '../shortcuts/task-actions.js';
 import type { ShortcutManager } from '../shortcuts/manager.js';
-import type { TaskRunner, TaskOrigin } from './task_runner.js';
+import type { TaskOrigin } from '#shared/task-runner/task_runner.js';
+import type { AgentBackend } from '#shared/backend/interface.js';
 
 const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
 const MAX_TASK_LOG_LIST_LIMIT = 1000;
@@ -25,8 +26,8 @@ function normalizeTaskLogFileName(value: unknown): string {
 
 export function registerTaskRunnerHandlers(
   getRoot: (e: IpcMainInvokeEvent) => string,
-  getTaskRunner: (e: IpcMainInvokeEvent) => TaskRunner,
   getShortcutManager: (e: IpcMainInvokeEvent) => ShortcutManager,
+  getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
 ): void {
   const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
@@ -41,23 +42,21 @@ export function registerTaskRunnerHandlers(
   // --- Direct task execution handlers ---
 
   ipcMain.handle(Channels.tasks.start, async (event, taskName: string, input?: unknown, origin?: TaskOrigin) => {
-    const runner = getTaskRunner(event);
+    const backend = getBackend(event);
     const effectiveOrigin = origin ?? { type: 'view' as const };
-    const runId = await runner.startTask(taskName, input, effectiveOrigin);
-    return { runId };
+    return backend.tasks.start({ taskName, input, origin: effectiveOrigin });
   });
 
   ipcMain.handle(Channels.tasks.stop, async (event, runId: string) => {
-    const runner = getTaskRunner(event);
-    runner.stopTask(runId);
+    await getBackend(event).tasks.stop({ runId });
   });
 
   ipcMain.handle(Channels.tasks.listRunning, async (event) => {
-    const runner = getTaskRunner(event);
-    return runner.listRunning();
+    return getBackend(event).tasks.listRunning();
   });
 
   ipcMain.handle(Channels.tasks.listShortcuts, async (event) => {
+    if (getBackend(event).kind !== 'local') return {};
     const sm = getShortcutManager(event);
     const tasks = await listTasks(getRoot(event));
     const out: Record<string, string> = {};
@@ -72,6 +71,7 @@ export function registerTaskRunnerHandlers(
 
   // listLogHistory — inlined from TaskRunner class
   ipcMain.handle(Channels.tasks.listLogHistory, async (event) => {
+    if (getBackend(event).kind !== 'local') return [];
     const dataDir = getRoot(event);
     const taskLogsDir = path.join(dataDir, '.agentwfy', 'task_logs');
 
@@ -115,6 +115,7 @@ export function registerTaskRunnerHandlers(
 
   // listTaskLogs(limit?) → [{ name, updatedAt }]
   ipcMain.handle(Channels.tasks.listLogs, async (event, limit?: number) => {
+    if (getBackend(event).kind !== 'local') return [];
     const taskLogsDir = await ensureTaskLogsDir(event);
     const requestedLimit = typeof limit === 'number' && Number.isFinite(limit)
       ? Math.floor(limit)
@@ -148,12 +149,18 @@ export function registerTaskRunnerHandlers(
 
   // readTaskLog(logFileName) → file content
   ipcMain.handle(Channels.tasks.readLog, async (event, logFileName: string) => {
+    if (getBackend(event).kind !== 'local') {
+      throw new Error('task logs aren\'t exposed for remote agents yet — view them on the daemon directly');
+    }
     const logPath = await resolveTaskLogPath(event, logFileName);
     return fs.readFile(logPath, 'utf-8');
   });
 
   // writeTaskLog(logFileName, content)
   ipcMain.handle(Channels.tasks.writeLog, async (event, logFileName: string, content: string) => {
+    if (getBackend(event).kind !== 'local') {
+      throw new Error('task logs aren\'t writable from the desktop for remote agents — they\'re managed by the daemon');
+    }
     const logPath = await resolveTaskLogPath(event, logFileName, { allowMissing: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
     await fs.writeFile(logPath, content, 'utf-8');

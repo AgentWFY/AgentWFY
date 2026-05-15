@@ -14,48 +14,48 @@ export class ActionRegistry {
     this.global.set(def.id, def);
   }
 
-  registerForAgent(agentRoot: string, def: ActionDef): void {
-    let bucket = this.perAgent.get(agentRoot);
+  registerForAgent(agentId: string, def: ActionDef): void {
+    let bucket = this.perAgent.get(agentId);
     if (!bucket) {
       bucket = new Map();
-      this.perAgent.set(agentRoot, bucket);
+      this.perAgent.set(agentId, bucket);
     }
     bucket.set(def.id, def);
   }
 
-  unregisterForAgent(agentRoot: string, id: string): void {
-    this.perAgent.get(agentRoot)?.delete(id);
+  unregisterForAgent(agentId: string, id: string): void {
+    this.perAgent.get(agentId)?.delete(id);
   }
 
-  clearAgent(agentRoot: string): void {
-    this.perAgent.delete(agentRoot);
+  clearAgent(agentId: string): void {
+    this.perAgent.delete(agentId);
   }
 
-  resolve(agentRoot: string | null, id: string): ActionDef | undefined {
-    if (agentRoot) {
-      const fromAgent = this.perAgent.get(agentRoot)?.get(id);
+  resolve(agentId: string | null, id: string): ActionDef | undefined {
+    if (agentId) {
+      const fromAgent = this.perAgent.get(agentId)?.get(id);
       if (fromAgent) return fromAgent;
     }
     return this.global.get(id);
   }
 
-  getAllForAgent(agentRoot: string): ActionDef[] {
+  getAllForAgent(agentId: string): ActionDef[] {
     const merged = new Map<string, ActionDef>();
     for (const def of this.global.values()) merged.set(def.id, def);
-    const bucket = this.perAgent.get(agentRoot);
+    const bucket = this.perAgent.get(agentId);
     if (bucket) {
       for (const def of bucket.values()) merged.set(def.id, def);
     }
     return Array.from(merged.values());
   }
 
-  getAgentBucketActions(agentRoot: string): ActionDef[] {
-    const bucket = this.perAgent.get(agentRoot);
+  getAgentBucketActions(agentId: string): ActionDef[] {
+    const bucket = this.perAgent.get(agentId);
     return bucket ? Array.from(bucket.values()) : [];
   }
 
-  run(agentRoot: string | null, id: string): void {
-    const def = this.resolve(agentRoot, id);
+  run(agentId: string | null, id: string): void {
+    const def = this.resolve(agentId, id);
     if (!def) return;
     Promise.resolve()
       .then(() => def.run())

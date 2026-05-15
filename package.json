@@ -4,7 +4,17 @@
   "version": "2.1.1",
   "description": "AI agent desktop app with local SQLite database",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/src/main.js",
+  "imports": {
+    "#shared/*.js": {
+      "types": "./shared/*.ts",
+      "default": "./dist/shared/*.js"
+    },
+    "#shared/*.mjs": {
+      "types": "./shared/*.mts",
+      "default": "./dist/shared/*.mjs"
+    }
+  },
   "scripts": {
     "setup": "node scripts/setup",
     "build": "node scripts/build",

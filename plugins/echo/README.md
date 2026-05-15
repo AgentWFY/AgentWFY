@@ -38,7 +38,7 @@ Produces `dist/echo.plugins.awfy`. Install it in AgentWFY via the command palett
 
 The `activate(api)` function receives:
 
-- `api.agentRoot` — absolute path to the agent's data directory.
+- `api.runtimeRoot` — absolute path to the agent's data directory.
 - `api.assetsDir` — path to `.agentwfy/plugin-assets/<name>/` for runtime files.
 - `api.publish(topic, data)` — publish a message to the event bus.
 - `api.registerFunction(name, handler)` — register a function. `name` becomes a global in execJs and views.

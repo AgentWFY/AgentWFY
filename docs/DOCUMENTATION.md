@@ -888,7 +888,7 @@ module.exports = {
 
 | Method | Description |
 |--------|-------------|
-| `api.agentRoot` | Absolute path to agent's data directory |
+| `api.runtimeRoot` | Absolute path to agent's data directory |
 | `api.assetsDir` | Path to plugin assets |
 | `api.registerFunction(name, handler)` | Register a callable function |
 | `api.registerProvider(factory)` | Register a custom LLM provider |

@@ -2,11 +2,11 @@ import { net } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { readFile } from 'fs/promises';
-import { isInsideDir, assertPathAllowed } from '../security/path-policy.js';
-import { serveFile } from './file-server.js';
-import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from './view-document.js';
-import { getViewContent } from '../db/views.js';
-import { getModuleContent, getModuleContentType } from '../db/modules.js';
+import { isInsideDir, assertPathAllowed } from '#shared/security/path-policy.js';
+import { serveFile } from '#shared/protocol/file-server.js';
+import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from '#shared/protocol/view-document.js';
+import { getViewContent } from '#shared/db/views.js';
+import { getModuleContent, getModuleContentType } from '#shared/db/modules.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
@@ -32,13 +32,13 @@ function resolveViewAssetPath(relativePath: string, clientPath: string): string 
   return absolutePath;
 }
 
-async function resolveViewDataPath(url: URL, agentRoot: string): Promise<string> {
+async function resolveViewDataPath(url: URL, cacheRoot: string): Promise<string> {
   const normalizedPath = normalizeViewPathname(url.pathname);
   if (!normalizedPath) {
     throw new Error('Missing file path');
   }
 
-  return assertPathAllowed(agentRoot, normalizedPath, { allowMissing: false });
+  return assertPathAllowed(cacheRoot, normalizedPath, { allowMissing: false });
 }
 
 function escapeHtml(text: string): string {
@@ -61,12 +61,12 @@ function toHtmlResponse(status: number, html: string): Response {
 }
 
 export interface ViewProtocolHandlerOptions {
-  agentRoot: string;
+  cacheRoot: string;
   clientPath: string;
 }
 
 export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request) => Promise<Response> {
-  const { agentRoot, clientPath } = options;
+  const { cacheRoot, clientPath } = options;
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -97,7 +97,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
       let record;
       try {
-        record = await getModuleContent(agentRoot, moduleName);
+        record = await getModuleContent(cacheRoot, moduleName);
       } catch (error: unknown) {
         console.error('[agentview] failed to read module from agent DB', error);
         return new Response((error as Error)?.message || 'Failed to load module', {
@@ -124,7 +124,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
     if (isFileHostname(hostname) || (isViewHostname(hostname) && !isViewDocumentRequest(url))) {
       try {
-        const absolutePath = await resolveViewDataPath(url, agentRoot);
+        const absolutePath = await resolveViewDataPath(url, cacheRoot);
         return serveFile(request, absolutePath);
       } catch {
         return new Response('Asset not found', {
@@ -155,7 +155,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
     // File-sourced view: read from filesystem instead of DB
     if (url.searchParams.get('source') === 'file') {
       try {
-        const absolutePath = await assertPathAllowed(agentRoot, viewName, { allowMissing: false });
+        const absolutePath = await assertPathAllowed(cacheRoot, viewName, { allowMissing: false });
         const content = await readFile(absolutePath, 'utf-8');
         const html = buildViewDocument(content);
         return toHtmlResponse(200, html);
@@ -167,7 +167,7 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
     let record;
     try {
-      record = await getViewContent(agentRoot, viewName);
+      record = await getViewContent(cacheRoot, viewName);
     } catch (error: unknown) {
       console.error('[agentview] failed to read view from agent DB', error);
       return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);

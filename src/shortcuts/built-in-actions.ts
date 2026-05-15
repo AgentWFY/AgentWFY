@@ -112,9 +112,7 @@ export function registerBuiltInActions(registry: ActionRegistry, deps: BuiltInAc
       const ctx = requireActive();
       if (!ctx) return;
       deps.getRendererBridge()?.dispatchRendererCustomEvent('agentwfy:open-sidebar-panel', { panel: 'agent-chat' });
-      if (!ctx.sessionManager.activeIsEmpty) {
-        ctx.sessionManager.newSession().catch(() => {});
-      }
+      ctx.chat.createSession({}).catch(() => {});
       // Explicit focus needed when chat panel is already open
       deps.getRendererBridge()?.dispatchRendererWindowEvent('agentwfy:focus-chat-input');
     },

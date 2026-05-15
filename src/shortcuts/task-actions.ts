@@ -1,5 +1,5 @@
-import { listTasksSync } from '../db/tasks.js';
-import type { TaskRunner } from '../task-runner/task_runner.js';
+import { listTasksSync } from '#shared/db/tasks.js';
+import type { TaskRunner } from '#shared/task-runner/task_runner.js';
 import type { ActionRegistry } from './registry.js';
 
 const TASK_ACTION_PREFIX = 'task.';
@@ -15,25 +15,25 @@ export function taskShortcutConfigKey(taskName: string): string {
 
 export function syncTaskActions(
   registry: ActionRegistry,
-  agentRoot: string,
+  agentId: string,
   taskRunner: TaskRunner,
 ): void {
-  const tasks = listTasksSync(agentRoot);
+  const tasks = listTasksSync(agentId);
   const wanted = new Map<string, string>();
   for (const t of tasks) {
     wanted.set(taskActionId(t.name), t.title || t.name);
   }
 
-  for (const def of registry.getAgentBucketActions(agentRoot)) {
+  for (const def of registry.getAgentBucketActions(agentId)) {
     if (!def.id.startsWith(TASK_ACTION_PREFIX)) continue;
     if (!wanted.has(def.id)) {
-      registry.unregisterForAgent(agentRoot, def.id);
+      registry.unregisterForAgent(agentId, def.id);
     }
   }
 
   for (const [id, title] of wanted) {
     const taskName = id.slice(TASK_ACTION_PREFIX.length);
-    registry.registerForAgent(agentRoot, {
+    registry.registerForAgent(agentId, {
       id,
       label: `Run task: ${title}`,
       configKey: taskShortcutConfigKey(taskName),

@@ -1,6 +1,6 @@
-import type { DisplayMessage, ProviderInfo } from '../../agent/provider_types.js'
+import type { DisplayMessage, ProviderInfo } from '#shared/agent/provider_types.js'
 export type { DisplayMessage, ProviderInfo }
-export type { RetryState } from '../../agent/types.js'
+export type { RetryState } from '#shared/agent/types.js'
 export type { AgentSnapshot } from '../../ipc/schema.js'
 
 export interface OpenSession {
@@ -8,4 +8,4 @@ export interface OpenSession {
   label: string
 }
 
-export type { SessionListItem } from '../../agent/session_manager.js'
+export type { SessionListItem } from '#shared/agent/session_manager.js'

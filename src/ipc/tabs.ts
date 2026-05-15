@@ -1,76 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { Channels } from './channels.cjs';
-import { getViewByName } from '../db/views.js';
-
-interface CaptureTabRequest {
-  tabId: string
-}
-
-interface GetTabConsoleLogsRequest {
-  tabId: string
-  since?: number
-  limit?: number
-}
-
-interface ExecTabJsRequest {
-  tabId: string
-  code: string
-  timeoutMs?: number
-}
-
-type GetTabsResult = Array<Record<string, unknown>>
-
-interface OpenTabRequest {
-  viewName?: string
-  view?: string
-  filePath?: string
-  url?: string
-  title?: string
-  hidden?: boolean
-  params?: Record<string, string>
-}
-
-interface CloseTabRequest {
-  tabId: string
-}
-
-interface SelectTabRequest {
-  tabId: string
-}
-
-interface ReloadTabRequest {
-  tabId: string
-}
-
-export interface DebuggerBufferedEvent {
-  method: string
-  params: unknown
-  sessionId?: string
-}
-
-export interface DebuggerPollResult {
-  events: DebuggerBufferedEvent[]
-  dropped: number
-  closed: boolean
-}
-
-export interface AgentTabTools {
-  getTabs: () => Promise<GetTabsResult>
-  openTab: (request: OpenTabRequest) => Promise<{ tabId: string }>
-  closeTab: (request: CloseTabRequest) => Promise<void>
-  selectTab: (request: SelectTabRequest) => Promise<void>
-  reloadTab: (request: ReloadTabRequest) => Promise<void>
-  captureTab: (request: CaptureTabRequest) => Promise<{ base64: string; mimeType: 'image/png' }>
-  getTabConsoleLogs: (request: GetTabConsoleLogsRequest) => Promise<Array<{ level: string; message: string; timestamp: number }>>
-  execTabJs: (request: ExecTabJsRequest) => Promise<unknown>
-  sendInput: (request: { tabId: string; type: string; x?: number; y?: number; button?: string; clickCount?: number; deltaX?: number; deltaY?: number; keyCode?: string; modifiers?: string[] }) => Promise<void>
-  inspectElement: (request: { tabId: string; selector: string }) => Promise<unknown>
-  tabDebuggerSend: (request: { tabId: string; method: string; params?: unknown; sessionId?: string }) => Promise<unknown>
-  tabDebuggerSubscribe: (request: { tabId: string; subscriptionId: string; events: string[] }) => Promise<void>
-  tabDebuggerPoll: (request: { subscriptionId: string; maxBatch?: number; maxWaitMs?: number }) => Promise<DebuggerPollResult>
-  tabDebuggerUnsubscribe: (request: { subscriptionId: string }) => Promise<void>
-  tabDebuggerDetach: (request: { tabId: string }) => Promise<void>
-}
+import { getViewByName } from '#shared/db/views.js';
+import type { TabHost, TabOpenRequest } from '#shared/runtime/hosts.js';
 
 function parseTabId(value: unknown): string {
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -81,12 +12,12 @@ function parseTabId(value: unknown): string {
 }
 
 export function registerTabsHandlers(
-  getTabTools: (e: IpcMainInvokeEvent) => AgentTabTools,
-  getAgentRoot: (e: IpcMainInvokeEvent) => string,
+  getTabTools: (e: IpcMainInvokeEvent) => TabHost,
+  getCacheRoot: (e: IpcMainInvokeEvent) => string,
 ) {
   // openTab({ viewName?, filePath?, url?, title? }) — exactly one of viewName, filePath, url required
   ipcMain.handle(Channels.tabs.openTab, async (event, payload: unknown) => {
-    const input = payload as OpenTabRequest | undefined;
+    const input = payload as TabOpenRequest | undefined;
     if (!input) {
       throw new Error('openTab requires a request object');
     }
@@ -100,7 +31,7 @@ export function registerTabsHandlers(
     let resolvedViewName = viewNameInput;
     let resolvedTitle = input.title;
     if (hasViewName) {
-      const view = await getViewByName(getAgentRoot(event), viewNameInput!);
+      const view = await getViewByName(getCacheRoot(event), viewNameInput!);
       if (!view) {
         throw new Error(`View not found: ${viewNameInput}`);
       }
@@ -137,14 +68,14 @@ export function registerTabsHandlers(
 
   // closeTab({ tabId })
   ipcMain.handle(Channels.tabs.closeTab, async (event, payload: unknown) => {
-    const input = payload as CloseTabRequest | undefined;
+    const input = payload as { tabId?: string } | undefined;
     const tabId = parseTabId(input?.tabId);
     return getTabTools(event).closeTab({ tabId });
   });
 
   // selectTab({ tabId })
   ipcMain.handle(Channels.tabs.selectTab, async (event, payload: unknown) => {
-    const input = payload as SelectTabRequest | undefined;
+    const input = payload as { tabId?: string } | undefined;
     const tabId = parseTabId(input?.tabId);
     return getTabTools(event).selectTab({ tabId });
   });

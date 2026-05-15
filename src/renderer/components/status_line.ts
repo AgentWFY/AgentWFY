@@ -221,7 +221,7 @@ export class TlStatusLine extends HTMLElement {
     this.bindBackupClick()
     this.bindIndicatorClicks()
     this.shadow.querySelector('#data-dir')?.addEventListener('click', () => {
-      window.ipc?.openAgentRoot()
+      window.ipc?.openAgentDir()
     })
     this.subscribeToSnapshots()
     this.subscribeToTaskRuns()
@@ -372,11 +372,11 @@ export class TlStatusLine extends HTMLElement {
     const dirEl = this.shadow.querySelector('#data-dir') as HTMLSpanElement | null
     if (!dirEl) return
     try {
-      const agentRoot = window.ipc?.agentRoot
+      const agentId = window.ipc?.agentId
       const displayPath = await window.ipc?.getAgentDisplayPath()
       if (displayPath) {
         dirEl.textContent = displayPath
-        dirEl.setAttribute('title', agentRoot ?? displayPath)
+        dirEl.setAttribute('title', agentId ?? displayPath)
       } else {
         dirEl.textContent = ''
         dirEl.removeAttribute('title')

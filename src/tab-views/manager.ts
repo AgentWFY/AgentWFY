@@ -1,10 +1,10 @@
 import { BaseWindow, BrowserWindow, Menu, nativeTheme, View, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
-import { isViewDocumentRequest, parseViewName } from '../protocol/view-document.js';
+import { isViewDocumentRequest, parseViewName } from '#shared/protocol/view-document.js';
 import { Channels } from '../ipc/channels.cjs';
 import type { SendToRenderer } from '../ipc/schema.js';
-import { resolveTimeout, formatTimeoutError } from '../runtime/timeout_utils.js';
+import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
 
 // --- Types & Constants ---
 

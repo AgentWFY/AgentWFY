@@ -10,6 +10,7 @@ import { AgentsScreen } from './screens/agents.js'
 import { SessionsScreen } from './screens/sessions.js'
 import { TabsScreen } from './screens/tabs.js'
 import { AddAgentScreen } from './screens/add-agent.js'
+import { AddRemoteAgentScreen } from './screens/add-remote-agent.js'
 import { PickScreen } from './screens/pick.js'
 import type { PickScreenParams } from './screens/pick.js'
 
@@ -28,6 +29,7 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
   'sessions': (bridge) => new SessionsScreen(bridge),
   'tabs': (bridge) => new TabsScreen(bridge),
   'add-agent': (bridge) => new AddAgentScreen(bridge),
+  'add-remote-agent': (bridge) => new AddRemoteAgentScreen(bridge),
   'pick': (bridge, params) => new PickScreen(bridge, params as PickScreenParams | undefined),
 }
 

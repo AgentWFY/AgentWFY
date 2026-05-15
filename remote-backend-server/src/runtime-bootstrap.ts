@@ -1,0 +1,183 @@
+import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js'
+import { LocalBackend } from '#shared/backend/local.js'
+import { FunctionRegistry } from '#shared/runtime/function_registry.js'
+import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
+import { getOrCreateAgentDb } from '#shared/db/agent-db.js'
+import type { AgentDbChange } from '#shared/db/sqlite.js'
+import { installPackageData, readValidatedPackage, uninstallPlugin } from '#shared/plugins/installer.js'
+import path from 'node:path'
+import type { loadPlugins } from '#shared/plugins/loader.js'
+
+export interface RuntimeBundle {
+  backend: LocalBackend
+  dbChanges: {
+    subscribe(handler: (change: AgentDbChange) => void): () => void
+  }
+  dispose(): Promise<void>
+}
+
+export async function createAgentRuntime(
+  runtimeRoot: string,
+  clientFunctionInvoker?: ClientFunctionInvoker,
+): Promise<RuntimeBundle> {
+  const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
+
+  const runtime = await createLocalAgentRuntime({
+    runtimeRoot,
+    onDbChange: (change) => {
+      for (const handler of dbChangeSubscribers) {
+        try {
+          handler(change)
+        } catch (err) {
+          console.warn('[runtime] db change subscriber failed:', err)
+        }
+      }
+    },
+  })
+
+  if (runtime.pluginRegistry) {
+    registerRemotePluginManagement({
+      runtimeRoot,
+      functionRegistry: runtime.functionRegistry,
+      clientFunctionInvoker,
+      pluginRegistry: runtime.pluginRegistry,
+    })
+  }
+
+  if (clientFunctionInvoker) {
+    registerClientFunctionProxies(runtime.functionRegistry, clientFunctionInvoker)
+  }
+
+  const dispose = async (): Promise<void> => {
+    await runtime.dispose()
+    runtime.jsRuntime.disposeAll()
+    dbChangeSubscribers.clear()
+  }
+
+  return {
+    backend: runtime.backend,
+    dbChanges: {
+      subscribe(handler) {
+        dbChangeSubscribers.add(handler)
+        return () => {
+          dbChangeSubscribers.delete(handler)
+        }
+      },
+    },
+    dispose,
+  }
+}
+
+function resolveAgentPath(runtimeRoot: string, requestedPath: string): string {
+  return path.isAbsolute(requestedPath) ? requestedPath : path.resolve(runtimeRoot, requestedPath)
+}
+
+function publicPluginMeta(plugin: {
+  code?: string
+  name: string
+  title?: string
+  description?: string
+  version?: string
+  author?: string | null
+  repository?: string | null
+  license?: string | null
+  enabled?: number
+}): Record<string, unknown> {
+  const { code: _code, ...meta } = plugin
+  return meta
+}
+
+function registerRemotePluginManagement(opts: {
+  runtimeRoot: string
+  functionRegistry: FunctionRegistry
+  clientFunctionInvoker?: ClientFunctionInvoker
+  pluginRegistry: ReturnType<typeof loadPlugins>
+}): void {
+  const requireClient = (): ClientFunctionInvoker => {
+    if (!opts.clientFunctionInvoker) {
+      throw new Error('A connected desktop client is required for plugin confirmation')
+    }
+    return opts.clientFunctionInvoker
+  }
+
+  opts.functionRegistry.register('requestInstallPlugin', async (params) => {
+    const request = params as { packagePath?: string } | undefined
+    if (!request || typeof request.packagePath !== 'string' || request.packagePath.trim().length === 0) {
+      throw new Error('requestInstallPlugin requires a non-empty packagePath string')
+    }
+
+    const packagePath = resolveAgentPath(opts.runtimeRoot, request.packagePath)
+    const packageData = readValidatedPackage(packagePath)
+    const confirmed = await requireClient().invokeClientFunction('_confirmPluginInstall', {
+      packagePath,
+      plugins: packageData.plugins.map(publicPluginMeta),
+    })
+    if (confirmed !== true) return { installed: [] }
+
+    const result = installPackageData(opts.runtimeRoot, packageData)
+    const db = getOrCreateAgentDb(opts.runtimeRoot)
+    for (const name of result.installed) {
+      const row = db.getPlugin(name)
+      if (row) opts.pluginRegistry.reloadPlugin(row)
+    }
+    return result
+  })
+
+  opts.functionRegistry.register('requestTogglePlugin', async (params) => {
+    const request = params as { pluginName?: string } | undefined
+    if (!request || typeof request.pluginName !== 'string' || request.pluginName.trim().length === 0) {
+      throw new Error('requestTogglePlugin requires a non-empty pluginName string')
+    }
+
+    const db = getOrCreateAgentDb(opts.runtimeRoot)
+    const plugin = db.getPluginInfo(request.pluginName)
+    if (!plugin) throw new Error(`Plugin '${request.pluginName}' not found`)
+
+    const currentEnabled = !!plugin.enabled
+    const confirmed = await requireClient().invokeClientFunction('_confirmPluginToggle', {
+      pluginName: request.pluginName,
+      title: plugin.title,
+      currentEnabled,
+      description: plugin.description,
+      version: plugin.version,
+      author: plugin.author,
+      license: plugin.license,
+    })
+    if (confirmed !== true) return { toggled: false }
+
+    const nextEnabled = !currentEnabled
+    db.togglePlugin(request.pluginName, nextEnabled)
+    if (nextEnabled) {
+      const row = db.getPlugin(request.pluginName)
+      if (row) opts.pluginRegistry.loadPlugin(row)
+    } else {
+      opts.pluginRegistry.unloadPlugin(request.pluginName)
+    }
+    return { toggled: true, enabled: nextEnabled }
+  })
+
+  opts.functionRegistry.register('requestUninstallPlugin', async (params) => {
+    const request = params as { pluginName?: string } | undefined
+    if (!request || typeof request.pluginName !== 'string' || request.pluginName.trim().length === 0) {
+      throw new Error('requestUninstallPlugin requires a non-empty pluginName string')
+    }
+
+    const db = getOrCreateAgentDb(opts.runtimeRoot)
+    const plugin = db.getPluginInfo(request.pluginName)
+    if (!plugin) throw new Error(`Plugin '${request.pluginName}' not found`)
+
+    const confirmed = await requireClient().invokeClientFunction('_confirmPluginUninstall', {
+      pluginName: request.pluginName,
+      title: plugin.title,
+      description: plugin.description,
+      version: plugin.version,
+      author: plugin.author,
+      license: plugin.license,
+    })
+    if (confirmed !== true) return { uninstalled: false }
+
+    opts.pluginRegistry.unloadPlugin(request.pluginName)
+    uninstallPlugin(opts.runtimeRoot, request.pluginName)
+    return { uninstalled: true }
+  })
+}

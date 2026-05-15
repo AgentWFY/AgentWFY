@@ -2,8 +2,8 @@ import { app, dialog, type BaseWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { mkdir } from 'fs/promises';
-import { ensureViewsSchema } from './db/views.js';
-import { seedDefaultAgent } from './default-agent.js';
+import { ensureViewsSchema } from '#shared/db/views.js';
+import { seedDefaultAgent } from '#shared/default-agent.js';
 
 const AGENT_DIR_NAME = '.agentwfy';
 const DEFAULT_AGENTS_DIR = 'agents';
@@ -11,18 +11,18 @@ const DEFAULT_AGENT_BASE_NAME = 'Default Agent';
 
 // --- Agent dir helpers ---
 
-export function getAgentDir(agentRoot: string): string {
-  return path.join(agentRoot, AGENT_DIR_NAME);
+export function getAgentDir(runtimeRoot: string): string {
+  return path.join(runtimeRoot, AGENT_DIR_NAME);
 }
 
-async function ensureAgentDir(agentRoot: string): Promise<void> {
-  const agentDir = getAgentDir(agentRoot);
+async function ensureAgentDir(runtimeRoot: string): Promise<void> {
+  const agentDir = getAgentDir(runtimeRoot);
   await mkdir(agentDir, { recursive: true });
 }
 
-export async function ensureAgentRuntimeBootstrap(agentRoot: string): Promise<void> {
-  await ensureAgentDir(agentRoot);
-  await ensureViewsSchema(agentRoot);
+export async function ensureAgentRuntimeBootstrap(runtimeRoot: string): Promise<void> {
+  await ensureAgentDir(runtimeRoot);
+  await ensureViewsSchema(runtimeRoot);
 }
 
 export function isAgentDir(dirPath: string): boolean {
@@ -144,8 +144,8 @@ function getDefaultAgentsDir(): string {
   return _defaultAgentsDir;
 }
 
-export function isDefaultAgentPath(agentRoot: string): boolean {
-  return agentRoot.startsWith(getDefaultAgentsDir() + path.sep);
+export function isDefaultAgentPath(agentId: string): boolean {
+  return agentId.startsWith(getDefaultAgentsDir() + path.sep);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { normalizeAgentViewUrl, isViewHostname, isFileHostname, normalizeViewPathname } from '../../protocol/view-document.js'
+import { normalizeAgentViewUrl, isViewHostname, isFileHostname, normalizeViewPathname } from '#shared/protocol/view-document.js'
 
 interface TabLinkRequest {
   viewName?: string

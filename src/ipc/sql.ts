@@ -1,10 +1,9 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js';
+import type { AgentBackend } from '#shared/backend/interface.js';
 import { Channels } from './channels.cjs';
 
-export function registerSqlHandlers(getRoot: (e: IpcMainInvokeEvent) => string) {
+export function registerSqlHandlers(getBackend: (e: IpcMainInvokeEvent) => AgentBackend) {
   ipcMain.handle(Channels.sql.run, async (event, payload: unknown) => {
-    const request = parseRunSqlRequest(payload);
-    return routeSqlRequest(getRoot(event), request);
+    return getBackend(event).functions.invoke({ name: 'runSql', params: payload });
   });
 }

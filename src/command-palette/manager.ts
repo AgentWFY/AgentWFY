@@ -1,15 +1,15 @@
 import { BaseWindow, WebContentsView, dialog, shell } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { listViews, getViewByName } from '../db/views.js';
-import { listTasks } from '../db/tasks.js';
-import { listConfig } from '../db/config.js';
-import { getOrCreateAgentDb } from '../db/agent-db.js';
-import { installPackageData, uninstallPlugin, readValidatedPackage } from '../plugins/installer.js';
+import { listViews, getViewByName } from '#shared/db/views.js';
+import { listTasks } from '#shared/db/tasks.js';
+import { listConfig } from '#shared/db/config.js';
+import { getOrCreateAgentDb } from '#shared/db/agent-db.js';
+import { installPackageData, uninstallPlugin, readValidatedPackage } from '#shared/plugins/installer.js';
 import { storeRemove } from '../ipc/store.js';
-import { getGlobalValue } from '../settings/config.js';
-import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '../settings/global-config.js';
-import { SYSTEM_PREFIX, PLUGIN_PREFIX } from '../system-config/keys.js';
+import { getGlobalValue } from '#shared/settings/config.js';
+import { globalConfigSet, globalConfigRemove, getGlobalConfigPath, ensureGlobalConfig } from '#shared/settings/global-config.js';
+import { SYSTEM_PREFIX, PLUGIN_PREFIX } from '#shared/system-config/keys.js';
 import { taskActionId, taskShortcutConfigKey, TASK_SHORTCUT_KEY_PREFIX } from '../shortcuts/task-actions.js';
 import {
   showOpenAgentDialog,
@@ -17,12 +17,15 @@ import {
   createDefaultAgent,
   initAgent,
 } from '../agent-manager.js';
+import { setAgentMeta } from '../agent-meta.js';
 import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
-import type { PluginRegistry } from '../plugins/registry.js';
+import type { PluginRegistry } from '#shared/plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
-import type { AgentSessionManager } from '../agent/session_manager.js';
+import type { AgentChatController } from '#shared/agent/chat_controller.js';
+import type { AgentBackend } from '#shared/backend/interface.js';
+import type { InstalledAgent } from '../ipc/schema.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
 import type { CommandPaletteAction, CommandPaletteItem, PickFromPaletteOptions, PickItemInput } from './types.js';
 
@@ -30,23 +33,29 @@ export { COMMAND_PALETTE_CHANNEL };
 
 export interface CommandPaletteManagerDeps {
   getMainWindow: () => BaseWindow | null;
-  getAgentRoot: () => string;
+  getCacheRoot: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
-  addAgent: (agentRoot: string) => Promise<void>;
-  switchAgent: (agentRoot: string) => Promise<void>;
-  getInstalledAgentsList: () => Array<{ path: string; name: string; active: boolean; initialized: boolean }>;
+  addAgent: (agentId: string) => Promise<void>;
+  switchAgent: (agentId: string) => Promise<void>;
+  getInstalledAgentsList: () => InstalledAgent[];
   getPluginRegistry: () => PluginRegistry | null;
   getConfirmation: () => ConfirmationManager;
-  getSessionManager: () => AgentSessionManager;
+  /** Active agent's chat controller, or null when no agent is active. Used for
+   *  session-list lookups so the palette works for both local and remote agents. */
+  getChat: () => AgentChatController | null;
+  /** Active agent's backend, or null when no agent is active. UI-initiated
+   *  operations route through here so remote agents reach the daemon instead
+   *  of mutating the local DB mirror. */
+  getBackend: () => AgentBackend | null;
   getDisplayShortcut: (actionId: string) => string | null;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleShortcutAction: (action: string) => void;
   reloadRenderer: () => void;
-  setAgentConfig: (name: string, value: unknown) => void;
-  clearAgentConfig: (name: string) => void;
-  removeAgentConfig: (name: string) => void;
-  pushProviderState: () => void;
+  setAgentConfig: (name: string, value: unknown) => void | Promise<void>;
+  clearAgentConfig: (name: string) => void | Promise<void>;
+  removeAgentConfig: (name: string) => void | Promise<void>;
+  pushProviderState: () => void | Promise<void>;
 }
 
 /** Extra padding around the palette content for the CSS drop-shadow to render. */
@@ -343,9 +352,9 @@ export class CommandPaletteManager {
   }
 
   async buildItems(): Promise<CommandPaletteItem[]> {
-    const agentRoot = this.deps.getAgentRoot();
+    const cacheRoot = this.deps.getCacheRoot();
 
-    const rows = await listViews(agentRoot);
+    const rows = await listViews(cacheRoot);
 
     const viewItems: CommandPaletteItem[] = rows.map((row) => {
       const viewTitle = row.title || row.name;
@@ -479,8 +488,8 @@ export class CommandPaletteManager {
   }
 
   async buildSettingsItems(): Promise<CommandPaletteItem[]> {
-    const agentRoot = this.deps.getAgentRoot();
-    const [tasks, allRows] = await Promise.all([listTasks(agentRoot), listConfig(agentRoot)]);
+    const cacheRoot = this.deps.getCacheRoot();
+    const [tasks, allRows] = await Promise.all([listTasks(cacheRoot), listConfig(cacheRoot)]);
 
     const taskShortcutDescription = new Map<string, string>();
     for (const t of tasks) {
@@ -541,35 +550,35 @@ export class CommandPaletteManager {
     });
   }
 
-  updateSetting(name: string, rawValue: unknown, scope?: 'agent' | 'global'): { success: boolean; error?: string } {
+  async updateSetting(name: string, rawValue: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }> {
     if (scope === 'agent') {
-      this.deps.setAgentConfig(name, rawValue);
+      await this.deps.setAgentConfig(name, rawValue);
     } else {
       // Clear agent override so the new global value wins resolution.
-      this.clearAgentOverride(name);
+      await this.clearAgentOverride(name);
       globalConfigSet(name, rawValue);
     }
     return { success: true };
   }
 
-  private clearAgentOverride(name: string): void {
+  private async clearAgentOverride(name: string): Promise<void> {
     // system.* and plugin.* rows can't be deleted — set value to NULL instead
     if (name.startsWith(SYSTEM_PREFIX) || name.startsWith(PLUGIN_PREFIX)) {
-      this.deps.clearAgentConfig(name);
+      await this.deps.clearAgentConfig(name);
     } else {
-      this.deps.removeAgentConfig(name);
+      await this.deps.removeAgentConfig(name);
     }
   }
 
-  clearToDefault(name: string): void {
-    this.clearAgentOverride(name);
+  async clearToDefault(name: string): Promise<void> {
+    await this.clearAgentOverride(name);
     globalConfigRemove(name);
     storeRemove(name);
   }
 
   async buildTaskItems(): Promise<CommandPaletteItem[]> {
     try {
-      const tasks = await listTasks(this.deps.getAgentRoot());
+      const tasks = await listTasks(this.deps.getCacheRoot());
       return tasks.map((task) => ({
         id: `task:${task.name}`,
         title: task.title,
@@ -590,7 +599,7 @@ export class CommandPaletteManager {
   }
 
   buildBackupItems(): CommandPaletteItem[] {
-    const backups = listAllBackups(this.deps.getAgentRoot());
+    const backups = listAllBackups(this.deps.getCacheRoot());
     return backups.map((b) => {
       const date = new Date(b.timestamp);
       const dateStr = date.toLocaleString();
@@ -611,14 +620,14 @@ export class CommandPaletteManager {
 
   buildAgentItems(): CommandPaletteItem[] {
     return this.deps.getInstalledAgentsList().map((agent) => ({
-      id: `agent:${agent.path}`,
+      id: `agent:${agent.agentId}`,
       title: agent.name,
-      subtitle: agent.path,
+      subtitle: agent.agentId,
       group: 'Agents' as const,
       settingValue: agent.active ? 'current' : undefined,
       action: {
         type: 'switch-agent' as const,
-        agentRoot: agent.path,
+        agentId: agent.agentId,
       },
     }));
   }
@@ -649,8 +658,10 @@ export class CommandPaletteManager {
   }
 
   async buildSessionItems(): Promise<CommandPaletteItem[]> {
+    const chat = this.deps.getChat();
+    if (!chat) return [];
     try {
-      const sessions = await this.deps.getSessionManager().getSessionList();
+      const sessions = await chat.getSessionList();
       return sessions
         .filter((s) => s.file)
         .map((s) => {
@@ -673,10 +684,10 @@ export class CommandPaletteManager {
     }
   }
 
-  private finishInstall(agentRoot: string, installResult: { installed: string[] }): { installed: string[] } {
+  private finishInstall(cacheRoot: string, installResult: { installed: string[] }): { installed: string[] } {
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry && installResult.installed.length > 0) {
-      const db = getOrCreateAgentDb(agentRoot);
+      const db = getOrCreateAgentDb(cacheRoot);
       for (const name of installResult.installed) {
         const row = db.getPlugin(name);
         if (row) pluginRegistry.reloadPlugin(row);
@@ -695,7 +706,7 @@ export class CommandPaletteManager {
     const tabViewManager = this.deps.getTabViewManager();
     for (const name of installResult.installed) {
       const viewName = `plugin.${name}.welcome`;
-      void getViewByName(agentRoot, viewName).then((view) => {
+      void getViewByName(cacheRoot, viewName).then((view) => {
         if (view) {
           void tabViewManager.openTabHandler({
             viewName: view.name,
@@ -724,18 +735,27 @@ export class CommandPaletteManager {
       return { installed: [] };
     }
 
-    return this.requestPluginInstall(result.filePaths[0]);
+    // Route through the active backend so remote agents reach the daemon
+    // (which owns their DB). For local agents this resolves to the same
+    // function-registry path that an agent's runtime call to
+    // requestInstallPlugin would take.
+    const backend = this.deps.getBackend();
+    if (!backend) return { installed: [] };
+    return (await backend.functions.invoke({
+      name: 'requestInstallPlugin',
+      params: { packagePath: result.filePaths[0] },
+    })) as { installed: string[] };
   }
 
   uninstallPluginByName(pluginName: string): void {
-    const agentRoot = this.deps.getAgentRoot();
+    const cacheRoot = this.deps.getCacheRoot();
 
     const pluginRegistry = this.deps.getPluginRegistry();
     if (pluginRegistry) {
       pluginRegistry.unloadPlugin(pluginName);
     }
 
-    uninstallPlugin(agentRoot, pluginName);
+    uninstallPlugin(cacheRoot, pluginName);
     this.deps.rendererBridge.dispatchRendererCustomEvent('agentwfy:plugin-changed', {
       message: `Uninstalled ${pluginName}`,
     });
@@ -743,8 +763,8 @@ export class CommandPaletteManager {
   }
 
   togglePluginEnabled(pluginName: string, enabled: boolean): void {
-    const agentRoot = this.deps.getAgentRoot();
-    const db = getOrCreateAgentDb(agentRoot);
+    const cacheRoot = this.deps.getCacheRoot();
+    const db = getOrCreateAgentDb(cacheRoot);
     db.togglePlugin(pluginName, enabled);
 
     const pluginRegistry = this.deps.getPluginRegistry();
@@ -764,29 +784,39 @@ export class CommandPaletteManager {
   }
 
   async requestPluginInstall(packagePath: string): Promise<{ installed: string[] }> {
-    const agentRoot = this.deps.getAgentRoot();
-    packagePath = path.isAbsolute(packagePath) ? packagePath : path.resolve(agentRoot, packagePath);
+    const cacheRoot = this.deps.getCacheRoot();
+    packagePath = path.isAbsolute(packagePath) ? packagePath : path.resolve(cacheRoot, packagePath);
     const packageData = readValidatedPackage(packagePath);
+    const confirmed = await this.confirmPluginInstall(
+      packagePath,
+      packageData.plugins.map(({ code, ...meta }) => meta),
+    );
+    if (!confirmed) {
+      return { installed: [] };
+    }
+    return this.finishInstall(cacheRoot, installPackageData(cacheRoot, packageData));
+  }
+
+  async confirmPluginInstall(
+    packagePath: string,
+    plugins: Array<Record<string, unknown>>,
+  ): Promise<boolean> {
     const confirmation = this.deps.getConfirmation();
     const result = await confirmation.requestConfirmation('confirm-plugin-install', {
       packagePath,
-      plugins: packageData.plugins.map(({ code, ...meta }) => meta),
+      plugins,
     });
-    if (!result.confirmed) {
-      return { installed: [] };
-    }
-    return this.finishInstall(agentRoot, installPackageData(agentRoot, packageData));
+    return result.confirmed;
   }
 
   async requestPluginToggle(pluginName: string): Promise<{ toggled: boolean; enabled?: boolean }> {
-    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    const db = getOrCreateAgentDb(this.deps.getCacheRoot());
     const plugin = db.getPluginInfo(pluginName);
     if (!plugin) {
       throw new Error(`Plugin '${pluginName}' not found`);
     }
     const currentEnabled = !!plugin.enabled;
-    const confirmation = this.deps.getConfirmation();
-    const result = await confirmation.requestConfirmation('confirm-plugin-toggle', {
+    const confirmed = await this.confirmPluginToggle({
       pluginName,
       title: plugin.title,
       currentEnabled,
@@ -795,21 +825,26 @@ export class CommandPaletteManager {
       author: plugin.author,
       license: plugin.license,
     });
-    if (!result.confirmed) {
+    if (!confirmed) {
       return { toggled: false };
     }
     this.togglePluginEnabled(pluginName, !currentEnabled);
     return { toggled: true, enabled: !currentEnabled };
   }
 
+  async confirmPluginToggle(plugin: Record<string, unknown> & { currentEnabled: boolean }): Promise<boolean> {
+    const confirmation = this.deps.getConfirmation();
+    const result = await confirmation.requestConfirmation('confirm-plugin-toggle', plugin);
+    return result.confirmed;
+  }
+
   async requestPluginUninstall(pluginName: string): Promise<{ uninstalled: boolean }> {
-    const db = getOrCreateAgentDb(this.deps.getAgentRoot());
+    const db = getOrCreateAgentDb(this.deps.getCacheRoot());
     const plugin = db.getPluginInfo(pluginName);
     if (!plugin) {
       throw new Error(`Plugin '${pluginName}' not found`);
     }
-    const confirmation = this.deps.getConfirmation();
-    const result = await confirmation.requestConfirmation('confirm-plugin-uninstall', {
+    const confirmed = await this.confirmPluginUninstall({
       pluginName,
       title: plugin.title,
       description: plugin.description,
@@ -817,14 +852,20 @@ export class CommandPaletteManager {
       author: plugin.author,
       license: plugin.license,
     });
-    if (!result.confirmed) {
+    if (!confirmed) {
       return { uninstalled: false };
     }
     this.uninstallPluginByName(pluginName);
     return { uninstalled: true };
   }
 
-  async requestAgentInstall(filePath: string): Promise<{ installed: boolean; agentRoot?: string }> {
+  async confirmPluginUninstall(plugin: Record<string, unknown>): Promise<boolean> {
+    const confirmation = this.deps.getConfirmation();
+    const result = await confirmation.requestConfirmation('confirm-plugin-uninstall', plugin);
+    return result.confirmed;
+  }
+
+  async requestAgentInstall(filePath: string): Promise<{ installed: boolean; agentId?: string }> {
     // Validate the .agent.awfy file
     const { DatabaseSync } = await import('node:sqlite');
     let viewsCount = 0, docsCount = 0, tasksCount = 0, pluginsCount = 0;
@@ -867,7 +908,7 @@ export class CommandPaletteManager {
     await initAgent(targetDir, filePath);
 
     await this.deps.addAgent(targetDir);
-    return { installed: true, agentRoot: targetDir };
+    return { installed: true, agentId: targetDir };
   }
 
   openSettingsFile(): void {
@@ -906,7 +947,7 @@ export class CommandPaletteManager {
 
       case 'switch-agent': {
         const switchAgentAction = action as Extract<CommandPaletteAction, { type: 'switch-agent' }>;
-        await this.deps.switchAgent(switchAgentAction.agentRoot);
+        await this.deps.switchAgent(switchAgentAction.agentId);
         break;
       }
 
@@ -943,6 +984,7 @@ export class CommandPaletteManager {
       case 'enter-agents':
       case 'enter-sessions':
       case 'enter-tabs':
+      case 'enter-add-remote-agent':
         // Handled entirely in the palette UI
         return;
 
@@ -990,9 +1032,26 @@ export class CommandPaletteManager {
         return;
       }
 
+      case 'add-remote-agent': {
+        const remoteAction = action as Extract<CommandPaletteAction, { type: 'add-remote-agent' }>;
+        const agentId = remoteAction.agentId?.trim();
+        const baseUrl = remoteAction.baseUrl?.trim().replace(/\/$/, '');
+        const agentToken = remoteAction.agentToken?.trim();
+        if (!agentId) throw new Error('Local label is required');
+        if (!baseUrl || !/^https?:\/\//.test(baseUrl)) throw new Error('Server URL must start with http:// or https://');
+        if (!agentToken) throw new Error('Bearer token is required');
+        setAgentMeta(agentId, {
+          backend: 'remote',
+          remoteConfig: { baseUrl, agentToken },
+        });
+        this.hide({ focusMain: true });
+        await this.deps.addAgent(agentId);
+        return;
+      }
+
 
       case 'backup-agent-db': {
-        const result = await backupAgentDb(this.deps.getAgentRoot());
+        const result = await backupAgentDb(this.deps.getCacheRoot());
         if (result.error) {
           throw new Error(result.error);
         }
@@ -1011,7 +1070,7 @@ export class CommandPaletteManager {
 
       case 'restore-agent-db-confirm': {
         const restoreAction = action as Extract<CommandPaletteAction, { type: 'restore-agent-db-confirm' }>;
-        const result = await restoreFromBackup(this.deps.getAgentRoot(), restoreAction.backupVersion);
+        const result = await restoreFromBackup(this.deps.getCacheRoot(), restoreAction.backupVersion);
         if (!result.success) {
           throw new Error(result.error || 'Restore failed');
         }

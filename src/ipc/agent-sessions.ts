@@ -1,62 +1,77 @@
 import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
-import type { AgentSessionManager } from '../agent/session_manager.js'
-import type { FileContent } from '../agent/types.js'
+import type { AgentSessionManager } from '#shared/agent/session_manager.js'
+import type { AgentBackend } from '#shared/backend/interface.js'
+import type { AgentChatController } from '#shared/agent/chat_controller.js'
+import type { AgentSnapshot, FileContent } from '#shared/agent/types.js'
 import { Channels } from './channels.cjs'
 import type { PushMap } from './schema.js'
 
 export function registerAgentSessionHandlers(
-  getManager: (e: IpcMainInvokeEvent) => AgentSessionManager,
   onReconnect: (e: IpcMainInvokeEvent) => Promise<AgentSessionManager>,
+  getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
+  getChat: (e: IpcMainInvokeEvent) => AgentChatController,
 ): void {
   ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string; files?: FileContent[] }) => {
-    if (!opts?.prompt) {
-      getManager(event).resetActive()
-      return null
-    }
-    return getManager(event).createSession(opts as { prompt: string; label?: string; providerId?: string; files?: FileContent[] })
+    return getChat(event).createSession({
+      label: opts?.label,
+      prompt: opts?.prompt,
+      providerId: opts?.providerId,
+      files: opts?.files,
+    })
   })
 
   ipcMain.handle(Channels.agent.sendMessage, async (event, text: string, options?: { streamingBehavior?: 'followUp'; files?: FileContent[] }) => {
-    await getManager(event).sendMessage(text, options)
+    await getChat(event).sendMessage(text, options)
   })
 
   ipcMain.handle(Channels.agent.abort, async (event) => {
-    await getManager(event).abortActive()
+    await getChat(event).abort()
   })
 
   ipcMain.handle(Channels.agent.closeSession, async (event) => {
-    await getManager(event).closeActiveSession()
+    await getChat(event).closeSession()
   })
 
   ipcMain.handle(Channels.agent.loadSession, async (event, file: string) => {
-    await getManager(event).openSessionInChat(file)
+    await getChat(event).loadSession(file)
   })
 
   ipcMain.handle(Channels.agent.switchTo, async (event, sessionId: string) => {
-    getManager(event).switchTo(sessionId)
+    await getChat(event).switchTo(sessionId)
   })
 
   ipcMain.handle(Channels.agent.getSessionList, async (event) => {
-    return getManager(event).getSessionList()
+    return getChat(event).getSessionList()
   })
 
   ipcMain.handle(Channels.agent.setNotifyOnFinish, async (event, value: boolean) => {
-    getManager(event).setNotifyOnFinish(value)
+    await getChat(event).setNotifyOnFinish(value)
   })
 
   ipcMain.handle(Channels.agent.reconnect, async (event) => {
-    await onReconnect(event)
+    const backend = getBackend(event)
+    if (backend.kind === 'local') {
+      await onReconnect(event)
+      return
+    }
+    // Remote backends own their connection lifecycle; just nudge the chat.
+    const chat = getChat(event)
+    const current = chat.getDisplayedSessionId()
+    await chat.setDisplayedSessionId(current)
   })
 
   ipcMain.handle(Channels.agent.getSnapshot, async (event) => {
-    return getManager(event).getSnapshot()
+    return getChat(event).getSnapshot()
   })
 
   ipcMain.handle(Channels.agent.spawnSession, async (event, prompt: string, providerId?: string, providerOptions?: Record<string, unknown>) => {
     if (typeof prompt !== 'string' || prompt.trim().length === 0) {
       throw new Error('spawnSession requires a non-empty prompt string')
     }
-    return getManager(event).spawnSession(prompt, providerId, providerOptions)
+    const result = await getBackend(event).sessions.spawn({ prompt, providerId, providerOptions })
+    // Pin the new session to the chat panel so its events flow through to the renderer.
+    await getChat(event).setDisplayedSessionId(result.sessionId)
+    return result
   })
 
   ipcMain.handle(Channels.agent.sendToSession, async (event, sessionId: string, message: string) => {
@@ -66,117 +81,162 @@ export function registerAgentSessionHandlers(
     if (typeof message !== 'string' || message.trim().length === 0) {
       throw new Error('sendToSession requires a non-empty message string')
     }
-    await getManager(event).sendToSession(sessionId, message)
+    await getChat(event).setDisplayedSessionId(sessionId)
+    await getBackend(event).sessions.send({ sessionId, text: message })
   })
 
   ipcMain.handle(Channels.agent.disposeSession, async (event, file: string) => {
     if (typeof file !== 'string' || file.trim().length === 0) return
-    await getManager(event).disposeSessionByFile(file)
+    await getChat(event).disposeSessionByFile(file)
   })
 
   ipcMain.handle(Channels.agent.retryNow, async (event) => {
-    getManager(event).skipRetryDelay()
+    await getChat(event).skipRetryDelay()
   })
 }
 
+export interface AgentChatPump {
+  /** Tear down all subscriptions/timers. */
+  stop(): void
+  /** Force an immediate snapshot push (used when the renderer switches to
+   *  this agent and the existing chat state should be re-sent). */
+  refresh(): void
+}
+
 /**
- * Set up state streaming from AgentSessionManager to renderer.
- * Call this after creating/reconnecting the session manager.
+ * Unified snapshot/streaming pump for the chat panel.
  *
- * Optimization: only sends the full snapshot (with messages) when non-streaming
- * state changes (session switch, streaming end, etc.). During streaming, only
- * sends the lightweight streaming message on a debounced channel.
+ * Subscribes to `chat.subscribe(...)` — both chat controllers fire it
+ * whenever chat-visible state may have changed (new message, streaming
+ * toggle, displayed session change, connection status change). The pump
+ * pulls a fresh snapshot via `chat.getSnapshot()` and pushes
+ * snapshot/streaming updates to the renderer using the same throttling
+ * and heartbeat strategy that local agents have always used.
  *
- * A periodic heartbeat sends full snapshots every few seconds while any session
- * is streaming, ensuring the renderer stays in sync even during long silent
- * periods (e.g. model thinking with hidden deltas).
+ * - Snapshots are sent on every non-streaming change (session switch,
+ *   streaming end, etc.) and on message changes mid-stream.
+ * - Streaming-update payloads are debounced to ~60fps so partial-token
+ *   updates don't flood IPC.
+ * - While streaming, a 5s heartbeat pushes a full snapshot so the renderer
+ *   stays in sync during long silent periods.
  */
-export function setupAgentStateStreaming(
-  manager: AgentSessionManager,
+export function setupAgentChatPump(
+  chat: AgentChatController,
   wc: WebContents,
   isActive?: () => boolean,
-): () => void {
+): AgentChatPump {
   let streamingDebounce: ReturnType<typeof setTimeout> | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let heartbeatDirty = false
   let prevIsStreaming = false
   let prevMessages: unknown = null
   let prevNotifyOnFinish = false
+  let pendingSnapshotFetch = false
+  let stopped = false
 
   const send = <C extends keyof PushMap>(channel: C, data: PushMap[C]) => {
     if (!wc.isDestroyed()) wc.send(channel, data)
   }
 
-  const sendFullSnapshot = () => {
-    if (wc.isDestroyed()) return
-    if (!heartbeatDirty) return
-    if (isActive && !isActive()) return
-    heartbeatDirty = false
-    const snapshot = manager.getSnapshot()
+  const pushFullSnapshot = (snapshot: AgentSnapshot) => {
     send(Channels.agent.snapshot, snapshot)
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
   }
 
-  const unsubscribe = manager.subscribe(() => {
-    if (wc.isDestroyed()) return
+  const tickHeartbeat = async () => {
+    if (stopped || wc.isDestroyed()) return
+    if (!heartbeatDirty) return
+    if (isActive && !isActive()) return
+    heartbeatDirty = false
+    try {
+      const snapshot = await chat.getSnapshot()
+      if (stopped || wc.isDestroyed()) return
+      pushFullSnapshot(snapshot)
+    } catch (err) {
+      console.warn('[chat-pump] heartbeat snapshot failed:', err)
+    }
+  }
+
+  const handleChange = async () => {
+    if (stopped || wc.isDestroyed()) return
+    if (pendingSnapshotFetch) return
+    pendingSnapshotFetch = true
+
+    let snapshot: AgentSnapshot
+    try {
+      snapshot = await chat.getSnapshot()
+    } catch (err) {
+      pendingSnapshotFetch = false
+      console.warn('[chat-pump] getSnapshot failed:', err)
+      return
+    } finally {
+      pendingSnapshotFetch = false
+    }
+
+    if (stopped || wc.isDestroyed()) return
     heartbeatDirty = true
 
-    const snapshot = manager.getSnapshot()
-
-    // Start heartbeat when any session begins streaming
+    // Manage heartbeat lifecycle around streaming state.
     if ((snapshot.isStreaming || snapshot.streamingSessionsCount > 0) && !heartbeat) {
-      heartbeat = setInterval(sendFullSnapshot, 5_000)
+      heartbeat = setInterval(() => { void tickHeartbeat() }, 5_000)
     }
-    // Stop heartbeat when nothing is streaming
     if (!snapshot.isStreaming && snapshot.streamingSessionsCount === 0 && heartbeat) {
       clearInterval(heartbeat)
       heartbeat = null
     }
 
-    // Skip sending to renderer if this agent is not the active one
     if (isActive && !isActive()) return
 
     if (snapshot.isStreaming) {
-      // During streaming, send the lightweight streaming data (debounced)
+      // Lightweight streaming payload — debounced to ~60fps.
       if (!streamingDebounce) {
-        streamingDebounce = setTimeout(() => {
+        streamingDebounce = setTimeout(async () => {
           streamingDebounce = null
-          if (wc.isDestroyed()) return
+          if (stopped || wc.isDestroyed()) return
           if (isActive && !isActive()) return
-          const current = manager.getSnapshot()
-          send(Channels.agent.streaming, {
-            message: current.streamingMessage,
-            statusLine: current.statusLine,
-            isStreaming: current.isStreaming,
-            retryState: current.retryState,
-            stalledSince: current.stalledSince,
-          })
-        }, 16) // ~60fps
+          try {
+            const current = await chat.getSnapshot()
+            send(Channels.agent.streaming, {
+              message: current.streamingMessage,
+              statusLine: current.statusLine,
+              isStreaming: current.isStreaming,
+              retryState: current.retryState,
+              stalledSince: current.stalledSince,
+            })
+          } catch (err) {
+            console.warn('[chat-pump] streaming snapshot failed:', err)
+          }
+        }, 16)
       }
-
+      // Send a full snapshot on transitions to-streaming and on message changes mid-stream.
       if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
-        send(Channels.agent.snapshot, snapshot)
+        pushFullSnapshot(snapshot)
       }
     } else {
-      send(Channels.agent.snapshot, snapshot)
+      pushFullSnapshot(snapshot)
     }
+  }
 
-    prevIsStreaming = snapshot.isStreaming
-    prevMessages = snapshot.messages
-    prevNotifyOnFinish = snapshot.notifyOnFinish
-  })
+  const onChange = (): void => { void handleChange() }
+  const unsubscribe = chat.subscribe(onChange)
 
-  return () => {
-    unsubscribe()
-    if (streamingDebounce) {
-      clearTimeout(streamingDebounce)
-      streamingDebounce = null
-    }
-    if (heartbeat) {
-      clearInterval(heartbeat)
-      heartbeat = null
-    }
+  return {
+    stop() {
+      stopped = true
+      unsubscribe()
+      if (streamingDebounce) {
+        clearTimeout(streamingDebounce)
+        streamingDebounce = null
+      }
+      if (heartbeat) {
+        clearInterval(heartbeat)
+        heartbeat = null
+      }
+    },
+    refresh() {
+      void handleChange()
+    },
   }
 }

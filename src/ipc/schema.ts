@@ -5,72 +5,40 @@
 // All type imports are `import type`, so this ESM file can be
 // referenced from the CJS preload via `import type`.
 
-import type { DisplayMessage } from '../agent/provider_types.js'
-import type { RetryState } from '../agent/types.js'
 import type { TabState, TabViewEvent } from '../tab-views/manager.js'
 import type { ProviderState } from './providers.js'
-import type { AgentDbChange } from '../db/sqlite.js'
-import type { ExecJsLogEntry } from '../runtime/types.js'
-import type { TaskOrigin } from '../task-runner/task_runner.js'
+import type { AgentDbChange } from '#shared/db/sqlite.js'
+import type { AgentSnapshot, AgentStreamingUpdate } from '#shared/agent/types.js'
+import type { BackendConnectionState } from '#shared/backend/interface.js'
+import type {
+  TaskRunStartedPayload,
+  TaskRunFinishedPayload,
+} from '#shared/task-runner/task_runner.js'
+
+// Re-exported from portable locations so renderer/preload imports continue to
+// resolve through ipc/schema as before.
+export type { AgentSnapshot, AgentStreamingUpdate } from '#shared/agent/types.js'
+export type {
+  TaskRunStartedPayload,
+  TaskRunFinishedPayload,
+} from '#shared/task-runner/task_runner.js'
 
 // ── Canonical payload types ──
 
 export interface InstalledAgent {
-  path: string
+  agentId: string
   name: string
   active: boolean
   initialized: boolean
-}
-
-export interface AgentSnapshot {
-  messages: DisplayMessage[]
-  isStreaming: boolean
-  label: string
-  streamingSessionsCount: number
-  notifyOnFinish: boolean
-  streamingMessage: DisplayMessage | null
-  statusLine: string | undefined
-  providerId: string
-  activeSessionFile: string | null
-  activeSessionId: string | null
-  streamingFiles: string[]
-  retryState: RetryState | null
-  stalledSince: number | null
-}
-
-export interface AgentStreamingUpdate {
-  message: DisplayMessage | null
-  statusLine: string | undefined
-  isStreaming: boolean
-  retryState: RetryState | null
-  stalledSince: number | null
-}
-
-export interface TaskRunStartedPayload {
-  runId: string
-  taskName: string
-  title: string
-  status: string
-  origin: TaskOrigin
-  startedAt: number
-}
-
-export interface TaskRunFinishedPayload {
-  runId: string
-  taskName: string
-  title: string
-  status: string
-  origin: TaskOrigin
-  startedAt: number
-  finishedAt: number | undefined
-  result: unknown
-  error: string | undefined
-  logs: ExecJsLogEntry[]
-  logFile: string | null
+  /** 'local' for in-process agents, 'remote' for daemon-backed agents. */
+  backend: 'local' | 'remote'
+  /** Present for daemon-backed agents so the sidebar can show connection health. */
+  remoteStatus?: BackendConnectionState
+  remoteStatusText?: string
 }
 
 export interface SidebarSwitchedPayload {
-  agentRoot: string | null
+  agentId: string | null
   agents: InstalledAgent[]
 }
 

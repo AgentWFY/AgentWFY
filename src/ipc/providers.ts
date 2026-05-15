@@ -1,18 +1,15 @@
 import { ipcMain, type WebContents } from 'electron'
-import type { ProviderRegistry } from '../providers/registry.js'
-import type { ProviderInfo } from '../agent/provider_types.js'
+import type { ProviderRegistry } from '#shared/providers/registry.js'
+import type { ProviderInfo } from '#shared/agent/provider_types.js'
+import type { AgentBackend, ProviderState } from '#shared/backend/interface.js'
 import { Channels } from './channels.cjs'
-import { getConfigValue, setAgentConfig } from '../settings/config.js'
-import { SystemConfigKeys } from '../system-config/keys.js'
+import { getConfigValue } from '#shared/settings/config.js'
+import { SystemConfigKeys } from '#shared/system-config/keys.js'
 
-export interface ProviderState {
-  providerList: ProviderInfo[]
-  defaultProviderId: string
-  providerStatusLines: Array<[string, string]>
-}
+export type { ProviderState } from '#shared/backend/interface.js'
 
-export function buildProviderState(agentRoot: string, registry: ProviderRegistry): ProviderState {
-  const defaultId = (getConfigValue(agentRoot, SystemConfigKeys.provider, 'openai-compatible') as string) || 'openai-compatible'
+export function buildProviderState(runtimeRoot: string, registry: ProviderRegistry): ProviderState {
+  const defaultId = (getConfigValue(runtimeRoot, SystemConfigKeys.provider, 'openai-compatible') as string) || 'openai-compatible'
   const { providers, statusLines } = registry.listWithStatusLines()
   return { providerList: providers, defaultProviderId: defaultId, providerStatusLines: statusLines }
 }
@@ -24,24 +21,19 @@ export function pushProviderState(wc: WebContents, state: ProviderState): void {
 }
 
 export function registerProviderHandlers(
-  getRegistry: (e: Electron.IpcMainInvokeEvent) => ProviderRegistry,
-  getAgentRoot: (e: Electron.IpcMainInvokeEvent) => string,
   getRendererWebContents: () => WebContents | undefined,
+  getBackend: (e: Electron.IpcMainInvokeEvent) => AgentBackend,
 ): void {
-  ipcMain.handle(Channels.providers.list, (event): ProviderInfo[] => {
-    return getRegistry(event).list()
+  ipcMain.handle(Channels.providers.list, async (event): Promise<ProviderInfo[]> => {
+    return getBackend(event).providers.list()
   })
 
-  ipcMain.handle(Channels.providers.getStatusLine, (event, providerId: string): string => {
-    const factory = getRegistry(event).get(providerId)
-    if (!factory?.getStatusLine) return ''
-    return factory.getStatusLine()
+  ipcMain.handle(Channels.providers.getStatusLine, async (event, providerId: string): Promise<string> => {
+    return getBackend(event).providers.getStatusLine(providerId)
   })
 
   ipcMain.handle(Channels.providers.setDefault, async (event, providerId: string) => {
-    const agentRoot = getAgentRoot(event)
-    setAgentConfig(agentRoot, SystemConfigKeys.provider, providerId)
-    const state = buildProviderState(agentRoot, getRegistry(event))
+    const state = await getBackend(event).providers.setDefault(providerId)
     const wc = getRendererWebContents()
     if (wc) pushProviderState(wc, state)
   })

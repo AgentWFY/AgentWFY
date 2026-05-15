@@ -1,20 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import type { IpcMainInvokeEvent } from 'electron';
-import type { AgentContext } from './agent-context.js';
+import { isLocalAgentContext, type AgentContext, type LocalAgentContext, type RemoteAgentContext } from './agent-context.js';
 import type { AgentContextFactory } from './agent-context-factory.js';
-import type { AgentDbChange } from './db/sqlite.js';
-import type { ProviderRegistry } from './providers/registry.js';
-import { setupAgentStateStreaming } from './ipc/agent-sessions.js';
+import type { AgentDbChange } from '#shared/db/sqlite.js';
+import { setupAgentChatPump } from './ipc/agent-sessions.js';
 import { storeSet } from './ipc/store.js';
+import { getAgentMeta, removeAgentMeta } from './agent-meta.js';
 import { isDefaultAgentPath } from './agent-manager.js';
 import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
 import { runCleanup } from './cleanup.js';
-import { getConfigValue } from './settings/config.js';
-import { getViewByName } from './db/views.js';
-import { SystemConfigKeys, PLUGIN_PREFIX } from './system-config/keys.js';
+import { getConfigValue } from '#shared/settings/config.js';
+import { getViewByName } from '#shared/db/views.js';
+import { SystemConfigKeys, PLUGIN_PREFIX } from '#shared/system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
-import type { SendToRenderer } from './ipc/schema.js';
+import type { InstalledAgent, SendToRenderer } from './ipc/schema.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
 import { syncTaskActions } from './shortcuts/task-actions.js';
 
@@ -26,7 +26,6 @@ export interface AgentOrchestratorDeps {
   applyTheme: () => void;
   applyTrafficLightPosition: () => void;
   applyTrafficLightVisibility: () => void;
-  pushProviderState: (agentRoot: string, providerRegistry: ProviderRegistry) => void;
   dispatchRendererEvent: (eventName: string, detail?: unknown) => void;
   getIsZenMode: () => boolean;
   actionRegistry: ActionRegistry;
@@ -34,8 +33,8 @@ export interface AgentOrchestratorDeps {
 
 export class AgentOrchestrator {
   private agentContexts = new Map<string, AgentContext>();
-  private activeAgentRoot: string | null = null;
-  private persistedAgentPaths: string[] = [];
+  private activeAgentId: string | null = null;
+  private persistedAgentIds: string[] = [];
   private tabSenderMap = new Map<number, string>();
   private pendingInits = new Map<string, Promise<AgentContext>>();
   private readonly deps: AgentOrchestratorDeps;
@@ -46,67 +45,88 @@ export class AgentOrchestrator {
 
   // --- Agent context lifecycle ---
 
-  async initAgentContext(agentRoot: string): Promise<AgentContext> {
-    if (this.agentContexts.has(agentRoot)) {
-      return this.agentContexts.get(agentRoot)!;
+  async initAgentContext(agentId: string): Promise<AgentContext> {
+    if (this.agentContexts.has(agentId)) {
+      return this.agentContexts.get(agentId)!;
     }
 
-    const pending = this.pendingInits.get(agentRoot);
+    const pending = this.pendingInits.get(agentId);
     if (pending) return pending;
 
-    const promise = this.doInit(agentRoot);
-    this.pendingInits.set(agentRoot, promise);
+    const promise = this.doInit(agentId);
+    this.pendingInits.set(agentId, promise);
     try {
       return await promise;
     } finally {
-      this.pendingInits.delete(agentRoot);
+      this.pendingInits.delete(agentId);
     }
   }
 
-  private async doInit(agentRoot: string): Promise<AgentContext> {
-    const agentCtx = await this.deps.factory.createContext(agentRoot);
-    this.agentContexts.set(agentRoot, agentCtx);
+  private async doInit(agentId: string): Promise<AgentContext> {
+    const agentCtx = await this.deps.factory.createContext(agentId);
+    this.agentContexts.set(agentId, agentCtx);
 
-    // Gate streaming IPC to active agent (background agents keep processing internally)
+    // The chat pump is the single renderer-snapshot pipeline for both
+    // local and remote agents. It reads from the per-agent chat controller.
     const rwc = this.deps.getRendererWebContents();
     if (rwc) {
-      agentCtx.agentStateStreamingCleanup = setupAgentStateStreaming(
-        agentCtx.sessionManager, rwc, () => this.activeAgentRoot === agentRoot
+      agentCtx.chatPump = setupAgentChatPump(
+        agentCtx.chat,
+        rwc,
+        () => this.activeAgentId === agentId,
       );
     }
+
+    if (agentCtx.mode === 'remote') {
+      this.wireRemoteSidebarAndProviders(agentCtx);
+      return agentCtx;
+    }
+
+    // Local-only follow-on work: reset the session manager's state,
+    // schedule backups, run cleanup.
     agentCtx.sessionManager.resetActive();
 
-    // Schedule backup
-    scheduleBackup(agentRoot).then(() => {
+    scheduleBackup(agentId).then(() => {
       this.deps.dispatchRendererEvent('agentwfy:backup-changed');
     }).catch((err) => console.error('[backup] Schedule failed:', err));
 
-    // Cleanup
-    runCleanup(agentRoot).catch((err) => console.error('[cleanup] failed:', err));
+    runCleanup(agentId).catch((err) => console.error('[cleanup] failed:', err));
 
     return agentCtx;
   }
 
-  private destroyAgentContext(agentRoot: string): void {
-    const ctx = this.agentContexts.get(agentRoot);
+  /** Remote agents need extra wiring around the chat pump:
+   *   - Status changes should refresh the sidebar (to update the connection
+   *     dot) and re-push provider state on reconnect. */
+  private wireRemoteSidebarAndProviders(agentCtx: RemoteAgentContext): void {
+    agentCtx.subscriptions.add(agentCtx.backend.status.subscribe((status) => {
+      if (this.deps.isWindowAvailable()) this.broadcastSidebarState();
+      if (status.state === 'connected' && this.activeAgentId === agentCtx.agentId) {
+        void this.pushProviderState(agentCtx);
+      }
+    }));
+  }
+
+  private destroyAgentContext(agentId: string): void {
+    const ctx = this.agentContexts.get(agentId);
     if (!ctx) return;
 
-    this.deps.factory.destroyContext(agentRoot, ctx);
+    this.deps.factory.destroyContext(agentId, ctx);
 
     // Clean up sender map entries for this agent
-    for (const [senderId, root] of this.tabSenderMap) {
-      if (root === agentRoot) {
+    for (const [senderId, id] of this.tabSenderMap) {
+      if (id === agentId) {
         this.tabSenderMap.delete(senderId);
       }
     }
 
-    this.agentContexts.delete(agentRoot);
+    this.agentContexts.delete(agentId);
   }
 
   // --- Tab sender routing (called by factory via deps) ---
 
-  registerTabSender(webContentsId: number, agentRoot: string): void {
-    this.tabSenderMap.set(webContentsId, agentRoot);
+  registerTabSender(webContentsId: number, agentId: string): void {
+    this.tabSenderMap.set(webContentsId, agentId);
   }
 
   unregisterTabSender(webContentsId: number): void {
@@ -115,41 +135,42 @@ export class AgentOrchestrator {
 
   // --- Public agent management API ---
 
-  addPersistedAgent(agentRoot: string): void {
-    if (!this.persistedAgentPaths.includes(agentRoot)) {
-      this.persistedAgentPaths.push(agentRoot);
+  addPersistedAgent(agentId: string): void {
+    if (!this.persistedAgentIds.includes(agentId)) {
+      this.persistedAgentIds.push(agentId);
     }
   }
 
-  async addAgent(agentRoot: string): Promise<void> {
-    this.addPersistedAgent(agentRoot);
+  async addAgent(agentId: string): Promise<void> {
+    this.addPersistedAgent(agentId);
     this.persistInstalledAgents();
-    await this.switchAgent(agentRoot);
+    await this.switchAgent(agentId);
   }
 
-  async switchAgent(agentRoot: string): Promise<void> {
+  async switchAgent(agentId: string): Promise<void> {
     if (!this.deps.isWindowAvailable()) return;
-    if (agentRoot === this.activeAgentRoot) return;
-    if (!this.persistedAgentPaths.includes(agentRoot) && !this.agentContexts.has(agentRoot)) return;
+    if (agentId === this.activeAgentId) return;
+    if (!this.persistedAgentIds.includes(agentId) && !this.agentContexts.has(agentId)) return;
 
-    const previousCtx = this.activeAgentRoot ? this.agentContexts.get(this.activeAgentRoot) : undefined;
+    const previousCtx = this.activeAgentId ? this.agentContexts.get(this.activeAgentId) : undefined;
 
     // Lazy-init: initialize agent context on first switch
-    let ctx = this.agentContexts.get(agentRoot);
+    let ctx = this.agentContexts.get(agentId);
     if (!ctx) {
       try {
-        ctx = await this.initAgentContext(agentRoot);
+        ctx = await this.initAgentContext(agentId);
       } catch (err) {
-        console.error(`[agent] Failed to initialize agent ${agentRoot}:`, err);
+        console.error(`[agent] Failed to initialize agent ${agentId}:`, err);
         return;
       }
-      ctx.triggerEngine.start().then(() => {
-        this.broadcastSidebarState(); // refresh HTTP port in status line
-      }).catch(err => console.error('[triggers] Start failed:', err));
-      this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+      if (isLocalAgentContext(ctx)) {
+        ctx.triggerEngine.start().then(() => {
+          this.broadcastSidebarState(); // refresh HTTP port in status line
+        }).catch(err => console.error('[triggers] Start failed:', err));
+      }
     }
 
-    this.activeAgentRoot = agentRoot;
+    this.activeAgentId = agentId;
     this.deps.applyTheme();
     this.deps.applyTrafficLightPosition();
     this.deps.applyTrafficLightVisibility();
@@ -157,37 +178,44 @@ export class AgentOrchestrator {
     // Collapse outgoing agent's views to 0x0 before promoting incoming. If
     // the user then closes the incoming agent's last tab, nothing underneath
     // the z-stack is left at stale bounds to leak through.
-    previousCtx?.tabViewManager.deactivateViews();
+    if (previousCtx && this.activeAgentId) {
+      previousCtx.tabViewManager.deactivateViews();
+    }
     ctx.tabViewManager.activateViews();
+    await this.openDefaultViewForContext(ctx);
 
     this.pushFullState(ctx);
   }
 
-  async removeAgent(agentRoot: string): Promise<void> {
-    if (this.persistedAgentPaths.length <= 1) return;
+  async removeAgent(agentId: string): Promise<void> {
+    if (this.persistedAgentIds.length <= 1) return;
 
-    const wasActive = this.activeAgentRoot === agentRoot;
+    const wasActive = this.activeAgentId === agentId;
 
     // Remove from persisted list
-    this.persistedAgentPaths = this.persistedAgentPaths.filter(p => p !== agentRoot);
+    this.persistedAgentIds = this.persistedAgentIds.filter(p => p !== agentId);
 
     // Destroy context if initialized
-    if (this.agentContexts.has(agentRoot)) {
-      this.destroyAgentContext(agentRoot);
+    if (this.agentContexts.has(agentId)) {
+      this.destroyAgentContext(agentId);
     }
     this.persistInstalledAgents();
 
+    // Clear per-agent meta (backend kind, remote config, token reference).
+    // Local agents may not have an entry; removeAgentMeta is a no-op if absent.
+    removeAgentMeta(agentId);
+
     // Delete directory on disk for default agents living in userData
-    if (isDefaultAgentPath(agentRoot)) {
-      fs.rm(agentRoot, { recursive: true, force: true }, () => {});
+    if (isDefaultAgentPath(agentId)) {
+      fs.rm(agentId, { recursive: true, force: true }, () => {});
     }
 
     if (wasActive) {
       // Switch to first available agent
-      const nextRoot = this.persistedAgentPaths[0];
-      if (nextRoot) {
-        this.activeAgentRoot = null; // Clear so switchAgent doesn't skip
-        await this.switchAgent(nextRoot);
+      const nextId = this.persistedAgentIds[0];
+      if (nextId) {
+        this.activeAgentId = null; // Clear so switchAgent doesn't skip
+        await this.switchAgent(nextId);
       }
     } else {
       this.broadcastSidebarState();
@@ -195,38 +223,38 @@ export class AgentOrchestrator {
   }
 
   reorderAgents(fromIndex: number, toIndex: number): void {
-    if (fromIndex < 0 || fromIndex >= this.persistedAgentPaths.length) return;
-    if (toIndex < 0 || toIndex >= this.persistedAgentPaths.length) return;
+    if (fromIndex < 0 || fromIndex >= this.persistedAgentIds.length) return;
+    if (toIndex < 0 || toIndex >= this.persistedAgentIds.length) return;
     if (fromIndex === toIndex) return;
-    const newOrder = [...this.persistedAgentPaths];
+    const newOrder = [...this.persistedAgentIds];
     const [moved] = newOrder.splice(fromIndex, 1);
     const insertAt = toIndex > fromIndex ? toIndex - 1 : toIndex;
     newOrder.splice(insertAt, 0, moved);
-    this.persistedAgentPaths = newOrder;
+    this.persistedAgentIds = newOrder;
     this.persistInstalledAgents();
     this.broadcastSidebarState();
   }
 
   switchToNextAgent(direction: 1 | -1): void {
-    const paths = this.persistedAgentPaths;
-    if (paths.length <= 1) return;
-    const currentIdx = this.activeAgentRoot ? paths.indexOf(this.activeAgentRoot) : -1;
+    const ids = this.persistedAgentIds;
+    if (ids.length <= 1) return;
+    const currentIdx = this.activeAgentId ? ids.indexOf(this.activeAgentId) : -1;
     let nextIdx: number;
     if (currentIdx < 0) {
       nextIdx = 0;
     } else {
-      nextIdx = (currentIdx + direction + paths.length) % paths.length;
+      nextIdx = (currentIdx + direction + ids.length) % ids.length;
     }
-    this.switchAgent(paths[nextIdx]).catch(() => {});
+    this.switchAgent(ids[nextIdx]).catch(() => {});
   }
 
   // --- IPC routing ---
 
   getContextForSender(senderId: number): AgentContext {
     // Check tab sender map (tab views map to specific agents)
-    const agentRoot = this.tabSenderMap.get(senderId);
-    if (agentRoot) {
-      const ctx = this.agentContexts.get(agentRoot);
+    const agentId = this.tabSenderMap.get(senderId);
+    if (agentId) {
+      const ctx = this.agentContexts.get(agentId);
       if (ctx) return ctx;
     }
 
@@ -238,23 +266,27 @@ export class AgentOrchestrator {
   }
 
   tryGetContextForSender(senderId: number): AgentContext | null {
-    const agentRoot = this.tabSenderMap.get(senderId);
-    if (agentRoot) {
-      const ctx = this.agentContexts.get(agentRoot);
+    const agentId = this.tabSenderMap.get(senderId);
+    if (agentId) {
+      const ctx = this.agentContexts.get(agentId);
       if (ctx) return ctx;
     }
     return this.getActiveAgentContext();
   }
 
-  getAgentRootForEvent(event: IpcMainInvokeEvent): string {
-    return this.getContextForSender(event.sender.id).agentRoot;
+  getCacheRootForEvent(event: IpcMainInvokeEvent): string {
+    return this.getContextForSender(event.sender.id).cacheRoot;
+  }
+
+  getBackendForSender(senderId: number): AgentContext['backend'] {
+    return this.getContextForSender(senderId).backend;
   }
 
   // --- Initial setup (used by coordinator during first window creation) ---
 
   /** Set the first agent as active and persist the agent list. */
-  activateFirstAgent(agentRoot: string): void {
-    this.activeAgentRoot = agentRoot;
+  activateFirstAgent(agentId: string): void {
+    this.activeAgentId = agentId;
     this.persistInstalledAgents();
   }
 
@@ -262,32 +294,61 @@ export class AgentOrchestrator {
   startActiveAgent(): void {
     const ctx = this.getActiveAgentContext();
     if (!ctx) return;
-    ctx.tabViewManager.activateViews();
     this.pushFullState(ctx);
-    ctx.triggerEngine.start().then(() => {
-      this.broadcastSidebarState(); // refresh HTTP port in status line
-    }).catch(err => console.error('[triggers] Initial start failed:', err));
+    ctx.tabViewManager.activateViews();
     this.openDefaultViewForContext(ctx).catch(err => console.error('[default-view]', err));
+    if (isLocalAgentContext(ctx)) {
+      ctx.triggerEngine.start().then(() => {
+        this.broadcastSidebarState(); // refresh HTTP port in status line
+      }).catch(err => console.error('[triggers] Initial start failed:', err));
+    }
   }
 
   // --- State queries ---
 
-  getActiveAgentRoot(): string | null {
-    return this.activeAgentRoot;
+  getActiveAgentId(): string | null {
+    return this.activeAgentId;
+  }
+
+  getActiveCacheRoot(): string | null {
+    return this.getActiveAgentContext()?.cacheRoot ?? this.activeAgentId;
   }
 
   getActiveAgentContext(): AgentContext | null {
-    if (!this.activeAgentRoot) return null;
-    return this.agentContexts.get(this.activeAgentRoot) ?? null;
+    if (!this.activeAgentId) return null;
+    return this.agentContexts.get(this.activeAgentId) ?? null;
   }
 
-  getInstalledAgentsList(): Array<{ path: string; name: string; active: boolean; initialized: boolean }> {
-    return this.persistedAgentPaths.map(root => ({
-      path: root,
-      name: path.basename(root),
-      active: root === this.activeAgentRoot,
-      initialized: this.agentContexts.has(root),
-    }));
+  getActiveLocalAgentContext(): LocalAgentContext | null {
+    const ctx = this.getActiveAgentContext();
+    return ctx && isLocalAgentContext(ctx) ? ctx : null;
+  }
+
+  getInstalledAgentsList(): InstalledAgent[] {
+    return this.persistedAgentIds.map(id => {
+      const ctx = this.agentContexts.get(id);
+      const backendKind: 'local' | 'remote' = ctx?.mode ?? (this.persistedKindFor(id));
+      const status = ctx?.mode === 'remote' ? ctx.backend.status.get() : undefined;
+      return {
+        agentId: id,
+        name: path.basename(id),
+        active: id === this.activeAgentId,
+        initialized: this.agentContexts.has(id),
+        backend: backendKind,
+        ...(backendKind === 'remote'
+          ? {
+              remoteStatus: status?.state ?? 'disconnected',
+              remoteStatusText: status?.message ?? 'Remote agent has not connected yet',
+            }
+          : {}),
+      };
+    });
+  }
+
+  private persistedKindFor(agentId: string): 'local' | 'remote' {
+    // Only consulted before the context is initialized. Once a context exists,
+    // ctx.mode is the source of truth.
+    return getAgentMeta(agentId).backend;
   }
 
   getAllContexts(): AgentContext[] {
@@ -296,18 +357,19 @@ export class AgentOrchestrator {
 
   getActiveHttpApiPort(): number | null {
     const ctx = this.getActiveAgentContext();
-    return ctx?.triggerEngine.getHttpApiPort() ?? null;
+    if (!ctx || !isLocalAgentContext(ctx)) return null;
+    return ctx.triggerEngine.getHttpApiPort() ?? null;
   }
 
   // --- DB change handling ---
 
-  onRuntimeDbChange(agentRoot: string, change: AgentDbChange): void {
-    const agentCtx = this.agentContexts.get(agentRoot);
+  onRuntimeDbChange(agentId: string, change: AgentDbChange): void {
+    const agentCtx = this.agentContexts.get(agentId);
     if (!agentCtx) return;
 
     if (!this.deps.isWindowAvailable()) return;
 
-    if (this.activeAgentRoot === agentRoot) {
+    if (this.activeAgentId === agentId) {
       this.deps.sendToRenderer(Channels.db.changed, change);
     }
 
@@ -315,10 +377,26 @@ export class AgentOrchestrator {
       agentCtx.tabViewManager.markViewChanged(change.rowId as string);
     }
 
+    if (!isLocalAgentContext(agentCtx)) {
+      if (change.table === 'config' && this.activeAgentId === agentId) {
+        const key = change.rowId as string;
+        if (key === SystemConfigKeys.theme) {
+          this.deps.applyTheme();
+        }
+        if (key === SystemConfigKeys.showTabSource) {
+          this.deps.applyTrafficLightPosition();
+        }
+        if (key === SystemConfigKeys.hideTrafficLights) {
+          this.deps.applyTrafficLightVisibility();
+        }
+      }
+      return;
+    }
+
     if (change.table === 'config') {
-      rescheduleBackupForAgent(agentRoot);
-      agentCtx.shortcutManager.reload(agentRoot);
-      if (this.activeAgentRoot === agentRoot) {
+      rescheduleBackupForAgent(agentId);
+      agentCtx.shortcutManager.reload(agentId);
+      if (this.activeAgentId === agentId) {
         this.deps.applyTheme();
         const key = change.rowId as string;
         if (key === SystemConfigKeys.showTabSource) {
@@ -328,7 +406,7 @@ export class AgentOrchestrator {
           this.deps.applyTrafficLightVisibility();
         }
         if (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider) {
-          this.deps.pushProviderState(agentRoot, agentCtx.providerRegistry);
+          void this.pushProviderState(agentCtx);
         }
       }
     }
@@ -336,8 +414,8 @@ export class AgentOrchestrator {
     if (change.table === 'tasks') {
       if (agentCtx.taskActionsReloadDebounceTimer) clearTimeout(agentCtx.taskActionsReloadDebounceTimer);
       agentCtx.taskActionsReloadDebounceTimer = setTimeout(() => {
-        syncTaskActions(this.deps.actionRegistry, agentRoot, agentCtx.taskRunner);
-        agentCtx.shortcutManager.reload(agentRoot);
+        syncTaskActions(this.deps.actionRegistry, agentId, agentCtx.taskRunner);
+        agentCtx.shortcutManager.reload(agentId);
       }, 500);
     }
 
@@ -361,6 +439,7 @@ export class AgentOrchestrator {
 
   hasActiveWork(): boolean {
     for (const ctx of this.agentContexts.values()) {
+      if (!isLocalAgentContext(ctx)) continue;
       if (ctx.taskRunner.runningCount > 0 || ctx.sessionManager.streamingSessionsCount > 0) return true;
     }
     return false;
@@ -370,6 +449,7 @@ export class AgentOrchestrator {
     let runningTasks = 0;
     let streamingAgents = 0;
     for (const ctx of this.agentContexts.values()) {
+      if (!isLocalAgentContext(ctx)) continue;
       runningTasks += ctx.taskRunner.runningCount;
       streamingAgents += ctx.sessionManager.streamingSessionsCount;
     }
@@ -377,12 +457,12 @@ export class AgentOrchestrator {
   }
 
   destroyAll(): void {
-    const roots = Array.from(this.agentContexts.keys());
-    for (const root of roots) {
-      this.destroyAgentContext(root);
+    const ids = Array.from(this.agentContexts.keys());
+    for (const id of ids) {
+      this.destroyAgentContext(id);
     }
-    this.activeAgentRoot = null;
-    this.persistedAgentPaths = [];
+    this.activeAgentId = null;
+    this.persistedAgentIds = [];
   }
 
   // --- Private helpers ---
@@ -400,28 +480,39 @@ export class AgentOrchestrator {
    */
   private pushFullState(ctx: AgentContext): void {
     this.broadcastSidebarState();
-    this.deps.sendToRenderer(Channels.agent.snapshot, ctx.sessionManager.getSnapshot());
-    this.deps.pushProviderState(ctx.agentRoot, ctx.providerRegistry);
+    ctx.chatPump?.refresh();
+    void this.pushProviderState(ctx);
     this.deps.sendToRenderer(Channels.zenMode.changed, this.deps.getIsZenMode());
+  }
+
+  private async pushProviderState(ctx: AgentContext): Promise<void> {
+    try {
+      this.deps.sendToRenderer(
+        Channels.providers.stateChanged,
+        await ctx.backend.providers.getState(),
+      );
+    } catch (err) {
+      console.error('[providers] Provider state failed:', err);
+    }
   }
 
   private broadcastSidebarState(): void {
     this.deps.sendToRenderer(Channels.agentSidebar.switched, {
-      agentRoot: this.activeAgentRoot,
+      agentId: this.activeAgentId,
       agents: this.getInstalledAgentsList(),
     });
   }
 
   private persistInstalledAgents(): void {
-    storeSet('installedAgents', this.persistedAgentPaths);
+    storeSet('installedAgents', this.persistedAgentIds);
   }
 
   private async openDefaultViewForContext(ctx: AgentContext): Promise<void> {
     try {
-      const configValue = getConfigValue(ctx.agentRoot, SystemConfigKeys.defaultView, 'home');
+      const configValue = getConfigValue(ctx.cacheRoot, SystemConfigKeys.defaultView, 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
       const viewName = trimmed || 'home';
-      const view = await getViewByName(ctx.agentRoot, viewName);
+      const view = await getViewByName(ctx.cacheRoot, viewName);
       if (!view) return;
       const state = ctx.tabViewManager.getState();
       if (state.tabs.length > 0) return;

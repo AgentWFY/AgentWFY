@@ -1,5 +1,5 @@
-import { getConfigValue } from '../settings/config.js';
-import { SHORTCUT_PREFIX } from '../system-config/keys.js';
+import { getConfigValue } from '#shared/settings/config.js';
+import { SHORTCUT_PREFIX } from '#shared/system-config/keys.js';
 import type { ActionRegistry } from './registry.js';
 
 const IS_DARWIN = process.platform === 'darwin';
@@ -79,19 +79,23 @@ export class ShortcutManager {
   // action ID → parsed shortcut (for display/accelerator without re-parsing)
   private parsed = new Map<string, ParsedShortcut>();
   private readonly registry: ActionRegistry;
+  private readonly readConfig: boolean;
 
-  constructor(agentRoot: string, registry: ActionRegistry) {
+  constructor(agentId: string, registry: ActionRegistry, opts?: { readConfig?: boolean }) {
     this.registry = registry;
-    this.reload(agentRoot);
+    this.readConfig = opts?.readConfig ?? true;
+    this.reload(agentId);
   }
 
-  reload(agentRoot: string): void {
+  reload(agentId: string): void {
     this.keyMap.clear();
     this.parsed.clear();
 
-    for (const action of this.registry.getAllForAgent(agentRoot)) {
+    for (const action of this.registry.getAllForAgent(agentId)) {
       const configKey = action.configKey ?? SHORTCUT_PREFIX + action.id;
-      const raw = getConfigValue(agentRoot, configKey, action.defaultKey ?? DISABLED) as string;
+      const raw = this.readConfig
+        ? getConfigValue(agentId, configKey, action.defaultKey ?? DISABLED) as string
+        : action.defaultKey ?? DISABLED;
 
       if (raw === DISABLED) continue;
 

@@ -1,6 +1,6 @@
 import { escapeHtml, imageDataUrl } from './chat_utils.js'
 import { agentSessionStore } from '../stores/agent-session-store.js'
-import type { FileContent } from '../../agent/types.js'
+import type { FileContent } from '#shared/agent/types.js'
 
 type PendingAttachment = FileContent & { name: string }
 
@@ -166,14 +166,14 @@ export class TlChatInput extends HTMLElement {
 
   // Per-agent state cache
   private _inputStateCache = new Map<string, InputStateCache>()
-  private _currentAgentRoot: string | null = null
+  private _currentAgentId: string | null = null
 
   connectedCallback() {
     this._styleEl = document.createElement('style')
     this._styleEl.textContent = STYLES
     this.appendChild(this._styleEl)
 
-    this._currentAgentRoot = window.ipc?.agentRoot ?? null
+    this._currentAgentId = window.ipc?.agentId ?? null
     this.buildLayout()
 
     this._storeUnsub = agentSessionStore.select(
@@ -205,13 +205,13 @@ export class TlChatInput extends HTMLElement {
 
   private _onAgentSwitched = (e: Event) => {
     const detail = (e as CustomEvent).detail
-    const newAgentRoot: string | null = detail?.agentRoot ?? null
-    const agents: Array<{ path: string }> | undefined = detail?.agents
+    const newAgentId: string | null = detail?.agentId ?? null
+    const agents: Array<{ agentId: string }> | undefined = detail?.agents
 
-    if (newAgentRoot === this._currentAgentRoot) return
+    if (newAgentId === this._currentAgentId) return
 
-    if (this._currentAgentRoot) {
-      this._inputStateCache.set(this._currentAgentRoot, {
+    if (this._currentAgentId) {
+      this._inputStateCache.set(this._currentAgentId, {
         inputValue: this._inputValue,
         pastedText: this._pastedText,
         pastedLineCount: this._pastedLineCount,
@@ -220,7 +220,7 @@ export class TlChatInput extends HTMLElement {
       })
     }
 
-    const cached = newAgentRoot ? this._inputStateCache.get(newAgentRoot) : null
+    const cached = newAgentId ? this._inputStateCache.get(newAgentId) : null
     if (cached) {
       this._inputValue = cached.inputValue
       this._pastedText = cached.pastedText
@@ -236,9 +236,9 @@ export class TlChatInput extends HTMLElement {
     }
 
     if (agents) {
-      const activePaths = new Set(agents.map(a => a.path))
+      const activeIds = new Set(agents.map(a => a.agentId))
       for (const key of this._inputStateCache.keys()) {
-        if (!activePaths.has(key)) this._inputStateCache.delete(key)
+        if (!activeIds.has(key)) this._inputStateCache.delete(key)
       }
     }
 
@@ -249,7 +249,7 @@ export class TlChatInput extends HTMLElement {
     this.renderPasteAttachment()
     this.renderAttachmentStrip()
 
-    this._currentAgentRoot = newAgentRoot
+    this._currentAgentId = newAgentId
   }
 
   private buildLayout() {

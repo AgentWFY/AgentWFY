@@ -1,0 +1,427 @@
+import path from 'path'
+import fs from 'fs/promises'
+import { assertPathAllowed, isAgentPrivatePath } from '../../security/path-policy.js'
+import type { FunctionRegistry } from '../function_registry.js'
+import type { WorkerHostMethodMap } from '../types.js'
+import { parseDbPath, dbRead, dbWrite, dbEdit, dbLs, dbFind, dbGrep, dbRemove, dbRename } from './db_content.js'
+import { paginateText, applyTextEdits, matchesGlob, compileGlob, truncateLine, GREP_MAX_LINE_LENGTH, DEFAULT_GREP_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_LS_LIMIT } from './text_utils.js'
+
+const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
+
+async function walkDir(dir: string, root: string): Promise<string[]> {
+  const results: string[] = []
+  let entries
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true })
+  } catch {
+    return results
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    if (isAgentPrivatePath(root, full)) continue
+    const rel = path.relative(root, full)
+    if (entry.isDirectory()) {
+      results.push(rel + '/')
+      results.push(...await walkDir(full, root))
+    } else {
+      results.push(rel)
+    }
+  }
+  return results
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+}
+
+function mimeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
+
+export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot: string }): void {
+  const { runtimeRoot } = deps
+
+  registry.register('read', async (params) => {
+    const request = params as WorkerHostMethodMap['read']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('read requires a non-empty path string')
+    }
+    if (typeof request.offset !== 'undefined' && (!Number.isFinite(request.offset) || request.offset < 1)) {
+      throw new Error('read offset must be a number >= 1 when provided')
+    }
+    if (typeof request.limit !== 'undefined' && (!Number.isFinite(request.limit) || request.limit < 1)) {
+      throw new Error('read limit must be a number >= 1 when provided')
+    }
+
+    const dbPath = parseDbPath(request.path)
+    if (dbPath) return dbRead(runtimeRoot, dbPath, request.offset, request.limit)
+
+    const filePath = await assertPathAllowed(runtimeRoot, request.path)
+
+    // Auto-detect binary files by MIME type
+    const mime = mimeFromPath(filePath)
+    if (mime !== 'application/octet-stream' && !mime.startsWith('text/')) {
+      const stat = await fs.stat(filePath)
+      if (stat.size > MAX_READ_BINARY_BYTES) {
+        throw new Error(`File too large (${stat.size} bytes). Max binary read size is ${MAX_READ_BINARY_BYTES} bytes.`)
+      }
+      const buffer = await fs.readFile(filePath)
+      return {
+        base64: buffer.toString('base64'),
+        mimeType: mime,
+        size: buffer.length,
+      }
+    }
+
+    // Text file
+    const raw = await fs.readFile(filePath, 'utf-8')
+    return paginateText(raw, request.offset, request.limit)
+  })
+
+  registry.register('write', async (params) => {
+    const request = params as WorkerHostMethodMap['write']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('write requires a non-empty path string')
+    }
+
+    const hasContent = typeof request.content === 'string'
+    const hasBase64 = typeof request.base64 === 'string'
+
+    if (hasContent && hasBase64) {
+      throw new Error('write accepts either `content` (text) or `base64` (binary), not both. Pick one based on the data you want to write.')
+    }
+    if (!hasContent && !hasBase64) {
+      throw new Error('write requires either `content` (string, for UTF-8 text) or `base64` (string, for binary data like images/PDFs).')
+    }
+
+    const dbPath = parseDbPath(request.path)
+    if (dbPath) {
+      if (hasBase64) {
+        throw new Error(`write to ${request.path}: DB content tables (@views/, @docs/, @tasks/, @modules/) store UTF-8 text only. Pass \`content\` instead of \`base64\`.`)
+      }
+      return dbWrite(runtimeRoot, dbPath, request.content as string)
+    }
+
+    let buffer: Buffer
+    if (hasBase64) {
+      const base64 = request.base64 as string
+      if (!/^[A-Za-z0-9+/=\s]*$/.test(base64)) {
+        throw new Error('write: `base64` contains characters that are not valid base64. Expected A-Z, a-z, 0-9, +, /, = (and whitespace).')
+      }
+      buffer = Buffer.from(base64, 'base64')
+    } else {
+      buffer = Buffer.from(request.content as string, 'utf-8')
+    }
+
+    const filePath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+    await fs.writeFile(filePath, buffer)
+    return `Successfully wrote ${buffer.length} bytes to ${request.path}`
+  })
+
+  registry.register('edit', async (params) => {
+    const request = params as WorkerHostMethodMap['edit']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('edit requires a non-empty path string')
+    }
+    if (!Array.isArray(request.edits) || request.edits.length === 0) {
+      throw new Error('edit requires edits array with at least one replacement')
+    }
+
+    for (const edit of request.edits) {
+      if (typeof edit.oldText !== 'string' || typeof edit.newText !== 'string') {
+        throw new Error('Each edit must have oldText and newText strings')
+      }
+    }
+
+    const dbPath = parseDbPath(request.path)
+    if (dbPath) return dbEdit(runtimeRoot, dbPath, request.edits)
+
+    const filePath = await assertPathAllowed(runtimeRoot, request.path)
+    const rawContent = await fs.readFile(filePath, 'utf-8')
+
+    // Strip BOM
+    const bom = rawContent.startsWith('\uFEFF') ? '\uFEFF' : ''
+    const content = bom ? rawContent.slice(1) : rawContent
+
+    // Detect and normalize line endings
+    const originalEnding = content.includes('\r\n') ? '\r\n' : '\n'
+    const normalized = content.replace(/\r\n/g, '\n')
+    const normalizedEdits = request.edits.map(e => ({
+      oldText: e.oldText.replace(/\r\n/g, '\n'),
+      newText: e.newText.replace(/\r\n/g, '\n'),
+    }))
+
+    let result = applyTextEdits(normalized, normalizedEdits, request.path)
+
+    // Restore original line endings and BOM
+    if (originalEnding === '\r\n') {
+      result = result.replace(/\n/g, '\r\n')
+    }
+    await fs.writeFile(filePath, bom + result, 'utf-8')
+    return `Successfully replaced ${request.edits.length} block(s) in ${request.path}`
+  })
+
+  registry.register('ls', async (params) => {
+    const request = (params ?? {}) as WorkerHostMethodMap['ls']['params']
+    if (typeof request.path !== 'undefined' && typeof request.path !== 'string') {
+      throw new Error('ls path must be a string when provided')
+    }
+    if (typeof request.limit !== 'undefined' && (!Number.isFinite(request.limit) || request.limit < 1)) {
+      throw new Error('ls limit must be a number >= 1 when provided')
+    }
+
+    if (typeof request.path === 'string') {
+      const dbPath = parseDbPath(request.path)
+      if (dbPath) return dbLs(runtimeRoot, dbPath, request.limit)
+    }
+
+    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
+    const dirPath = await assertPathAllowed(runtimeRoot, request.path || '.')
+    const effectiveLimit = request.limit ?? DEFAULT_LS_LIMIT
+
+    const entries = await fs.readdir(dirPath, { withFileTypes: true })
+    entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+
+    const results: string[] = []
+
+    for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name)
+      if (isAgentPrivatePath(root, entryPath)) continue
+      if (results.length >= effectiveLimit) break
+      results.push(entry.isDirectory() ? entry.name + '/' : entry.name)
+    }
+
+    return results
+  })
+
+  registry.register('mkdir', async (params) => {
+    const request = params as WorkerHostMethodMap['mkdir']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('mkdir requires a non-empty path string')
+    }
+    if (typeof request.recursive !== 'undefined' && typeof request.recursive !== 'boolean') {
+      throw new Error('mkdir recursive must be a boolean when provided')
+    }
+
+    if (parseDbPath(request.path)) {
+      throw new Error('mkdir is not applicable for DB content')
+    }
+
+    const dirPath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
+    await fs.mkdir(dirPath, { recursive: request.recursive ?? true })
+    return undefined
+  })
+
+  registry.register('remove', async (params) => {
+    const request = params as WorkerHostMethodMap['remove']['params']
+    if (!request || typeof request.path !== 'string' || request.path.trim().length === 0) {
+      throw new Error('remove requires a non-empty path string')
+    }
+    if (typeof request.recursive !== 'undefined' && typeof request.recursive !== 'boolean') {
+      throw new Error('remove recursive must be a boolean when provided')
+    }
+
+    const dbPath = parseDbPath(request.path)
+    if (dbPath) {
+      await dbRemove(runtimeRoot, dbPath)
+      return undefined
+    }
+
+    const targetPath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
+    await fs.rm(targetPath, { recursive: request.recursive ?? false, force: false })
+    return undefined
+  })
+
+  registry.register('rename', async (params) => {
+    const request = params as WorkerHostMethodMap['rename']['params']
+    if (!request || typeof request.oldPath !== 'string' || request.oldPath.trim().length === 0) {
+      throw new Error('rename requires a non-empty oldPath string')
+    }
+    if (typeof request.newPath !== 'string' || request.newPath.trim().length === 0) {
+      throw new Error('rename requires a non-empty newPath string')
+    }
+
+    const oldDbPath = parseDbPath(request.oldPath)
+    const newDbPath = parseDbPath(request.newPath)
+    if (oldDbPath || newDbPath) {
+      if (!oldDbPath || !newDbPath) {
+        throw new Error('rename: both paths must be @table/name paths or both must be file paths')
+      }
+      return dbRename(runtimeRoot, oldDbPath, newDbPath)
+    }
+
+    const srcPath = await assertPathAllowed(runtimeRoot, request.oldPath)
+    const destPath = await assertPathAllowed(runtimeRoot, request.newPath, { allowMissing: true })
+    await fs.mkdir(path.dirname(destPath), { recursive: true })
+    await fs.rename(srcPath, destPath)
+    return `Renamed ${request.oldPath} → ${request.newPath}`
+  })
+
+  registry.register('find', async (params) => {
+    const request = params as WorkerHostMethodMap['find']['params']
+    if (!request || typeof request.pattern !== 'string' || request.pattern.trim().length === 0) {
+      throw new Error('find requires a non-empty pattern string')
+    }
+    if (typeof request.path !== 'undefined' && typeof request.path !== 'string') {
+      throw new Error('find path must be a string when provided')
+    }
+    if (typeof request.limit !== 'undefined' && (!Number.isFinite(request.limit) || request.limit < 1)) {
+      throw new Error('find limit must be a number >= 1 when provided')
+    }
+
+    if (request.path) {
+      const dbPath = parseDbPath(request.path)
+      if (dbPath) return dbFind(runtimeRoot, dbPath, request.pattern, request.limit)
+    }
+
+    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
+    const searchDir = request.path ? await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true }) : root
+    const effectiveLimit = request.limit ?? DEFAULT_FIND_LIMIT
+
+    const all = await walkDir(searchDir, root)
+    const matched = all.filter((p) => {
+      const name = p.endsWith('/') ? p.slice(0, -1) : p
+      return matchesGlob(name, request.pattern) || matchesGlob(path.basename(name), request.pattern)
+    })
+
+    if (matched.length === 0) return ''
+
+    const limited = matched.slice(0, effectiveLimit)
+    let output = limited.join('\n')
+
+    if (matched.length > effectiveLimit) {
+      output += `\n\n[${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern.]`
+    }
+
+    return output
+  })
+
+  registry.register('grep', async (params) => {
+    const request = params as WorkerHostMethodMap['grep']['params']
+    if (!request || typeof request.pattern !== 'string' || request.pattern.trim().length === 0) {
+      throw new Error('grep requires a non-empty pattern string')
+    }
+    if (typeof request.path !== 'undefined' && typeof request.path !== 'string') {
+      throw new Error('grep path must be a string when provided')
+    }
+    if (typeof request.options !== 'undefined' && (request.options === null || typeof request.options !== 'object')) {
+      throw new Error('grep options must be an object when provided')
+    }
+
+    if (request.path) {
+      const dbPath = parseDbPath(request.path)
+      if (dbPath) return dbGrep(runtimeRoot, dbPath, request.pattern, request.options)
+    }
+
+    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
+    const searchPath = request.path ? await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true }) : root
+    const ignoreCase = request.options?.ignoreCase ?? false
+    const literal = request.options?.literal ?? false
+    const contextLines = request.options?.context ?? 0
+    const effectiveLimit = request.options?.limit ?? DEFAULT_GREP_LIMIT
+
+    const globPattern = request.options?.glob
+    const globRegex = globPattern ? compileGlob(globPattern) : null
+    const globBaseRegex = globPattern ? compileGlob(path.basename(globPattern)) : null
+    const filesOnly = request.options?.filesOnly ?? false
+
+    let files: string[]
+    const searchStat = await fs.stat(searchPath)
+    if (searchStat.isFile()) {
+      files = [path.relative(root, searchPath)]
+    } else {
+      files = await walkDir(searchPath, root)
+    }
+    const flags = ignoreCase ? 'i' : ''
+    const escapedPattern = literal ? request.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : request.pattern
+    const regex = new RegExp(escapedPattern, flags)
+
+    const outputLines: string[] = []
+    let matchCount = 0
+    let limitReached = false
+
+    for (const rel of files) {
+      if (rel.endsWith('/')) continue
+      if (limitReached) break
+      if (globRegex && !globRegex.test(rel) && (!globBaseRegex || !globBaseRegex.test(path.basename(rel)))) continue
+      const abs = path.join(root, rel)
+
+      let buf: Buffer
+      try {
+        buf = await fs.readFile(abs)
+      } catch {
+        continue
+      }
+      if (buf.includes(0)) continue
+      const content = buf.toString('utf-8')
+
+      if (filesOnly) {
+        if (regex.test(content)) {
+          matchCount++
+          if (matchCount > effectiveLimit) {
+            limitReached = true
+          }
+          outputLines.push(rel)
+        }
+        continue
+      }
+
+      const lines = content.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        if (regex.test(lines[i])) {
+          matchCount++
+          if (matchCount > effectiveLimit) {
+            limitReached = true
+            break
+          }
+
+          const start = Math.max(0, i - contextLines)
+          const end = Math.min(lines.length - 1, i + contextLines)
+
+          if (outputLines.length > 0 && contextLines > 0) {
+            outputLines.push('--')
+          }
+
+          for (let j = start; j <= end; j++) {
+            const lineText = truncateLine(lines[j], GREP_MAX_LINE_LENGTH)
+            if (j === i) {
+              outputLines.push(`${rel}:${j + 1}: ${lineText}`)
+            } else {
+              outputLines.push(`${rel}-${j + 1}- ${lineText}`)
+            }
+          }
+        }
+      }
+    }
+
+    if (matchCount === 0) return ''
+
+    let output = outputLines.join('\n')
+    const notices: string[] = []
+
+    if (limitReached) {
+      notices.push(`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`)
+    }
+
+    if (notices.length > 0) {
+      output += `\n\n[${notices.join('. ')}]`
+    }
+
+    return output
+  })
+}

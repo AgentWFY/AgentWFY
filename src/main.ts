@@ -1,5 +1,6 @@
 import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, shell, webContents, type MenuItemConstructorOptions } from 'electron';
-import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange } from './ipc/store.js';
+import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange, storeGet } from './ipc/store.js';
+import { setFallbackStoreReader } from '#shared/settings/config.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerSqlHandlers } from './ipc/sql.js';
@@ -12,7 +13,7 @@ import { registerAgentHandlers } from './ipc/agents.js';
 import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
-import { registerAgentSessionHandlers, setupAgentStateStreaming } from './ipc/agent-sessions.js';
+import { registerAgentSessionHandlers, setupAgentChatPump } from './ipc/agent-sessions.js';
 import { registerTraceHandlers } from './ipc/traces.js';
 import { flushAllTraceWriters } from './ipc/exec-js.js';
 import {
@@ -23,22 +24,26 @@ import {
   initAgent,
   createDefaultAgent,
 } from './agent-manager.js';
-import { windowManager, getPersistedAgentRoots } from './window-manager.js';
+import { windowManager, getPersistedAgentIds } from './window-manager.js';
 import { stopBackupScheduler, getBackupStatus } from './backup.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
-import { getViewByName } from './db/views.js';
-import { getConfigValue } from './settings/config.js';
-import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from './settings/global-config.js';
-import { SystemConfigKeys } from './system-config/keys.js';
+import { getViewByName } from '#shared/db/views.js';
+import { getConfigValue } from '#shared/settings/config.js';
+import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from '#shared/settings/global-config.js';
+import { SystemConfigKeys } from '#shared/system-config/keys.js';
+import { getAgentMeta } from './agent-meta.js';
 import { Channels } from './ipc/channels.cjs';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
 import { pathToFileURL } from 'url';
 
+const DIST_ROOT = path.join(import.meta.dirname, '..');
+const PROJECT_ROOT = path.join(DIST_ROOT, '..');
+
 async function devRebuild(): Promise<void> {
   if (app.isPackaged) return;
-  const root = path.join(import.meta.dirname, '..');
+  const root = PROJECT_ROOT;
   const tsgo = path.join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo');
   const dist = path.join(root, 'dist');
   await new Promise<void>((resolve) => {
@@ -65,7 +70,7 @@ if (process.env.AGENTWFY_HEADLESS && process.platform === 'darwin') {
 
 // Write main process logs to .dev.log when not packaged
 if (!app.isPackaged) {
-  const devLogStream = fs.createWriteStream(path.join(import.meta.dirname, '..', '.dev.log'), { flags: 'w' });
+  const devLogStream = fs.createWriteStream(path.join(PROJECT_ROOT, '.dev.log'), { flags: 'w' });
   devLogStream.on('error', () => {}); // ignore log file write failures
   const origStdoutWrite = process.stdout.write.bind(process.stdout);
   const origStderrWrite = process.stderr.write.bind(process.stderr);
@@ -123,6 +128,7 @@ const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 // --- IPC registration (global, routes via windowManager) ---
 
 registerStoreHandlers();
+setFallbackStoreReader(storeGet);
 registerViewHandlers();
 registerDialogSubscribers();
 
@@ -139,63 +145,74 @@ onAnyChange(handleConfigChange);
 onGlobalConfigChange(handleConfigChange);
 
 registerSqlHandlers(
-  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getBackendForSender(e.sender.id),
 );
 registerTabsHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).tabTools,
-  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getCacheRootForEvent(e),
 );
-registerSessionsHandlers((e) => windowManager.getAgentRootForEvent(e));
+registerSessionsHandlers(
+  (e) => windowManager.getCacheRootForEvent(e),
+  (e) => windowManager.getBackendForSender(e.sender.id),
+);
 registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
 registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
-  (e) => windowManager.getAgentRootForEvent(e),
-  (e) => windowManager.getContextForSender(e.sender.id).taskRunner,
+  (e) => windowManager.getCacheRootForEvent(e),
   (e) => windowManager.getContextForSender(e.sender.id).shortcutManager,
+  (e) => windowManager.getBackendForSender(e.sender.id),
 );
 registerRuntimeFunctionHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).functionRegistry,
+  (e) => windowManager.getBackendForSender(e.sender.id),
+  (e) => windowManager.getLocalContextForSender(e.sender.id).functionRegistry,
 );
 registerAgentHandlers(
-  (e) => windowManager.getAgentRootForEvent(e),
+  (e) => windowManager.getCacheRootForEvent(e),
   () => windowManager.getCommandPalette(),
 );
 registerConfirmationHandlers(() => windowManager.getConfirmation());
 const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
-  const ctx = windowManager.getContextForSender(e.sender.id);
-  // Dispose old streaming and session manager
-  ctx.agentStateStreamingCleanup?.();
+  const ctx = windowManager.getLocalContextForSender(e.sender.id);
+  // Tear down the old chat pump (which is bound to the old session manager)
+  // and dispose the old manager.
+  ctx.chatPump?.stop();
+  ctx.chatPump = null;
   await ctx.sessionManager.disposeAll();
-  // Create new session manager
-  const { AgentSessionManager } = await import('./agent/session_manager.js');
-  const agentRootForReconnect = ctx.agentRoot;
+  // Create new session manager.
+  const { AgentSessionManager } = await import('#shared/agent/session_manager.js');
+  const { getElectronNotificationHost } = await import('./runtime/hosts-electron.js');
+  const agentIdForReconnect = ctx.agentId;
   const newMgr = new AgentSessionManager({
-    agentRoot: agentRootForReconnect,
+    runtimeRoot: ctx.runtimeRoot,
     providerRegistry: ctx.providerRegistry,
     getJsRuntime: () => ctx.jsRuntime,
     busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
+    notificationHost: getElectronNotificationHost(),
   });
   ctx.sessionManager = newMgr;
+  // Rebuild the chat pump so it subscribes to the new manager through
+  // the chat controller, which reads ctx.sessionManager dynamically.
   const rwc = windowManager.getRendererWebContents();
   if (rwc) {
-    ctx.agentStateStreamingCleanup = setupAgentStateStreaming(
-      newMgr, rwc, () => windowManager.getActiveAgentRoot() === agentRootForReconnect
+    ctx.chatPump = setupAgentChatPump(
+      ctx.chat, rwc, () => windowManager.getActiveAgentId() === agentIdForReconnect,
     );
   }
   newMgr.resetActive();
   return newMgr;
 };
 registerProviderHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).providerRegistry,
-  (e) => windowManager.getAgentRootForEvent(e),
   () => windowManager.getRendererWebContents() ?? undefined,
+  (e) => windowManager.getBackendForSender(e.sender.id),
 );
 registerAgentSessionHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).sessionManager,
   reconnectSessionManager,
+  (e) => windowManager.getBackendForSender(e.sender.id),
+  (e) => windowManager.getContextForSender(e.sender.id).chat,
 );
 registerTraceHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).agentRoot,
+  (e) => windowManager.getContextForSender(e.sender.id).agentId,
+  (e) => windowManager.getBackendForSender(e.sender.id),
 );
 
 ipcMain.handle(Channels.app.restart, async () => {
@@ -214,21 +231,21 @@ ipcMain.handle(Channels.app.reloadRenderer, async () => {
   }
 });
 
-ipcMain.handle(Channels.app.getAgentRoot, () => {
-  return windowManager.getActiveAgentRoot();
+ipcMain.handle(Channels.app.getAgentId, () => {
+  return windowManager.getActiveAgentId();
 });
 
-ipcMain.on(Channels.app.getAgentRoot, (event) => {
-  event.returnValue = windowManager.getActiveAgentRoot();
+ipcMain.on(Channels.app.getAgentId, (event) => {
+  event.returnValue = windowManager.getActiveAgentId();
 });
 
-ipcMain.handle(Channels.app.openAgentRoot, () => {
-  const root = windowManager.getActiveAgentRoot();
+ipcMain.handle(Channels.app.openAgentDir, () => {
+  const root = windowManager.getActiveAgentId();
   if (root) shell.openPath(root);
 });
 
 ipcMain.handle(Channels.app.getAgentDisplayPath, () => {
-  const root = windowManager.getActiveAgentRoot();
+  const root = windowManager.getActiveAgentId();
   if (!root) return null;
   if (isDefaultAgentPath(root)) return path.basename(root);
   const home = app.getPath('home');
@@ -246,7 +263,7 @@ ipcMain.handle(Channels.app.getHttpApiPort, () => {
 
 ipcMain.handle(Channels.app.getDefaultView, async () => {
   try {
-    const root = windowManager.getActiveAgentRoot();
+    const root = windowManager.getActiveCacheRoot();
     if (!root) return null;
     const configValue = getConfigValue(root, SystemConfigKeys.defaultView, 'home');
     const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
@@ -261,7 +278,7 @@ ipcMain.handle(Channels.app.getDefaultView, async () => {
 
 ipcMain.handle(Channels.app.getBackupStatus, () => {
   try {
-    const root = windowManager.getActiveAgentRoot();
+    const root = windowManager.getActiveAgentId();
     if (!root) return null;
     return getBackupStatus(root);
   } catch {
@@ -270,7 +287,7 @@ ipcMain.handle(Channels.app.getBackupStatus, () => {
 });
 
 ipcMain.handle(Channels.app.getSetting, (event, key: string, fallback?: unknown) => {
-  const root = windowManager.getAgentRootForEvent(event);
+  const root = windowManager.getCacheRootForEvent(event);
   return getConfigValue(root, key, fallback) ?? null;
 });
 
@@ -280,8 +297,8 @@ ipcMain.handle(Channels.agentSidebar.getInstalled, () => {
   return windowManager.getInstalledAgentsList();
 });
 
-ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentRoot: string) => {
-  await windowManager.switchAgent(agentRoot);
+ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentId: string) => {
+  await windowManager.switchAgent(agentId);
 });
 
 ipcMain.handle(Channels.agentSidebar.add, async () => {
@@ -300,15 +317,15 @@ ipcMain.handle(Channels.agentSidebar.addFromFile, async () => {
   return picked;
 });
 
-ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentRoot: string) => {
-  await windowManager.removeAgent(agentRoot);
+ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentId: string) => {
+  await windowManager.removeAgent(agentId);
 });
 
 ipcMain.handle(Channels.agentSidebar.reorder, async (_event, fromIndex: number, toIndex: number) => {
   windowManager.reorderAgents(fromIndex, toIndex);
 });
 
-ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: string) => {
+ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentId: string) => {
   const win = windowManager.getMainWindow();
   if (!win || win.isDestroyed()) return;
 
@@ -319,7 +336,7 @@ ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentRoot: 
   if (canRemove) {
     template.push({
       label: 'Close Agent',
-      click: () => windowManager.removeAgent(agentRoot),
+      click: () => windowManager.removeAgent(agentId),
     });
   }
 
@@ -506,6 +523,12 @@ function getAgentPathFromArgs(): string | null {
   return null;
 }
 
+function isPersistableAgentId(agentId: string): boolean {
+  // We must read meta directly here: this is the bootstrap path that runs before
+  // any agent context has been initialized, so ctx.mode is not yet available.
+  return isAgentDir(agentId) || getAgentMeta(agentId).backend === 'remote';
+}
+
 // --- Initial window creation ---
 
 async function createInitialWindow() {
@@ -519,7 +542,7 @@ async function createInitialWindow() {
     }
     if (isAgentDir(resolved)) {
       // Register all persisted agents in sidebar without initializing
-      const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
+      const persisted = getPersistedAgentIds().filter(r => isPersistableAgentId(r));
       for (const root of persisted) {
         windowManager.addPersistedAgent(root);
       }
@@ -533,7 +556,7 @@ async function createInitialWindow() {
   }
 
   // 2. Try persisted agents (register all, only init the first one)
-  const persisted = getPersistedAgentRoots().filter(r => isAgentDir(r));
+  const persisted = getPersistedAgentIds().filter(r => isPersistableAgentId(r));
   if (persisted.length > 0) {
     for (const root of persisted) {
       windowManager.addPersistedAgent(root);

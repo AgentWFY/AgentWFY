@@ -9,7 +9,7 @@ Export an `activate` function that receives a `PluginApi` object. Use `api.regis
 ```js
 module.exports = {
   activate(api) {
-    const root = api.agentRoot
+    const root = api.runtimeRoot
     const assets = api.assetsDir
 
     api.registerFunction('myPluginDo', async (params) => {
@@ -49,7 +49,7 @@ module.exports = {
 
 ### api object
 
-- `api.agentRoot` — absolute path to the agent's data directory.
+- `api.runtimeRoot` — absolute path to the agent's data directory (where `.agentwfy/agent.db` lives).
 - `api.assetsDir` — path to `.agentwfy/plugin-assets/<name>/` for runtime files (binaries, caches).
 - `api.publish(topic, data)` — publish a message to the event bus.
 - `api.registerFunction(name, handler, opts?)` — register a function. `name` becomes the global function name in execJs / views. Pass `{ hidden: true }` to register a function that's callable via the runtime (e.g. from a custom binding the plugin exposes through another function's return value) but is *not* bound as an agent variable and does *not* appear in `getAvailableFunctions`. Use for internal plumbing — for example, a `connect()` that returns an async-iterable handle whose `next()` calls a hidden `_pollMyPluginQueue` under the hood.

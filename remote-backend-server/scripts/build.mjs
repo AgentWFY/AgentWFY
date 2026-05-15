@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+// Build the remote-backend-server using tsgo from the parent project's
+// vendor/. The daemon stays free of external npm deps; we reuse the binary
+// the main app already downloads via scripts/setup.
+
+import { execSync } from 'node:child_process'
+import { copyFileSync, existsSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const serverRoot = join(__dirname, '..')
+const projectRoot = join(serverRoot, '..')
+
+const tsgo = join(
+  projectRoot,
+  'vendor',
+  'tsgo',
+  'lib',
+  process.platform === 'win32' ? 'tsgo.exe' : 'tsgo',
+)
+
+const dist = join(serverRoot, 'dist')
+rmSync(dist, { recursive: true, force: true })
+
+execSync(`"${tsgo}" --project "${join(serverRoot, 'tsconfig.json')}"`, {
+  cwd: serverRoot,
+  stdio: 'inherit',
+})
+
+// AgentDb resolves system data JSON files via `import.meta.dirname/../*.json`.
+// In the daemon's compiled tree, db/agent-db.js lives at dist/shared/db/, so
+// the JSONs must be at dist/shared/. They're produced by the main app's build
+// under dist/shared — copy them in if available, otherwise leave a clear
+// message for the user.
+const mainDist = join(projectRoot, 'dist', 'shared')
+const daemonAssetsDir = join(dist, 'shared')
+const assets = ['system-docs.json', 'system-views.json', 'system-config.json']
+let copied = 0
+for (const f of assets) {
+  const from = join(mainDist, f)
+  const to = join(daemonAssetsDir, f)
+  if (existsSync(from)) {
+    copyFileSync(from, to)
+    copied += 1
+  }
+}
+if (copied < assets.length) {
+  console.warn(
+    `agentwfy-remote-server: ${assets.length - copied}/${assets.length} system asset(s) missing — run \`npm run build\` in the main project first if the daemon fails to start.`,
+  )
+}
+
+console.log('agentwfy-remote-server: build OK')

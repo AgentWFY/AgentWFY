@@ -1,0 +1,24 @@
+{
+  "name": "agentwfy-remote-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/remote-backend-server/src/index.js",
+  "imports": {
+    "#shared/*.js": {
+      "types": "../shared/*.ts",
+      "default": "./dist/shared/*.js"
+    },
+    "#shared/*.mjs": {
+      "types": "../shared/*.mts",
+      "default": "./dist/shared/*.mjs"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/remote-backend-server/src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

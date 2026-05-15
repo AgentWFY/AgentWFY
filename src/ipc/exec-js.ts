@@ -1,41 +1,41 @@
 import path from 'path'
-import { JsRuntime, type JsRuntimeDeps } from '../runtime/js_runtime.js'
-import { TraceWriter } from '../runtime/trace_writer.js'
+import { JsRuntime, type JsRuntimeDeps } from '#shared/runtime/js_runtime.js'
+import { TraceWriter } from '#shared/runtime/trace_writer.js'
 
 const runtimes = new Map<string, JsRuntime>()
 const traceWriters = new Map<string, TraceWriter>()
 
 export const TRACES_DIR_NAME = '.agentwfy/traces'
 
-export function getOrCreateTraceWriter(agentRoot: string): TraceWriter {
-  let writer = traceWriters.get(agentRoot)
+export function getOrCreateTraceWriter(runtimeRoot: string): TraceWriter {
+  let writer = traceWriters.get(runtimeRoot)
   if (writer) return writer
-  writer = new TraceWriter(path.join(agentRoot, TRACES_DIR_NAME))
-  traceWriters.set(agentRoot, writer)
+  writer = new TraceWriter(path.join(runtimeRoot, TRACES_DIR_NAME))
+  traceWriters.set(runtimeRoot, writer)
   return writer
 }
 
-export function getOrCreateRuntime(agentRoot: string, deps: Omit<JsRuntimeDeps, 'traceWriter'>): JsRuntime {
-  let runtime = runtimes.get(agentRoot)
+export function getOrCreateRuntime(runtimeRoot: string, deps: Omit<JsRuntimeDeps, 'traceWriter'>): JsRuntime {
+  let runtime = runtimes.get(runtimeRoot)
   if (runtime) return runtime
 
-  const traceWriter = getOrCreateTraceWriter(agentRoot)
+  const traceWriter = getOrCreateTraceWriter(runtimeRoot)
   runtime = new JsRuntime({ ...deps, traceWriter })
-  runtimes.set(agentRoot, runtime)
+  runtimes.set(runtimeRoot, runtime)
 
   return runtime
 }
 
-export function disposeRuntime(agentRoot: string): void {
-  const r = runtimes.get(agentRoot)
+export function disposeRuntime(runtimeRoot: string): void {
+  const r = runtimes.get(runtimeRoot)
   if (r) {
     r.disposeAll()
-    runtimes.delete(agentRoot)
+    runtimes.delete(runtimeRoot)
   }
-  const w = traceWriters.get(agentRoot)
+  const w = traceWriters.get(runtimeRoot)
   if (w) {
     void w.flush()
-    traceWriters.delete(agentRoot)
+    traceWriters.delete(runtimeRoot)
   }
 }
 

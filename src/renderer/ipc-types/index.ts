@@ -15,7 +15,7 @@ import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 import type { TracesApi } from './traces.js'
-import type { FileContent } from '../../agent/types.js'
+import type { FileContent } from '#shared/agent/types.js'
 import type { ProviderState } from '../../ipc/providers.js'
 import type { AgentSnapshot, AgentStreamingUpdate, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
 
@@ -64,18 +64,18 @@ export interface PreviewCursorApi {
 
 export interface AgentSidebarApi {
   getInstalled(): Promise<InstalledAgent[]>
-  switch(agentRoot: string): Promise<void>
+  switch(agentId: string): Promise<void>
   add(): Promise<string | null>
   addFromFile(): Promise<string | null>
-  remove(agentRoot: string): Promise<void>
-  showContextMenu(agentRoot: string): Promise<void>
+  remove(agentId: string): Promise<void>
+  showContextMenu(agentId: string): Promise<void>
   reorder(fromIndex: number, toIndex: number): Promise<void>
   onSwitched(callback: (data: SidebarSwitchedPayload) => void): () => void
 }
 
 export interface AppIpc {
   sql: SqlApi
-  agentRoot: string | null
+  agentId: string | null
   tabs: TabsApi
   sessions: SessionsApi
   store: StoreApi
@@ -92,8 +92,8 @@ export interface AppIpc {
   restart(): Promise<void>
   stop(): Promise<void>
   reloadRenderer(): Promise<void>
-  getAgentRoot(): Promise<string | null>
-  openAgentRoot(): Promise<void>
+  getAgentId(): Promise<string | null>
+  openAgentDir(): Promise<void>
   getAgentDisplayPath(): Promise<string | null>
   getHttpApiPort(): Promise<number | null>
   getBackupStatus(): Promise<{ currentVersion: number | null; modified: boolean; latestBackup: { version: number; timestamp: string } | null } | null>

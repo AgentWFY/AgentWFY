@@ -90,6 +90,9 @@ class TestSession {
       case 'tools':
         yield* this._streamWithTools(signal, executeTool)
         break
+      case 'remote-view':
+        yield* this._streamRemoteView(signal, executeTool)
+        break
       case 'trace-demo':
         yield* this._streamTraceDemo(signal, executeTool)
         break
@@ -180,6 +183,72 @@ class TestSession {
     yield* this._streamText(outro, signal, 20)
 
     const fullText = intro + outro
+    this._displayMessages.push({
+      role: 'assistant',
+      blocks: [
+        { type: 'text', text: intro },
+        { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code },
+        { type: 'exec_js_result', id: toolCall.id, content: result.content, isError: result.isError },
+        { type: 'text', text: outro },
+      ],
+      timestamp: Date.now(),
+    })
+    this._partial = null
+    yield { type: 'state_changed' }
+  }
+
+  async *_streamRemoteView(signal, executeTool) {
+    const intro = 'I will create a persistent DB view on the remote agent, wait for the desktop mirror to sync, then open it locally.'
+    yield* this._streamText(intro, signal, 18)
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Remote Sync Demo</title>
+  <style>
+    body { margin: 0; font-family: var(--font-family); background: var(--color-bg1); color: var(--color-text4); }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
+    section { max-width: 620px; border: 1px solid var(--color-border); background: var(--color-bg); padding: 24px; border-radius: 8px; }
+    h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+    p { margin: 0; color: var(--color-text2); line-height: 1.5; }
+    code { color: var(--color-accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Remote DB Sync Works</h1>
+      <p>This view was inserted into <code>views</code> by the daemon-side agent runtime, synced to the desktop copy of <code>agent.db</code>, and opened from the local mirror.</p>
+    </section>
+  </main>
+</body>
+</html>`
+
+    const code = `const html = ${JSON.stringify(html)};
+await runSql({
+  target: 'agent',
+  sql: 'INSERT INTO views (name, title, content) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content',
+  params: ['remote-sync-demo', 'Remote Sync Demo', html],
+});
+await new Promise(resolve => setTimeout(resolve, 1200));
+await openTab({ viewName: 'remote-sync-demo' });
+return 'created and opened remote-sync-demo';`
+
+    const toolCall = {
+      id: 'remote-view-' + Date.now(),
+      description: 'Create and open a DB-backed remote view',
+      code,
+    }
+    yield { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code }
+    const result = await executeTool(toolCall)
+    this._messages.push({ role: 'assistant', content: intro, toolCall })
+    this._messages.push({ role: 'tool', id: toolCall.id, content: result.content })
+    yield { type: 'state_changed' }
+
+    const outro = '\n\nThe remote view is now open from the desktop mirror.'
+    yield* this._streamText(outro, signal, 18)
+
     this._displayMessages.push({
       role: 'assistant',
       blocks: [
@@ -390,6 +459,7 @@ return rows`
       id: 'pick-demo-1',
       description: 'Pick from palette demo',
       code: pickCode,
+      timeoutMs: 60000,
     }
     yield { type: 'exec_js', id: toolCall.id, description: toolCall.description, code: toolCall.code }
 

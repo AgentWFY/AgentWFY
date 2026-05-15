@@ -888,7 +888,7 @@ export class TlAgentChat extends HTMLElement {
 
   // Per-agent state cache (scroll & tool state only — input state is in chat-input)
   private _chatStateCache = new Map<string, { userScrolledUp: boolean }>()
-  private _currentAgentRoot: string | null = null
+  private _currentAgentId: string | null = null
 
   // Per-session scroll cache — only populated when the user scrolled up;
   // at-bottom is represented by absence (auto-scroll handles it).
@@ -914,7 +914,7 @@ export class TlAgentChat extends HTMLElement {
     this.containerEl.style.minHeight = '0'
     this.appendChild(this.containerEl)
 
-    this._currentAgentRoot = window.ipc?.agentRoot ?? null
+    this._currentAgentId = window.ipc?.agentId ?? null
     this.render()
     this.init()
   }
@@ -962,18 +962,18 @@ export class TlAgentChat extends HTMLElement {
 
   private onAgentSwitched = (e: Event) => {
     const detail = (e as CustomEvent).detail
-    const newAgentRoot: string | null = detail?.agentRoot ?? null
-    const agents: Array<{ path: string }> | undefined = detail?.agents
+    const newAgentId: string | null = detail?.agentId ?? null
+    const agents: Array<{ agentId: string }> | undefined = detail?.agents
 
-    if (newAgentRoot === this._currentAgentRoot) return
+    if (newAgentId === this._currentAgentId) return
 
-    if (this._currentAgentRoot) {
-      this._chatStateCache.set(this._currentAgentRoot, {
+    if (this._currentAgentId) {
+      this._chatStateCache.set(this._currentAgentId, {
         userScrolledUp: this.userScrolledUp,
       })
     }
 
-    const cached = newAgentRoot ? this._chatStateCache.get(newAgentRoot) : null
+    const cached = newAgentId ? this._chatStateCache.get(newAgentId) : null
     if (cached) {
       this.userScrolledUp = cached.userScrolledUp
     } else {
@@ -983,14 +983,14 @@ export class TlAgentChat extends HTMLElement {
     this._tracePanelEl?.close()
 
     if (agents) {
-      const activePaths = new Set(agents.map(a => a.path))
+      const activeIds = new Set(agents.map(a => a.agentId))
       for (const key of this._chatStateCache.keys()) {
-        if (!activePaths.has(key)) this._chatStateCache.delete(key)
+        if (!activeIds.has(key)) this._chatStateCache.delete(key)
       }
     }
 
     this.error = null
-    this._currentAgentRoot = newAgentRoot
+    this._currentAgentId = newAgentId
   }
 
   private onCloseCurrentSession = () => {
@@ -1131,9 +1131,9 @@ export class TlAgentChat extends HTMLElement {
         const providerId = hasMessages ? s.providerId : s.selectedProviderId
         const provider = s.providerList.find(p => p.id === providerId)
         const name = provider?.name || providerId || ''
-        const status = hasMessages
-          ? (s.statusLine || s.configStatusLine)
-          : (s.providerStatusLines.get(providerId) || '')
+        const status = s.statusLine || (hasMessages
+          ? s.configStatusLine
+          : (s.providerStatusLines.get(providerId) || ''))
         return `${name}\0${status}`
       },
       () => this.updateStatus()
@@ -1882,9 +1882,9 @@ export class TlAgentChat extends HTMLElement {
     const providerId = hasMessages ? s.providerId : s.selectedProviderId
     const provider = s.providerList.find(p => p.id === providerId)
     const providerName = provider?.name || providerId || ''
-    const statusLine = hasMessages
-      ? (s.statusLine || s.configStatusLine)
-      : (s.providerStatusLines.get(providerId) || '')
+    const statusLine = s.statusLine || (hasMessages
+      ? s.configStatusLine
+      : (s.providerStatusLines.get(providerId) || ''))
     const stats = statusLine ? (providerName ? ' · ' + statusLine : statusLine) : ''
 
     if (this._statusProviderEl.textContent !== providerName) this._statusProviderEl.textContent = providerName

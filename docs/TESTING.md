@@ -129,6 +129,25 @@ The container ships `sqlite3`, `grim`, `jq`, `curl`, `wf-recorder`, `wtype`, `wl
 
 `wf-recorder` is wired into the preview via `--record-start <name>` / `--record-stop <name> <out.mp4>` for recording demos. See [RECORDING_DEMOS.md](RECORDING_DEMOS.md) for the full workflow, the preview-cursor overlay, and where to drop new demo scripts.
 
+### Remote agent smoke test
+
+Preview builds `remote-backend-server` alongside the app, so a daemon can run
+inside the same container. The repeatable demo provisions a remote agent,
+installs `plugins/test-provider`, adds the agent through the UI, and sends
+remote chat/tool prompts:
+
+```bash
+./scripts/preview
+./scripts/record-demo --no-test-provider <name> demos/remote-agent
+```
+
+For manual testing, run the same setup steps from
+`demos/remote-agent/driver.js`: initialize an agent root with
+`node /app/remote-backend-server/dist/remote-backend-server/src/index.js init`,
+install `plugins/test-provider/dist/test-provider.plugins.awfy`, start the
+daemon on `127.0.0.1:9878`, then add `http://127.0.0.1:9878` from the
+command palette: Add Agent → Add Remote Agent.
+
 ### Diagnostics
 
 ```bash

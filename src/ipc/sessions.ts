@@ -1,8 +1,9 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import { assertPathAllowed } from '../security/path-policy.js';
+import { assertPathAllowed } from '#shared/security/path-policy.js';
 import { Channels } from './channels.cjs';
+import type { AgentBackend } from '#shared/backend/interface.js';
 
 const DEFAULT_SESSION_LIST_LIMIT = 200;
 const MAX_SESSION_LIST_LIMIT = 1000;
@@ -21,7 +22,10 @@ function normalizeSessionFileName(value: unknown): string {
   return normalized;
 }
 
-export function registerSessionsHandlers(getRoot: (e: IpcMainInvokeEvent) => string) {
+export function registerSessionsHandlers(
+  getRoot: (e: IpcMainInvokeEvent) => string,
+  getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
+) {
   const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
     assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
   const ensureAgentSessionsDir = async (event: IpcMainInvokeEvent): Promise<string> => {
@@ -34,6 +38,10 @@ export function registerSessionsHandlers(getRoot: (e: IpcMainInvokeEvent) => str
 
   // listSessions(limit?) → [{ name, updatedAt }]
   ipcMain.handle(Channels.sessions.list, async (event, limit?: number) => {
+    if (getBackend(event).kind !== 'local') {
+      const summaries = await getBackend(event).sessions.list({ limit })
+      return summaries.map((s) => ({ name: s.sessionId, updatedAt: s.updatedAt }))
+    }
     const sessionsDir = await ensureAgentSessionsDir(event);
     const requestedLimit = typeof limit === 'number' && Number.isFinite(limit)
       ? Math.floor(limit)
@@ -67,12 +75,18 @@ export function registerSessionsHandlers(getRoot: (e: IpcMainInvokeEvent) => str
 
   // readSession(sessionFileName) → file content
   ipcMain.handle(Channels.sessions.read, async (event, sessionFileName: string) => {
+    if (getBackend(event).kind !== 'local') {
+      throw new Error('readSession file IO is not supported for remote agents; use sessions.get or functions.invoke("readSession", ...)');
+    }
     const sessionPath = await resolveAgentSessionPath(event, sessionFileName);
     return fs.readFile(sessionPath, 'utf-8');
   });
 
   // writeSession(sessionFileName, content)
   ipcMain.handle(Channels.sessions.write, async (event, sessionFileName: string, content: string) => {
+    if (getBackend(event).kind !== 'local') {
+      throw new Error('writeSession file IO is not supported for remote agents; the daemon manages its own session files');
+    }
     const sessionPath = await resolveAgentSessionPath(event, sessionFileName, { allowMissing: true });
     await fs.mkdir(path.dirname(sessionPath), { recursive: true });
     await fs.writeFile(sessionPath, content, 'utf-8');

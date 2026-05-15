@@ -110,6 +110,40 @@ export class TlAgentSidebar extends HTMLElement {
       .agent-item-wrapper.uninitialized:hover .agent-item {
         opacity: 1;
       }
+      /* Remote agents — small connection-status dot in the bottom-right corner. */
+      .agent-item-wrapper.remote .agent-item::after {
+        content: '';
+        position: absolute;
+        right: 1px;
+        bottom: 1px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #9ca3af;
+        border: 1.5px solid var(--color-bg);
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      .agent-item-wrapper.remote-connected .agent-item::after {
+        background: #4ade80;
+      }
+      .agent-item-wrapper.remote-connecting .agent-item::after {
+        background: #facc15;
+        animation: remote-status-pulse 1.2s ease-in-out infinite;
+      }
+      .agent-item-wrapper.remote-disconnected .agent-item::after {
+        background: #9ca3af;
+      }
+      .agent-item-wrapper.remote-error .agent-item::after {
+        background: #f87171;
+      }
+      .agent-item-wrapper.remote .agent-item {
+        position: relative;
+      }
+      @keyframes remote-status-pulse {
+        0%, 100% { opacity: 0.55; }
+        50% { opacity: 1; }
+      }
       .separator {
         width: 24px;
         height: 1.5px;
@@ -202,7 +236,7 @@ export class TlAgentSidebar extends HTMLElement {
       this.render()
       // Dispatch global event so all components refresh their agent-specific data
       window.dispatchEvent(new CustomEvent('agentwfy:agent-switched', {
-        detail: { agentRoot: data.agentRoot, agents: data.agents },
+        detail: { agentId: data.agentId, agents: data.agents },
       }))
     })
   }
@@ -216,6 +250,10 @@ export class TlAgentSidebar extends HTMLElement {
       let cls = 'agent-item-wrapper'
       if (agent.active) cls += ' active'
       if (!agent.initialized) cls += ' uninitialized'
+      if (agent.backend === 'remote') {
+        const remoteStatus = agent.remoteStatus ?? 'disconnected'
+        cls += ` remote remote-${remoteStatus}`
+      }
       wrapper.className = cls
       wrapper.draggable = true
 
@@ -225,16 +263,16 @@ export class TlAgentSidebar extends HTMLElement {
 
       const item = document.createElement('button')
       item.className = 'agent-item'
-      item.title = agent.name
+      item.title = this.getAgentTitle(agent)
       item.appendChild(document.createTextNode(this.getInitials(agent.name)))
 
       item.addEventListener('click', () => {
-        if (!agent.active) window.ipc?.agentSidebar.switch(agent.path)
+        if (!agent.active) window.ipc?.agentSidebar.switch(agent.agentId)
       })
 
       item.addEventListener('contextmenu', (e) => {
         e.preventDefault()
-        window.ipc?.agentSidebar.showContextMenu(agent.path)
+        window.ipc?.agentSidebar.showContextMenu(agent.agentId)
       })
 
       wrapper.addEventListener('dragstart', (e) => {
@@ -310,5 +348,11 @@ export class TlAgentSidebar extends HTMLElement {
       return name.slice(0, 2).toUpperCase()
     }
     return name.toUpperCase()
+  }
+
+  private getAgentTitle(agent: InstalledAgent): string {
+    if (agent.backend !== 'remote') return agent.name
+    const status = agent.remoteStatusText || agent.remoteStatus || 'remote'
+    return `${agent.name} (remote: ${status})`
   }
 }

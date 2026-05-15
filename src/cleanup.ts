@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { getConfigValue } from './settings/config.js';
-import { readSessionId } from './agent/session_persistence.js';
-import { isValidTraceSessionId } from './runtime/trace_types.js';
-import { SystemConfigKeys } from './system-config/keys.js';
+import { getConfigValue } from '#shared/settings/config.js';
+import { readSessionId } from '#shared/agent/session_persistence.js';
+import { isValidTraceSessionId } from '#shared/runtime/trace_types.js';
+import { SystemConfigKeys } from '#shared/system-config/keys.js';
 
 const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 
@@ -62,7 +62,7 @@ async function deleteOldSessionsAndTraces(sessionsDir: string, tracesDir: string
   if (toDelete.length === 0) return 0;
 
   // Look up each session's sessionId before unlinking, so we can pair-delete
-  // the matching trace file from {agentRoot}/.agentwfy/traces/{sessionId}.jsonl.
+  // the matching trace file from {runtimeRoot}/.agentwfy/traces/{sessionId}.jsonl.
   const sessionIds = await Promise.all(
     toDelete.map((entry) => readSessionId(sessionsDir, entry.name).catch(() => '')),
   );
@@ -116,14 +116,14 @@ async function deleteOldTracesByMtime(tracesDir: string, retentionDays: number):
   return results.filter((r) => r.status === 'fulfilled').length;
 }
 
-export async function runCleanup(agentRoot: string): Promise<void> {
-  const sessionDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupSessionRetentionDays, '30'));
-  const taskLogDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupTaskLogRetentionDays, '30'));
-  const traceDays = Number(getConfigValue(agentRoot, SystemConfigKeys.cleanupTraceRetentionDays, String(sessionDays)));
+export async function runCleanup(runtimeRoot: string): Promise<void> {
+  const sessionDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupSessionRetentionDays, '30'));
+  const taskLogDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTaskLogRetentionDays, '30'));
+  const traceDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTraceRetentionDays, String(sessionDays)));
 
-  const sessionsDir = path.join(agentRoot, '.agentwfy', 'sessions');
-  const tracesDir = path.join(agentRoot, '.agentwfy', 'traces');
-  const taskLogsDir = path.join(agentRoot, '.agentwfy', 'task_logs');
+  const sessionsDir = path.join(runtimeRoot, '.agentwfy', 'sessions');
+  const tracesDir = path.join(runtimeRoot, '.agentwfy', 'traces');
+  const taskLogsDir = path.join(runtimeRoot, '.agentwfy', 'task_logs');
 
   // Session sweep removes paired traces first; then a tracesDir sweep by mtime
   // catches anything left behind — task-run traces (no session file at all) and

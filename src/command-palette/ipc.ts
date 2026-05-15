@@ -23,7 +23,7 @@ export function registerCommandPaletteHandlers(getCommandPalette: () => CommandP
   });
 
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.CLEAR_TO_DEFAULT, async (_event, key: string) => {
-    getCommandPalette().clearToDefault(key);
+    await getCommandPalette().clearToDefault(key);
   });
 
   ipcMain.handle(COMMAND_PALETTE_CHANNEL.OPEN_SETTINGS_FILE, async () => {

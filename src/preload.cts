@@ -66,16 +66,16 @@ const isApp = window.location.protocol === 'app:';
 if (isApp) {
   const sql = buildSqlApi();
 
-  let agentRootSync: string | null = null;
+  let agentIdSync: string | null = null;
   try {
-    agentRootSync = ipcRenderer.sendSync(Channels.app.getAgentRoot) ?? null;
+    agentIdSync = ipcRenderer.sendSync(Channels.app.getAgentId) ?? null;
   } catch {
     // Silently continue — sendSync may fail if context is not yet ready.
   }
 
   const api = {
     sql,
-    agentRoot: agentRootSync,
+    agentId: agentIdSync,
     tabs: {
       openTab(request: unknown): Promise<{ tabId: string }> {
         return ipcRenderer.invoke(Channels.tabs.openTab, request);
@@ -178,11 +178,11 @@ if (isApp) {
     reloadRenderer(): Promise<void> {
       return ipcRenderer.invoke(Channels.app.reloadRenderer);
     },
-    getAgentRoot(): Promise<string | null> {
-      return ipcRenderer.invoke(Channels.app.getAgentRoot);
+    getAgentId(): Promise<string | null> {
+      return ipcRenderer.invoke(Channels.app.getAgentId);
     },
-    openAgentRoot(): Promise<void> {
-      return ipcRenderer.invoke(Channels.app.openAgentRoot);
+    openAgentDir(): Promise<void> {
+      return ipcRenderer.invoke(Channels.app.openAgentDir);
     },
     getAgentDisplayPath(): Promise<string | null> {
       return ipcRenderer.invoke(Channels.app.getAgentDisplayPath);
@@ -320,11 +320,11 @@ if (isApp) {
       },
     },
     agentSidebar: {
-      getInstalled(): Promise<Array<{ path: string; name: string; active: boolean; initialized: boolean }>> {
+      getInstalled(): Promise<Array<{ agentId: string; name: string; active: boolean; initialized: boolean; backend: 'local' | 'remote' }>> {
         return ipcRenderer.invoke(Channels.agentSidebar.getInstalled);
       },
-      switch(agentRoot: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.agentSidebar.switch, agentRoot);
+      switch(agentId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.switch, agentId);
       },
       add(): Promise<string | null> {
         return ipcRenderer.invoke(Channels.agentSidebar.add);
@@ -332,11 +332,11 @@ if (isApp) {
       addFromFile(): Promise<string | null> {
         return ipcRenderer.invoke(Channels.agentSidebar.addFromFile);
       },
-      remove(agentRoot: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.agentSidebar.remove, agentRoot);
+      remove(agentId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.remove, agentId);
       },
-      showContextMenu(agentRoot: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentRoot);
+      showContextMenu(agentId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentId);
       },
       reorder(fromIndex: number, toIndex: number): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.reorder, fromIndex, toIndex);
@@ -369,7 +369,7 @@ if (isAgentView) {
 
   contextBridge.exposeInMainWorld('agentwfy', {
     ...runtimeFunctions,
-    requestInstallAgent(filePath: string): Promise<{ installed: boolean; agentRoot?: string }> {
+    requestInstallAgent(filePath: string): Promise<{ installed: boolean; agentId?: string }> {
       return ipcRenderer.invoke(Channels.agents.requestInstall, filePath);
     },
     fetch(params: { url: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<{ status: number; body: string }> {
