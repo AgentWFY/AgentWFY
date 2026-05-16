@@ -26,6 +26,10 @@ export interface RemoteAgentDbSyncOptions {
   cacheRoot: string;
   remoteBackend: RemoteBackend;
   onLocalDbChange?: (change: AgentDbChange) => void;
+  /** Fires after a snapshot wholesale-replaces the mirror — the per-row
+   *  onLocalDbChange callback doesn't run for snapshot content, so any
+   *  client-side state derived from the mirror needs a fresh resync here. */
+  onSnapshotApplied?: () => void;
 }
 
 /**
@@ -60,6 +64,7 @@ export class RemoteAgentDbSync {
   private readonly cacheRoot: string;
   private readonly remoteBackend: RemoteBackend;
   private readonly onLocalDbChange?: (change: AgentDbChange) => void;
+  private readonly onSnapshotApplied?: () => void;
 
   private dbChangesUnsubscribe: (() => void) | null = null;
   private statusUnsubscribe: (() => void) | null = null;
@@ -89,6 +94,7 @@ export class RemoteAgentDbSync {
     this.cacheRoot = opts.cacheRoot;
     this.remoteBackend = opts.remoteBackend;
     this.onLocalDbChange = opts.onLocalDbChange;
+    this.onSnapshotApplied = opts.onSnapshotApplied;
     configureAgentDb(this.cacheRoot, { syncSystemData: false });
   }
 
@@ -322,6 +328,8 @@ export class RemoteAgentDbSync {
       // Schedule outside this call so snapshotPromise can clear first.
       queueMicrotask(() => this.requestSnapshotInBackground());
     }
+
+    this.onSnapshotApplied?.();
   }
 
   private async downloadSnapshotToTempFile(): Promise<{ snapshotPath: string; version: number }> {

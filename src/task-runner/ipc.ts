@@ -26,7 +26,6 @@ export function registerTaskRunnerHandlers(
   });
 
   ipcMain.handle(Channels.tasks.listShortcuts, async (event) => {
-    if (getBackend(event).kind !== 'local') return {};
     const sm = getShortcutManager(event);
     const tasks = await listTasks(getRoot(event));
     const out: Record<string, string> = {};

@@ -1,5 +1,5 @@
 import { listTasksSync } from '#shared/db/tasks.js';
-import type { TaskRunner } from '#shared/task-runner/task_runner.js';
+import type { AgentBackend } from '#shared/backend/interface.js';
 import type { ActionRegistry } from './registry.js';
 
 const TASK_ACTION_PREFIX = 'task.';
@@ -15,10 +15,11 @@ export function taskShortcutConfigKey(taskName: string): string {
 
 export function syncTaskActions(
   registry: ActionRegistry,
-  agentId: string,
-  taskRunner: TaskRunner,
+  dataDir: string,
+  backend: AgentBackend,
 ): void {
-  const tasks = listTasksSync(agentId);
+  const agentId = backend.id;
+  const tasks = listTasksSync(dataDir);
   const wanted = new Map<string, string>();
   for (const t of tasks) {
     wanted.set(taskActionId(t.name), t.title || t.name);
@@ -38,7 +39,7 @@ export function syncTaskActions(
       label: `Run task: ${title}`,
       configKey: taskShortcutConfigKey(taskName),
       run: () => {
-        taskRunner.startTask(taskName, undefined, { type: 'shortcut' }).catch((err) => {
+        backend.tasks.start({ taskName, origin: { type: 'shortcut' } }).catch((err) => {
           console.error(`[shortcuts] failed to start task ${taskName}:`, err);
         });
       },

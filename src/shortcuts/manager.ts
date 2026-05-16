@@ -79,23 +79,22 @@ export class ShortcutManager {
   // action ID → parsed shortcut (for display/accelerator without re-parsing)
   private parsed = new Map<string, ParsedShortcut>();
   private readonly registry: ActionRegistry;
-  private readonly readConfig: boolean;
+  private readonly agentId: string;
+  private readonly dataDir: string;
 
-  constructor(agentId: string, registry: ActionRegistry, opts?: { readConfig?: boolean }) {
+  constructor(agentId: string, registry: ActionRegistry, opts?: { dataDir?: string }) {
     this.registry = registry;
-    this.readConfig = opts?.readConfig ?? true;
-    this.reload(agentId);
+    this.agentId = agentId;
+    this.dataDir = opts?.dataDir ?? agentId;
   }
 
-  reload(agentId: string): void {
+  reload(): void {
     this.keyMap.clear();
     this.parsed.clear();
 
-    for (const action of this.registry.getAllForAgent(agentId)) {
+    for (const action of this.registry.getAllForAgent(this.agentId)) {
       const configKey = action.configKey ?? SHORTCUT_PREFIX + action.id;
-      const raw = this.readConfig
-        ? getConfigValue(agentId, configKey, action.defaultKey ?? DISABLED) as string
-        : action.defaultKey ?? DISABLED;
+      const raw = getConfigValue(this.dataDir, configKey, action.defaultKey ?? DISABLED) as string;
 
       if (raw === DISABLED) continue;
 

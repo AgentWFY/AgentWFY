@@ -23,6 +23,7 @@ export async function createRemoteAgentContext(opts: {
   tabTools: TabHost
   getCommandPalette?: () => PaletteHost
   onLocalDbChange?: (change: AgentDbChange) => void
+  onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
   const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools } = opts
 
@@ -42,6 +43,7 @@ export async function createRemoteAgentContext(opts: {
     cacheRoot,
     remoteBackend,
     onLocalDbChange: opts.onLocalDbChange,
+    onSnapshotApplied: opts.onSnapshotApplied,
   })
   remoteBackend.attachDbSync(dbSync)
   try {

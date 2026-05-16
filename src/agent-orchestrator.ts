@@ -14,11 +14,11 @@ import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
 import { runCleanup } from './cleanup.js';
 import { getConfigValue } from '#shared/settings/config.js';
 import { getViewByName } from '#shared/db/views.js';
-import { SystemConfigKeys, PLUGIN_PREFIX } from '#shared/system-config/keys.js';
+import { SystemConfigKeys, PLUGIN_PREFIX, SHORTCUT_PREFIX } from '#shared/system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
 import type { InstalledAgent, SendToRenderer } from './ipc/schema.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
-import { syncTaskActions } from './shortcuts/task-actions.js';
+import { syncTaskActions, TASK_SHORTCUT_KEY_PREFIX } from './shortcuts/task-actions.js';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;
@@ -395,9 +395,20 @@ export class AgentOrchestrator {
       agentCtx.tabViewManager.markViewChanged(change.rowId as string);
     }
 
-    if (!isLocalAgentContext(agentCtx)) {
-      if (change.table === 'config' && this.activeAgentId === agentId) {
-        const key = change.rowId as string;
+    if (change.table === 'tasks') {
+      if (agentCtx.taskActionsReloadDebounceTimer) clearTimeout(agentCtx.taskActionsReloadDebounceTimer);
+      agentCtx.taskActionsReloadDebounceTimer = setTimeout(() => {
+        syncTaskActions(this.deps.actionRegistry, agentCtx.cacheRoot, agentCtx.backend);
+        agentCtx.shortcutManager.reload();
+      }, 500);
+    }
+
+    if (change.table === 'config') {
+      const key = change.rowId as string;
+      if (key.startsWith(SHORTCUT_PREFIX) || key.startsWith(TASK_SHORTCUT_KEY_PREFIX)) {
+        agentCtx.shortcutManager.reload();
+      }
+      if (this.activeAgentId === agentId) {
         if (key === SystemConfigKeys.theme) {
           this.deps.applyTheme();
         }
@@ -408,34 +419,15 @@ export class AgentOrchestrator {
           this.deps.applyTrafficLightVisibility();
         }
       }
-      return;
-    }
-
-    if (change.table === 'config') {
-      rescheduleBackupForAgent(agentId);
-      agentCtx.shortcutManager.reload(agentId);
-      if (this.activeAgentId === agentId) {
-        this.deps.applyTheme();
-        const key = change.rowId as string;
-        if (key === SystemConfigKeys.showTabSource) {
-          this.deps.applyTrafficLightPosition();
-        }
-        if (key === SystemConfigKeys.hideTrafficLights) {
-          this.deps.applyTrafficLightVisibility();
-        }
-        if (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider) {
+      if (isLocalAgentContext(agentCtx)) {
+        rescheduleBackupForAgent(agentId);
+        if (this.activeAgentId === agentId && (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider)) {
           void this.pushProviderState(agentCtx);
         }
       }
     }
 
-    if (change.table === 'tasks') {
-      if (agentCtx.taskActionsReloadDebounceTimer) clearTimeout(agentCtx.taskActionsReloadDebounceTimer);
-      agentCtx.taskActionsReloadDebounceTimer = setTimeout(() => {
-        syncTaskActions(this.deps.actionRegistry, agentId, agentCtx.taskRunner);
-        agentCtx.shortcutManager.reload(agentId);
-      }, 500);
-    }
+    if (!isLocalAgentContext(agentCtx)) return;
 
     if (change.table === 'triggers') {
       if (agentCtx.triggerReloadDebounceTimer) clearTimeout(agentCtx.triggerReloadDebounceTimer);

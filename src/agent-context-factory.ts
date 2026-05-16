@@ -14,6 +14,7 @@ import type { ActionRegistry } from './shortcuts/registry.js';
 import { syncTaskActions } from './shortcuts/task-actions.js';
 import { getOrCreateRuntime, disposeRuntime } from './ipc/exec-js.js';
 import type { TabHost } from '#shared/runtime/hosts.js';
+import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from './backup.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
 import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
@@ -69,8 +70,16 @@ export class AgentContextFactory {
     const cacheRoot = this.computeRemoteCacheRoot(agentId);
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
-    const shortcutManager = new ShortcutManager(cacheRoot, this.deps.actionRegistry, { readConfig: false });
+    const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry, { dataDir: cacheRoot });
     const { tabViewManager, tabTools } = this.createTabRuntime(agentId, shortcutManager);
+    // Refs let onSnapshotApplied resync after later (re)connect snapshots,
+    // which replace the mirror wholesale without emitting per-row changes.
+    let backendRef: AgentBackend | null = null;
+    const resyncFromMirror = () => {
+      if (!backendRef) return;
+      syncTaskActions(this.deps.actionRegistry, cacheRoot, backendRef);
+      shortcutManager.reload();
+    };
     const ctx = await createRemoteAgentContext({
       agentId,
       cacheRoot,
@@ -80,7 +89,10 @@ export class AgentContextFactory {
       tabTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
+      onSnapshotApplied: resyncFromMirror,
     });
+    backendRef = ctx.backend;
+    resyncFromMirror();
     this.attachAgentViewHandler(agentId, cacheRoot, new RemoteFileSource(ctx.backend));
     return ctx;
   }
@@ -123,8 +135,9 @@ export class AgentContextFactory {
       onDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
     });
 
-    syncTaskActions(this.deps.actionRegistry, agentId, runtime.taskRunner);
+    syncTaskActions(this.deps.actionRegistry, agentId, runtime.backend);
     const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry);
+    shortcutManager.reload();
 
     const agentCtx: LocalAgentContext = {
       mode: 'local',
@@ -164,11 +177,16 @@ export class AgentContextFactory {
     if (ctx.mode === 'remote') {
       ctx.statusUnsubscribe?.();
       ctx.statusUnsubscribe = null;
+      if (ctx.taskActionsReloadDebounceTimer) {
+        clearTimeout(ctx.taskActionsReloadDebounceTimer);
+        ctx.taskActionsReloadDebounceTimer = null;
+      }
       ctx.tabViewManager.destroyAllTabViews();
       ctx.tabViewManager.clearTrackedViewWebContents();
       destroyRemoteAgentContext(ctx).catch((err) => {
         console.warn('[AgentContextFactory] destroyRemoteAgentContext failed:', err);
       });
+      this.deps.actionRegistry.clearAgent(agentId);
       closeAgentDb(ctx.cacheRoot);
       const agentSession = this.agentSessions.get(ctx.agentId);
       if (agentSession) {
