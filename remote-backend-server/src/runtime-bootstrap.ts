@@ -4,7 +4,12 @@ import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
 import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
-import { installPackageData, readValidatedPackage, uninstallPlugin } from '#shared/plugins/installer.js'
+import {
+  installPackageData,
+  readValidatedPackage,
+  readValidatedPackageFromBytes,
+  uninstallPlugin,
+} from '#shared/plugins/installer.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
 
@@ -122,16 +127,12 @@ function registerRemotePluginManagement(opts: {
     return opts.clientFunctionInvoker
   }
 
-  opts.functionRegistry.register('requestInstallPlugin', async (params) => {
-    const request = params as { packagePath?: string } | undefined
-    if (!request || typeof request.packagePath !== 'string' || request.packagePath.trim().length === 0) {
-      throw new Error('requestInstallPlugin requires a non-empty packagePath string')
-    }
-
-    const packagePath = resolveAgentPath(opts.runtimeRoot, request.packagePath)
-    const packageData = readValidatedPackage(packagePath)
+  const confirmAndInstall = async (
+    packageData: ReturnType<typeof readValidatedPackage>,
+    displayPath: string,
+  ): Promise<{ installed: string[] }> => {
     const confirmed = await requireClient().invokeClientFunction('_confirmPluginInstall', {
-      packagePath,
+      packagePath: displayPath,
       plugins: packageData.plugins.map(publicPluginMeta),
     })
     if (confirmed !== true) return { installed: [] }
@@ -143,6 +144,30 @@ function registerRemotePluginManagement(opts: {
       if (row) opts.pluginRegistry.reloadPlugin(row)
     }
     return result
+  }
+
+  opts.functionRegistry.register('requestInstallPlugin', async (params) => {
+    const request = params as { packagePath?: string } | undefined
+    if (!request || typeof request.packagePath !== 'string' || request.packagePath.trim().length === 0) {
+      throw new Error('requestInstallPlugin requires a non-empty packagePath string')
+    }
+    const packagePath = resolveAgentPath(opts.runtimeRoot, request.packagePath)
+    return confirmAndInstall(readValidatedPackage(packagePath), packagePath)
+  })
+
+  // Bytes variant: used by the desktop's file-picker flow when this agent is
+  // remote — the picked file lives on the desktop's filesystem, not the
+  // daemon's, so requestInstallPlugin's path-based form can't reach it.
+  opts.functionRegistry.register('requestInstallPluginFromBytes', async (params) => {
+    const request = params as { fileName?: string; packageBytes?: string } | undefined
+    if (!request || typeof request.packageBytes !== 'string' || request.packageBytes.length === 0) {
+      throw new Error('requestInstallPluginFromBytes requires base64 packageBytes')
+    }
+    const bytes = Buffer.from(request.packageBytes, 'base64')
+    const displayName = typeof request.fileName === 'string' && request.fileName.trim().length > 0
+      ? request.fileName.trim()
+      : 'uploaded.plugins.awfy'
+    return confirmAndInstall(readValidatedPackageFromBytes(bytes), displayName)
   })
 
   opts.functionRegistry.register('requestTogglePlugin', async (params) => {

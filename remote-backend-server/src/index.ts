@@ -23,6 +23,8 @@ import {
   type ConfigClearRequest,
   type ConfigRemoveRequest,
   type ConfigSetRequest,
+  type FilesReadRequest,
+  type FilesStatRequest,
   type FunctionsInvokeRequest,
   type ProvidersGetStatusLineRequest,
   type ProvidersSetDefaultRequest,
@@ -168,6 +170,18 @@ async function dispatchBackendRpc(
     }
     case 'tasks.listRunning':
       return bundle.backend.tasks.listRunning()
+    case 'files.read': {
+      const result = await bundle.backend.files.read(params as FilesReadRequest)
+      // Wire is JSON; base64-encode bytes at the WS boundary only.
+      return {
+        size: result.size,
+        offset: result.offset,
+        mimeType: result.mimeType,
+        contentBase64: Buffer.from(result.content).toString('base64'),
+      }
+    }
+    case 'files.stat':
+      return bundle.backend.files.stat(params as FilesStatRequest)
     default:
       throw new Error(`Unknown RPC method: ${method}`)
   }

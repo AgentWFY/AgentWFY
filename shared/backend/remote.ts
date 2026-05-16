@@ -22,6 +22,10 @@ import {
   type ConfigMutationResponse,
   type ConfigRemoveRequest,
   type ConfigSetRequest,
+  type FilesReadRequest,
+  type FilesReadResponse,
+  type FilesStatRequest,
+  type FilesStatResponse,
   type FunctionsInvokeRequest,
   type FunctionsInvokeResponse,
   type FunctionsListResponse,
@@ -56,6 +60,7 @@ import type {
   BackendStatusSnapshot,
   ConfigApi,
   EventsApi,
+  FilesApi,
   FunctionInfo,
   FunctionsApi,
   ProvidersApi,
@@ -73,6 +78,13 @@ import { DAEMON_BUILT_IN_FUNCTIONS } from '../runtime/daemon-functions.js'
 import { WsClient, WsClientError, type WsClientConfig } from './ws_client.js'
 
 export { WsClientError as RemoteBackendError }
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return bytes
+}
 
 export interface RemoteBackendConfig extends WsClientConfig {
   /** Stable identifier for this backend instance (e.g. the agent slug). */
@@ -230,6 +242,21 @@ export class RemoteBackend implements AgentBackend {
     },
     listRunning: async () => {
       return this.ws.rpc<Record<string, never>, TasksListRunningResponse>('tasks.listRunning', {})
+    },
+  }
+
+  readonly files: FilesApi = {
+    read: async (req) => {
+      const wire = await this.ws.rpc<FilesReadRequest, FilesReadResponse>('files.read', req)
+      return {
+        size: wire.size,
+        offset: wire.offset,
+        mimeType: wire.mimeType,
+        content: base64ToBytes(wire.contentBase64),
+      }
+    },
+    stat: async (req) => {
+      return this.ws.rpc<FilesStatRequest, FilesStatResponse>('files.stat', req)
     },
   }
 

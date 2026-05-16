@@ -5,6 +5,7 @@ import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 import { parseDbPath, dbRead, dbWrite, dbEdit, dbLs, dbFind, dbGrep, dbRemove, dbRename } from './db_content.js'
 import { paginateText, applyTextEdits, matchesGlob, compileGlob, truncateLine, GREP_MAX_LINE_LENGTH, DEFAULT_GREP_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_LS_LIMIT } from './text_utils.js'
+import { mimeFromPath } from '../mime.js'
 
 const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
 
@@ -28,28 +29,6 @@ async function walkDir(dir: string, root: string): Promise<string[]> {
     }
   }
   return results
-}
-
-const MIME_BY_EXT: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.bmp': 'image/bmp',
-  '.ico': 'image/x-icon',
-  '.pdf': 'application/pdf',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.ogg': 'audio/ogg',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-}
-
-function mimeFromPath(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase()
-  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }
 
 export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot: string }): void {

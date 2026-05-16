@@ -1,12 +1,11 @@
 import { net } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { readFile } from 'fs/promises';
-import { isInsideDir, assertPathAllowed } from '#shared/security/path-policy.js';
-import { serveFile } from '#shared/protocol/file-server.js';
+import { isInsideDir } from '#shared/security/path-policy.js';
 import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from '#shared/protocol/view-document.js';
 import { getViewContent } from '#shared/db/views.js';
 import { getModuleContent, getModuleContentType } from '#shared/db/modules.js';
+import type { FileSource } from './file-source.js';
 
 function resolveViewAssetPath(relativePath: string, clientPath: string): string | null {
   if (typeof relativePath !== 'string' || relativePath.trim().length === 0) {
@@ -32,15 +31,6 @@ function resolveViewAssetPath(relativePath: string, clientPath: string): string 
   return absolutePath;
 }
 
-async function resolveViewDataPath(url: URL, cacheRoot: string): Promise<string> {
-  const normalizedPath = normalizeViewPathname(url.pathname);
-  if (!normalizedPath) {
-    throw new Error('Missing file path');
-  }
-
-  return assertPathAllowed(cacheRoot, normalizedPath, { allowMissing: false });
-}
-
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -63,10 +53,11 @@ function toHtmlResponse(status: number, html: string): Response {
 export interface ViewProtocolHandlerOptions {
   cacheRoot: string;
   clientPath: string;
+  fileSource: FileSource;
 }
 
 export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request) => Promise<Response> {
-  const { cacheRoot, clientPath } = options;
+  const { cacheRoot, clientPath, fileSource } = options;
 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
@@ -123,9 +114,15 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
     }
 
     if (isFileHostname(hostname) || (isViewHostname(hostname) && !isViewDocumentRequest(url))) {
+      const normalizedPath = normalizeViewPathname(url.pathname);
+      if (!normalizedPath) {
+        return new Response('Asset not found', {
+          status: 404,
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
       try {
-        const absolutePath = await resolveViewDataPath(url, cacheRoot);
-        return serveFile(request, absolutePath);
+        return await fileSource.serve(request, normalizedPath);
       } catch {
         return new Response('Asset not found', {
           status: 404,
@@ -152,11 +149,10 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       return toHtmlResponse(400, `<pre>${escapeHtml((error as Error)?.message || 'Invalid agent view URL')}</pre>`);
     }
 
-    // File-sourced view: read from filesystem instead of DB
+    // File-sourced view (vs DB-sourced).
     if (url.searchParams.get('source') === 'file') {
       try {
-        const absolutePath = await assertPathAllowed(cacheRoot, viewName, { allowMissing: false });
-        const content = await readFile(absolutePath, 'utf-8');
+        const content = await fileSource.readText(viewName);
         const html = buildViewDocument(content);
         return toHtmlResponse(200, html);
       } catch (error: unknown) {

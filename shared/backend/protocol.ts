@@ -108,6 +108,8 @@ export type BackendRpcMethod =
   | 'tasks.start'
   | 'tasks.stop'
   | 'tasks.listRunning'
+  | 'files.read'
+  | 'files.stat'
 
 export type ClientRpcMethod =
   | 'client.functions.invoke'
@@ -254,3 +256,33 @@ export interface TasksStartResponse { runId: string }
 export interface TasksStopRequest { runId: string }
 export type TasksStopResponse = { ok: true }
 export type TasksListRunningResponse = RunningTaskSummary[]
+
+// Files
+//
+// Reads run against the daemon's `runtimeRoot` (the agent's filesystem on
+// the host where the agent's code executes). The desktop uses this to fetch
+// file bytes for tab views that point at `filePath` on a remote agent —
+// where the desktop has only a local DB mirror and no direct access to the
+// agent's working files.
+export interface FilesReadRequest {
+  path: string
+  /** Byte offset (0-based). Defaults to 0. */
+  offset?: number
+  /** Max bytes to return. Defaults to the daemon's per-read cap. */
+  limit?: number
+}
+export interface FilesReadResponse {
+  /** Total file size in bytes. Helps callers decide whether to paginate. */
+  size: number
+  /** Byte offset this chunk starts at. */
+  offset: number
+  /** base64-encoded bytes for this chunk. */
+  contentBase64: string
+  mimeType: string
+}
+export interface FilesStatRequest { path: string }
+export interface FilesStatResponse {
+  exists: boolean
+  size: number
+  mtimeMs: number
+}

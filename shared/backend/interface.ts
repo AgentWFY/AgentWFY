@@ -129,6 +129,31 @@ export interface TasksApi {
   listRunning(): Promise<RunningTaskSummary[]>
 }
 
+// ── Files ───────────────────────────────────────────────────────────────
+
+// Bytes-level access to files inside the agent's filesystem (runtimeRoot for
+// local agents; the daemon's per-agent dir for remote). Lets the desktop
+// open file-backed tab views on remote agents without a local file mirror —
+// the renderer fetches bytes lazily through this API on each load.
+
+export interface FilesReadResult {
+  size: number
+  offset: number
+  content: Uint8Array
+  mimeType: string
+}
+
+export interface FilesStatResult {
+  exists: boolean
+  size: number
+  mtimeMs: number
+}
+
+export interface FilesApi {
+  read(req: { path: string; offset?: number; limit?: number }): Promise<FilesReadResult>
+  stat(req: { path: string }): Promise<FilesStatResult>
+}
+
 // ── Events (live stream from backend to subscribed clients) ──────────────
 
 // Push-only: subscribers maintain a local cache and apply patches as events
@@ -180,6 +205,7 @@ export interface AgentBackend {
   providers: ProvidersApi
   config: ConfigApi
   tasks: TasksApi
+  files: FilesApi
   events: EventsApi
   status: StatusApi
 }

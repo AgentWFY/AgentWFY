@@ -1,5 +1,6 @@
 import { BaseWindow, WebContentsView, dialog, shell } from 'electron';
 import path from 'path';
+import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'url';
 import { listViews, getViewByName } from '#shared/db/views.js';
 import { listTasks } from '#shared/db/tasks.js';
@@ -734,15 +735,24 @@ export class CommandPaletteManager {
       return { installed: [] };
     }
 
-    // Route through the active backend so remote agents reach the daemon
-    // (which owns their DB). For local agents this resolves to the same
-    // function-registry path that an agent's runtime call to
-    // requestInstallPlugin would take.
     const backend = this.deps.getBackend();
     if (!backend) return { installed: [] };
+
+    const pickedPath = result.filePaths[0]!;
+
+    if (backend.kind === 'local') {
+      return this.requestPluginInstall(pickedPath);
+    }
+
+    // Remote agent: the picked path doesn't exist on the daemon's machine,
+    // so upload the bytes instead.
+    const bytes = await readFile(pickedPath);
     return (await backend.functions.invoke({
-      name: 'requestInstallPlugin',
-      params: { packagePath: result.filePaths[0] },
+      name: 'requestInstallPluginFromBytes',
+      params: {
+        fileName: path.basename(pickedPath),
+        packageBytes: bytes.toString('base64'),
+      },
     })) as { installed: string[] };
   }
 

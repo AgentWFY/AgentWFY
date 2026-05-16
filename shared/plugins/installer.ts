@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import path from 'path'
+import os from 'node:os'
 import fs from 'fs'
 import { getOrCreateAgentDb } from '../db/agent-db.js'
 import { PLUGIN_PREFIX } from '../system-config/keys.js'
@@ -177,6 +178,21 @@ export function readValidatedPackage(packagePath: string): PackageData {
     throw new Error(`Invalid plugin package:\n${errors.join('\n')}`)
   }
   return data
+}
+
+// Used for the bytes-upload install flow: the package is a SQLite file, which
+// node:sqlite can only open by path, so write to a uniquely-named temp file
+// and clean up after parsing. The temp dir lives outside the agent's
+// runtimeRoot so the partial file is never visible to the agent.
+export function readValidatedPackageFromBytes(bytes: Buffer): PackageData {
+  const tmpName = `agentwfy-plugin-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.awfy`
+  const tmpPath = path.join(os.tmpdir(), tmpName)
+  fs.writeFileSync(tmpPath, bytes)
+  try {
+    return readValidatedPackage(tmpPath)
+  } finally {
+    try { fs.unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+  }
 }
 
 export function installFromPackage(runtimeRoot: string, packagePath: string): { installed: string[] } {

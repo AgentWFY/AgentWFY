@@ -20,6 +20,7 @@ import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
+import { LocalFileSource, RemoteFileSource, type FileSource } from './protocol/file-source.js';
 import type { AgentContext, LocalAgentContext, RemoteAgentContext } from './agent-context.js';
 import type { CommandPaletteManager } from './command-palette/manager.js';
 import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
@@ -70,8 +71,8 @@ export class AgentContextFactory {
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
     const shortcutManager = new ShortcutManager(cacheRoot, this.deps.actionRegistry, { readConfig: false });
-    const { tabViewManager, tabTools } = this.createTabRuntime(agentId, cacheRoot, shortcutManager);
-    return createRemoteAgentContext({
+    const { tabViewManager, tabTools } = this.createTabRuntime(agentId, shortcutManager);
+    const ctx = await createRemoteAgentContext({
       agentId,
       cacheRoot,
       remoteConfig,
@@ -81,6 +82,8 @@ export class AgentContextFactory {
       getCommandPalette: () => this.deps.getCommandPalette(),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
     });
+    this.attachAgentViewHandler(agentId, cacheRoot, new RemoteFileSource(ctx.backend));
+    return ctx;
   }
 
   private async createLocal(agentId: string): Promise<LocalAgentContext> {
@@ -89,7 +92,8 @@ export class AgentContextFactory {
     // Desktop-only surfaces are built up-front because the shared runtime
     // needs the tab/palette/renderer/external hosts during builtin-function
     // registration.
-    const agentSession = this.getOrCreateAgentSession(agentId, agentId);
+    const agentSession = this.ensureAgentSession(agentId);
+    this.attachAgentViewHandler(agentId, agentId, new LocalFileSource(agentId));
     const registerSender = (webContentsId: number) => this.deps.registerTabSender(webContentsId, agentId);
     const unregisterSender = (webContentsId: number) => this.deps.unregisterTabSender(webContentsId);
 
@@ -225,20 +229,27 @@ export class AgentContextFactory {
     }
   }
 
-  private getOrCreateAgentSession(agentId: string, cacheRoot: string): Electron.Session {
+  private ensureAgentSession(agentId: string): Electron.Session {
     let agentSession = this.agentSessions.get(agentId);
     if (agentSession) return agentSession;
-
     agentSession = session.fromPartition(`agent:${agentId}`);
+    this.agentSessions.set(agentId, agentSession);
+    return agentSession;
+  }
 
+  // Idempotent: re-attaching for the same agentId replaces the previous handler.
+  private attachAgentViewHandler(agentId: string, cacheRoot: string, fileSource: FileSource): void {
+    const agentSession = this.agentSessions.get(agentId);
+    if (!agentSession) {
+      throw new Error(`No Electron session for agent ${agentId}; call ensureAgentSession first`);
+    }
+    agentSession.protocol.unhandle('agentview');
     const handler = createViewProtocolHandler({
       cacheRoot,
       clientPath: this.deps.clientPath,
+      fileSource,
     });
     agentSession.protocol.handle('agentview', handler);
-
-    this.agentSessions.set(agentId, agentSession);
-    return agentSession;
   }
 
   private computeRemoteCacheRoot(agentId: string): string {
@@ -248,10 +259,9 @@ export class AgentContextFactory {
 
   private createTabRuntime(
     ownerAgentId: string,
-    cacheRoot: string,
     shortcutManager: ShortcutManager,
   ): { tabViewManager: TabViewManager; tabTools: TabHost } {
-    const agentSession = this.getOrCreateAgentSession(ownerAgentId, cacheRoot);
+    const agentSession = this.ensureAgentSession(ownerAgentId);
     const registerSender = (webContentsId: number) => this.deps.registerTabSender(webContentsId, ownerAgentId);
     const unregisterSender = (webContentsId: number) => this.deps.unregisterTabSender(webContentsId);
 

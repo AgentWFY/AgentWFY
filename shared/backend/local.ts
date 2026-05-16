@@ -18,6 +18,7 @@ import type { ProviderRegistry } from '../providers/registry.js'
 import type { TaskRunner } from '../task-runner/task_runner.js'
 import { getConfigValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
+import { readAgentFile, statAgentFile } from './files.js'
 
 /** Minimal slice of per-agent runtime that LocalBackend actually uses.
  *  Importing this (vs. the full AgentContext) keeps LocalBackend free of
@@ -40,6 +41,7 @@ import {
   type BackendStatusSnapshot,
   type BackendKind,
   type EventsApi,
+  type FilesApi,
   type FunctionsApi,
   type ProvidersApi,
   type ConfigApi,
@@ -280,6 +282,15 @@ export class LocalBackend implements AgentBackend {
     },
     listRunning: async (): Promise<RunningTaskSummary[]> => {
       return this.ctx.taskRunner.listRunning()
+    },
+  }
+
+  readonly files: FilesApi = {
+    read: async ({ path, offset, limit }) => {
+      return readAgentFile(this.ctx.runtimeRoot, path, { offset, limit })
+    },
+    stat: async ({ path }) => {
+      return statAgentFile(this.ctx.runtimeRoot, path)
     },
   }
 

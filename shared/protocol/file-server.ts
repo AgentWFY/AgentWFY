@@ -1,25 +1,6 @@
-import path from 'path';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
-
-function getMimeType(filename: string): string {
-  const ext = path.extname(filename).toLowerCase();
-  const mimeMap: Record<string, string> = {
-    '.mp4': 'video/mp4',
-    '.webm': 'video/webm',
-    '.ogg': 'video/ogg',
-    '.ogv': 'video/ogg',
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.webp': 'image/webp',
-  };
-  return mimeMap[ext] || 'application/octet-stream';
-}
+import { mimeFromPath } from '../runtime/mime.js';
 
 const nodeStreamToWeb = (nodeStream: import('fs').ReadStream) => {
   nodeStream.pause();
@@ -61,7 +42,7 @@ export const serveFile = async (request: Request, absolutePath: string) => {
     const rangeHeader = request.headers.get('Range');
 
     const headers = new Headers([
-      ['Content-Type', getMimeType(absolutePath)],
+      ['Content-Type', mimeFromPath(absolutePath)],
       ['Accept-Ranges', 'bytes'],
       ['X-Content-Type-Options', 'nosniff'],
     ]);
