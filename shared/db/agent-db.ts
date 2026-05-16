@@ -2,7 +2,7 @@ import { DatabaseSync, StatementSync, backup, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams, SYNTHETIC_DB_TABLE } from './sqlite.js';
+import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
 
 export interface AgentDbSnapshotResult {
@@ -11,45 +11,6 @@ export interface AgentDbSnapshotResult {
    *  `version > snapshotVersion` is not. */
   version: number;
 }
-
-const PROTECTED_TABLES = new Set(['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules']);
-
-function isReservedNamespace(name: string | null | undefined): boolean {
-  if (!name) return false;
-  const lower = name.toLowerCase();
-  return lower === 'system' || lower === 'plugin'
-    || lower.startsWith('system.') || lower.startsWith('plugin.');
-}
-
-function isProtectedSchemaName(name: string | null | undefined): boolean {
-  if (!name) return false;
-  return PROTECTED_TABLES.has(name.toLowerCase()) || isReservedNamespace(name);
-}
-
-function guardSqlWithoutAuthorizer(sql: string): void {
-  const normalized = sql.replace(/--.*$/gm, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ').toLowerCase();
-  if (/\b(attach|detach|alter|create|drop)\b/.test(normalized)) {
-    throw new Error('DDL and ATTACH/DETACH require node:sqlite authorizer support in this runtime');
-  }
-  if (/\b(insert\s+into|update|delete\s+from)\s+plugins\b/.test(normalized)) {
-    throw new Error('plugins table is read-only in this runtime');
-  }
-}
-
-const RESERVED_NAME_PREDICATE = `(
-  LOWER(name) IN ('system', 'plugin')
-  OR LOWER(name) LIKE 'system.%'
-  OR LOWER(name) LIKE 'plugin.%'
-)`;
-
-const RESERVED_SCHEMA_SCAN_SQL = `
-  SELECT type, name FROM sqlite_master WHERE ${RESERVED_NAME_PREDICATE}
-  UNION ALL
-  SELECT type, name FROM sqlite_temp_master WHERE ${RESERVED_NAME_PREDICATE}
-  LIMIT 1
-`;
-
-const DDL_SAVEPOINT = '_agent_ddl';
 
 const AGENT_DB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS views (
@@ -138,23 +99,6 @@ END;`;
 
 export function isReplicatedTable(table: string): boolean {
   return CHANGE_TRACKED_TABLE_SET.has(table);
-}
-
-function isUserTableMutationTarget(table: string): boolean {
-  const lower = table.toLowerCase();
-  if (lower === '_changes' || lower.startsWith('sqlite_')) return false;
-  return !CHANGE_TRACKED_TABLE_SET.has(lower);
-}
-
-function sqlTargetsUntrackedTable(sql: string): boolean {
-  const stripped = sql.replace(/--.*$/gm, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ').trim();
-  const target =
-    stripped.match(/^(?:insert|replace)\s+(?:or\s+\w+\s+)?into\s+([`"\[]?[\w.-]+[`"\]]?)/i)?.[1]
-    ?? stripped.match(/^update\s+(?:or\s+\w+\s+)?([`"\[]?[\w.-]+[`"\]]?)/i)?.[1]
-    ?? stripped.match(/^delete\s+from\s+([`"\[]?[\w.-]+[`"\]]?)/i)?.[1];
-  if (!target) return false;
-  const table = target.split('.').pop()?.replace(/^[`"\[]|[`"\]]$/g, '');
-  return table ? isUserTableMutationTarget(table) : false;
 }
 
 const CHANGE_TRACKING_SQL = `
@@ -271,15 +215,6 @@ interface SystemDataSync<T extends { name: string }> {
 class AgentDb {
   private db: DatabaseSync;
   private changeListener: ((change: AgentDbChange) => void) | null = null;
-  private authorizerAvailable = false;
-  // Set by the authorizer when prepare() encounters a DDL action code; read
-  // by run() to decide whether to wrap execution in a schema-guard savepoint.
-  private prepareSawDdl = false;
-  // Set by the authorizer when a statement writes outside the built-in
-  // replicated table set. We still emit any built-in row changes, then append
-  // a synthetic full-DB marker so mirrors refresh user-defined tables too.
-  private prepareMutatedUntrackedTable = false;
-  private reservedSchemaScan: StatementSync | null = null;
   // Monotonic counter for emitted change events. Used by remote mirrors to
   // sequence incremental application and detect gaps. The counter lives in
   // memory only — on process restart it resets, and clients detect this by
@@ -288,6 +223,7 @@ class AgentDb {
   // Row-fetch statements cached per replicated table. Built lazily because
   // some tables don't exist yet when the AgentDb is first constructed.
   private rowFetchStatements = new Map<string, StatementSync>();
+  private drainSelectStatement: StatementSync | null = null;
 
   constructor(opts: {
     dbPath: string;
@@ -367,13 +303,6 @@ class AgentDb {
   }
 
   private installAuthorizer(): void {
-    const setAuthorizer = (this.db as { setAuthorizer?: DatabaseSync['setAuthorizer'] }).setAuthorizer;
-    if (typeof setAuthorizer !== 'function') {
-      this.authorizerAvailable = false;
-      return;
-    }
-
-    this.authorizerAvailable = true;
     const {
       SQLITE_OK, SQLITE_DENY,
       SQLITE_CREATE_TABLE, SQLITE_DROP_TABLE, SQLITE_ALTER_TABLE,
@@ -384,27 +313,18 @@ class AgentDb {
       SQLITE_CREATE_TEMP_TRIGGER, SQLITE_DROP_TEMP_TRIGGER,
       SQLITE_CREATE_VIEW, SQLITE_DROP_VIEW,
       SQLITE_CREATE_TEMP_VIEW, SQLITE_DROP_TEMP_VIEW,
+      SQLITE_CREATE_VTABLE, SQLITE_DROP_VTABLE,
       SQLITE_INSERT, SQLITE_UPDATE, SQLITE_DELETE,
       SQLITE_ATTACH, SQLITE_DETACH,
     } = constants;
 
-    setAuthorizer.call(this.db, (actionCode, arg1, arg2) => {
+    this.db.setAuthorizer((actionCode, arg1) => {
       switch (actionCode) {
-        // Table DDL — arg1 = table name
         case SQLITE_CREATE_TABLE:
         case SQLITE_DROP_TABLE:
         case SQLITE_CREATE_TEMP_TABLE:
         case SQLITE_DROP_TEMP_TABLE:
-          this.prepareSawDdl = true;
-          return isProtectedSchemaName(arg1) ? SQLITE_DENY : SQLITE_OK;
-
-        // ALTER TABLE — arg1 = db name, arg2 = table name (the new name in
-        // RENAME TO is not visible here; the post-DDL schema scan catches it)
         case SQLITE_ALTER_TABLE:
-          this.prepareSawDdl = true;
-          return isProtectedSchemaName(arg2) ? SQLITE_DENY : SQLITE_OK;
-
-        // Index/trigger DDL — arg1 = object name, arg2 = target table
         case SQLITE_CREATE_INDEX:
         case SQLITE_DROP_INDEX:
         case SQLITE_CREATE_TRIGGER:
@@ -413,30 +333,20 @@ class AgentDb {
         case SQLITE_DROP_TEMP_INDEX:
         case SQLITE_CREATE_TEMP_TRIGGER:
         case SQLITE_DROP_TEMP_TRIGGER:
-          this.prepareSawDdl = true;
-          return isProtectedSchemaName(arg1) || isProtectedSchemaName(arg2) ? SQLITE_DENY : SQLITE_OK;
-
-        // SQLite views share namespace with tables
         case SQLITE_CREATE_VIEW:
         case SQLITE_DROP_VIEW:
         case SQLITE_CREATE_TEMP_VIEW:
         case SQLITE_DROP_TEMP_VIEW:
-          this.prepareSawDdl = true;
-          return isProtectedSchemaName(arg1) ? SQLITE_DENY : SQLITE_OK;
-
-        // Plugins table is entirely read-only
-        case SQLITE_INSERT:
-        case SQLITE_UPDATE:
-        case SQLITE_DELETE:
-          if (arg1 && isUserTableMutationTarget(arg1)) {
-            this.prepareMutatedUntrackedTable = true;
-          }
-          return arg1 === 'plugins' ? SQLITE_DENY : SQLITE_OK;
-
-        // Block database attachment
+        case SQLITE_CREATE_VTABLE:
+        case SQLITE_DROP_VTABLE:
         case SQLITE_ATTACH:
         case SQLITE_DETACH:
           return SQLITE_DENY;
+
+        case SQLITE_INSERT:
+        case SQLITE_UPDATE:
+        case SQLITE_DELETE:
+          return arg1 === 'plugins' ? SQLITE_DENY : SQLITE_OK;
 
         default:
           return SQLITE_OK;
@@ -572,9 +482,7 @@ class AgentDb {
    * remote change to the UI so the mirror doesn't fabricate a duplicate.
    */
   private shieldedWrite(fn: () => void, opts: { drain: boolean }): void {
-    if (this.authorizerAvailable) {
-      this.db.setAuthorizer(null);
-    }
+    this.db.setAuthorizer(null);
     this.db.exec(DROP_GUARDS_SQL);
     try {
       this.db.exec('DELETE FROM _changes;');
@@ -597,84 +505,33 @@ class AgentDb {
     const params = normalizeParams(request.params) as (null | number | bigint | string)[];
     const trackChanges = this.changeListener && isPotentiallyMutatingSql(request.sql);
 
-    if (!this.authorizerAvailable) {
-      guardSqlWithoutAuthorizer(request.sql);
-      this.prepareMutatedUntrackedTable = sqlTargetsUntrackedTable(request.sql);
-    }
-
     if (trackChanges) {
       this.db.exec('DELETE FROM _changes;');
     }
 
-    this.prepareSawDdl = false;
-    if (this.authorizerAvailable) {
-      this.prepareMutatedUntrackedTable = false;
-    }
     const statement = this.db.prepare(request.sql);
-
-    if (this.prepareSawDdl) {
-      const rows = this.runDdlGuarded(() => statement.all(...params));
-      if (trackChanges) {
-        this.drainChanges({ table: 'sqlite_schema', rowId: 'main', op: 'update' });
-      }
-      return rows;
-    }
-
     const rows = statement.all(...params);
     if (trackChanges) {
-      this.drainChanges(
-        { table: SYNTHETIC_DB_TABLE, rowId: 'main', op: 'update' },
-        { alwaysEmitFallback: this.prepareMutatedUntrackedTable },
-      );
+      this.drainChanges();
     }
     return normalizeSqlRows(rows);
   }
 
-  // The authorizer can't inspect the new name in `ALTER TABLE ... RENAME TO ...`
-  // (arg2 holds the old name) or distinguish RENAME from ADD COLUMN. Run DDL
-  // inside a savepoint and post-scan sqlite_master + sqlite_temp_master for
-  // any reserved-namespace object the authorizer couldn't see; rollback if so.
-  private runDdlGuarded(execute: () => unknown[]): unknown[] {
-    if (!this.reservedSchemaScan) {
-      this.reservedSchemaScan = this.db.prepare(RESERVED_SCHEMA_SCAN_SQL);
-    }
-    this.db.exec(`SAVEPOINT ${DDL_SAVEPOINT};`);
-    let released = false;
-    try {
-      const rows = execute();
-      const violation = this.reservedSchemaScan.get() as { type: string; name: string } | undefined;
-      if (violation) {
-        throw new Error(`Reserved namespace: ${violation.type} "${violation.name}" — names equal to or starting with "system" or "plugin" are reserved`);
-      }
-      this.db.exec(`RELEASE ${DDL_SAVEPOINT};`);
-      released = true;
-      return normalizeSqlRows(rows);
-    } finally {
-      if (!released) {
-        this.db.exec(`ROLLBACK TO ${DDL_SAVEPOINT}; RELEASE ${DDL_SAVEPOINT};`);
-      }
-    }
-  }
-
-  private drainChanges(
-    fallback?: Omit<AgentDbChange, 'version'>,
-    opts: { alwaysEmitFallback?: boolean } = {},
-  ): void {
+  private drainChanges(): void {
     // We always drain the temp table to keep state clean even when no
     // listener is attached (mirrors run without a listener — they emit
     // manually after applying remote changes).
-    const changes = this.db.prepare('SELECT table_name, row_id, previous_row_id, op FROM _changes').all();
+    if (!this.drainSelectStatement) {
+      this.drainSelectStatement = this.db.prepare(
+        'SELECT table_name, row_id, previous_row_id, op FROM _changes',
+      );
+    }
+    const changes = this.drainSelectStatement.all();
     if (changes.length > 0) {
       this.db.exec('DELETE FROM _changes;');
     }
 
     if (!this.changeListener) return;
-
-    if (changes.length === 0 && fallback) {
-      this.versionCounter += 1;
-      this.changeListener({ ...fallback, version: this.versionCounter });
-      return;
-    }
 
     for (const raw of changes) {
       const record = raw as Record<string, unknown>;
@@ -687,16 +544,11 @@ class AgentDb {
       if (op === 'update' && previousRowId !== null && previousRowId !== rowId) {
         change.previousRowId = previousRowId;
       }
-      if (op !== 'delete' && CHANGE_TRACKED_TABLE_SET.has(table)) {
+      if (op !== 'delete') {
         const row = this.fetchRowByName(table, rowId);
         if (row) change.row = row;
       }
       this.changeListener(change);
-    }
-
-    if (fallback && opts.alwaysEmitFallback) {
-      this.versionCounter += 1;
-      this.changeListener({ ...fallback, version: this.versionCounter });
     }
   }
 

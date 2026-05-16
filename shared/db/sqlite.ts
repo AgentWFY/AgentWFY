@@ -6,10 +6,6 @@ export interface SqlExecutionRequest {
   params?: unknown[];
 }
 
-/** Synthetic table name used for change-event markers that don't correspond
- *  to a real row (full-DB notifications, post-snapshot markers). */
-export const SYNTHETIC_DB_TABLE = '_database' as const;
-
 export interface AgentDbChange {
   table: string;
   rowId: string | number;
@@ -22,25 +18,22 @@ export interface AgentDbChange {
   previousRowId?: string | number;
   /**
    * Monotonic per-AgentDb version assigned by the daemon when the change is
-   * drained. Increments by 1 for every emitted change (including synthetic
-   * ones). Mirrors use this to sequence incremental application and to detect
-   * gaps that require a full re-snapshot.
+   * drained. Increments by 1 for every emitted change. Mirrors use this to
+   * sequence incremental application and to detect gaps that require a full
+   * re-snapshot.
    *
    * Local agents (no remote mirror) just ignore it.
    */
   version: number;
   /**
-   * Snapshot of the row at change time, for insert/update events on
-   * replicated tables. Absent for deletes, schema changes, and the
-   * synthetic `_database`/`sqlite_schema` markers. When absent and the
-   * change isn't a delete, mirrors fall back to a full snapshot.
+   * Snapshot of the row at change time, for insert/update events. Absent
+   * for deletes. When absent on a non-delete change, mirrors fall back to
+   * a full snapshot.
    */
   row?: Record<string, unknown>;
 }
 
-export const WRITE_RE = /^\s*(INSERT|UPDATE|DELETE)\b/i;
-
-const MUTATION_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|VACUUM)\b/i;
+const MUTATION_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i;
 
 export function isPotentiallyMutatingSql(sql: string): boolean {
   return MUTATION_RE.test(stripLeadingSqlComments(sql));

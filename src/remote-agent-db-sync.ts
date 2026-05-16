@@ -17,7 +17,6 @@ import { parseRunSqlRequest, type RunSqlRequest } from '#shared/db/sql-router.js
 import {
   isPotentiallyMutatingSql,
   runAgentDbSql,
-  SYNTHETIC_DB_TABLE,
   type AgentDbChange,
 } from '#shared/db/sqlite.js';
 import { messageFromUnknown } from '#shared/backend/protocol.js';
@@ -224,17 +223,7 @@ export class RemoteAgentDbSync {
   /** Apply a remote change to the mirror DB and emit nothing. Returns false
    *  if the change isn't replayable (caller should request a snapshot). */
   private applyChange(change: AgentDbChange): boolean {
-    if (change.table === SYNTHETIC_DB_TABLE) {
-      // Full-DB markers are emitted for mutations we cannot row-replay,
-      // including user-defined table DML. Pull a snapshot so the mirror file
-      // stays correct beyond the built-in replicated tables.
-      return false;
-    }
-    if (!isReplicatedTable(change.table)) {
-      // DDL and unknown-table INSERT/UPDATE events cannot be reconstructed
-      // from a row payload. Deletes for unknown tables have no mirror action.
-      return change.op === 'delete';
-    }
+    if (!isReplicatedTable(change.table)) return false;
     if (change.op !== 'delete' && !change.row) {
       // Daemon couldn't capture the row (e.g. inserted-then-deleted in
       // the same statement). Fall back to a snapshot for correctness.
@@ -319,26 +308,15 @@ export class RemoteAgentDbSync {
         continue;
       }
       const result = this.tryApply(change);
-      if (result === 'applied') {
-        this.onLocalDbChange?.(change);
-      } else if (result === 'duplicate' && shouldNotifySnapshotAbsorbedChange(change)) {
+      if (result === 'applied' || (result === 'duplicate' && isReplicatedTable(change.table))) {
         this.onLocalDbChange?.(change);
       } else if (result === 'gap' || result === 'unreplayable') {
         needReSnapshot = true;
         this.buffered.push(change);
       }
-      // Other duplicates are already in the snapshot and have no precise
-      // table-level invalidation to forward.
     }
 
     this.resolveWaiters();
-
-    this.onLocalDbChange?.({
-      table: SYNTHETIC_DB_TABLE,
-      rowId: 'snapshot',
-      op: 'update',
-      version: this.localVersion,
-    });
 
     if (needReSnapshot) {
       // Schedule outside this call so snapshotPromise can clear first.
@@ -429,8 +407,4 @@ function toRuntimeRunSqlParams(request: RunSqlRequest): Record<string, unknown> 
     params: request.params,
     description: request.description,
   };
-}
-
-function shouldNotifySnapshotAbsorbedChange(change: AgentDbChange): boolean {
-  return isReplicatedTable(change.table);
 }

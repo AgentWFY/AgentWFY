@@ -19,6 +19,6 @@
     "start": "node dist/remote-backend-server/src/index.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24.10.0"
   }
 }
