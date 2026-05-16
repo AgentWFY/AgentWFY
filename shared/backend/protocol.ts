@@ -26,6 +26,7 @@ import type {
   SessionState,
   SessionSummary,
   SpawnSessionRequest,
+  TaskLogHistoryItem,
 } from './interface.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent } from '../agent/types.js'
@@ -109,6 +110,8 @@ export type BackendRpcMethod =
   | 'tasks.start'
   | 'tasks.stop'
   | 'tasks.listRunning'
+  | 'tasks.listLogHistory'
+  | 'tasks.readLog'
   | 'files.read'
   | 'files.stat'
 
@@ -257,6 +260,9 @@ export interface TasksStartResponse { runId: string }
 export interface TasksStopRequest { runId: string }
 export type TasksStopResponse = { ok: true }
 export type TasksListRunningResponse = RunningTaskSummary[]
+export type TasksListLogHistoryResponse = TaskLogHistoryItem[]
+export interface TasksReadLogRequest { logFileName: string }
+export interface TasksReadLogResponse { content: string }
 
 // Files
 //

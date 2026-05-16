@@ -19,6 +19,7 @@ import type { TaskRunner } from '../task-runner/task_runner.js'
 import { getConfigValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 import { readAgentFile, statAgentFile } from './files.js'
+import { listAgentTaskLogHistory, readAgentTaskLog } from './task-logs.js'
 
 /** Minimal slice of per-agent runtime that LocalBackend actually uses.
  *  Importing this (vs. the full AgentContext) keeps LocalBackend free of
@@ -283,6 +284,12 @@ export class LocalBackend implements AgentBackend {
     },
     listRunning: async (): Promise<RunningTaskSummary[]> => {
       return this.ctx.taskRunner.listRunning()
+    },
+    listLogHistory: async () => {
+      return listAgentTaskLogHistory(this.ctx.runtimeRoot)
+    },
+    readLog: async ({ logFileName }) => {
+      return readAgentTaskLog(this.ctx.runtimeRoot, logFileName)
     },
   }
 

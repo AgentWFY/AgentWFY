@@ -17,7 +17,6 @@ import type { TabHost } from '#shared/runtime/hosts.js';
 import { stopBackupSchedulerForAgent } from './backup.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
 import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
-import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import { LocalFileSource, RemoteFileSource, type FileSource } from './protocol/file-source.js';
@@ -87,8 +86,6 @@ export class AgentContextFactory {
   }
 
   private async createLocal(agentId: string): Promise<LocalAgentContext> {
-    const win = this.deps.getMainWindow()!;
-
     // Desktop-only surfaces are built up-front because the shared runtime
     // needs the tab/palette/renderer/external hosts during builtin-function
     // registration.
@@ -124,16 +121,6 @@ export class AgentContextFactory {
       },
       createJsRuntime: (functionRegistry) => getOrCreateRuntime(agentId, { functionRegistry }),
       onDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
-      onTaskRunStarted: (payload) => {
-        if (!win.isDestroyed() && this.deps.getActiveAgentId() === agentId) {
-          this.deps.sendToRenderer(Channels.tasks.runStarted, payload);
-        }
-      },
-      onTaskRunFinished: (payload) => {
-        if (!win.isDestroyed() && this.deps.getActiveAgentId() === agentId) {
-          this.deps.sendToRenderer(Channels.tasks.runFinished, payload);
-        }
-      },
     });
 
     syncTaskActions(this.deps.actionRegistry, agentId, runtime.taskRunner);
@@ -157,6 +144,7 @@ export class AgentContextFactory {
       backend: runtime.backend,
       chat: new LocalChatController(() => agentCtx.sessionManager),
       chatPump: null,
+      eventsUnsubscribe: null,
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
       taskActionsReloadDebounceTimer: null,
@@ -168,9 +156,12 @@ export class AgentContextFactory {
   }
 
   destroyContext(agentId: string, ctx: AgentContext): void {
+    ctx.chatPump?.stop();
+    ctx.chatPump = null;
+    ctx.eventsUnsubscribe?.();
+    ctx.eventsUnsubscribe = null;
+
     if (ctx.mode === 'remote') {
-      ctx.chatPump?.stop();
-      ctx.chatPump = null;
       ctx.statusUnsubscribe?.();
       ctx.statusUnsubscribe = null;
       ctx.tabViewManager.destroyAllTabViews();
@@ -187,8 +178,6 @@ export class AgentContextFactory {
       return;
     }
 
-    ctx.chatPump?.stop();
-    ctx.chatPump = null;
     ctx.backend.stop().catch((err) => {
       console.warn('[AgentContextFactory] backend.stop failed:', err);
     });

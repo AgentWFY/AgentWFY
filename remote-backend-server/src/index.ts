@@ -34,6 +34,7 @@ import {
   type SessionsRemoveRequest,
   type SessionsSendRequest,
   type SessionsSpawnRequest,
+  type TasksReadLogRequest,
   type TasksStartRequest,
   type TasksStopRequest,
   type WsRpcRequest,
@@ -170,6 +171,13 @@ async function dispatchBackendRpc(
     }
     case 'tasks.listRunning':
       return bundle.backend.tasks.listRunning()
+    case 'tasks.listLogHistory':
+      return bundle.backend.tasks.listLogHistory()
+    case 'tasks.readLog': {
+      const req = params as TasksReadLogRequest
+      const content = await bundle.backend.tasks.readLog(req)
+      return { content }
+    }
     case 'files.read': {
       const result = await bundle.backend.files.read(params as FilesReadRequest)
       // Wire is JSON; base64-encode bytes at the WS boundary only.

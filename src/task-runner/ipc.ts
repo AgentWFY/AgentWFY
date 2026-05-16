@@ -1,7 +1,4 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import fs from 'fs/promises';
-import path from 'path';
-import { assertPathAllowed } from '#shared/security/path-policy.js';
 import { Channels } from '../ipc/channels.cjs';
 import { listTasks } from '#shared/db/tasks.js';
 import { taskActionId } from '../shortcuts/task-actions.js';
@@ -9,38 +6,11 @@ import type { ShortcutManager } from '../shortcuts/manager.js';
 import type { TaskOrigin } from '#shared/task-runner/task_runner.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 
-const DEFAULT_TASK_LOG_LIST_LIMIT = 200;
-const MAX_TASK_LOG_LIST_LIMIT = 1000;
-const TASK_LOG_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/;
-
-function normalizeTaskLogFileName(value: unknown): string {
-  if (typeof value !== 'string') {
-    throw new Error('Task log file name must be a string');
-  }
-  const normalized = value.trim();
-  if (!TASK_LOG_FILE_NAME_RE.test(normalized)) {
-    throw new Error('Task log file name must match /^[A-Za-z0-9._-]+\\.json$/');
-  }
-  return normalized;
-}
-
 export function registerTaskRunnerHandlers(
   getRoot: (e: IpcMainInvokeEvent) => string,
   getShortcutManager: (e: IpcMainInvokeEvent) => ShortcutManager,
   getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
 ): void {
-  const resolvePrivatePath = (event: IpcMainInvokeEvent, relativePath: string, options?: { allowMissing?: boolean }) =>
-    assertPathAllowed(getRoot(event), relativePath, { ...options, allowAgentPrivate: true });
-  const ensureTaskLogsDir = async (event: IpcMainInvokeEvent): Promise<string> => {
-    const taskLogsDir = await resolvePrivatePath(event, '.agentwfy/task_logs', { allowMissing: true });
-    await fs.mkdir(taskLogsDir, { recursive: true });
-    return taskLogsDir;
-  };
-  const resolveTaskLogPath = (event: IpcMainInvokeEvent, logFileName: string, options?: { allowMissing?: boolean }) =>
-    resolvePrivatePath(event, `.agentwfy/task_logs/${normalizeTaskLogFileName(logFileName)}`, options);
-
-  // --- Direct task execution handlers ---
-
   ipcMain.handle(Channels.tasks.start, async (event, taskName: string, input?: unknown, origin?: TaskOrigin) => {
     const backend = getBackend(event);
     const effectiveOrigin = origin ?? { type: 'view' as const };
@@ -67,102 +37,11 @@ export function registerTaskRunnerHandlers(
     return out;
   });
 
-  // --- Log persistence handlers ---
-
-  // listLogHistory — inlined from TaskRunner class
   ipcMain.handle(Channels.tasks.listLogHistory, async (event) => {
-    if (getBackend(event).kind !== 'local') return [];
-    const dataDir = getRoot(event);
-    const taskLogsDir = path.join(dataDir, '.agentwfy', 'task_logs');
-
-    try {
-      await fs.mkdir(taskLogsDir, { recursive: true });
-    } catch {
-      return [];
-    }
-
-    try {
-      const entries = await fs.readdir(taskLogsDir, { withFileTypes: true });
-      const items: Array<{ file: string; updatedAt: number; taskName: string; status: string; origin?: unknown }> = [];
-
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        if (!TASK_LOG_FILE_NAME_RE.test(entry.name)) continue;
-
-        try {
-          const filePath = path.join(taskLogsDir, entry.name);
-          const raw = await fs.readFile(filePath, 'utf-8');
-          const parsed = JSON.parse(raw);
-          const stats = await fs.stat(filePath);
-          items.push({
-            file: entry.name,
-            updatedAt: typeof parsed.finishedAt === 'number' ? parsed.finishedAt : Math.floor(stats.mtimeMs),
-            taskName: typeof parsed.taskTitle === 'string' ? parsed.taskTitle : typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
-            status: typeof parsed.status === 'string' ? parsed.status : 'unknown',
-            origin: parsed.origin ?? undefined,
-          });
-        } catch {
-          // Skip unparseable files
-        }
-      }
-
-      items.sort((a, b) => b.updatedAt - a.updatedAt);
-      return items.slice(0, 50);
-    } catch {
-      return [];
-    }
+    return getBackend(event).tasks.listLogHistory();
   });
 
-  // listTaskLogs(limit?) → [{ name, updatedAt }]
-  ipcMain.handle(Channels.tasks.listLogs, async (event, limit?: number) => {
-    if (getBackend(event).kind !== 'local') return [];
-    const taskLogsDir = await ensureTaskLogsDir(event);
-    const requestedLimit = typeof limit === 'number' && Number.isFinite(limit)
-      ? Math.floor(limit)
-      : DEFAULT_TASK_LOG_LIST_LIMIT;
-    const effectiveLimit = Math.max(1, Math.min(requestedLimit, MAX_TASK_LOG_LIST_LIMIT));
-
-    const entries = await fs.readdir(taskLogsDir, { withFileTypes: true });
-    const logs: Array<{ name: string; updatedAt: number }> = [];
-
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (!TASK_LOG_FILE_NAME_RE.test(entry.name)) continue;
-
-      const filePath = path.join(taskLogsDir, entry.name);
-      let stats;
-      try {
-        stats = await fs.stat(filePath);
-      } catch {
-        continue;
-      }
-
-      logs.push({
-        name: entry.name,
-        updatedAt: Math.floor(stats.mtimeMs),
-      });
-    }
-
-    logs.sort((a, b) => b.updatedAt - a.updatedAt);
-    return logs.slice(0, effectiveLimit);
-  });
-
-  // readTaskLog(logFileName) → file content
   ipcMain.handle(Channels.tasks.readLog, async (event, logFileName: string) => {
-    if (getBackend(event).kind !== 'local') {
-      throw new Error('task logs aren\'t exposed for remote agents yet — view them on the daemon directly');
-    }
-    const logPath = await resolveTaskLogPath(event, logFileName);
-    return fs.readFile(logPath, 'utf-8');
-  });
-
-  // writeTaskLog(logFileName, content)
-  ipcMain.handle(Channels.tasks.writeLog, async (event, logFileName: string, content: string) => {
-    if (getBackend(event).kind !== 'local') {
-      throw new Error('task logs aren\'t writable from the desktop for remote agents — they\'re managed by the daemon');
-    }
-    const logPath = await resolveTaskLogPath(event, logFileName, { allowMissing: true });
-    await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(logPath, content, 'utf-8');
+    return getBackend(event).tasks.readLog({ logFileName });
   });
 }

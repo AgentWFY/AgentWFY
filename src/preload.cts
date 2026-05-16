@@ -204,14 +204,8 @@ if (isApp) {
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
       },
-      listLogs(limit?: number): Promise<Array<{ name: string; updatedAt: number }>> {
-        return ipcRenderer.invoke(Channels.tasks.listLogs, limit);
-      },
       readLog(logFileName: string): Promise<string> {
         return ipcRenderer.invoke(Channels.tasks.readLog, logFileName);
-      },
-      writeLog(logFileName: string, content: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.tasks.writeLog, logFileName, content);
       },
       onRunFinished(callback: (payload: PushMap['tasks:runFinished']) => void): () => void {
         return typedOn(Channels.tasks.runFinished, callback);

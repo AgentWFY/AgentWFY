@@ -33,6 +33,8 @@ interface AgentContextBase {
   /** Renderer snapshot/streaming pump. One implementation for both backends —
    *  see setupAgentChatPump. Null between construction and pump setup. */
   chatPump: AgentChatPump | null;
+  /** Disposer for the backend.events subscription wired by the orchestrator. */
+  eventsUnsubscribe: (() => void) | null;
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   taskActionsReloadDebounceTimer: ReturnType<typeof setTimeout> | null;

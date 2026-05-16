@@ -66,6 +66,7 @@ export async function createRemoteAgentContext(opts: {
     backend: remoteBackend,
     chat: new RemoteChatController(remoteBackend),
     statusUnsubscribe: null,
+    eventsUnsubscribe: null,
     chatPump: null,
     dbChangeDebounceTimer: null,
     triggerReloadDebounceTimer: null,

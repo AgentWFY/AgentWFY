@@ -124,10 +124,23 @@ export interface RunningTaskSummary {
   startedAt: number
 }
 
+export interface TaskLogHistoryItem {
+  file: string
+  updatedAt: number
+  taskName: string
+  status: string
+  origin?: TaskOrigin
+}
+
 export interface TasksApi {
   start(req: { taskName: string; input?: unknown; origin?: TaskOrigin }): Promise<{ runId: string }>
   stop(req: { runId: string }): Promise<void>
   listRunning(): Promise<RunningTaskSummary[]>
+  listLogHistory(): Promise<TaskLogHistoryItem[]>
+  /** Read a single task log file by its name (sanitized against
+   *  `/^[A-Za-z0-9._-]+\.json$/`). The path is resolved inside the agent's
+   *  `.agentwfy/task_logs/` directory. */
+  readLog(req: { logFileName: string }): Promise<string>
 }
 
 // ── Files ───────────────────────────────────────────────────────────────

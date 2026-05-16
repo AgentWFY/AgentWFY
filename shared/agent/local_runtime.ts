@@ -4,7 +4,7 @@
 // wires up DB, plugins, providers, functions, sessions, tasks, triggers,
 // and the LocalBackend. Callers provide host bundles for environment-bound
 // surfaces (tabs, palette, notifications, renderer push, external launcher)
-// and side-effect callbacks (DB change, task run started/finished).
+// and a DB-change listener.
 
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
@@ -24,11 +24,7 @@ import type {
 } from '../runtime/hosts.js'
 import { ProviderRegistry } from '../providers/registry.js'
 import { createOpenAICompatibleFactory } from '../providers/openai_compatible.js'
-import {
-  TaskRunner,
-  type TaskRunFinishedPayload,
-  type TaskRunStartedPayload,
-} from '../task-runner/task_runner.js'
+import { TaskRunner } from '../task-runner/task_runner.js'
 import { TriggerEngine } from '../triggers/engine.js'
 import { loadPlugins } from '../plugins/loader.js'
 import type { PluginRegistry } from '../plugins/registry.js'
@@ -59,10 +55,6 @@ export interface CreateLocalAgentRuntimeOptions {
   /** Single agent-DB change listener — only one can be registered on the DB
    *  itself, so callers fan out from here if they need multiple subscribers. */
   onDbChange?: (change: AgentDbChange) => void
-  /** Extra side effect when a task run starts (the bus topic fires either way). */
-  onTaskRunStarted?: (payload: TaskRunStartedPayload) => void
-  /** Extra side effect when a task run finishes. */
-  onTaskRunFinished?: (payload: TaskRunFinishedPayload) => void
 }
 
 export interface LocalAgentRuntime {
@@ -123,14 +115,8 @@ export async function createLocalAgentRuntime(
     runtimeRoot,
     getJsRuntime: () => jsRuntime,
     busPublish,
-    onRunStarted: (payload) => {
-      busPublish('tasks.run.started', payload)
-      opts.onTaskRunStarted?.(payload)
-    },
-    onRunFinished: (payload) => {
-      busPublish('tasks.run.finished', payload)
-      opts.onTaskRunFinished?.(payload)
-    },
+    onRunStarted: (payload) => busPublish('tasks.run.started', payload),
+    onRunFinished: (payload) => busPublish('tasks.run.finished', payload),
   })
 
   const triggerEngine = new TriggerEngine({
