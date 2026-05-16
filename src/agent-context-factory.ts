@@ -250,7 +250,9 @@ export class AgentContextFactory {
     if (!agentSession) {
       throw new Error(`No Electron session for agent ${agentId}; call ensureAgentSession first`);
     }
-    agentSession.protocol.unhandle('agentview');
+    if (agentSession.protocol.isProtocolHandled('agentview')) {
+      agentSession.protocol.unhandle('agentview');
+    }
     const handler = createViewProtocolHandler({
       cacheRoot,
       clientPath: this.deps.clientPath,
