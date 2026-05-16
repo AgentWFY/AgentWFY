@@ -119,19 +119,20 @@ export class RemoteChatController implements AgentChatController {
       prompt: opts.prompt,
       providerId: opts.providerId,
       providerOptions: opts.providerOptions,
+      files: opts.files,
     })
     await this.setDisplayedSessionId(sessionId)
     return sessionId
   }
 
-  async sendMessage(text: string, _opts?: ChatSendOpts): Promise<void> {
+  async sendMessage(text: string, opts?: ChatSendOpts): Promise<void> {
     const current = this.displayedSessionId
     if (current) {
-      await this.backend.sessions.send({ sessionId: current, text })
+      await this.backend.sessions.send({ sessionId: current, text, files: opts?.files })
       this.notifyChange()
       return
     }
-    const { sessionId } = await this.backend.sessions.spawn({ prompt: text })
+    const { sessionId } = await this.backend.sessions.spawn({ prompt: text, files: opts?.files })
     await this.setDisplayedSessionId(sessionId)
   }
 

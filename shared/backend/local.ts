@@ -201,12 +201,13 @@ export class LocalBackend implements AgentBackend {
         prompt: req.prompt,
         providerId: req.providerId,
         providerOptions: req.providerOptions,
+        files: req.files,
       })
       return { sessionId }
     },
 
-    send: async ({ sessionId, text }) => {
-      await this.ctx.sessionManager.sendToSession(sessionId, text, { autoPublishResponse: false })
+    send: async ({ sessionId, text, files }) => {
+      await this.ctx.sessionManager.sendToSession(sessionId, text, { autoPublishResponse: false, files })
     },
 
     abort: async ({ sessionId }) => {

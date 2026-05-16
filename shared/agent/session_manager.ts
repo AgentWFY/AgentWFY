@@ -409,12 +409,12 @@ export class AgentSessionManager {
   async sendToSession(
     sessionId: string,
     message: string,
-    opts: { autoPublishResponse?: boolean } = {},
+    opts: { autoPublishResponse?: boolean; files?: FileContent[] } = {},
   ): Promise<void> {
     // Check if this session is already in memory (streaming or idle)
     const existing = this.sessions.get(sessionId)
     if (existing) {
-      await existing.agent.prompt(message, { streamingBehavior: 'followUp' })
+      await existing.agent.prompt(message, { streamingBehavior: 'followUp', files: opts.files })
       return
     }
 
@@ -428,7 +428,7 @@ export class AgentSessionManager {
     entry.autoPublishResponse = opts.autoPublishResponse ?? true
     this.notify()
 
-    await agent.prompt(message)
+    await agent.prompt(message, { files: opts.files })
   }
 
   async openSessionInChat(sessionId: string): Promise<{ label: string }> {

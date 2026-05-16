@@ -10,7 +10,7 @@
 // protocol used by RemoteBackend lives in ./protocol.ts.
 
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
-import type { SessionLivePatch } from '../agent/types.js'
+import type { FileContent, SessionLivePatch } from '../agent/types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
 
 // ── Backend identity ─────────────────────────────────────────────────────
@@ -57,6 +57,7 @@ export interface SpawnSessionRequest {
   providerId?: string
   providerOptions?: Record<string, unknown>
   title?: string
+  files?: FileContent[]
 }
 
 export interface SessionHandle {
@@ -67,7 +68,7 @@ export interface SessionsApi {
   list(req?: { limit?: number; offset?: number; since?: number; until?: number }): Promise<SessionSummary[]>
   get(req: { sessionId: string }): Promise<SessionState | null>
   spawn(req: SpawnSessionRequest): Promise<SessionHandle>
-  send(req: { sessionId: string; text: string }): Promise<void>
+  send(req: { sessionId: string; text: string; files?: FileContent[] }): Promise<void>
   abort(req: { sessionId: string }): Promise<void>
   remove(req: { sessionId: string }): Promise<void>
 }

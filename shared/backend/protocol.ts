@@ -28,6 +28,7 @@ import type {
   SpawnSessionRequest,
 } from './interface.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
+import type { FileContent } from '../agent/types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
 
 export const PROTOCOL_VERSION = 'v1' as const
@@ -214,7 +215,7 @@ export type SessionsGetResponse = SessionState | null
 export type SessionsSpawnRequest = SpawnSessionRequest
 export type SessionsSpawnResponse = SessionHandle
 
-export interface SessionsSendRequest { sessionId: string; text: string }
+export interface SessionsSendRequest { sessionId: string; text: string; files?: FileContent[] }
 export type SessionsSendResponse = { ok: true }
 
 export interface SessionsAbortRequest { sessionId: string }
