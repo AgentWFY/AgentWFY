@@ -112,9 +112,31 @@ const INPUT_TYPE_ALIASES: Record<string, string> = {
   keyup: 'keyUp',
 };
 
+type AsyncFunctionConstructor = new (...args: string[]) => (...callArgs: unknown[]) => Promise<unknown>;
+
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as AsyncFunctionConstructor;
 
 function isAbortedLoadError(error: unknown): boolean {
   return (error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3;
+}
+
+function buildTabExecutionCode(code: string): string {
+  let mode: 'expression' | 'body' = 'expression';
+
+  try {
+    new AsyncFunction(`return (\n${code}\n);`);
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err;
+    mode = 'body';
+    new AsyncFunction(code);
+  }
+
+  const completion = '.then((__agentwfy_value) => __agentwfy_value === undefined ? null : __agentwfy_value)';
+  if (mode === 'expression') {
+    return `(async function() {\nreturn (\n${code}\n);\n})()${completion}`;
+  }
+
+  return `(async function() {\n${code}\n})()${completion}`;
 }
 
 // --- Input validation helpers ---
@@ -1239,26 +1261,10 @@ export class TabViewManager {
     const { timeoutMs: requestedTimeout, wasDefault } = resolveTimeout(request.timeoutMs, VIEW_EXEC_DEFAULT_TIMEOUT_MS);
     const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
-    // Try compiling as `return (<code>)` first so bare expressions (e.g. "SYMBOLS.length")
-    // evaluate to their value instead of silently becoming null. If that throws a
-    // SyntaxError — e.g. the code uses statements, declarations, or its own `return` —
-    // fall back to treating the code as an async function body (original behavior).
-    // Detection runs inside the tab so parsing uses the same V8 as execution.
-    // Coerce undefined → null so IPC serialization stays well-formed.
-    const codeLiteral = JSON.stringify(request.code);
-    const wrappedCode = `(async () => {
-  const __code = ${codeLiteral};
-  const __AsyncFn = (async function(){}).constructor;
-  let __fn;
-  try {
-    __fn = new __AsyncFn('return (\\n' + __code + '\\n);');
-  } catch (__err) {
-    if (!(__err instanceof SyntaxError)) throw __err;
-    __fn = new __AsyncFn(__code);
-  }
-  const __result = await __fn();
-  return __result === undefined ? null : __result;
-})()`;
+    // Syntax-probe in the main process, then send a fully expanded async
+    // function to the tab. Creating Function/AsyncFunction inside the page is
+    // blocked by strict CSPs such as TradingView's script-src without unsafe-eval.
+    const wrappedCode = buildTabExecutionCode(request.code);
     return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs, wasDefault);
   }
 
