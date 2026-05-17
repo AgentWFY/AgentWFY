@@ -18,7 +18,7 @@ import { registerAgentSessionHandlers, setupAgentChatPump } from './ipc/agent-se
 import { registerTraceHandlers } from './ipc/traces.js';
 import { registerZenModeHandlers } from './ipc/zen-mode.js';
 import { registerPreviewCursorHandlers } from './ipc/preview-cursor.js';
-import { flushAllTraceWriters } from './runtime/runtime-cache.js';
+import { flushDesktopTraceWriters } from './runtime/desktop-runtime-registry.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
@@ -208,10 +208,7 @@ registerAgentSessionHandlers(
   (e) => windowManager.getBackendForSender(e.sender.id),
   (e) => windowManager.getContextForSender(e.sender.id).chat,
 );
-registerTraceHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).agentId,
-  (e) => windowManager.getBackendForSender(e.sender.id),
-);
+registerTraceHandlers((e) => windowManager.getBackendForSender(e.sender.id));
 
 registerAppHandlers({
   devRebuild,
@@ -508,14 +505,14 @@ function doQuitCleanup() {
   windowManager.destroyAll();
 }
 
-// Drain buffered trace writes before the sync cleanup — disposeRuntime fires
-// its own flush but doesn't await it, so without this the last few trace
+// Drain buffered trace writes before the sync cleanup — disposeDesktopRuntime
+// fires its own flush but doesn't await it, so without this the last few trace
 // records (the ones most useful for post-mortem debugging) can be lost on exit.
 async function flushThenCleanup() {
   if (flushInProgress) return;
   flushInProgress = true;
   try {
-    await flushAllTraceWriters();
+    await flushDesktopTraceWriters();
   } catch (err) {
     console.error('[quit] trace flush failed:', err);
   }

@@ -11,7 +11,11 @@ import { TabViewManager } from './tab-views/manager.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
 import { syncTaskActions } from './shortcuts/task-actions.js';
-import { getOrCreateRuntime, disposeRuntime } from './runtime/runtime-cache.js';
+import {
+  disposeDesktopRuntime,
+  getOrCreateDesktopRuntime,
+  getOrCreateDesktopTraceWriter,
+} from './runtime/desktop-runtime-registry.js';
 import type { TabHost } from '#shared/runtime/hosts.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
@@ -130,7 +134,8 @@ export class AgentContextFactory {
         rendererPush: createElectronRendererPush(this.deps.getRendererWebContents()!),
         externalLauncher: getElectronExternalLauncher(),
       },
-      createJsRuntime: (functionRegistry) => getOrCreateRuntime(agentId, { functionRegistry }),
+      createTraceWriter: () => getOrCreateDesktopTraceWriter(agentId),
+      createJsRuntime: (functionRegistry, traceWriter) => getOrCreateDesktopRuntime(agentId, { functionRegistry, traceWriter }),
       onDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
     });
 
@@ -234,7 +239,7 @@ export class AgentContextFactory {
     this.deps.actionRegistry.clearAgent(agentId);
 
     stopBackupSchedulerForAgent(agentId);
-    disposeRuntime(agentId);
+    disposeDesktopRuntime(agentId);
     closeAgentDb(agentId);
 
     const agentSession = this.agentSessions.get(agentId);

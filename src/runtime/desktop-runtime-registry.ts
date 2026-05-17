@@ -1,32 +1,29 @@
-import path from 'path'
 import { JsRuntime, type JsRuntimeDeps } from '#shared/runtime/js_runtime.js'
 import { TraceWriter } from '#shared/runtime/trace_writer.js'
+import { getTraceDir } from '#shared/runtime/trace_paths.js'
 
 const runtimes = new Map<string, JsRuntime>()
 const traceWriters = new Map<string, TraceWriter>()
 
-const TRACES_DIR_NAME = '.agentwfy/traces'
-
-export function getOrCreateTraceWriter(runtimeRoot: string): TraceWriter {
+export function getOrCreateDesktopTraceWriter(runtimeRoot: string): TraceWriter {
   let writer = traceWriters.get(runtimeRoot)
   if (writer) return writer
-  writer = new TraceWriter(path.join(runtimeRoot, TRACES_DIR_NAME))
+  writer = new TraceWriter(getTraceDir(runtimeRoot))
   traceWriters.set(runtimeRoot, writer)
   return writer
 }
 
-export function getOrCreateRuntime(runtimeRoot: string, deps: Omit<JsRuntimeDeps, 'traceWriter'>): JsRuntime {
+export function getOrCreateDesktopRuntime(runtimeRoot: string, deps: JsRuntimeDeps): JsRuntime {
   let runtime = runtimes.get(runtimeRoot)
   if (runtime) return runtime
 
-  const traceWriter = getOrCreateTraceWriter(runtimeRoot)
-  runtime = new JsRuntime({ ...deps, traceWriter })
+  runtime = new JsRuntime(deps)
   runtimes.set(runtimeRoot, runtime)
 
   return runtime
 }
 
-export function disposeRuntime(runtimeRoot: string): void {
+export function disposeDesktopRuntime(runtimeRoot: string): void {
   const r = runtimes.get(runtimeRoot)
   if (r) {
     r.disposeAll()
@@ -41,10 +38,11 @@ export function disposeRuntime(runtimeRoot: string): void {
 
 /**
  * Await every active trace writer's pending queue. Call before shutdown so the
- * most recent buffered trace records land on disk — the sync disposeRuntime
- * path fires-and-forgets, which loses records if the process exits first.
+ * most recent buffered trace records land on disk — the sync
+ * disposeDesktopRuntime path fires-and-forgets, which loses records if the
+ * process exits first.
  */
-export async function flushAllTraceWriters(): Promise<void> {
+export async function flushDesktopTraceWriters(): Promise<void> {
   const writers = Array.from(traceWriters.values())
   await Promise.allSettled(writers.map((w) => w.flush()))
 }

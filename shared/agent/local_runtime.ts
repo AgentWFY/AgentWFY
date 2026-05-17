@@ -14,6 +14,7 @@ import { EventBus } from '../event-bus.js'
 import { FunctionRegistry } from '../runtime/function_registry.js'
 import { JsRuntime } from '../runtime/js_runtime.js'
 import { TraceWriter } from '../runtime/trace_writer.js'
+import { getTraceDir } from '../runtime/trace_paths.js'
 import { registerAllBuiltInFunctions } from '../runtime/functions/index.js'
 import type {
   ExternalLauncher,
@@ -35,7 +36,6 @@ import { getConfigValue, setAgentConfig } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 
 const AGENT_DIR_NAME = '.agentwfy'
-const TRACES_DIR_NAME = '.agentwfy/traces'
 
 export interface LocalRuntimeHosts {
   notificationHost?: NotificationHost
@@ -51,7 +51,9 @@ export interface CreateLocalAgentRuntimeOptions {
   /** Build the JsRuntime for this agent. Defaults to a fresh JsRuntime with
    *  a per-agent TraceWriter. The desktop overrides this to thread the
    *  runtime through its lifecycle-managed registry. */
-  createJsRuntime?: (functionRegistry: FunctionRegistry) => JsRuntime
+  createJsRuntime?: (functionRegistry: FunctionRegistry, traceWriter: TraceWriter) => JsRuntime
+  /** Build the TraceWriter for this agent. Defaults to `getTraceDir(runtimeRoot)`. */
+  createTraceWriter?: (runtimeRoot: string) => TraceWriter
   /** Single agent-DB change listener — only one can be registered on the DB
    *  itself, so callers fan out from here if they need multiple subscribers. */
   onDbChange?: (change: AgentDbChange) => void
@@ -67,6 +69,7 @@ export interface LocalAgentRuntime {
   taskRunner: TaskRunner
   triggerEngine: TriggerEngine
   jsRuntime: JsRuntime
+  traceWriter: TraceWriter
   /** Teardown the core runtime (backend, sessions, tasks, triggers, plugins,
    *  event bus, DB). Does NOT dispose the JsRuntime — that's the caller's
    *  responsibility because the desktop and daemon manage it differently. */
@@ -96,11 +99,15 @@ export async function createLocalAgentRuntime(
 
   const pluginRegistry = loadPlugins(runtimeRoot, busPublish, providerRegistry, functionRegistry)
 
+  const traceWriter = opts.createTraceWriter
+    ? opts.createTraceWriter(runtimeRoot)
+    : new TraceWriter(getTraceDir(runtimeRoot))
+
   const jsRuntime = opts.createJsRuntime
-    ? opts.createJsRuntime(functionRegistry)
+    ? opts.createJsRuntime(functionRegistry, traceWriter)
     : new JsRuntime({
         functionRegistry,
-        traceWriter: new TraceWriter(path.join(runtimeRoot, TRACES_DIR_NAME)),
+        traceWriter,
       })
 
   const sessionManager = new AgentSessionManager({
@@ -152,6 +159,7 @@ export async function createLocalAgentRuntime(
     functionRegistry,
     providerRegistry,
     taskRunner,
+    traceWriter,
   })
   await backend.start()
 
@@ -175,6 +183,7 @@ export async function createLocalAgentRuntime(
     taskRunner,
     triggerEngine,
     jsRuntime,
+    traceWriter,
     dispose,
   }
 }

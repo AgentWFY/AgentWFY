@@ -3,6 +3,7 @@ import path from 'path';
 import { getConfigValue } from './settings/config.js';
 import { readSessionId } from './agent/session_persistence.js';
 import { isValidTraceSessionId } from './runtime/trace_types.js';
+import { getTraceDir } from './runtime/trace_paths.js';
 import { SystemConfigKeys } from './system-config/keys.js';
 
 const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
@@ -62,7 +63,7 @@ async function deleteOldSessionsAndTraces(sessionsDir: string, tracesDir: string
   if (toDelete.length === 0) return 0;
 
   // Look up each session's sessionId before unlinking, so we can pair-delete
-  // the matching trace file from {runtimeRoot}/.agentwfy/traces/{sessionId}.jsonl.
+  // the matching trace file from the agent trace directory.
   const sessionIds = await Promise.all(
     toDelete.map((entry) => readSessionId(sessionsDir, entry.name).catch(() => '')),
   );
@@ -122,7 +123,7 @@ export async function runCleanup(runtimeRoot: string): Promise<void> {
   const traceDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTraceRetentionDays, String(sessionDays)));
 
   const sessionsDir = path.join(runtimeRoot, '.agentwfy', 'sessions');
-  const tracesDir = path.join(runtimeRoot, '.agentwfy', 'traces');
+  const tracesDir = getTraceDir(runtimeRoot);
   const taskLogsDir = path.join(runtimeRoot, '.agentwfy', 'task_logs');
 
   // Session sweep removes paired traces first; then a tracesDir sweep by mtime

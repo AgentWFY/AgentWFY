@@ -15,10 +15,12 @@ import { stripBlockBinaries } from '../agent/session_persistence.js'
 import type { FunctionRegistry } from '../runtime/function_registry.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { TaskRunner } from '../task-runner/task_runner.js'
+import type { TraceWriter } from '../runtime/trace_writer.js'
 import { getConfigValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 import { readAgentFile, statAgentFile } from './files.js'
 import { listAgentTaskLogHistory, readAgentTaskLog } from './task-logs.js'
+import { listAgentTraces } from './traces.js'
 import {
   backupAgentDb,
   getBackupStatus,
@@ -38,6 +40,7 @@ export interface LocalBackendContext {
   functionRegistry: FunctionRegistry
   providerRegistry: ProviderRegistry
   taskRunner: TaskRunner
+  traceWriter: TraceWriter
 }
 import {
   type AgentBackend,
@@ -51,6 +54,7 @@ import {
   type ProvidersApi,
   type ConfigApi,
   type TasksApi,
+  type TracesApi,
   type RunningTaskSummary,
   type SessionHandle,
   type SessionLivePatch,
@@ -285,6 +289,13 @@ export class LocalBackend implements AgentBackend {
     },
     stat: async ({ path }) => {
       return statAgentFile(this.ctx.runtimeRoot, path)
+    },
+  }
+
+  readonly traces: TracesApi = {
+    list: async ({ sessionId }) => {
+      await this.ctx.traceWriter.flush(sessionId)
+      return listAgentTraces(this.ctx.runtimeRoot, sessionId)
     },
   }
 

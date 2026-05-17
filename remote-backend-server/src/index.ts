@@ -38,6 +38,7 @@ import {
   type TasksReadLogRequest,
   type TasksStartRequest,
   type TasksStopRequest,
+  type TracesListRequest,
   type WsRpcRequest,
 } from '#shared/backend/protocol.js'
 import type { RuntimeBundle } from './runtime-bootstrap.js'
@@ -179,6 +180,8 @@ async function dispatchBackendRpc(
       const content = await bundle.backend.tasks.readLog(req)
       return { content }
     }
+    case 'traces.list':
+      return bundle.backend.traces.list(params as TracesListRequest)
     case 'files.read': {
       const result = await bundle.backend.files.read(params as FilesReadRequest)
       // Wire is JSON; base64-encode bytes at the WS boundary only.

@@ -34,6 +34,7 @@ import type {
 } from './interface.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent } from '../agent/types.js'
+import type { TraceEvent } from '../runtime/trace_types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
 
 export const PROTOCOL_VERSION = 'v1' as const
@@ -116,6 +117,7 @@ export type BackendRpcMethod =
   | 'tasks.listRunning'
   | 'tasks.listLogHistory'
   | 'tasks.readLog'
+  | 'traces.list'
   | 'files.read'
   | 'files.stat'
   | 'backup.create'
@@ -280,6 +282,10 @@ export type TasksListRunningResponse = RunningTaskSummary[]
 export type TasksListLogHistoryResponse = TaskLogHistoryItem[]
 export interface TasksReadLogRequest { logFileName: string }
 export interface TasksReadLogResponse { content: string }
+
+// Traces
+export interface TracesListRequest { sessionId: string }
+export type TracesListResponse = TraceEvent[]
 
 // Files
 //

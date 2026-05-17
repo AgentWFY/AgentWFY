@@ -57,6 +57,8 @@ import {
   type TasksStartResponse,
   type TasksStopRequest,
   type TasksStopResponse,
+  type TracesListRequest,
+  type TracesListResponse,
   type WireError,
   type WsMessage,
   type WsRpcRequest,
@@ -79,6 +81,7 @@ import type {
   SessionsApi,
   StatusApi,
   TasksApi,
+  TracesApi,
   Unsubscribe,
 } from './interface.js'
 import type { AgentDbChange } from '../db/sqlite.js'
@@ -278,6 +281,12 @@ export class RemoteBackend implements AgentBackend {
     },
     stat: async (req) => {
       return this.ws.rpc<FilesStatRequest, FilesStatResponse>('files.stat', req)
+    },
+  }
+
+  readonly traces: TracesApi = {
+    list: async (req) => {
+      return this.ws.rpc<TracesListRequest, TracesListResponse>('traces.list', req)
     },
   }
 

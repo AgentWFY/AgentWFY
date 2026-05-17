@@ -11,6 +11,7 @@
 
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent, SessionLivePatch } from '../agent/types.js'
+import type { TraceEvent } from '../runtime/trace_types.js'
 import type { TaskOrigin, TaskRunFinishedPayload, TaskRunStartedPayload } from '../task-runner/task_runner.js'
 import type {
   BackupCreateResult,
@@ -181,6 +182,12 @@ export interface FilesApi {
   stat(req: { path: string }): Promise<FilesStatResult>
 }
 
+// ── Traces ──────────────────────────────────────────────────────────────
+
+export interface TracesApi {
+  list(req: { sessionId: string }): Promise<TraceEvent[]>
+}
+
 // ── Backups ─────────────────────────────────────────────────────────────
 
 // Per-agent DB backups. Always operates on the backend's own runtime root —
@@ -239,6 +246,7 @@ export interface AgentBackend {
   config: ConfigApi
   tasks: TasksApi
   files: FilesApi
+  traces: TracesApi
   backup: BackupApi
   events: EventsApi
   status: StatusApi

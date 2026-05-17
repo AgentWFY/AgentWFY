@@ -104,6 +104,7 @@ export async function createAgentRuntime(
     stopBackupSchedulerForAgent(runtimeRoot)
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
+    await runtime.traceWriter.flush()
     dbChangeSubscribers.clear()
     dbResetSubscribers.clear()
   }
