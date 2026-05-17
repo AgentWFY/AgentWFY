@@ -4,8 +4,6 @@ import type { IpcMainInvokeEvent } from 'electron';
 import { isLocalAgentContext, type AgentContext, type LocalAgentContext, type RemoteAgentContext } from './agent-context.js';
 import type { AgentContextFactory } from './agent-context-factory.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
-import { BUS_TOPICS } from '#shared/backend/interface.js';
-import type { TaskRunFinishedPayload, TaskRunStartedPayload } from '#shared/task-runner/task_runner.js';
 import { setupAgentChatPump } from './ipc/agent-sessions.js';
 import { storeSet } from './ipc/store.js';
 import { getAgentMeta, getRemoteAgentCacheRoot, removeAgentMeta } from './agent-meta.js';
@@ -101,13 +99,12 @@ export class AgentOrchestrator {
 
   private wireBackendEvents(agentCtx: AgentContext): void {
     agentCtx.eventsUnsubscribe = agentCtx.backend.events.subscribe((event) => {
-      if (event.kind !== 'bus') return;
       if (!this.deps.isWindowAvailable()) return;
       if (this.activeAgentId !== agentCtx.agentId) return;
-      if (event.topic === BUS_TOPICS.taskRunStarted) {
-        this.deps.sendToRenderer(Channels.tasks.runStarted, event.data as TaskRunStartedPayload);
-      } else if (event.topic === BUS_TOPICS.taskRunFinished) {
-        this.deps.sendToRenderer(Channels.tasks.runFinished, event.data as TaskRunFinishedPayload);
+      if (event.kind === 'task:started') {
+        this.deps.sendToRenderer(Channels.tasks.runStarted, event.payload);
+      } else if (event.kind === 'task:finished') {
+        this.deps.sendToRenderer(Channels.tasks.runFinished, event.payload);
       }
     });
   }

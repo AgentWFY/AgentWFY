@@ -66,16 +66,42 @@ interface TaskRunnerDeps {
   runtimeRoot: string
   getJsRuntime: () => JsRuntime
   busPublish: (topic: string, data: unknown) => void
-  onRunFinished?: (payload: TaskRunFinishedPayload) => void
+}
+
+export interface TaskLifecycleListener {
   onRunStarted?: (payload: TaskRunStartedPayload) => void
+  onRunFinished?: (payload: TaskRunFinishedPayload) => void
 }
 
 export class TaskRunner {
   private _runs: TaskRun[] = []
   private readonly deps: TaskRunnerDeps
+  private readonly lifecycleListeners = new Set<TaskLifecycleListener>()
 
   constructor(deps: TaskRunnerDeps) {
     this.deps = deps
+  }
+
+  subscribeLifecycle(listener: TaskLifecycleListener): () => void {
+    this.lifecycleListeners.add(listener)
+    return () => {
+      this.lifecycleListeners.delete(listener)
+    }
+  }
+
+  private emitLifecycle<K extends keyof TaskLifecycleListener>(
+    method: K,
+    payload: Parameters<NonNullable<TaskLifecycleListener[K]>>[0],
+  ): void {
+    for (const listener of this.lifecycleListeners) {
+      const fn = listener[method]
+      if (!fn) continue
+      try {
+        ;(fn as (p: typeof payload) => void)(payload)
+      } catch (err) {
+        console.error(`[TaskRunner] ${method} listener threw:`, err)
+      }
+    }
   }
 
   get runningCount(): number {
@@ -123,7 +149,7 @@ export class TaskRunner {
 
     this._runs.unshift(run)
 
-    this.deps.onRunStarted?.({
+    this.emitLifecycle('onRunStarted', {
       runId: run.runId, taskName: run.taskName, title: run.title,
       status: run.status, origin: run.origin, startedAt: run.startedAt,
     })
@@ -156,6 +182,7 @@ export class TaskRunner {
       }
     }
     this._runs = []
+    this.lifecycleListeners.clear()
   }
 
   private async executeRun(run: TaskRun, code: string, timeoutMs: number | null, input?: unknown): Promise<void> {
@@ -197,7 +224,7 @@ export class TaskRunner {
         logFile,
       }
       this.deps.busPublish(`task:run:${run.runId}`, payload)
-      this.deps.onRunFinished?.(payload)
+      this.emitLifecycle('onRunFinished', payload)
     }
   }
 

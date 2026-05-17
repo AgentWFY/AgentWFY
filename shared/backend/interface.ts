@@ -11,7 +11,7 @@
 
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent, SessionLivePatch } from '../agent/types.js'
-import type { TaskOrigin } from '../task-runner/task_runner.js'
+import type { TaskOrigin, TaskRunFinishedPayload, TaskRunStartedPayload } from '../task-runner/task_runner.js'
 import type {
   BackupCreateResult,
   BackupRestoreResult,
@@ -198,7 +198,9 @@ export interface BackupApi {
 
 // Push-only: subscribers maintain a local cache and apply patches as events
 // arrive. `messages` and `title` are included only when they change, so the
-// conversation isn't shipped per streaming token.
+// conversation isn't shipped per streaming token. Backend lifecycle is
+// carried by typed variants here, not via the agent EventBus — see
+// shared/event-bus.ts.
 
 export type AgentBackendEvent =
   | {
@@ -210,19 +212,10 @@ export type AgentBackendEvent =
     }
   | { kind: 'session:created'; summary: SessionSummary }
   | { kind: 'session:removed'; sessionId: string }
-  | { kind: 'bus'; topic: string; data: unknown }
-
-// Subsystems publish their lifecycle changes to the event bus under known
-// topics. Clients filter on topic instead of subscribing to typed event kinds.
-// Convention is dotted, lowercase, scoped-by-domain — e.g. tasks.run.started.
-export const BUS_TOPICS = {
-  taskRunStarted:  'tasks.run.started',
-  taskRunFinished: 'tasks.run.finished',
-  triggersReloaded: 'triggers.reloaded',
-  pluginsChanged:  'plugins.changed',
-  providersChanged: 'providers.changed',
-  configChanged:   'config.changed',
-} as const
+  | { kind: 'session:saved'; sessionId: string }
+  | { kind: 'session:loaded'; sessionId: string }
+  | { kind: 'task:started'; payload: TaskRunStartedPayload }
+  | { kind: 'task:finished'; payload: TaskRunFinishedPayload }
 
 export interface EventsApi {
   subscribe(handler: (event: AgentBackendEvent) => void): Unsubscribe

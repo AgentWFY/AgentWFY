@@ -115,8 +115,6 @@ export async function createLocalAgentRuntime(
     runtimeRoot,
     getJsRuntime: () => jsRuntime,
     busPublish,
-    onRunStarted: (payload) => busPublish('tasks.run.started', payload),
-    onRunFinished: (payload) => busPublish('tasks.run.finished', payload),
   })
 
   const triggerEngine = new TriggerEngine({
@@ -150,7 +148,6 @@ export async function createLocalAgentRuntime(
   const backend = new LocalBackend({
     agentId: runtimeRoot,
     runtimeRoot: runtimeRoot,
-    eventBus,
     sessionManager,
     functionRegistry,
     providerRegistry,

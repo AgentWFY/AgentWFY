@@ -1,3 +1,10 @@
+// In-process pub/sub scoped to a single agent runtime. Reserved for
+// agent-authored code: sessions/plugins/tasks via the `events` runtime
+// function, event-type triggers, and views calling waitFor. Host code
+// (backend, orchestrator, IPC, etc.) must NOT publish/subscribe/waitFor
+// here — surface backend lifecycle through AgentBackendEvent variants
+// in shared/backend/interface.ts instead.
+
 type Waiter = {
   resolve: (value: unknown) => void
   reject: (reason: unknown) => void

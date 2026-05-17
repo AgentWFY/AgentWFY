@@ -9,7 +9,6 @@
 
 import type { AgentState } from '../agent/types.js'
 import type { DisplayMessage } from '../agent/provider_types.js'
-import type { EventBus } from '../event-bus.js'
 import type { AgentSessionManager } from '../agent/session_manager.js'
 import { sanitizeStreamingMessage } from '../agent/session_manager.js'
 import { stripBlockBinaries } from '../agent/session_persistence.js'
@@ -35,14 +34,12 @@ export interface LocalBackendContext {
   agentId: string
   /** Filesystem root where the live runtime owns on-disk data. */
   runtimeRoot: string
-  eventBus: EventBus
   sessionManager: AgentSessionManager
   functionRegistry: FunctionRegistry
   providerRegistry: ProviderRegistry
   taskRunner: TaskRunner
 }
 import {
-  BUS_TOPICS,
   type AgentBackend,
   type AgentBackendEvent,
   type BackendStatusSnapshot,
@@ -64,11 +61,6 @@ import {
   type Unsubscribe,
 } from './interface.js'
 
-const SESSION_BUS_TOPICS = {
-  saved:  'sessions.saved',
-  loaded: 'sessions.loaded',
-} as const
-
 function liveStateFromAgentState(state: AgentState): SessionLivePatch {
   return {
     isStreaming: state.isStreaming,
@@ -87,9 +79,9 @@ export class LocalBackend implements AgentBackend {
   private readonly subscribers = new Set<(event: AgentBackendEvent) => void>()
   private readonly lastMessagesRef = new Map<string, DisplayMessage[]>()
   private readonly lastTitle = new Map<string, string>()
-  private busUnsubscribes: Array<() => void> = []
   private agentEventsUnsubscribe: (() => void) | null = null
   private sessionLifecycleUnsubscribe: (() => void) | null = null
+  private taskLifecycleUnsubscribe: (() => void) | null = null
   private started = false
 
   constructor(ctx: LocalBackendContext) {
@@ -101,35 +93,17 @@ export class LocalBackend implements AgentBackend {
     if (this.started) return
     this.started = true
 
-    // Forward known bus topics into the unified event stream. Unknown topics
-    // stay invisible to backend subscribers — by design, since
-    // plugins/views consume their own topics via runtime functions.
-    for (const topic of Object.values(BUS_TOPICS)) {
-      const off = this.ctx.eventBus.subscribe(topic, (data) => {
-        this.emit({ kind: 'bus', topic, data })
-      })
-      this.busUnsubscribes.push(off)
-    }
-
     // Per-session typed event stream: every tracked agent's events fan out as
     // session:state (live always, messages only when the array reference
-    // changes). session_saved/loaded become bus events.
+    // changes). Session save/load fan out as their own typed events.
     this.agentEventsUnsubscribe = this.ctx.sessionManager.subscribeToAgentEvents(
       (sessionId, event) => {
         if (event.type === 'session_saved') {
-          this.emit({
-            kind: 'bus',
-            topic: SESSION_BUS_TOPICS.saved,
-            data: { sessionId: event.sessionId },
-          })
+          this.emit({ kind: 'session:saved', sessionId: event.sessionId })
           return
         }
         if (event.type === 'session_loaded') {
-          this.emit({
-            kind: 'bus',
-            topic: SESSION_BUS_TOPICS.loaded,
-            data: { sessionId: event.sessionId },
-          })
+          this.emit({ kind: 'session:loaded', sessionId: event.sessionId })
           return
         }
 
@@ -168,17 +142,22 @@ export class LocalBackend implements AgentBackend {
         this.emit({ kind: 'session:removed', sessionId })
       },
     })
+
+    this.taskLifecycleUnsubscribe = this.ctx.taskRunner.subscribeLifecycle({
+      onRunStarted: (payload) => this.emit({ kind: 'task:started', payload }),
+      onRunFinished: (payload) => this.emit({ kind: 'task:finished', payload }),
+    })
   }
 
   async stop(): Promise<void> {
     if (!this.started) return
     this.started = false
-    for (const off of this.busUnsubscribes) off()
-    this.busUnsubscribes = []
     this.agentEventsUnsubscribe?.()
     this.agentEventsUnsubscribe = null
     this.sessionLifecycleUnsubscribe?.()
     this.sessionLifecycleUnsubscribe = null
+    this.taskLifecycleUnsubscribe?.()
+    this.taskLifecycleUnsubscribe = null
     this.subscribers.clear()
     this.lastMessagesRef.clear()
     this.lastTitle.clear()
