@@ -19,6 +19,10 @@ import type {
 } from '../db/sqlite.js'
 import type {
   AgentBackendEvent,
+  BackupCreateResult,
+  BackupRestoreResult,
+  BackupStatus,
+  BackupVersionInfo,
   FunctionInfo,
   ProviderState,
   RunningTaskSummary,
@@ -114,6 +118,10 @@ export type BackendRpcMethod =
   | 'tasks.readLog'
   | 'files.read'
   | 'files.stat'
+  | 'backup.create'
+  | 'backup.restore'
+  | 'backup.list'
+  | 'backup.status'
 
 export type ClientRpcMethod =
   | 'client.functions.invoke'
@@ -153,6 +161,14 @@ export interface WsDbChanged {
   change: AgentDbChange
 }
 
+/** Server-initiated signal that the entire agent DB was replaced out-of-band
+ *  (e.g. by `backup.restore`). Mirrors must discard cached versions and pull
+ *  a fresh snapshot; per-row `db:changed` events cannot describe a wholesale
+ *  file replacement. */
+export interface WsDbReset {
+  type: 'db:reset'
+}
+
 export interface WsHello {
   type: 'hello'
   protocolVersion: typeof PROTOCOL_VERSION
@@ -174,6 +190,7 @@ export type WsMessage =
   | WsRpcError
   | WsBackendEvent
   | WsDbChanged
+  | WsDbReset
 
 export function encodeWsMessage(message: WsMessage): string {
   return JSON.stringify(message)
@@ -293,3 +310,10 @@ export interface FilesStatResponse {
   size: number
   mtimeMs: number
 }
+
+// Backups
+export type BackupCreateResponse = BackupCreateResult
+export interface BackupRestoreRequest { version: number }
+export type BackupRestoreResponse = BackupRestoreResult
+export type BackupListResponse = BackupVersionInfo[]
+export type BackupStatusResponse = BackupStatus

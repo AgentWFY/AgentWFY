@@ -16,6 +16,11 @@ import {
   DB_SNAPSHOT_VERSION_HEADER,
   errorFromUnknown,
   formatAuthHeader,
+  type BackupCreateResponse,
+  type BackupListResponse,
+  type BackupRestoreRequest,
+  type BackupRestoreResponse,
+  type BackupStatusResponse,
   type ClientFunctionsInvokeRequest,
   type ClientFunctionsInvokeResponse,
   type ConfigClearRequest,
@@ -61,6 +66,7 @@ import type {
   AgentBackendEvent,
   BackendKind,
   BackendStatusSnapshot,
+  BackupApi,
   ConfigApi,
   EventsApi,
   FilesApi,
@@ -111,6 +117,10 @@ export interface RemoteDbSync {
    *  mirror compares against its `localVersion` and triggers a snapshot
    *  fetch if it's behind. */
   onHello(dbVersion: number): void
+  /** Called when the daemon signals that the DB was replaced out-of-band
+   *  (e.g. by a backup restore). The mirror must discard cached state and
+   *  fetch a fresh snapshot. */
+  onReset(): void
 }
 
 export class RemoteBackend implements AgentBackend {
@@ -273,6 +283,21 @@ export class RemoteBackend implements AgentBackend {
     },
   }
 
+  readonly backup: BackupApi = {
+    create: async () => {
+      return this.ws.rpc<Record<string, never>, BackupCreateResponse>('backup.create', {})
+    },
+    restore: async (req) => {
+      return this.ws.rpc<BackupRestoreRequest, BackupRestoreResponse>('backup.restore', req)
+    },
+    list: async () => {
+      return this.ws.rpc<Record<string, never>, BackupListResponse>('backup.list', {})
+    },
+    status: async () => {
+      return this.ws.rpc<Record<string, never>, BackupStatusResponse>('backup.status', {})
+    },
+  }
+
   readonly events: EventsApi = {
     subscribe: (handler: (event: AgentBackendEvent) => void): Unsubscribe => {
       this.eventSubscribers.add(handler)
@@ -332,6 +357,9 @@ export class RemoteBackend implements AgentBackend {
         return
       case 'db:changed':
         this.emitDbChange(message.change)
+        return
+      case 'db:reset':
+        this.dbSync?.onReset()
         return
       case 'rpc':
         await this.handleServerRpc(message)

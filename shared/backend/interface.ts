@@ -12,6 +12,19 @@
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent, SessionLivePatch } from '../agent/types.js'
 import type { TaskOrigin } from '../task-runner/task_runner.js'
+import type {
+  BackupCreateResult,
+  BackupRestoreResult,
+  BackupStatus,
+  BackupVersionInfo,
+} from '../backup.js'
+
+export type {
+  BackupCreateResult,
+  BackupRestoreResult,
+  BackupStatus,
+  BackupVersionInfo,
+} from '../backup.js'
 
 // ── Backend identity ─────────────────────────────────────────────────────
 
@@ -168,6 +181,19 @@ export interface FilesApi {
   stat(req: { path: string }): Promise<FilesStatResult>
 }
 
+// ── Backups ─────────────────────────────────────────────────────────────
+
+// Per-agent DB backups. Always operates on the backend's own runtime root —
+// the daemon's agent dir for remote, the agent dir on disk for local. The
+// local mirror cache for a remote agent is never touched by this API.
+
+export interface BackupApi {
+  create(): Promise<BackupCreateResult>
+  restore(req: { version: number }): Promise<BackupRestoreResult>
+  list(): Promise<BackupVersionInfo[]>
+  status(): Promise<BackupStatus>
+}
+
 // ── Events (live stream from backend to subscribed clients) ──────────────
 
 // Push-only: subscribers maintain a local cache and apply patches as events
@@ -220,6 +246,7 @@ export interface AgentBackend {
   config: ConfigApi
   tasks: TasksApi
   files: FilesApi
+  backup: BackupApi
   events: EventsApi
   status: StatusApi
 }

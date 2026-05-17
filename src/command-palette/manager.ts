@@ -19,7 +19,6 @@ import {
   initAgent,
 } from '../agent-manager.js';
 import { setAgentMeta } from '../agent-meta.js';
-import { backupAgentDb, listAllBackups, restoreFromBackup } from '../backup.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-views/manager.js';
 import type { PluginRegistry } from '#shared/plugins/registry.js';
@@ -75,6 +74,12 @@ export class CommandPaletteManager {
 
   constructor(deps: CommandPaletteManagerDeps) {
     this.deps = deps;
+  }
+
+  private requireBackend(): AgentBackend {
+    const backend = this.deps.getBackend();
+    if (!backend) throw new Error('No active agent backend');
+    return backend;
   }
 
   getWebContents(): Electron.WebContents | null {
@@ -599,8 +604,10 @@ export class CommandPaletteManager {
     }
   }
 
-  buildBackupItems(): CommandPaletteItem[] {
-    const backups = listAllBackups(this.deps.getCacheRoot());
+  async buildBackupItems(): Promise<CommandPaletteItem[]> {
+    const backend = this.deps.getBackend();
+    if (!backend) return [];
+    const backups = await backend.backup.list();
     return backups.map((b) => {
       const date = new Date(b.timestamp);
       const dateStr = date.toLocaleString();
@@ -1060,7 +1067,7 @@ export class CommandPaletteManager {
 
 
       case 'backup-agent-db': {
-        const result = await backupAgentDb(this.deps.getCacheRoot());
+        const result = await this.requireBackend().backup.create();
         if (result.error) {
           throw new Error(result.error);
         }
@@ -1079,12 +1086,11 @@ export class CommandPaletteManager {
 
       case 'restore-agent-db-confirm': {
         const restoreAction = action as Extract<CommandPaletteAction, { type: 'restore-agent-db-confirm' }>;
-        const result = await restoreFromBackup(this.deps.getCacheRoot(), restoreAction.backupVersion);
+        const result = await this.requireBackend().backup.restore({ version: restoreAction.backupVersion });
         if (!result.success) {
           throw new Error(result.error || 'Restore failed');
         }
         this.hide({ focusMain: true });
-        // Reload the app to pick up restored DB — full reset like agent switch
         this.deps.getTabViewManager().destroyAllTabViews();
         this.deps.getTabViewManager().clearTrackedViewWebContents();
         this.deps.reloadRenderer();

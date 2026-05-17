@@ -491,6 +491,7 @@ class WindowManager {
     return views;
   }
   getAllContexts() { return this.orchestrator.getAllContexts(); }
+  getActiveBackend() { return this.orchestrator.getActiveAgentContext()?.backend ?? null; }
 
   getContextForSender(senderId: number) { return this.orchestrator.getContextForSender(senderId); }
   tryGetContextForSender(senderId: number) { return this.orchestrator.tryGetContextForSender(senderId); }

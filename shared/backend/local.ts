@@ -20,6 +20,12 @@ import { getConfigValue, setAgentConfig, clearAgentConfig, removeAgentConfig } f
 import { SystemConfigKeys } from '../system-config/keys.js'
 import { readAgentFile, statAgentFile } from './files.js'
 import { listAgentTaskLogHistory, readAgentTaskLog } from './task-logs.js'
+import {
+  backupAgentDb,
+  getBackupStatus,
+  listAllBackups,
+  restoreFromBackup,
+} from '../backup.js'
 
 /** Minimal slice of per-agent runtime that LocalBackend actually uses.
  *  Importing this (vs. the full AgentContext) keeps LocalBackend free of
@@ -41,6 +47,7 @@ import {
   type AgentBackendEvent,
   type BackendStatusSnapshot,
   type BackendKind,
+  type BackupApi,
   type EventsApi,
   type FilesApi,
   type FunctionsApi,
@@ -300,6 +307,13 @@ export class LocalBackend implements AgentBackend {
     stat: async ({ path }) => {
       return statAgentFile(this.ctx.runtimeRoot, path)
     },
+  }
+
+  readonly backup: BackupApi = {
+    create: async () => backupAgentDb(this.ctx.runtimeRoot),
+    restore: async ({ version }) => restoreFromBackup(this.ctx.runtimeRoot, version),
+    list: async () => listAllBackups(this.ctx.runtimeRoot),
+    status: async () => getBackupStatus(this.ctx.runtimeRoot),
   }
 
   // ── events ─────────────────────────────────────────────────────────────

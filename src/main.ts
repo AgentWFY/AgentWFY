@@ -24,7 +24,7 @@ import {
   createDefaultAgent,
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentIds } from './window-manager.js';
-import { stopBackupScheduler, getBackupStatus } from './backup.js';
+import { stopBackupScheduler } from './backup.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { getViewByName } from '#shared/db/views.js';
 import { getConfigValue } from '#shared/settings/config.js';
@@ -270,11 +270,11 @@ ipcMain.handle(Channels.app.getDefaultView, async () => {
   }
 });
 
-ipcMain.handle(Channels.app.getBackupStatus, () => {
+ipcMain.handle(Channels.app.getBackupStatus, async () => {
   try {
-    const root = windowManager.getActiveAgentId();
-    if (!root) return null;
-    return getBackupStatus(root);
+    const backend = windowManager.getActiveBackend();
+    if (!backend) return null;
+    return await backend.backup.status();
   } catch {
     return null;
   }

@@ -110,20 +110,7 @@ export class RemoteAgentDbSync {
       // in-memory and may have reset, and we may have missed events while
       // disconnected. Within a connected session changes apply incrementally.
       if (status.state === 'connected') {
-        this.connectionEpoch += 1;
-        this.initialized = false;
-        this.localVersion = 0;
-        this.buffered = [];
-        this.clearSnapshotRetry();
-        // Any in-flight snapshot from the previous connection is stale; we
-        // null out the gate so a new one can start, and the stale fetch
-        // discards its result via the epoch check in pullSnapshot.
-        this.snapshotPromise = null;
-        // Outstanding waitForVersion targets were keyed to the prior session.
-        // After a daemon restart the new sequence may never reach them; resolve
-        // them now and let the caller see whatever's in the next snapshot.
-        for (const waiter of this.versionWaiters) waiter.resolve();
-        this.versionWaiters = [];
+        this.resetMirrorState();
         this.requestSnapshotInBackground();
       }
     });
@@ -189,6 +176,32 @@ export class RemoteAgentDbSync {
     if (dbVersion > this.localVersion) {
       this.requestSnapshotInBackground();
     }
+  }
+
+  /** Called when the daemon signals the DB was replaced wholesale (e.g.
+   *  backup restore). Per-row replication can't describe this, so we discard
+   *  cached state and re-snapshot. */
+  onReset(): void {
+    if (this.stopped) return;
+    this.resetMirrorState();
+    this.requestSnapshotInBackground();
+  }
+
+  private resetMirrorState(): void {
+    this.connectionEpoch += 1;
+    this.initialized = false;
+    this.localVersion = 0;
+    this.buffered = [];
+    this.clearSnapshotRetry();
+    // Any in-flight snapshot from the previous connection/epoch is stale; we
+    // null out the gate so a new one can start, and the stale fetch discards
+    // its result via the epoch check in pullSnapshot.
+    this.snapshotPromise = null;
+    // Outstanding waitForVersion targets were keyed to the prior session.
+    // After a daemon restart the new sequence may never reach them; resolve
+    // them now and let the caller see whatever's in the next snapshot.
+    for (const waiter of this.versionWaiters) waiter.resolve();
+    this.versionWaiters = [];
   }
 
   // --- Internal: change dispatch ---

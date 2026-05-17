@@ -20,6 +20,7 @@ import {
   encodeWsMessage,
   errorFromUnknown,
   type BackendRpcMethod,
+  type BackupRestoreRequest,
   type ConfigClearRequest,
   type ConfigRemoveRequest,
   type ConfigSetRequest,
@@ -190,6 +191,20 @@ async function dispatchBackendRpc(
     }
     case 'files.stat':
       return bundle.backend.files.stat(params as FilesStatRequest)
+    case 'backup.create':
+      return bundle.backend.backup.create()
+    case 'backup.restore': {
+      const result = await bundle.backend.backup.restore(params as BackupRestoreRequest)
+      // The DB file was replaced — every connected mirror is now stale and
+      // must re-snapshot. Per-row replication can't describe a wholesale
+      // file swap, so emit the dedicated db:reset signal.
+      if (result.success) bundle.dbResets.emit()
+      return result
+    }
+    case 'backup.list':
+      return bundle.backend.backup.list()
+    case 'backup.status':
+      return bundle.backend.backup.status()
     default:
       throw new Error(`Unknown RPC method: ${method}`)
   }
@@ -217,6 +232,12 @@ function attachDbChanges(bundle: RuntimeBundle, connection: WsConnection): () =>
   })
 }
 
+function attachDbResets(bundle: RuntimeBundle, connection: WsConnection): () => void {
+  return bundle.dbResets.subscribe(() => {
+    connection.send(encodeWsMessage({ type: 'db:reset' }))
+  })
+}
+
 function handleWebSocket(
   req: IncomingMessage,
   socket: Socket,
@@ -237,6 +258,7 @@ function handleWebSocket(
 
   let unsubscribeEvents: (() => void) | null = null
   let unsubscribeDbChanges: (() => void) | null = null
+  let unsubscribeDbResets: (() => void) | null = null
   const connection: WsConnection = acceptWebSocket(req, socket, head, {
     onMessage: (raw) => {
       let message
@@ -270,8 +292,10 @@ function handleWebSocket(
     onClose: () => {
       unsubscribeEvents?.()
       unsubscribeDbChanges?.()
+      unsubscribeDbResets?.()
       unsubscribeEvents = null
       unsubscribeDbChanges = null
+      unsubscribeDbResets = null
       clientBridge.detach(undefined, connection)
       console.log('agentwfy-remote-server: client disconnected')
     },
@@ -283,6 +307,7 @@ function handleWebSocket(
   clientBridge.attach(connection)
   unsubscribeEvents = attachBackendEvents(bundle, connection)
   unsubscribeDbChanges = attachDbChanges(bundle, connection)
+  unsubscribeDbResets = attachDbResets(bundle, connection)
   connection.send(encodeWsMessage({
     type: 'hello',
     protocolVersion: PROTOCOL_VERSION,

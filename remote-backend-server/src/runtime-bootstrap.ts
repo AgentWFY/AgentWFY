@@ -18,6 +18,13 @@ export interface RuntimeBundle {
   dbChanges: {
     subscribe(handler: (change: AgentDbChange) => void): () => void
   }
+  /** One-off "the DB was replaced out-of-band" notifications (currently only
+   *  emitted after backup.restore). Subscribers should discard cached state
+   *  and re-snapshot. */
+  dbResets: {
+    subscribe(handler: () => void): () => void
+    emit(): void
+  }
   /** Current DB change-log version. Read after RPCs / on hello so remote
    *  mirrors can sync their `localVersion`. */
   getDbVersion(): number
@@ -29,6 +36,7 @@ export async function createAgentRuntime(
   clientFunctionInvoker?: ClientFunctionInvoker,
 ): Promise<RuntimeBundle> {
   const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
+  const dbResetSubscribers = new Set<() => void>()
   let triggerReloadTimer: ReturnType<typeof setTimeout> | null = null
 
   const runtime = await createLocalAgentRuntime({
@@ -78,6 +86,7 @@ export async function createAgentRuntime(
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
     dbChangeSubscribers.clear()
+    dbResetSubscribers.clear()
   }
 
   return {
@@ -87,6 +96,23 @@ export async function createAgentRuntime(
         dbChangeSubscribers.add(handler)
         return () => {
           dbChangeSubscribers.delete(handler)
+        }
+      },
+    },
+    dbResets: {
+      subscribe(handler) {
+        dbResetSubscribers.add(handler)
+        return () => {
+          dbResetSubscribers.delete(handler)
+        }
+      },
+      emit() {
+        for (const handler of dbResetSubscribers) {
+          try {
+            handler()
+          } catch (err) {
+            console.warn('[runtime] db reset subscriber failed:', err)
+          }
         }
       },
     },
