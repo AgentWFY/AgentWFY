@@ -68,10 +68,6 @@ export function removeAgentMeta(agentId: string): void {
   writeMap(map)
 }
 
-export function listAgentMeta(): Record<string, AgentMeta> {
-  return readMap()
-}
-
 // Hash on (label, baseUrl, agentToken) so reusing the same local label for a
 // different daemon — or rotating the token — maps to a fresh cache directory.
 // Otherwise the previous daemon's mirror can leak through, especially while

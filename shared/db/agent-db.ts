@@ -1,7 +1,6 @@
 import { DatabaseSync, StatementSync, backup, constants } from 'node:sqlite';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
 
@@ -86,7 +85,7 @@ END;
 ${['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'].map(t => makeAutoUpdatedAtTriggerSql(t)).join('\n')}
 `;
 
-export const CHANGE_TRACKED_TABLES = ['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'] as const;
+const CHANGE_TRACKED_TABLES = ['views', 'docs', 'tasks', 'triggers', 'config', 'plugins', 'modules'] as const;
 const CHANGE_TRACKED_TABLE_SET = new Set<string>(CHANGE_TRACKED_TABLES);
 
 function makeAutoUpdatedAtTriggerSql(table: string): string {
@@ -623,19 +622,6 @@ class AgentDb {
     }
   }
 
-  async exportSnapshot(): Promise<Buffer> {
-    const tmpPath = path.join(
-      os.tmpdir(),
-      `agentwfy-agent-db-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
-    );
-    try {
-      await backup(this.db, tmpPath);
-      return fs.readFileSync(tmpPath);
-    } finally {
-      fs.rmSync(tmpPath, { force: true });
-    }
-  }
-
   /**
    * Stream a consistent copy of the DB to disk and return the version
    * the snapshot reflects. We capture `version` BEFORE invoking backup() —
@@ -738,10 +724,6 @@ export function closeAgentDb(dataDir: string): void {
   }
 }
 
-export async function exportAgentDbSnapshot(dataDir: string): Promise<Buffer> {
-  return getOrCreateAgentDb(dataDir).exportSnapshot();
-}
-
 export async function writeAgentDbSnapshotFile(
   dataDir: string,
   snapshotPath: string,
@@ -757,18 +739,6 @@ export function getAgentDbCurrentVersion(dataDir: string): number {
 
 export function applyAgentDbMirrorChange(dataDir: string, change: AgentDbChange): void {
   getOrCreateAgentDb(dataDir).applyMirrorChange(change);
-}
-
-export function replaceAgentDbSnapshot(dataDir: string, snapshot: Uint8Array): void {
-  const key = path.resolve(dataDir);
-  closeAgentDb(key);
-  const agentDbPath = getAgentDbPath(key);
-  fs.mkdirSync(path.dirname(agentDbPath), { recursive: true });
-  const tmpPath = `${agentDbPath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, snapshot);
-  fs.renameSync(tmpPath, agentDbPath);
-  fs.rmSync(`${agentDbPath}-wal`, { force: true });
-  fs.rmSync(`${agentDbPath}-shm`, { force: true });
 }
 
 export function replaceAgentDbSnapshotFile(dataDir: string, snapshotPath: string): void {

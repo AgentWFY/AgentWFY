@@ -84,9 +84,7 @@ import type {
 import type { AgentDbChange } from '../db/sqlite.js'
 import { isClientRuntimeFunction } from '../runtime/client-functions.js'
 import { DAEMON_BUILT_IN_FUNCTIONS } from '../runtime/daemon-functions.js'
-import { WsClient, WsClientError, type WsClientConfig } from './ws_client.js'
-
-export { WsClientError as RemoteBackendError }
+import { WsClient, type WsClientConfig } from './ws_client.js'
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64)

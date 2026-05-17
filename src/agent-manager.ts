@@ -11,7 +11,7 @@ const DEFAULT_AGENT_BASE_NAME = 'Default Agent';
 
 // --- Agent dir helpers ---
 
-export function getAgentDir(runtimeRoot: string): string {
+function getAgentDir(runtimeRoot: string): string {
   return path.join(runtimeRoot, AGENT_DIR_NAME);
 }
 
@@ -20,7 +20,7 @@ async function ensureAgentDir(runtimeRoot: string): Promise<void> {
   await mkdir(agentDir, { recursive: true });
 }
 
-export async function ensureAgentRuntimeBootstrap(runtimeRoot: string): Promise<void> {
+async function ensureAgentRuntimeBootstrap(runtimeRoot: string): Promise<void> {
   await ensureAgentDir(runtimeRoot);
   await ensureViewsSchema(runtimeRoot);
 }

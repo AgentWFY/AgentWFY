@@ -5,7 +5,7 @@ import { TraceWriter } from '#shared/runtime/trace_writer.js'
 const runtimes = new Map<string, JsRuntime>()
 const traceWriters = new Map<string, TraceWriter>()
 
-export const TRACES_DIR_NAME = '.agentwfy/traces'
+const TRACES_DIR_NAME = '.agentwfy/traces'
 
 export function getOrCreateTraceWriter(runtimeRoot: string): TraceWriter {
   let writer = traceWriters.get(runtimeRoot)

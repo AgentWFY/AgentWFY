@@ -69,7 +69,3 @@ export type AgentContext = LocalAgentContext | RemoteAgentContext;
 export function isLocalAgentContext(ctx: AgentContext): ctx is LocalAgentContext {
   return ctx.mode === 'local';
 }
-
-export function isRemoteAgentContext(ctx: AgentContext): ctx is RemoteAgentContext {
-  return ctx.mode === 'remote';
-}
