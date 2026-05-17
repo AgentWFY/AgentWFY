@@ -14,8 +14,7 @@ import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 import type { TracesApi } from './traces.js'
 import type { FileContent } from '#shared/agent/types.js'
-import type { ProviderState } from '../../ipc/providers.js'
-import type { AgentSnapshot, InstalledAgent, SessionLivePatch, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
+import type { AgentSnapshot, InstalledAgent, ProviderState, SessionLivePatch, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
 
 export type { ProviderState, AgentSnapshot, SessionLivePatch, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
 

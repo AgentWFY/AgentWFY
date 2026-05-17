@@ -5,8 +5,7 @@ import type {
   AgentSnapshot,
   RetryState,
 } from './types.js'
-import type { SessionLivePatch } from '../../ipc/schema.js'
-import type { ProviderState } from '../../ipc/providers.js'
+import type { ProviderState, SessionLivePatch } from '../../ipc/schema.js'
 import type { FileContent } from '#shared/agent/types.js'
 
 export interface AgentSessionState {

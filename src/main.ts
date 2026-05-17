@@ -1,38 +1,38 @@
-import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, net, shell, webContents, type MenuItemConstructorOptions } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, Menu, nativeImage, protocol, net, webContents } from 'electron';
+import { registerAppHandlers } from './ipc/app.js';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange, storeGet } from './ipc/store.js';
 import { setFallbackStoreReader } from '#shared/settings/config.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerSqlHandlers } from './ipc/sql.js';
 import { registerTabsHandlers } from './ipc/tabs.js';
-import { registerTabViewHandlers } from './tab-views/ipc.js';
+import { registerTabViewHandlers } from './ipc/tab-views.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
-import { registerTaskRunnerHandlers } from './task-runner/ipc.js';
+import { registerTaskRunnerHandlers } from './ipc/tasks.js';
 import { registerAgentHandlers } from './ipc/agents.js';
+import { registerAgentSidebarHandlers } from './ipc/agent-sidebar.js';
 import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentChatPump } from './ipc/agent-sessions.js';
 import { registerTraceHandlers } from './ipc/traces.js';
-import { flushAllTraceWriters } from './ipc/exec-js.js';
+import { registerZenModeHandlers } from './ipc/zen-mode.js';
+import { registerPreviewCursorHandlers } from './ipc/preview-cursor.js';
+import { flushAllTraceWriters } from './runtime/runtime-cache.js';
 import {
   showOpenAgentDialog,
   showInstallAgentFromFileDialog,
   isAgentDir,
-  isDefaultAgentPath,
   initAgent,
   createDefaultAgent,
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentIds } from './window-manager.js';
 import { stopBackupScheduler } from '#shared/backup-scheduler.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
-import { getViewByName } from '#shared/db/views.js';
-import { getConfigValue } from '#shared/settings/config.js';
 import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from '#shared/settings/global-config.js';
 import { SystemConfigKeys } from '#shared/system-config/keys.js';
 import { isShortcutKey } from './shortcuts/task-actions.js';
 import { getAgentMeta } from './agent-meta.js';
-import { Channels } from './ipc/channels.cjs';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -213,158 +213,28 @@ registerTraceHandlers(
   (e) => windowManager.getBackendForSender(e.sender.id),
 );
 
-ipcMain.handle(Channels.app.restart, async () => {
-  await devRebuild();
-  app.exit(100); // exit 100 = start.mjs respawns
+registerAppHandlers({
+  devRebuild,
+  getActiveAgentId: () => windowManager.getActiveAgentId(),
+  getActiveHttpApiPort: () => windowManager.getActiveHttpApiPort(),
+  getActiveCacheRoot: () => windowManager.getActiveCacheRoot(),
+  getActiveBackend: () => windowManager.getActiveBackend(),
+  getCacheRootForEvent: (e) => windowManager.getCacheRootForEvent(e),
 });
-
-ipcMain.handle(Channels.app.stop, () => {
-  app.exit(0);
+registerAgentSidebarHandlers({
+  getMainWindow: () => windowManager.getMainWindow(),
+  getInstalledAgentsList: () => windowManager.getInstalledAgentsList(),
+  addAgent: (agentId) => windowManager.addAgent(agentId),
+  switchAgent: (agentId) => windowManager.switchAgent(agentId),
+  removeAgent: (agentId) => windowManager.removeAgent(agentId),
+  reorderAgents: (fromIndex, toIndex) => windowManager.reorderAgents(fromIndex, toIndex),
 });
-
-ipcMain.handle(Channels.app.reloadRenderer, async () => {
-  await devRebuild();
-  for (const wc of webContents.getAllWebContents()) {
-    wc.reloadIgnoringCache();
-  }
+registerZenModeHandlers({
+  toggleZenMode: () => windowManager.toggleZenMode(),
+  setZenMode: (value) => windowManager.setZenMode(value),
 });
-
-ipcMain.handle(Channels.app.getAgentId, () => {
-  return windowManager.getActiveAgentId();
-});
-
-ipcMain.on(Channels.app.getAgentId, (event) => {
-  event.returnValue = windowManager.getActiveAgentId();
-});
-
-ipcMain.handle(Channels.app.openAgentDir, () => {
-  const root = windowManager.getActiveAgentId();
-  if (root) shell.openPath(root);
-});
-
-ipcMain.handle(Channels.app.getAgentDisplayPath, () => {
-  const root = windowManager.getActiveAgentId();
-  if (!root) return null;
-  if (isDefaultAgentPath(root)) return path.basename(root);
-  const home = app.getPath('home');
-  if (root.startsWith(home)) return '~' + root.slice(home.length);
-  return root;
-});
-
-ipcMain.handle(Channels.app.getHttpApiPort, () => {
-  try {
-    return windowManager.getActiveHttpApiPort();
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle(Channels.app.getDefaultView, async () => {
-  try {
-    const root = windowManager.getActiveCacheRoot();
-    if (!root) return null;
-    const configValue = getConfigValue(root, SystemConfigKeys.defaultView, 'home');
-    const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
-    const viewName = trimmed || 'home';
-    const view = await getViewByName(root, viewName);
-    if (!view) return null;
-    return { viewName: view.name, title: view.title || view.name, viewUpdatedAt: view.updated_at };
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle(Channels.app.getBackupStatus, async () => {
-  try {
-    const backend = windowManager.getActiveBackend();
-    if (!backend) return null;
-    return await backend.backup.status();
-  } catch {
-    return null;
-  }
-});
-
-ipcMain.handle(Channels.app.getSetting, (event, key: string, fallback?: unknown) => {
-  const root = windowManager.getCacheRootForEvent(event);
-  return getConfigValue(root, key, fallback) ?? null;
-});
-
-// --- Agent sidebar IPC handlers ---
-
-ipcMain.handle(Channels.agentSidebar.getInstalled, () => {
-  return windowManager.getInstalledAgentsList();
-});
-
-ipcMain.handle(Channels.agentSidebar.switch, async (_event, agentId: string) => {
-  await windowManager.switchAgent(agentId);
-});
-
-ipcMain.handle(Channels.agentSidebar.add, async () => {
-  const win = windowManager.getMainWindow();
-  const picked = await showOpenAgentDialog(win);
-  if (!picked) return null;
-  await windowManager.addAgent(picked);
-  return picked;
-});
-
-ipcMain.handle(Channels.agentSidebar.addFromFile, async () => {
-  const win = windowManager.getMainWindow();
-  const picked = await showInstallAgentFromFileDialog(win);
-  if (!picked) return null;
-  await windowManager.addAgent(picked);
-  return picked;
-});
-
-ipcMain.handle(Channels.agentSidebar.remove, async (_event, agentId: string) => {
-  await windowManager.removeAgent(agentId);
-});
-
-ipcMain.handle(Channels.agentSidebar.reorder, async (_event, fromIndex: number, toIndex: number) => {
-  windowManager.reorderAgents(fromIndex, toIndex);
-});
-
-ipcMain.handle(Channels.agentSidebar.showContextMenu, async (_event, agentId: string) => {
-  const win = windowManager.getMainWindow();
-  if (!win || win.isDestroyed()) return;
-
-  const agents = windowManager.getInstalledAgentsList();
-  const canRemove = agents.length > 1;
-
-  const template: MenuItemConstructorOptions[] = [];
-  if (canRemove) {
-    template.push({
-      label: 'Close Agent',
-      click: () => windowManager.removeAgent(agentId),
-    });
-  }
-
-  if (template.length === 0) return;
-  const menu = Menu.buildFromTemplate(template);
-  menu.popup({ window: win });
-});
-
-// --- Zen mode sync ---
-
-ipcMain.handle(Channels.zenMode.toggle, () => {
-  windowManager.toggleZenMode();
-});
-
-ipcMain.handle(Channels.zenMode.set, (_event, value: boolean) => {
-  windowManager.setZenMode(!!value);
-});
-
-// --- Preview cursor overlay (only active when AGENTWFY_PREVIEW_CURSOR is set) ---
-
-ipcMain.handle(Channels.previewCursor.setPos, (_event, payload: { x: number; y: number }) => {
-  windowManager.getPreviewCursor()?.setPos(payload.x, payload.y);
-});
-
-ipcMain.handle(Channels.previewCursor.setVisible, (_event, visible: boolean) => {
-  windowManager.getPreviewCursor()?.setVisible(!!visible);
-});
-
-ipcMain.handle(Channels.previewCursor.flash, () => {
-  windowManager.getPreviewCursor()?.flash();
+registerPreviewCursorHandlers({
+  getPreviewCursor: () => windowManager.getPreviewCursor(),
 });
 
 // --- Menu ---

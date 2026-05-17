@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { Channels } from '../ipc/channels.cjs';
+import { Channels } from './channels.cjs';
 import { listTasks } from '#shared/db/tasks.js';
 import { taskActionId } from '../shortcuts/task-actions.js';
 import type { ShortcutManager } from '../shortcuts/manager.js';

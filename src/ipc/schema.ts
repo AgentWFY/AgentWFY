@@ -6,10 +6,9 @@
 // referenced from the CJS preload via `import type`.
 
 import type { TabState, TabViewEvent } from '../tab-views/manager.js'
-import type { ProviderState } from './providers.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { AgentSnapshot, SessionLivePatch } from '#shared/agent/types.js'
-import type { BackendConnectionState } from '#shared/backend/interface.js'
+import type { BackendConnectionState, ProviderState } from '#shared/backend/interface.js'
 import type {
   TaskRunStartedPayload,
   TaskRunFinishedPayload,
@@ -18,6 +17,7 @@ import type {
 // Re-exported from portable locations so renderer/preload imports continue to
 // resolve through ipc/schema as before.
 export type { AgentSnapshot, SessionLivePatch } from '#shared/agent/types.js'
+export type { ProviderState } from '#shared/backend/interface.js'
 export type {
   TaskRunStartedPayload,
   TaskRunFinishedPayload,

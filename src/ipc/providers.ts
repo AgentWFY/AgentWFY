@@ -3,8 +3,6 @@ import type { ProviderInfo } from '#shared/agent/provider_types.js'
 import type { AgentBackend, ProviderState } from '#shared/backend/interface.js'
 import { Channels } from './channels.cjs'
 
-export type { ProviderState } from '#shared/backend/interface.js'
-
 function pushProviderState(wc: WebContents, state: ProviderState): void {
   if (!wc.isDestroyed()) {
     wc.send(Channels.providers.stateChanged, state)

@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { Channels } from './channels.cjs'
-import { getOrCreateTraceWriter } from './exec-js.js'
+import { getOrCreateTraceWriter } from '../runtime/runtime-cache.js'
 import { isValidTraceSessionId, type TraceEvent } from '#shared/runtime/trace_types.js'
 import type { AgentBackend } from '#shared/backend/interface.js'
 
