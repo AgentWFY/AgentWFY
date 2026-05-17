@@ -8,7 +8,7 @@ import { BUS_TOPICS } from '#shared/backend/interface.js';
 import type { TaskRunFinishedPayload, TaskRunStartedPayload } from '#shared/task-runner/task_runner.js';
 import { setupAgentChatPump } from './ipc/agent-sessions.js';
 import { storeSet } from './ipc/store.js';
-import { getAgentMeta, removeAgentMeta } from './agent-meta.js';
+import { getAgentMeta, getRemoteAgentCacheRoot, removeAgentMeta } from './agent-meta.js';
 import { isDefaultAgentPath } from './agent-manager.js';
 import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
 import { runCleanup } from './cleanup.js';
@@ -206,6 +206,14 @@ export class AgentOrchestrator {
 
     const wasActive = this.activeAgentId === agentId;
 
+    // Capture the remote cache root before clearing meta — once meta is gone
+    // we can't reconstruct the path, and the dir won't be deleted by anything
+    // else (isDefaultAgentPath is false for remote agents).
+    const meta = getAgentMeta(agentId);
+    const remoteCacheRoot = meta.backend === 'remote' && meta.remoteConfig
+      ? getRemoteAgentCacheRoot(agentId, meta.remoteConfig)
+      : null;
+
     // Remove from persisted list
     this.persistedAgentIds = this.persistedAgentIds.filter(p => p !== agentId);
 
@@ -222,6 +230,12 @@ export class AgentOrchestrator {
     // Delete directory on disk for default agents living in userData
     if (isDefaultAgentPath(agentId)) {
       fs.rm(agentId, { recursive: true, force: true }, () => {});
+    }
+
+    // Same idea for the remote mirror cache — context.destroy already closed
+    // the SQLite handle (if it was open), so this is safe to delete async.
+    if (remoteCacheRoot) {
+      fs.rm(remoteCacheRoot, { recursive: true, force: true }, () => {});
     }
 
     if (wasActive) {

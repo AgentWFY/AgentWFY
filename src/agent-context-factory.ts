@@ -1,6 +1,5 @@
-import { app, session } from 'electron';
+import { session } from 'electron';
 import type { BaseWindow, WebContentsView } from 'electron';
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -25,7 +24,7 @@ import type { AgentContext, LocalAgentContext, RemoteAgentContext } from './agen
 import type { CommandPaletteManager } from './command-palette/manager.js';
 import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
 import { LocalChatController } from './chat/local_chat_controller.js';
-import { getAgentMeta } from './agent-meta.js';
+import { getAgentMeta, getRemoteAgentCacheRoot } from './agent-meta.js';
 import { createRemoteAgentContext, destroyRemoteAgentContext } from './agent-context-remote.js';
 
 export interface AgentContextFactoryDeps {
@@ -67,7 +66,7 @@ export class AgentContextFactory {
     agentId: string,
     remoteConfig: { baseUrl: string; agentToken: string },
   ): Promise<RemoteAgentContext> {
-    const cacheRoot = this.computeRemoteCacheRoot(agentId);
+    const cacheRoot = getRemoteAgentCacheRoot(agentId, remoteConfig);
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
     const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry, { dataDir: cacheRoot });
@@ -259,11 +258,6 @@ export class AgentContextFactory {
       fileSource,
     });
     agentSession.protocol.handle('agentview', handler);
-  }
-
-  private computeRemoteCacheRoot(agentId: string): string {
-    const hash = createHash('sha256').update(agentId).digest('hex').slice(0, 16);
-    return path.join(app.getPath('userData'), 'remote-agents', hash);
   }
 
   private createTabRuntime(

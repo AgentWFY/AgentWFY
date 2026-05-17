@@ -8,6 +8,9 @@
 //
 // Old installs (no entry) default to local — the existing behavior.
 
+import { app } from 'electron'
+import { createHash } from 'crypto'
+import path from 'path'
 import { storeGet, storeSet } from './ipc/store.js'
 
 const STORE_KEY = 'installedAgentMeta'
@@ -67,4 +70,14 @@ export function removeAgentMeta(agentId: string): void {
 
 export function listAgentMeta(): Record<string, AgentMeta> {
   return readMap()
+}
+
+// Hash on (label, baseUrl, agentToken) so reusing the same local label for a
+// different daemon — or rotating the token — maps to a fresh cache directory.
+// Otherwise the previous daemon's mirror can leak through, especially while
+// the new daemon is offline (the sync layer falls back to the on-disk mirror).
+export function getRemoteAgentCacheRoot(agentId: string, remoteConfig: RemoteAgentConfig): string {
+  const identity = JSON.stringify([agentId, remoteConfig.baseUrl, remoteConfig.agentToken])
+  const hash = createHash('sha256').update(identity).digest('hex').slice(0, 16)
+  return path.join(app.getPath('userData'), 'remote-agents', hash)
 }
