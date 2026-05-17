@@ -33,10 +33,14 @@ export interface AgentDbChange {
   row?: Record<string, unknown>;
 }
 
-const MUTATION_RE = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i;
+// Conservative: only known-read prefixes count as non-mutating. Anything else
+// (WITH ... INSERT/UPDATE/DELETE, PRAGMA, DDL, BEGIN/COMMIT, ATTACH, VACUUM,
+// ...) is treated as potentially mutating. A false negative would split-brain
+// the remote mirror against the daemon and drop daemon change-tracking events.
+const READ_ONLY_RE = /^(?:SELECT|VALUES|EXPLAIN)\b/i;
 
 export function isPotentiallyMutatingSql(sql: string): boolean {
-  return MUTATION_RE.test(stripLeadingSqlComments(sql));
+  return !READ_ONLY_RE.test(stripLeadingSqlComments(sql));
 }
 
 function stripLeadingSqlComments(sql: string): string {
