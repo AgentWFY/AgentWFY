@@ -14,7 +14,7 @@ import { syncTaskActions } from './shortcuts/task-actions.js';
 import { getOrCreateRuntime, disposeRuntime } from './ipc/exec-js.js';
 import type { TabHost } from '#shared/runtime/hosts.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
-import { stopBackupSchedulerForAgent } from './backup.js';
+import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
 import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
 import type { SendToRenderer } from './ipc/schema.js';
@@ -160,6 +160,7 @@ export class AgentContextFactory {
       dbChangeDebounceTimer: null,
       triggerReloadDebounceTimer: null,
       taskActionsReloadDebounceTimer: null,
+      providerStatePushTimer: null,
       tabTools,
     };
     agentCtxRef = agentCtx;
@@ -179,6 +180,10 @@ export class AgentContextFactory {
       if (ctx.taskActionsReloadDebounceTimer) {
         clearTimeout(ctx.taskActionsReloadDebounceTimer);
         ctx.taskActionsReloadDebounceTimer = null;
+      }
+      if (ctx.providerStatePushTimer) {
+        clearTimeout(ctx.providerStatePushTimer);
+        ctx.providerStatePushTimer = null;
       }
       ctx.tabViewManager.destroyAllTabViews();
       ctx.tabViewManager.clearTrackedViewWebContents();
@@ -215,6 +220,10 @@ export class AgentContextFactory {
     if (ctx.taskActionsReloadDebounceTimer) {
       clearTimeout(ctx.taskActionsReloadDebounceTimer);
       ctx.taskActionsReloadDebounceTimer = null;
+    }
+    if (ctx.providerStatePushTimer) {
+      clearTimeout(ctx.providerStatePushTimer);
+      ctx.providerStatePushTimer = null;
     }
 
     ctx.pluginRegistry?.deactivateAll();

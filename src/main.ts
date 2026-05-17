@@ -24,12 +24,13 @@ import {
   createDefaultAgent,
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentIds } from './window-manager.js';
-import { stopBackupScheduler } from './backup.js';
+import { stopBackupScheduler } from '#shared/backup-scheduler.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { getViewByName } from '#shared/db/views.js';
 import { getConfigValue } from '#shared/settings/config.js';
 import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from '#shared/settings/global-config.js';
 import { SystemConfigKeys } from '#shared/system-config/keys.js';
+import { isShortcutKey } from './shortcuts/task-actions.js';
 import { getAgentMeta } from './agent-meta.js';
 import { Channels } from './ipc/channels.cjs';
 import path from 'path';
@@ -138,6 +139,9 @@ const handleConfigChange = (key: string, newValue: unknown) => {
   if (key === SystemConfigKeys.theme) windowManager.applyTheme();
   if (key === SystemConfigKeys.showTabSource) windowManager.applyTrafficLightPosition();
   if (key === SystemConfigKeys.hideTrafficLights) windowManager.applyTrafficLightVisibility();
+  if (isShortcutKey(key)) {
+    windowManager.reloadShortcutsForAllAgents();
+  }
   windowManager.broadcastSettingChanged(key, newValue);
 };
 onAnyChange(handleConfigChange);

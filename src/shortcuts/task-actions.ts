@@ -1,9 +1,14 @@
 import { listTasksSync } from '#shared/db/tasks.js';
+import { SHORTCUT_PREFIX } from '#shared/system-config/keys.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { ActionRegistry } from './registry.js';
 
 const TASK_ACTION_PREFIX = 'task.';
 export const TASK_SHORTCUT_KEY_PREFIX = 'shortcuts.task.';
+
+export function isShortcutKey(key: string): boolean {
+  return key.startsWith(SHORTCUT_PREFIX) || key.startsWith(TASK_SHORTCUT_KEY_PREFIX);
+}
 
 export function taskActionId(taskName: string): string {
   return TASK_ACTION_PREFIX + taskName;

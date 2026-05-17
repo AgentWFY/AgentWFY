@@ -38,6 +38,7 @@ interface AgentContextBase {
   dbChangeDebounceTimer: ReturnType<typeof setTimeout> | null;
   triggerReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
   taskActionsReloadDebounceTimer: ReturnType<typeof setTimeout> | null;
+  providerStatePushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 /** Local agent: full runtime lives in this process. */

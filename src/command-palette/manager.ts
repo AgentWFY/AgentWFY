@@ -27,7 +27,7 @@ import type { AgentChatController } from '#shared/agent/chat_controller.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { InstalledAgent } from '../ipc/schema.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
-import type { CommandPaletteAction, CommandPaletteItem, PickFromPaletteOptions, PickItemInput } from './types.js';
+import type { CommandPaletteAction, CommandPaletteItem, PickFromPaletteOptions, PickItemInput, SettingsListResponse } from './types.js';
 
 export { COMMAND_PALETTE_CHANNEL };
 
@@ -493,8 +493,9 @@ export class CommandPaletteManager {
     return [...actionItems, ...viewItems];
   }
 
-  async buildSettingsItems(): Promise<CommandPaletteItem[]> {
+  async buildSettingsItems(): Promise<SettingsListResponse> {
     const cacheRoot = this.deps.getCacheRoot();
+    const globalScopeIsDesktopOnly = this.deps.getBackend()?.kind === 'remote';
     const [tasks, allRows] = await Promise.all([listTasks(cacheRoot), listConfig(cacheRoot)]);
 
     const taskShortcutDescription = new Map<string, string>();
@@ -517,7 +518,7 @@ export class CommandPaletteManager {
       }
     }
 
-    return rows.map((row) => {
+    const items = rows.map((row) => {
       let group: CommandPaletteItem['group'];
       if (row.name.startsWith(SYSTEM_PREFIX)) group = 'System';
       else if (row.name.startsWith(PLUGIN_PREFIX)) group = 'Plugins';
@@ -554,6 +555,8 @@ export class CommandPaletteManager {
         },
       };
     });
+
+    return { items, globalScopeIsDesktopOnly };
   }
 
   async updateSetting(name: string, rawValue: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }> {

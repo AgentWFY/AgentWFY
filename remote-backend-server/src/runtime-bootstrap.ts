@@ -10,6 +10,13 @@ import {
   readValidatedPackageFromBytes,
   uninstallPlugin,
 } from '#shared/plugins/installer.js'
+import {
+  scheduleBackup,
+  rescheduleBackupForAgent,
+  stopBackupSchedulerForAgent,
+} from '#shared/backup-scheduler.js'
+import { runCleanup } from '#shared/cleanup.js'
+import { SystemConfigKeys } from '#shared/system-config/keys.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
 
@@ -51,6 +58,9 @@ export async function createAgentRuntime(
           })
         }, 500)
       }
+      if (change.table === 'config' && change.rowId === SystemConfigKeys.backupIntervalHours) {
+        rescheduleBackupForAgent(runtimeRoot)
+      }
       for (const handler of dbChangeSubscribers) {
         try {
           handler(change)
@@ -78,11 +88,20 @@ export async function createAgentRuntime(
     console.error('[triggers] Start failed:', err)
   })
 
+  scheduleBackup(runtimeRoot).catch(err => {
+    console.error('[backup] Schedule failed:', err)
+  })
+
+  runCleanup(runtimeRoot).catch(err => {
+    console.error('[cleanup] failed:', err)
+  })
+
   const dispose = async (): Promise<void> => {
     if (triggerReloadTimer) {
       clearTimeout(triggerReloadTimer)
       triggerReloadTimer = null
     }
+    stopBackupSchedulerForAgent(runtimeRoot)
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
     dbChangeSubscribers.clear()

@@ -117,6 +117,11 @@ export interface CommandPaletteItem {
   settingSource?: string
 }
 
+export interface SettingsListResponse {
+  items: CommandPaletteItem[]
+  globalScopeIsDesktopOnly: boolean
+}
+
 export const COMMAND_PALETTE_CHANNEL = {
   CLOSE: 'app:command-palette:close',
   LIST_ITEMS: 'app:command-palette:list-items',

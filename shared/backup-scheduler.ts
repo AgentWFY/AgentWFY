@@ -1,22 +1,10 @@
-// Per-agent backup scheduler. Wraps the runtimeRoot-only backup core in
-// `#shared/backup.ts` with the Electron-side interval scheduler used by the
-// main process. Only local agents schedule backups; remote agents go through
-// the daemon's BackupApi.
+// Per-agent backup scheduler around the runtimeRoot-only backup core in
+// ./backup.js. Used by both the desktop (for local agents) and the daemon
+// (for the remote agent runtime it hosts).
 
-import { backupAgentDb } from '#shared/backup.js';
-import { getConfigValue } from '#shared/settings/config.js';
-import { SystemConfigKeys } from '#shared/system-config/keys.js';
-
-export {
-  backupAgentDb,
-  restoreFromBackup,
-  listAllBackups,
-  getBackupStatus,
-  type BackupStatus,
-  type BackupVersionInfo,
-  type BackupCreateResult,
-  type BackupRestoreResult,
-} from '#shared/backup.js';
+import { backupAgentDb } from './backup.js';
+import { getConfigValue } from './settings/config.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 
 function getIntervalHours(runtimeRoot: string): number {
   return Number(getConfigValue(runtimeRoot, SystemConfigKeys.backupIntervalHours, '24'));

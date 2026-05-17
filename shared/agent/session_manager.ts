@@ -5,7 +5,7 @@ import type { AgentSnapshot, AgentState } from './types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
-import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
+import { getConfigValue } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 import {
   readSessionFile,
@@ -20,6 +20,8 @@ import {
 import type { AgentWFYAgentEvent } from './create_agent.js'
 import { escapeRegex } from '../runtime/functions/text_utils.js'
 import type { NotificationHost } from '../runtime/hosts.js'
+
+const DEFAULT_PROVIDER_ID = 'openai-compatible'
 
 function makeSnippet(text: string, matchIndex: number, matchLength: number, contextChars = 80): string {
   const start = Math.max(0, matchIndex - contextChars)
@@ -548,18 +550,8 @@ export class AgentSessionManager {
   }
 
   private async readDefaultProviderId(): Promise<string> {
-    const { runtimeRoot } = this.deps
-    try {
-      const parsed = parseRunSqlRequest({
-        target: 'agent',
-        sql: `SELECT value FROM config WHERE name = '${SystemConfigKeys.provider}'`,
-      })
-      const rows = await routeSqlRequest(runtimeRoot, parsed) as Array<{ value: string }>
-      if (rows[0]?.value) return rows[0].value
-    } catch (err) {
-      console.warn('[AgentSessionManager] failed to read default provider ID:', err)
-    }
-    return 'openai-compatible'
+    const value = getConfigValue(this.deps.runtimeRoot, SystemConfigKeys.provider, DEFAULT_PROVIDER_ID)
+    return typeof value === 'string' && value.length > 0 ? value : DEFAULT_PROVIDER_ID
   }
 
   private async createAgentInstance(opts: { sessionFile?: string; providerId?: string }): Promise<AgentWFYAgent> {

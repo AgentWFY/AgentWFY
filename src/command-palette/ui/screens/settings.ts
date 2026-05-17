@@ -131,6 +131,7 @@ export class SettingsScreen implements PaletteScreen {
   private saving = false
   private searchValue = ''
   private loaded = false
+  private globalScopeIsDesktopOnly = false
   private container: HTMLElement | null = null
   private keyHandler: ((e: KeyboardEvent) => void) | null = null
   /** Container DOM node we've already wired delegated listeners onto (avoids per-render leak). */
@@ -222,7 +223,9 @@ export class SettingsScreen implements PaletteScreen {
   async getItems(): Promise<CommandPaletteItem[]> {
     if (!this.loaded) {
       try {
-        const items = await this.bridge.listSettings()
+        const response = await this.bridge.listSettings()
+        const items = response.items
+        this.globalScopeIsDesktopOnly = response.globalScopeIsDesktopOnly
         this.allRows = items.map(item => {
           const source = (item.settingSource || 'default') as SettingTarget
           const key = item.action.type === 'edit-setting'
@@ -457,6 +460,10 @@ export class SettingsScreen implements PaletteScreen {
 
     container.innerHTML = ''
 
+    if (this.globalScopeIsDesktopOnly) {
+      container.appendChild(this.renderRemoteBanner())
+    }
+
     if (this.filteredRows.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'empty'
@@ -490,6 +497,13 @@ export class SettingsScreen implements PaletteScreen {
 
     this.renderFooter(container)
     this.bindContainerEvents(container)
+  }
+
+  private renderRemoteBanner(): HTMLElement {
+    const banner = document.createElement('div')
+    banner.className = 'set-remote-banner'
+    banner.textContent = 'Remote agent: Global settings are stored on this desktop only and won’t be visible to the remote agent runtime. Use the Agent scope for settings the agent should read.'
+    return banner
   }
 
   private renderToolbar(): HTMLElement {
@@ -652,6 +666,14 @@ export class SettingsScreen implements PaletteScreen {
     controls.appendChild(hint)
 
     edit.appendChild(controls)
+
+    if (this.globalScopeIsDesktopOnly && row.target === 'global') {
+      const warn = document.createElement('div')
+      warn.className = 'set-row-hint set-row-warning'
+      warn.textContent = 'Global is desktop-only — this value won’t reach the remote agent runtime.'
+      edit.appendChild(warn)
+    }
+
     return edit
   }
 

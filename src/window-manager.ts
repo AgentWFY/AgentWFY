@@ -402,6 +402,12 @@ class WindowManager {
     win.setWindowButtonVisibility(!hide);
   }
 
+  reloadShortcutsForAllAgents(): void {
+    for (const ctx of this.orchestrator.getAllContexts()) {
+      ctx.shortcutManager.reload();
+    }
+  }
+
   // --- Zen mode ---
 
   setZenMode(value: boolean): void {

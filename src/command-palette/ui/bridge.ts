@@ -1,4 +1,4 @@
-import type { CommandPaletteAction, CommandPaletteItem } from '../types.js'
+import type { CommandPaletteAction, CommandPaletteItem, SettingsListResponse } from '../types.js'
 
 export interface CommandPaletteBridge {
   listItems(): Promise<CommandPaletteItem[]>
@@ -7,7 +7,7 @@ export interface CommandPaletteBridge {
   onOpened(callback: () => void): () => void
   onOpenedWithFilter(callback: (query: string) => void): () => void
   onOpenedAtScreen(callback: (options: { screen: string; params?: Record<string, unknown> }) => void): () => void
-  listSettings(): Promise<CommandPaletteItem[]>
+  listSettings(): Promise<SettingsListResponse>
   updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }>
   clearToDefault(key: string): Promise<void>
   openSettingsFile(): Promise<void>

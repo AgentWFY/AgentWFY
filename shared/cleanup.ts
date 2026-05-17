@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { getConfigValue } from '#shared/settings/config.js';
-import { readSessionId } from '#shared/agent/session_persistence.js';
-import { isValidTraceSessionId } from '#shared/runtime/trace_types.js';
-import { SystemConfigKeys } from '#shared/system-config/keys.js';
+import { getConfigValue } from './settings/config.js';
+import { readSessionId } from './agent/session_persistence.js';
+import { isValidTraceSessionId } from './runtime/trace_types.js';
+import { SystemConfigKeys } from './system-config/keys.js';
 
 const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 

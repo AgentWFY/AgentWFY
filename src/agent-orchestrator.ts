@@ -8,15 +8,15 @@ import { setupAgentChatPump } from './ipc/agent-sessions.js';
 import { storeSet } from './ipc/store.js';
 import { getAgentMeta, getRemoteAgentCacheRoot, removeAgentMeta } from './agent-meta.js';
 import { isDefaultAgentPath } from './agent-manager.js';
-import { scheduleBackup, rescheduleBackupForAgent } from './backup.js';
-import { runCleanup } from './cleanup.js';
+import { scheduleBackup, rescheduleBackupForAgent } from '#shared/backup-scheduler.js';
+import { runCleanup } from '#shared/cleanup.js';
 import { getConfigValue } from '#shared/settings/config.js';
 import { getViewByName } from '#shared/db/views.js';
-import { SystemConfigKeys, PLUGIN_PREFIX, SHORTCUT_PREFIX } from '#shared/system-config/keys.js';
+import { SystemConfigKeys, PLUGIN_PREFIX } from '#shared/system-config/keys.js';
 import { Channels } from './ipc/channels.cjs';
 import type { InstalledAgent, SendToRenderer } from './ipc/schema.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
-import { syncTaskActions, TASK_SHORTCUT_KEY_PREFIX } from './shortcuts/task-actions.js';
+import { syncTaskActions, isShortcutKey } from './shortcuts/task-actions.js';
 
 export interface AgentOrchestratorDeps {
   factory: AgentContextFactory;
@@ -84,8 +84,6 @@ export class AgentOrchestrator {
       return agentCtx;
     }
 
-    // Local-only follow-on work: reset the session manager's state,
-    // schedule backups, run cleanup.
     agentCtx.sessionManager.resetActive();
 
     scheduleBackup(agentId).then(() => {
@@ -416,7 +414,7 @@ export class AgentOrchestrator {
 
     if (change.table === 'config') {
       const key = change.rowId as string;
-      if (key.startsWith(SHORTCUT_PREFIX) || key.startsWith(TASK_SHORTCUT_KEY_PREFIX)) {
+      if (isShortcutKey(key)) {
         agentCtx.shortcutManager.reload();
       }
       if (this.activeAgentId === agentId) {
@@ -429,12 +427,12 @@ export class AgentOrchestrator {
         if (key === SystemConfigKeys.hideTrafficLights) {
           this.deps.applyTrafficLightVisibility();
         }
+        if (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider) {
+          this.schedulePushProviderState(agentCtx);
+        }
       }
       if (isLocalAgentContext(agentCtx)) {
         rescheduleBackupForAgent(agentId);
-        if (this.activeAgentId === agentId && (key.startsWith(PLUGIN_PREFIX) || key === SystemConfigKeys.provider)) {
-          void this.pushProviderState(agentCtx);
-        }
       }
     }
 
@@ -515,6 +513,15 @@ export class AgentOrchestrator {
     } catch (err) {
       console.error('[providers] Provider state failed:', err);
     }
+  }
+
+  private schedulePushProviderState(ctx: AgentContext): void {
+    if (ctx.providerStatePushTimer) clearTimeout(ctx.providerStatePushTimer);
+    ctx.providerStatePushTimer = setTimeout(() => {
+      ctx.providerStatePushTimer = null;
+      if (this.activeAgentId !== ctx.agentId) return;
+      void this.pushProviderState(ctx);
+    }, 100);
   }
 
   private broadcastSidebarState(): void {

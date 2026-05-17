@@ -73,6 +73,7 @@ export async function createRemoteAgentContext(opts: {
     dbChangeDebounceTimer: null,
     triggerReloadDebounceTimer: null,
     taskActionsReloadDebounceTimer: null,
+    providerStatePushTimer: null,
     tabViewManager,
     shortcutManager,
     tabTools,

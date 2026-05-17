@@ -13,6 +13,11 @@ interface CommandPaletteItem {
   settingSource?: string
 }
 
+interface SettingsListResponse {
+  items: CommandPaletteItem[]
+  globalScopeIsDesktopOnly: boolean
+}
+
 const COMMAND_PALETTE_CHANNEL = {
   CLOSE: 'app:command-palette:close',
   LIST_ITEMS: 'app:command-palette:list-items',
@@ -61,7 +66,7 @@ contextBridge.exposeInMainWorld('commandPaletteBridge', {
     ipcRenderer.on(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, handler);
     return () => ipcRenderer.removeListener(COMMAND_PALETTE_CHANNEL.OPENED_AT_SCREEN, handler);
   },
-  listSettings(): Promise<CommandPaletteItem[]> {
+  listSettings(): Promise<SettingsListResponse> {
     return ipcRenderer.invoke(COMMAND_PALETTE_CHANNEL.LIST_SETTINGS);
   },
   updateSetting(key: string, value: unknown, scope?: 'agent' | 'global'): Promise<{ success: boolean; error?: string }> {
