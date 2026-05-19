@@ -266,6 +266,22 @@ export class CommandPaletteManager {
 
     this.view.setBackgroundColor('#00000000');
 
+    // Close when focus moves elsewhere *within the same window* (click on tab view,
+    // sidebar, etc.). Skip closing when the whole window lost OS focus (user
+    // switched apps) — that's detected via mainWindow.isFocused() being false.
+    this.view.webContents.on('blur', () => {
+      setTimeout(() => {
+        if (!this.view || this.view.webContents.isDestroyed()) return;
+        if (!this.view.getVisible()) return;
+        const mainWindow = this.deps.getMainWindow();
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (this.view.webContents.isFocused()) return;
+        if (mainWindow.isFocused()) {
+          this.hide({ focusMain: true });
+        }
+      }, 0);
+    });
+
     // Handle keyboard shortcuts when the palette has focus (e.g. Cmd+K to toggle off)
     // Skip Ctrl+J/K/N/P — those are palette navigation keys handled by the UI
     this.view.webContents.on('before-input-event', (event, input) => {
