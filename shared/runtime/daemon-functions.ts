@@ -30,6 +30,9 @@ export const DAEMON_BUILT_IN_FUNCTIONS = [
   'readSession',
   'startTask',
   'stopTask',
+  'listTaskRuns',
+  'searchTaskRuns',
+  'readTaskRun',
   'getAvailableFunctions',
   'getAvailableProviders',
 ] as const

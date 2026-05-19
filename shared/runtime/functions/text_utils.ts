@@ -71,6 +71,15 @@ export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+export function makeSnippet(text: string, matchIndex: number, matchLength: number, contextChars = 80): string {
+  const start = Math.max(0, matchIndex - contextChars)
+  const end = Math.min(text.length, matchIndex + matchLength + contextChars)
+  let out = text.slice(start, end).replace(/\s+/g, ' ').trim()
+  if (start > 0) out = '…' + out
+  if (end < text.length) out = out + '…'
+  return out
+}
+
 export function compileGlob(pattern: string): RegExp {
   const regex = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')

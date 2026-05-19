@@ -18,19 +18,10 @@ import {
   type StoredSession,
 } from './session_persistence.js'
 import type { AgentWFYAgentEvent } from './create_agent.js'
-import { escapeRegex } from '../runtime/functions/text_utils.js'
+import { escapeRegex, makeSnippet } from '../runtime/functions/text_utils.js'
 import type { NotificationHost } from '../runtime/hosts.js'
 
 const DEFAULT_PROVIDER_ID = 'openai-compatible'
-
-function makeSnippet(text: string, matchIndex: number, matchLength: number, contextChars = 80): string {
-  const start = Math.max(0, matchIndex - contextChars)
-  const end = Math.min(text.length, matchIndex + matchLength + contextChars)
-  let out = text.slice(start, end).replace(/\s+/g, ' ').trim()
-  if (start > 0) out = '…' + out
-  if (end < text.length) out = out + '…'
-  return out
-}
 
 function getTextFromDisplayMessage(msg: DisplayMessage): string {
   return msg.blocks

@@ -9,9 +9,9 @@ import path from 'path'
 import { assertPathAllowed } from '../security/path-policy.js'
 import type { TaskLogHistoryItem } from './interface.js'
 
-const TASK_LOGS_RELATIVE_DIR = '.agentwfy/task_logs'
+export const TASK_LOGS_RELATIVE_DIR = '.agentwfy/task_logs'
 const TASK_LOG_HISTORY_LIMIT = 50
-const TASK_LOG_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/
+export const TASK_LOG_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/
 
 function normalizeTaskLogFileName(value: unknown): string {
   if (typeof value !== 'string') {

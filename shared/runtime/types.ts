@@ -1,4 +1,5 @@
 import type { DisplayMessage } from '../agent/provider_types.js'
+import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -392,6 +393,58 @@ export interface WorkerHostMethodMap {
   stopTask: {
     params: WorkerStopTaskRequest
     result: void
+  }
+  listTaskRuns: {
+    params: {
+      limit?: number
+      offset?: number
+      since?: number
+      until?: number
+      status?: TaskRunStatus
+    }
+    result: Array<{
+      runId: string
+      taskName: string
+      title: string
+      status: TaskRunStatus
+      origin: TaskOrigin
+      startedAt: number
+      finishedAt?: number
+    }>
+  }
+  searchTaskRuns: {
+    params: {
+      pattern: string
+      ignoreCase?: boolean
+      literal?: boolean
+      limit?: number
+      matchesPerRun?: number
+      since?: number
+      until?: number
+    }
+    result: Array<{
+      runId: string
+      taskName: string
+      status: TaskRunStatus
+      startedAt: number
+      matches: Array<{ where: 'log' | 'result' | 'error' | 'input'; logIndex?: number; snippet: string }>
+    }>
+  }
+  readTaskRun: {
+    params: { runId: string }
+    result: {
+      runId: string
+      taskName: string
+      title: string
+      status: TaskRunStatus
+      origin: TaskOrigin
+      input: unknown
+      startedAt: number
+      finishedAt: number | null
+      result: unknown
+      error: string | null
+      logs: ExecJsLogEntry[]
+    }
   }
   requestInstallPlugin: {
     params: { packagePath: string }

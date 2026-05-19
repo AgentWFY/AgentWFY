@@ -8,6 +8,9 @@ The `content` column contains JavaScript code to execute. `timeout_ms` is an opt
 
 - `startTask({ taskName, input? })` → `{ runId }` — starts the task in a new worker. Non-blocking.
 - `stopTask({ runId })` → void — terminates a running task.
+- `listTaskRuns({ limit?, offset?, since?, until?, status? })` → `[{ runId, taskName, title, status, origin, startedAt, finishedAt? }]` — recent runs, newest first. Includes both running and finished. `limit` defaults to 20. `since`/`until` filter by finishedAt (or startedAt for running). `status` filters to `running` | `completed` | `failed`.
+- `searchTaskRuns({ pattern, ignoreCase?, literal?, limit?, matchesPerRun?, since?, until? })` → `[{ runId, taskName, status, startedAt, matches: [{ where, logIndex?, snippet }] }]` — regex search across each run's `input`, `result`, `error`, and log messages (`where` identifies which field matched). Same regex rules as `grep`. `literal: true` escapes regex metachars. `limit` defaults to 10 runs, `matchesPerRun` to 5.
+- `readTaskRun({ runId })` → `{ runId, taskName, title, status, origin, input, startedAt, finishedAt, result, error, logs }` — full run details including all logs. Reads from memory for running runs, from disk for finished runs.
 
 ## Input
 
