@@ -5,6 +5,11 @@ const PLUS_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
   <line x1="5" y1="12" x2="19" y2="12"/>
 </svg>`
 
+const SPINNER_SVG = `<svg class="agent-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+  <circle cx="12" cy="12" r="9" stroke-opacity="0.25"/>
+  <path d="M21 12a9 9 0 0 0-9-9"/>
+</svg>`
+
 export class TlAgentSidebar extends HTMLElement {
   private agents: InstalledAgent[] = []
   private listEl!: HTMLDivElement
@@ -73,6 +78,17 @@ export class TlAgentSidebar extends HTMLElement {
       .agent-item-wrapper.active .agent-indicator {
         height: 28px;
       }
+      /* Switching: small pulsing yellow indicator — clearly distinct from
+         the active state so the user knows the agent isn't selected yet. */
+      .agent-item-wrapper.switching .agent-indicator {
+        height: 12px;
+        background: #facc15;
+        animation: switching-indicator-pulse 1s ease-in-out infinite;
+      }
+      @keyframes switching-indicator-pulse {
+        0%, 100% { opacity: 0.45; }
+        50% { opacity: 1; }
+      }
       .agent-item {
         display: flex;
         align-items: center;
@@ -109,6 +125,23 @@ export class TlAgentSidebar extends HTMLElement {
       }
       .agent-item-wrapper.uninitialized:hover .agent-item {
         opacity: 1;
+      }
+      /* Switching: avatar shows a spinner instead of initials. Force a neutral
+         background (overriding hover) so it doesn't look active. */
+      .agent-item-wrapper.switching .agent-item,
+      .agent-item-wrapper.switching .agent-item:hover {
+        background: var(--color-agent-item-bg);
+        color: var(--color-text2);
+        cursor: progress;
+      }
+      .agent-spinner {
+        width: 22px;
+        height: 22px;
+        animation: agent-spinner-spin 0.8s linear infinite;
+        color: var(--color-accent);
+      }
+      @keyframes agent-spinner-spin {
+        to { transform: rotate(360deg); }
       }
       /* Remote agents — small connection-status dot in the bottom-right corner. */
       .agent-item-wrapper.remote .agent-item::after {
@@ -249,9 +282,15 @@ export class TlAgentSidebar extends HTMLElement {
       const wrapper = document.createElement('div')
       let cls = 'agent-item-wrapper'
       if (agent.active) cls += ' active'
-      if (!agent.initialized) cls += ' uninitialized'
+      if (agent.switching) cls += ' switching'
+      if (!agent.initialized && !agent.switching) cls += ' uninitialized'
       if (agent.backend === 'remote') {
-        const remoteStatus = agent.remoteStatus ?? 'disconnected'
+        // While switching to a not-yet-initialized remote agent, the backend
+        // status hasn't been wired up yet — show the pulsing 'connecting' dot
+        // so the user gets feedback during the WebSocket handshake.
+        const remoteStatus = agent.switching && !agent.initialized
+          ? 'connecting'
+          : (agent.remoteStatus ?? 'disconnected')
         cls += ` remote remote-${remoteStatus}`
       }
       wrapper.className = cls
@@ -264,7 +303,11 @@ export class TlAgentSidebar extends HTMLElement {
       const item = document.createElement('button')
       item.className = 'agent-item'
       item.title = this.getAgentTitle(agent)
-      item.appendChild(document.createTextNode(this.getInitials(agent.name)))
+      if (agent.switching) {
+        item.innerHTML = SPINNER_SVG
+      } else {
+        item.appendChild(document.createTextNode(this.getInitials(agent.name)))
+      }
 
       item.addEventListener('click', () => {
         if (!agent.active) window.ipc?.agentSidebar.switch(agent.agentId)

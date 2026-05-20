@@ -34,6 +34,9 @@ export interface AgentOrchestratorDeps {
 export class AgentOrchestrator {
   private agentContexts = new Map<string, AgentContext>();
   private activeAgentId: string | null = null;
+  private switchingAgentId: string | null = null;
+  private switchGeneration = 0;
+  private switchSupersedeListeners = new Set<() => void>();
   private persistedAgentIds: string[] = [];
   private tabSenderMap = new Map<number, string>();
   private pendingInits = new Map<string, Promise<AgentContext>>();
@@ -116,6 +119,52 @@ export class AgentOrchestrator {
     });
   }
 
+  private beginSwitchAttempt(): number {
+    this.switchGeneration += 1;
+    for (const listener of Array.from(this.switchSupersedeListeners)) {
+      listener();
+    }
+    return this.switchGeneration;
+  }
+
+  private isCurrentSwitch(generation: number): boolean {
+    return this.switchGeneration === generation;
+  }
+
+  /** Resolves on 'connected'/'error', or when another switch supersedes this one. */
+  private waitForRemoteReady(ctx: RemoteAgentContext, generation: number): Promise<void> {
+    return new Promise((resolve) => {
+      let unsub: (() => void) | null = null;
+      let unsubscribeAfterSubscribe = false;
+      let settled = false;
+      const onSuperseded = () => {
+        if (!this.isCurrentSwitch(generation)) done();
+      };
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (unsub) {
+          unsub();
+          unsub = null;
+        } else {
+          unsubscribeAfterSubscribe = true;
+        }
+        this.switchSupersedeListeners.delete(onSuperseded);
+        resolve();
+      };
+
+      this.switchSupersedeListeners.add(onSuperseded);
+      unsub = ctx.backend.status.subscribe((status) => {
+        if (!this.isCurrentSwitch(generation)) { done(); return; }
+        if (status.state === 'connected' || status.state === 'error') done();
+      });
+      if (unsubscribeAfterSubscribe && unsub) {
+        unsub();
+        unsub = null;
+      }
+    });
+  }
+
   private destroyAgentContext(agentId: string): void {
     const ctx = this.agentContexts.get(agentId);
     if (!ctx) return;
@@ -161,17 +210,35 @@ export class AgentOrchestrator {
     if (agentId === this.activeAgentId) return;
     if (!this.persistedAgentIds.includes(agentId) && !this.agentContexts.has(agentId)) return;
 
+    const switchGeneration = this.beginSwitchAttempt();
+
     const previousCtx = this.activeAgentId ? this.agentContexts.get(this.activeAgentId) : undefined;
 
     // Lazy-init: initialize agent context on first switch
     let ctx = this.agentContexts.get(agentId);
+    const needsLoadingState = !ctx
+      || (ctx.mode === 'remote' && ctx.backend.status.get().state !== 'connected');
+
+    const nextSwitchingAgentId = needsLoadingState ? agentId : null;
+    if (this.switchingAgentId !== nextSwitchingAgentId) {
+      // Surface loading only for agents that are not ready yet. Ready targets
+      // still supersede older attempts via switchGeneration above.
+      this.switchingAgentId = nextSwitchingAgentId;
+      this.broadcastSidebarState();
+    }
+
     if (!ctx) {
       try {
         ctx = await this.initAgentContext(agentId);
       } catch (err) {
         console.error(`[agent] Failed to initialize agent ${agentId}:`, err);
+        if (this.switchingAgentId === agentId) {
+          this.switchingAgentId = null;
+          this.broadcastSidebarState();
+        }
         return;
       }
+      if (!this.isCurrentSwitch(switchGeneration)) return;
       if (isLocalAgentContext(ctx)) {
         ctx.triggerEngine.start().then(() => {
           this.broadcastSidebarState(); // refresh HTTP port in status line
@@ -179,6 +246,20 @@ export class AgentOrchestrator {
       }
     }
 
+    // For remote agents, wait until the WebSocket is actually connected
+    // before promoting to active. backend.start() schedules the connect but
+    // doesn't await the open event, so status can still be 'connecting' here.
+    if (ctx.mode === 'remote' && this.switchingAgentId === agentId) {
+      const initial = ctx.backend.status.get().state;
+      if (initial !== 'connected' && initial !== 'error') {
+        await this.waitForRemoteReady(ctx, switchGeneration);
+      }
+    }
+
+    if (!this.isCurrentSwitch(switchGeneration)) return;
+    if (this.switchingAgentId === agentId) {
+      this.switchingAgentId = null;
+    }
     this.activeAgentId = agentId;
     this.deps.applyTheme();
     this.deps.applyTrafficLightPosition();
@@ -187,12 +268,11 @@ export class AgentOrchestrator {
     // Collapse outgoing agent's views to 0x0 before promoting incoming. If
     // the user then closes the incoming agent's last tab, nothing underneath
     // the z-stack is left at stale bounds to leak through.
-    if (previousCtx && this.activeAgentId) {
+    if (previousCtx) {
       previousCtx.tabViewManager.deactivateViews();
     }
     ctx.tabViewManager.activateViews();
     await this.openDefaultViewForContext(ctx);
-
     this.pushFullState(ctx);
   }
 
@@ -395,6 +475,7 @@ export class AgentOrchestrator {
         agentId: id,
         name: path.basename(id),
         active: id === this.activeAgentId,
+        switching: id === this.switchingAgentId,
         initialized: this.agentContexts.has(id),
         backend: backendKind,
         ...(backendKind === 'remote'

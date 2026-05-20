@@ -30,6 +30,8 @@ export interface InstalledAgent {
   name: string
   active: boolean
   initialized: boolean
+  /** True while switchAgent is awaiting lazy init/connect for this agent. */
+  switching?: boolean
   /** 'local' for in-process agents, 'remote' for daemon-backed agents. */
   backend: 'local' | 'remote'
   /** Present for daemon-backed agents so the sidebar can show connection health. */
