@@ -318,6 +318,9 @@ if (isApp) {
       remove(agentId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.remove, agentId);
       },
+      stop(agentId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.agentSidebar.stop, agentId);
+      },
       showContextMenu(agentId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.agentSidebar.showContextMenu, agentId);
       },

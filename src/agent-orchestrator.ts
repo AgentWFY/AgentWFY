@@ -245,6 +245,45 @@ export class AgentOrchestrator {
     }
   }
 
+  /**
+   * Tear down an agent's context (workers, DB handle, triggers, WS) but leave
+   * it in the persisted sidebar list. The sidebar will render it as
+   * uninitialized; switching to it later will re-init via the lazy path.
+   * If the agent is currently active, switch to another agent first; refuses
+   * if it's the only agent.
+   */
+  async stopAgent(agentId: string): Promise<void> {
+    if (!this.agentContexts.has(agentId)) return;
+
+    if (this.activeAgentId === agentId) {
+      const candidates = this.persistedAgentIds.filter(id => id !== agentId);
+      if (candidates.length === 0) return; // Can't stop the only agent.
+
+      const originalActiveId = this.activeAgentId;
+      this.activeAgentId = null; // So switchAgent doesn't short-circuit.
+
+      let switchedTo: string | null = null;
+      for (const candidate of candidates) {
+        await this.switchAgent(candidate);
+        if (this.activeAgentId === candidate) {
+          switchedTo = candidate;
+          break;
+        }
+      }
+
+      if (!switchedTo) {
+        // Every fallback candidate failed to initialize. Restore the original
+        // active agent rather than destroying its context and leaving the
+        // window with no selection.
+        this.activeAgentId = originalActiveId;
+        return;
+      }
+    }
+
+    this.destroyAgentContext(agentId);
+    this.broadcastSidebarState();
+  }
+
   reorderAgents(fromIndex: number, toIndex: number): void {
     if (fromIndex < 0 || fromIndex >= this.persistedAgentIds.length) return;
     if (toIndex < 0 || toIndex >= this.persistedAgentIds.length) return;

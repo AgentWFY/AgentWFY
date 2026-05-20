@@ -224,6 +224,7 @@ registerAgentSidebarHandlers({
   addAgent: (agentId) => windowManager.addAgent(agentId),
   switchAgent: (agentId) => windowManager.switchAgent(agentId),
   removeAgent: (agentId) => windowManager.removeAgent(agentId),
+  stopAgent: (agentId) => windowManager.stopAgent(agentId),
   reorderAgents: (fromIndex, toIndex) => windowManager.reorderAgents(fromIndex, toIndex),
 });
 registerZenModeHandlers({

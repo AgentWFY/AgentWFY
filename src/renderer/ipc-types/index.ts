@@ -65,6 +65,7 @@ export interface AgentSidebarApi {
   add(): Promise<string | null>
   addFromFile(): Promise<string | null>
   remove(agentId: string): Promise<void>
+  stop(agentId: string): Promise<void>
   showContextMenu(agentId: string): Promise<void>
   reorder(fromIndex: number, toIndex: number): Promise<void>
   onSwitched(callback: (data: SidebarSwitchedPayload) => void): () => void

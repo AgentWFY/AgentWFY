@@ -518,6 +518,7 @@ class WindowManager {
   addAgent(agentId: string) { return this.orchestrator.addAgent(agentId); }
   switchAgent(agentId: string) { return this.orchestrator.switchAgent(agentId); }
   removeAgent(agentId: string) { return this.orchestrator.removeAgent(agentId); }
+  stopAgent(agentId: string) { return this.orchestrator.stopAgent(agentId); }
   reorderAgents(fromIndex: number, toIndex: number) { this.orchestrator.reorderAgents(fromIndex, toIndex); }
   getInstalledAgentsList() { return this.orchestrator.getInstalledAgentsList(); }
 

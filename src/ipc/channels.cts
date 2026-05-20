@@ -87,6 +87,7 @@ export const Channels = {
     add: 'agent-sidebar:add',
     addFromFile: 'agent-sidebar:addFromFile',
     remove: 'agent-sidebar:remove',
+    stop: 'agent-sidebar:stop',
     switched: 'agent-sidebar:switched',
     showContextMenu: 'agent-sidebar:showContextMenu',
     reorder: 'agent-sidebar:reorder',
