@@ -1,6 +1,3 @@
-node_modules
-dist
-
 # Tauri / Rust
 src-tauri/target
 src-tauri/gen/schemas

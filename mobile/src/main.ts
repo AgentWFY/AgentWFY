@@ -1,4 +1,5 @@
-import './styles.css'
+import type { AgentBackend } from '#shared/backend/interface.js'
+import { bridge } from './tauri-bridge.js'
 
 const app = document.querySelector<HTMLDivElement>('#app')
 
@@ -19,3 +20,6 @@ if (app) {
     </section>
   `
 }
+
+export type { AgentBackend }
+export { bridge }

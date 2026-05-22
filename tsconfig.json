@@ -22,6 +22,7 @@
   },
   "include": [
     "desktop/**/*",
+    "mobile/**/*",
     "shared/**/*",
     "types/**/*"
   ]

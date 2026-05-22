@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Thin wrapper around the vendored tauri-cli.
+#
+# All `tauri ...` invocations for the mobile host go through here so the
+# iOS toolchain hints (PATH for rustup's cargo, DEVELOPER_DIR for Xcode)
+# are set in one place. Harmless for non-iOS commands.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TAURI_BIN="$ROOT/vendor/tauri-cli/bin/cargo-tauri"
+
+if [ ! -x "$TAURI_BIN" ]; then
+  echo "[mobile] tauri-cli not vendored. Run ./scripts/setup from the repo root." >&2
+  exit 1
+fi
+
+export PATH="$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+
+exec "$TAURI_BIN" "$@"

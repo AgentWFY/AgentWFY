@@ -1,13 +1,9 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "AgentWFY Mobile",
   "version": "0.1.0",
   "identifier": "com.agentwfy.mobile",
   "build": {
-    "beforeDevCommand": "npm run dev:web",
-    "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build:web",
-    "frontendDist": "../dist"
+    "frontendDist": "../../dist/mobile"
   },
   "app": {
     "windows": [

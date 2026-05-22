@@ -22,6 +22,7 @@ const vendorDir = join(root, 'vendor')
 const versions = JSON.parse(readFileSync(join(__dirname, 'vendor-versions.json'), 'utf-8'))
 const ELECTRON_VERSION = process.env.ELECTRON_VERSION || versions.electron
 const TSGO_VERSION = process.env.TSGO_VERSION || versions.tsgo
+const TAURI_CLI_VERSION = process.env.TAURI_CLI_VERSION || versions.tauriCli
 
 const PLATFORM = process.env.ELECTRON_INSTALL_PLATFORM || process.platform
 const ARCH = process.env.ELECTRON_INSTALL_ARCH || process.arch
@@ -131,6 +132,46 @@ async function setupTsgo() {
   }
 }
 
+// ── tauri-cli (mobile host) ──
+//
+// Installed via `cargo install` because tauri-cli is a Rust binary; this
+// matches how electron/tsgo come from upstream prebuilts, with vendor/
+// as the single source-of-truth for tool binaries.
+// Skipped if cargo is absent — desktop-only contributors don't need Rust.
+
+async function setupTauriCli() {
+  const tauriDir = join(vendorDir, 'tauri-cli')
+  const versionFile = join(tauriDir, 'version')
+
+  if (existsSync(versionFile) && readFileSync(versionFile, 'utf-8').trim() === TAURI_CLI_VERSION) {
+    console.log(`[setup] tauri-cli ${TAURI_CLI_VERSION} already installed`)
+    return
+  }
+
+  let cargoOk = false
+  try {
+    execSync('cargo --version', { stdio: 'pipe' })
+    cargoOk = true
+  } catch {}
+  if (!cargoOk) {
+    console.log(`[setup] cargo not on PATH — skipping tauri-cli (only needed for mobile host work)`)
+    return
+  }
+
+  console.log(`[setup] installing tauri-cli ${TAURI_CLI_VERSION} via cargo (this can take a few minutes)...`)
+
+  if (existsSync(tauriDir)) rmSync(tauriDir, { recursive: true })
+  mkdirSync(tauriDir, { recursive: true })
+
+  execSync(
+    `cargo install tauri-cli --version ${TAURI_CLI_VERSION} --locked --root "${tauriDir}"`,
+    { stdio: 'inherit' },
+  )
+
+  writeFileSync(versionFile, TAURI_CLI_VERSION)
+  console.log(`[setup] tauri-cli ${TAURI_CLI_VERSION} installed`)
+}
+
 // ── rcedit (Windows exe resource editor) ──
 
 const RCEDIT_VERSION = '2.0.0'
@@ -165,6 +206,7 @@ mkdirSync(vendorDir, { recursive: true })
 await Promise.all([
   setupElectron(),
   setupTsgo(),
+  setupTauriCli(),
   setupRcedit(),
 ])
 

@@ -66,20 +66,48 @@ Walk through every dev path that the rename could have missed:
 
 Done when: `./scripts/package` produces a working app bundle.
 
-## Step 3 — Mobile build wiring  ☐
+## Step 3 — Mobile build wiring  ✅
 
-Make the mobile frontend compile against `shared/` the same way desktop does.
+Make the mobile frontend compile against `shared/` the same way desktop does
+— no Vite, no separate `typescript` install; same tsgo + asset cpSync + import
+map pattern the desktop renderer uses.
 
-- `mobile/tsconfig.json`: add `paths` entry for `#shared/*.js` → `../shared/*.ts`
-- Add a Vite config (`mobile/vite.config.ts`) with the same alias so dev
-  server and `build:web` resolve `#shared/*`
-- Confirm `mobile/src/main.ts` can `import type { AgentBackend } from
-  '#shared/backend/interface.js'` and the Vite dev server resolves it
-- No bundling of node-native modules — mobile will not import
-  `shared/db/sqlite.ts` directly; see Step 5
+- Root `tsconfig.json` includes `mobile/**/*` so tsgo emits
+  `dist/mobile/src/main.js` next to the desktop output. `#shared/*` resolution
+  reuses the root config's `paths` and `imports` entries.
+- `scripts/build` copies `mobile/index.html` and `mobile/src/styles.css` into
+  `dist/mobile/`, then mirrors `dist/shared/` into `dist/mobile/shared/` for
+  the runtime import map (same shape as `dist/desktop/renderer/shared/`).
+- `mobile/index.html` declares `<script type="importmap">{"#shared/":"/shared/"}</script>`
+  and links the CSS via `<link rel="stylesheet">` instead of a JS-side
+  `import './styles.css'` (Vite-only convention).
+- `mobile/src/main.ts` carries a trivial `import type { AgentBackend } from
+  '#shared/backend/interface.js'` to prove the alias resolves.
+- `mobile/src-tauri/tauri.conf.json`: `frontendDist` → `../../dist/mobile`;
+  `beforeDevCommand`, `devUrl`, `beforeBuildCommand` removed — Tauri serves
+  the prebuilt assets directly.
+- `mobile/package.json`: `vite` and `typescript` removed; `dev`/`build`/
+  `ios:dev*`/`android:dev*` chain through a `prebuild-frontend` script that
+  invokes the root `scripts/build`.
+- `mobile/tsconfig.json` deleted — root config covers it.
+- `@tauri-apps/api` removed. The Tauri runtime auto-injects
+  `window.__TAURI_INTERNALS__.invoke` into the webview, so the equivalent of
+  the desktop preload's `contextBridge` lives in `mobile/src/tauri-bridge.ts`:
+  a hand-rolled typed object surface that wraps `invoke` into domain
+  namespaces. Future Rust commands (Step 5+) extend `bridge.*` instead of
+  reaching back to `@tauri-apps/api`.
+- `@tauri-apps/cli` removed; `mobile/package.json` + `node_modules` deleted.
+  `tauri-cli` is now vendored: `scripts/setup` runs
+  `cargo install tauri-cli --root vendor/tauri-cli --locked --version X` and
+  records the version in `vendor/tauri-cli/version`. Skipped gracefully if
+  `cargo` is absent (desktop-only contributors). Wrapper scripts at
+  `mobile/scripts/{tauri,run,doctor}` set the iOS PATH/`DEVELOPER_DIR`
+  and call the vendored binary.
 
-Done when: `cd mobile && npm run build:web` succeeds with a trivial
-`shared/` type import in `main.ts`.
+Done when: `./scripts/build` succeeds with the `#shared/` type import in
+`main.ts` and produces `dist/mobile/{index.html, src/main.js,
+src/tauri-bridge.js, src/styles.css, shared/}`. `mobile/` contains no
+`node_modules`, `package.json`, or `package-lock.json`.
 
 ## Step 4 — Driver seam in `shared/db/sqlite.ts`  ☐
 

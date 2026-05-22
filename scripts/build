@@ -14,9 +14,11 @@ const startedAt = Date.now()
 
 ensureVendor(root)
 const desktop = join(root, 'desktop')
+const mobile = join(root, 'mobile')
 const shared = join(root, 'shared')
 const dist = join(root, 'dist')
 const distDesktop = join(dist, 'desktop')
+const distMobile = join(dist, 'mobile')
 const distShared = join(dist, 'shared')
 
 rmSync(dist, { recursive: true, force: true })
@@ -28,6 +30,9 @@ cpSync(join(desktop, 'renderer', 'index.html'), join(distDesktop, 'renderer', 'i
 cpSync(join(desktop, 'renderer', 'global.css'), join(distDesktop, 'renderer', 'global.css'))
 cpSync(join(desktop, 'command_palette.html'), join(distDesktop, 'command_palette.html'))
 cpSync(join(desktop, 'confirmation.html'), join(distDesktop, 'confirmation.html'))
+mkdirSync(join(distMobile, 'src'), { recursive: true })
+cpSync(join(mobile, 'index.html'), join(distMobile, 'index.html'))
+cpSync(join(mobile, 'src', 'styles.css'), join(distMobile, 'src', 'styles.css'))
 mkdirSync(join(dist, 'icons'), { recursive: true })
 cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icons', 'icon.png'))
 cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
@@ -70,8 +75,10 @@ execSync(`"${tsgo}"`, { cwd: root, stdio: 'inherit' })
 
 // The renderer is served via the `app://` protocol rooted at dist/desktop/renderer/.
 // It uses an import map for #shared/*, so mirror the compiled shared package
-// under that protocol root.
+// under that protocol root. The mobile webview is served by Tauri rooted at
+// dist/mobile/ and uses the same import map; mirror shared/ there too.
 cpSync(join(dist, 'shared'), join(distDesktop, 'renderer', 'shared'), { recursive: true })
+cpSync(join(dist, 'shared'), join(distMobile, 'shared'), { recursive: true })
 
 // ── Preload bundling ──
 

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Quick environment sanity check for iOS mobile development.
+set -euo pipefail
+
+export PATH="$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+
+echo "rustc: $(command -v rustc || echo 'NOT FOUND')"
+if command -v rustc >/dev/null; then
+  rustc --print sysroot
+fi
+echo
+xcodebuild -version 2>/dev/null || echo "xcodebuild: NOT FOUND"
+echo
+echo "Available iOS simulators:"
+xcrun simctl list devices available 2>/dev/null | sed -n '1,80p' || echo "xcrun: NOT FOUND"
