@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+// Build the desktop host: tsgo on desktop/ + shared/, plus desktop static
+// assets, system data JSONs, the shared-mirror inside the renderer protocol
+// root, and the preload bundle.
+//
+// Use when you've edited only desktop/ (or shared/ and want desktop ready).
+// For everything in one shot, use `scripts/build`.
+
+import { execSync } from 'child_process'
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
+import { ensureVendor } from './lib/ensure-vendor.mjs'
+import { inlinePreload } from './lib/inline-preload.mjs'
+import { generateSystemConfigKeys } from './lib/generate-system-config-keys.mjs'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+
+const startedAt = Date.now()
+
+ensureVendor(root)
+const desktop = join(root, 'desktop')
+const shared = join(root, 'shared')
+const dist = join(root, 'dist')
+const distDesktop = join(dist, 'desktop')
+const distShared = join(dist, 'shared')
+
+rmSync(distDesktop, { recursive: true, force: true })
+
+// ── Static assets ──
+
+mkdirSync(join(distDesktop, 'renderer'), { recursive: true })
+cpSync(join(desktop, 'renderer', 'index.html'), join(distDesktop, 'renderer', 'index.html'))
+cpSync(join(desktop, 'renderer', 'global.css'), join(distDesktop, 'renderer', 'global.css'))
+cpSync(join(desktop, 'command_palette.html'), join(distDesktop, 'command_palette.html'))
+cpSync(join(desktop, 'confirmation.html'), join(distDesktop, 'confirmation.html'))
+mkdirSync(join(dist, 'icons'), { recursive: true })
+cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icons', 'icon.png'))
+cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
+
+// ── System data (consumed by desktop main and the daemon) ──
+
+mkdirSync(distShared, { recursive: true })
+
+const docsDir = join(desktop, 'system-docs')
+const docFiles = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
+const docs = docFiles.map(f => ({ name: f.replace(/\.md$/, ''), content: readFileSync(join(docsDir, f), 'utf-8') }))
+writeFileSync(join(distShared, 'system-docs.json'), JSON.stringify(docs))
+
+const viewsDir = join(desktop, 'system-views')
+const viewFiles = readdirSync(viewsDir).filter(f => f.endsWith('.html')).sort()
+const views = viewFiles.map(f => {
+  const content = readFileSync(join(viewsDir, f), 'utf-8')
+  const name = f.replace(/\.html$/, '')
+  const titleMatch = content.match(/<title>([^<]+)<\/title>/i)
+  const title = titleMatch ? titleMatch[1].trim() : name.split('.').pop().charAt(0).toUpperCase() + name.split('.').pop().slice(1)
+  return { name, title, content }
+})
+writeFileSync(join(distShared, 'system-views.json'), JSON.stringify(views))
+
+const configData = readFileSync(join(shared, 'system-config', 'system-config.json'), 'utf-8')
+const configItems = JSON.parse(configData)
+writeFileSync(join(distShared, 'system-config.json'), JSON.stringify(configItems))
+
+// Codegen the typed constants from system-config.json. Must run before tsgo
+// so the compiler sees any updates.
+generateSystemConfigKeys(shared)
+
+// ── TypeScript compilation ──
+
+const tsgo = join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo')
+execSync(`"${tsgo}" --project "${join(desktop, 'tsconfig.json')}"`, { cwd: root, stdio: 'inherit' })
+
+// The renderer is served via the `app://` protocol rooted at
+// dist/desktop/renderer/. It uses an import map for #shared/*, so mirror
+// the compiled shared package under that protocol root.
+cpSync(distShared, join(distDesktop, 'renderer', 'shared'), { recursive: true })
+
+// ── Preload bundling ──
+
+inlinePreload(distDesktop)
+
+const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1)
+console.log(`build-desktop OK · ${elapsed}s`)

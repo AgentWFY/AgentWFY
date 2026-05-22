@@ -29,8 +29,9 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 ./scripts/mobile-run build                         # release build, no bundling
 ```
 
-`mobile-run` rebuilds the mobile frontend through `scripts/build` first,
-then invokes the vendored tauri CLI with whatever args you pass.
+`mobile-run` rebuilds the mobile frontend through `scripts/build-mobile`
+first (mobile only — fast), then invokes the vendored tauri CLI with
+whatever args you pass.
 
 For Android:
 

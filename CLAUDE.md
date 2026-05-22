@@ -8,12 +8,31 @@ AgentWFY is an Electron desktop app that provides a local AI agent runtime. User
 
 ## Commands
 
-- **Setup** (first time): `./scripts/setup`
-- **Build**: `./scripts/build`
-- **Start** (run built app): `./scripts/start`
-- **Package**: `./scripts/package`
+- **Setup** (first time): `./scripts/setup` — vendors electron, tsgo, tauri-cli
+- **Build (everything)**: `./scripts/build` — desktop + mobile + remote daemon
+- **Start desktop**: `./scripts/start`
+- **Package desktop**: `./scripts/package`
+- **Run mobile**: `./scripts/mobile-run <tauri-args>` (e.g. `./scripts/mobile-run ios dev`)
 
-Build runs tsgo which does full type checking during compilation. A separate lint step is not needed — if the build succeeds, types are correct.
+Each `tsgo` invocation does full type-checking — no separate lint step.
+
+### Picking the right build script
+
+`./scripts/build` rebuilds everything; for narrower work prefer the per-host
+scripts — same code path, faster, and they document which host the change
+belongs to:
+
+| Edited                          | Run                       |
+|---------------------------------|---------------------------|
+| only `desktop/...`              | `./scripts/build-desktop` |
+| only `mobile/...`               | `./scripts/build-mobile`  |
+| only `remote-backend-server/...`| `./scripts/build-server`  |
+| `shared/...` (or unsure)        | `./scripts/build`         |
+
+Each host has its own `tsconfig.json` (`desktop/tsconfig.json`,
+`mobile/tsconfig.json`, `remote-backend-server/tsconfig.json`) that scopes
+tsgo to that host + `shared/`. The root `tsconfig.json` covers `shared/` and
+`types/` for editor support.
 
 No test framework is configured. See [docs/TESTING.md](docs/TESTING.md) for how to launch the app (via `./scripts/preview` — Docker + VNC) and visually verify changes.
 

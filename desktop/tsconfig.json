@@ -11,17 +11,18 @@
     "noUnusedParameters": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "outDir": "dist",
-    "rootDir": ".",
+    "outDir": "../dist",
+    "rootDir": "..",
     "paths": {
       "*": ["./*"],
-      "#shared/*.js": ["./shared/*.ts"],
-      "#shared/*.mjs": ["./shared/*.mts"]
+      "#shared/*.js": ["../shared/*.ts"],
+      "#shared/*.mjs": ["../shared/*.mts"]
     },
-    "typeRoots": ["types"]
+    "typeRoots": ["../types"],
+    "types": ["node", "electron"]
   },
   "include": [
-    "shared/**/*",
-    "types/**/*"
+    "**/*",
+    "../shared/**/*"
   ]
 }
