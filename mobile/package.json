@@ -1,0 +1,30 @@
+{
+  "name": "agentwfy-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "dev:web": "vite --host 127.0.0.1 --port 1420",
+    "build:web": "vite build",
+    "preview:web": "vite preview --host 127.0.0.1 --port 4173",
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
+    "ios:init": "PATH=\"$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH\" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer tauri ios init",
+    "ios:dev": "PATH=\"$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH\" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer tauri ios dev",
+    "ios:dev:sim": "PATH=\"$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH\" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer tauri ios dev \"iPhone 16 Pro\"",
+    "ios:build": "PATH=\"$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH\" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer tauri ios build",
+    "ios:doctor": "PATH=\"$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH\" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer sh -c 'command -v rustc && rustc --print sysroot && xcodebuild -version && xcrun simctl list devices available | sed -n \"1,80p\"'"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.2",
+    "typescript": "6.0.3",
+    "vite": "8.0.14"
+  }
+}
