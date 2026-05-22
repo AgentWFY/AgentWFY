@@ -18,10 +18,18 @@
   "scripts": {
     "setup": "node scripts/setup",
     "build": "node scripts/build",
+    "build-desktop": "node scripts/build-desktop",
+    "build-mobile": "node scripts/build-mobile",
+    "build-server": "node scripts/build-server",
     "start": "node scripts/start",
-    "dev": "node scripts/build && node scripts/start",
-    "package": "node scripts/build && node scripts/package",
-    "make": "node scripts/make"
+    "dev": "node scripts/build-desktop && node scripts/start",
+    "package": "node scripts/build-desktop && node scripts/package",
+    "make": "node scripts/make",
+    "preview": "node scripts/preview",
+    "record-demo": "scripts/record-demo",
+    "mobile-run": "scripts/mobile-run",
+    "mobile-tauri": "scripts/mobile-tauri",
+    "mobile-doctor": "scripts/mobile-doctor"
   },
   "keywords": [],
   "author": {
