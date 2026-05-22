@@ -338,7 +338,7 @@ CDP_PORT="${CDP_PORT:-9223}"
 CDP_PROXY_PORT="${CDP_PROXY_PORT:-9224}"
 export XDG_RUNTIME_DIR="/tmp/preview-xdg"
 mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
-if [ ! -d /src/src ]; then
+if [ ! -d /src/desktop ]; then
   echo "[preview] Error: mount source with -v /path/to/worktree:/src:ro"
   exit 1
 fi

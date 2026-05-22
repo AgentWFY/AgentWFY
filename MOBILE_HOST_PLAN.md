@@ -27,7 +27,7 @@ Each step must end with `./scripts/build` green (desktop) plus
 
 ---
 
-## Step 1 — Rename `src/` → `desktop/`  ☐
+## Step 1 — Rename `src/` → `desktop/`  ✅
 
 Pure mechanical move. No behaviour changes.
 
@@ -54,7 +54,7 @@ Pure mechanical move. No behaviour changes.
 Done when: `./scripts/build && ./scripts/start` launches the desktop app
 exactly as before.
 
-## Step 2 — `desktop/` build hardening  ☐
+## Step 2 — `desktop/` build hardening  ✅
 
 Walk through every dev path that the rename could have missed:
 

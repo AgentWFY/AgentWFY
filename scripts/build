@@ -13,21 +13,21 @@ const root = join(__dirname, '..')
 const startedAt = Date.now()
 
 ensureVendor(root)
-const src = join(root, 'src')
+const desktop = join(root, 'desktop')
 const shared = join(root, 'shared')
 const dist = join(root, 'dist')
-const distSrc = join(dist, 'src')
+const distDesktop = join(dist, 'desktop')
 const distShared = join(dist, 'shared')
 
 rmSync(dist, { recursive: true, force: true })
 
 // ── Static assets ──
 
-mkdirSync(join(distSrc, 'renderer'), { recursive: true })
-cpSync(join(src, 'renderer', 'index.html'), join(distSrc, 'renderer', 'index.html'))
-cpSync(join(src, 'renderer', 'global.css'), join(distSrc, 'renderer', 'global.css'))
-cpSync(join(src, 'command_palette.html'), join(distSrc, 'command_palette.html'))
-cpSync(join(src, 'confirmation.html'), join(distSrc, 'confirmation.html'))
+mkdirSync(join(distDesktop, 'renderer'), { recursive: true })
+cpSync(join(desktop, 'renderer', 'index.html'), join(distDesktop, 'renderer', 'index.html'))
+cpSync(join(desktop, 'renderer', 'global.css'), join(distDesktop, 'renderer', 'global.css'))
+cpSync(join(desktop, 'command_palette.html'), join(distDesktop, 'command_palette.html'))
+cpSync(join(desktop, 'confirmation.html'), join(distDesktop, 'confirmation.html'))
 mkdirSync(join(dist, 'icons'), { recursive: true })
 cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icons', 'icon.png'))
 cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
@@ -35,14 +35,14 @@ cpSync(join(root, 'icons', 'icon.png'), join(dist, 'icon.png'))
 // ── System data ──
 
 // Docs
-const docsDir = join(src, 'system-docs')
+const docsDir = join(desktop, 'system-docs')
 const docFiles = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
 const docs = docFiles.map(f => ({ name: f.replace(/\.md$/, ''), content: readFileSync(join(docsDir, f), 'utf-8') }))
 mkdirSync(distShared, { recursive: true })
 writeFileSync(join(distShared, 'system-docs.json'), JSON.stringify(docs))
 
 // Views
-const viewsDir = join(src, 'system-views')
+const viewsDir = join(desktop, 'system-views')
 const viewFiles = readdirSync(viewsDir).filter(f => f.endsWith('.html')).sort()
 const views = viewFiles.map(f => {
   const content = readFileSync(join(viewsDir, f), 'utf-8')
@@ -68,14 +68,14 @@ generateSystemConfigKeys(shared)
 const tsgo = join(root, 'vendor', 'tsgo', 'lib', process.platform === 'win32' ? 'tsgo.exe' : 'tsgo')
 execSync(`"${tsgo}"`, { cwd: root, stdio: 'inherit' })
 
-// The renderer is served via the `app://` protocol rooted at dist/src/renderer/.
+// The renderer is served via the `app://` protocol rooted at dist/desktop/renderer/.
 // It uses an import map for #shared/*, so mirror the compiled shared package
 // under that protocol root.
-cpSync(join(dist, 'shared'), join(distSrc, 'renderer', 'shared'), { recursive: true })
+cpSync(join(dist, 'shared'), join(distDesktop, 'renderer', 'shared'), { recursive: true })
 
 // ── Preload bundling ──
 
-inlinePreload(distSrc)
+inlinePreload(distDesktop)
 
 // ── Remote daemon ──
 

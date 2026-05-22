@@ -4,7 +4,7 @@
   "version": "2.1.1",
   "description": "AI agent desktop app with local SQLite database",
   "type": "module",
-  "main": "dist/src/main.js",
+  "main": "dist/desktop/main.js",
   "imports": {
     "#shared/*.js": {
       "types": "./shared/*.ts",

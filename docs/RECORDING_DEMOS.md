@@ -101,7 +101,7 @@ Wrappers exported by `scripts/lib/demo.mjs`:
 | `waitInTab(name, frag, predicate, opts?)` | Async wait inside the tab — single CDP call regardless of poll count. `predicate` is the source of an arrow function. Options: `timeoutMs` (default 30000), `intervalMs` (default 150). |
 | `confirmDialog(name, action?, opts?)` | Wait for the confirm-dialog view, move cursor to its `Confirm`/`Cancel` button, click. `action` is `'confirm'` (default) or `'cancel'`. Options: `width`, `height`, `dur`, `preClickDelay`. |
 | `typeInPalette(name, text, perChar?)` | Type letter-by-letter into the palette's `#searchInput`. |
-| `clickInPalette(name, selector, opts?)` | Move cursor and click an element inside `command_palette.html`. Computes the palette view origin from the formula in `src/command-palette/manager.ts`. Options match `clickInTab`. |
+| `clickInPalette(name, selector, opts?)` | Move cursor and click an element inside `command_palette.html`. Computes the palette view origin from the formula in `desktop/command-palette/manager.ts`. Options match `clickInTab`. |
 | `mark(label)` | Per-step timing on stderr: `[step] +1.23s (total 4.56s) <label>`. Use to spot slow steps. |
 | `sleep(ms)` | Plain promise-based sleep. |
 
@@ -149,7 +149,7 @@ Under the hood `clickInTab` looks up the tab's bounds via `window.ipc.tabs.descr
 
 ### Confirmation dialogs
 
-Any `request*` IPC routed through `src/confirmation/` opens a separate WebContentsView at `file:///app/dist/confirmation.html`. Currently:
+Any `request*` IPC routed through `desktop/confirmation/` opens a separate WebContentsView at `file:///app/dist/confirmation.html`. Currently:
 
 - `requestInstallPlugin`
 - `requestTogglePlugin`
@@ -163,7 +163,7 @@ await clickInTab(NAME, 'system.plugins', '.btn-install[data-name="anthropic-prov
 await confirmDialog(NAME, 'confirm');
 ```
 
-`confirmDialog` waits for `#confirmBtn` / `#cancelBtn` to appear, computes the WebContentsView's screen origin from the same formula in `src/confirmation/manager.ts` (420×300 dialog centered horizontally, top at `max(40, ch*0.25)`, view padded 40 px on each side for the drop shadow), moves the cursor over the button, and dispatches the click. Pass `{ width, height }` if a particular screen calls `setSize` to override the default.
+`confirmDialog` waits for `#confirmBtn` / `#cancelBtn` to appear, computes the WebContentsView's screen origin from the same formula in `desktop/confirmation/manager.ts` (420×300 dialog centered horizontally, top at `max(40, ch*0.25)`, view padded 40 px on each side for the drop shadow), moves the cursor over the button, and dispatches the click. Pass `{ width, height }` if a particular screen calls `setSize` to override the default.
 
 ### Polling efficiently
 

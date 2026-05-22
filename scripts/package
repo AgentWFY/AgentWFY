@@ -30,7 +30,7 @@ const arch = process.argv.includes('--arch')
 console.log(`Packaging ${APP_NAME} for ${platform}-${arch}...`)
 
 // Ensure dist/ exists (app must be built first)
-if (!existsSync(join(root, 'dist', 'main.js'))) {
+if (!existsSync(join(root, 'dist', 'desktop', 'main.js'))) {
   console.error('dist/ not found. Run `npm run build` first.')
   process.exit(1)
 }
