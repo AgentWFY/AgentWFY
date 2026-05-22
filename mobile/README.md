@@ -15,44 +15,45 @@ tooling comes from the project's `vendor/` directory, populated by
 ## First setup
 
 ```sh
-./scripts/setup                        # from repo root; installs tauri-cli to vendor/
-./mobile/scripts/run ios init          # one-time iOS scaffolding (already done in this checkout)
+./scripts/setup                    # installs tauri-cli to vendor/
+./scripts/mobile-run ios init      # one-time iOS scaffolding (already done in this checkout)
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 ```
 
 ## Run
 
 ```sh
-./mobile/scripts/run ios dev                       # default sim
-./mobile/scripts/run ios dev "iPhone 16 Pro"       # specific sim
-./mobile/scripts/run dev                           # desktop window (non-mobile)
-./mobile/scripts/run build                         # release build, no bundling
+./scripts/mobile-run ios dev                       # default sim
+./scripts/mobile-run ios dev "iPhone 16 Pro"       # specific sim
+./scripts/mobile-run dev                           # desktop window (non-mobile)
+./scripts/mobile-run build                         # release build, no bundling
 ```
 
-`run` rebuilds the mobile frontend through the root `scripts/build` first,
+`mobile-run` rebuilds the mobile frontend through `scripts/build` first,
 then invokes the vendored tauri CLI with whatever args you pass.
 
 For Android:
 
 ```sh
-./mobile/scripts/run android init
-./mobile/scripts/run android dev
-./mobile/scripts/run android build
+./scripts/mobile-run android init
+./scripts/mobile-run android dev
+./scripts/mobile-run android build
 ```
 
 ## Diagnostics
 
 ```sh
-./mobile/scripts/doctor
+./scripts/mobile-doctor
 ```
 
-Lists `rustc`, Xcode, and available iOS simulators. The `run` script forces
+Lists `rustc`, Xcode, and available iOS simulators. The `mobile-tauri`
+wrapper (which `mobile-run` calls) forces
 `PATH="$HOME/.cargo/bin:..."` and `DEVELOPER_DIR=/Applications/Xcode.app/...`
 so Xcode picks rustup's toolchain over Homebrew's `rustc`.
 
 ## Common failure
 
 If the build says it cannot find crate `core` for `aarch64-apple-ios-sim`,
-Xcode is using the wrong Rust. Run `./mobile/scripts/doctor` and confirm
+Xcode is using the wrong Rust. Run `./scripts/mobile-doctor` and confirm
 `rustc` resolves under `~/.cargo/bin`; if not, fix the shell PATH so
 rustup is ahead of Homebrew.

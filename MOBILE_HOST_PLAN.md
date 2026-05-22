@@ -101,7 +101,7 @@ map pattern the desktop renderer uses.
   `cargo install tauri-cli --root vendor/tauri-cli --locked --version X` and
   records the version in `vendor/tauri-cli/version`. Skipped gracefully if
   `cargo` is absent (desktop-only contributors). Wrapper scripts at
-  `mobile/scripts/{tauri,run,doctor}` set the iOS PATH/`DEVELOPER_DIR`
+  `scripts/{mobile-tauri,mobile-run,mobile-doctor}` set the iOS PATH/`DEVELOPER_DIR`
   and call the vendored binary.
 
 Done when: `./scripts/build` succeeds with the `#shared/` type import in

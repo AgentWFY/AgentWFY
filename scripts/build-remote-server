@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Build the remote-backend-server using tsgo from the parent project's
-// vendor/. The daemon stays free of external npm deps; we reuse the binary
-// the main app already downloads via scripts/setup.
+// Build the remote-backend-server using tsgo from vendor/. The daemon stays
+// free of external npm deps; we reuse the binary scripts/setup already
+// downloads.
 
 import { execSync } from 'node:child_process'
 import { copyFileSync, existsSync, rmSync } from 'node:fs'
@@ -9,8 +9,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const serverRoot = join(__dirname, '..')
-const projectRoot = join(serverRoot, '..')
+const projectRoot = join(__dirname, '..')
+const serverRoot = join(projectRoot, 'remote-backend-server')
 
 const tsgo = join(
   projectRoot,
