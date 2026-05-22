@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Build the mobile frontend (via the root build, which also covers desktop
-# + shared), then invoke tauri with the passed args.
+# Build the mobile frontend, then invoke tauri with the passed args.
 #
 # Examples:
 #   ./scripts/mobile-run dev

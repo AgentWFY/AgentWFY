@@ -18,4 +18,5 @@ fi
 export PATH="$HOME/.cargo/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:$PATH"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
+cd "$ROOT/mobile"
 exec "$TAURI_BIN" "$@"

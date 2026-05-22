@@ -4,13 +4,17 @@
 // downloads.
 
 import { execSync } from 'node:child_process'
-import { copyFileSync, existsSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ensureVendor } from './lib/ensure-vendor.mjs'
+import { generateSystemConfigKeys } from './lib/generate-system-config-keys.mjs'
+import { writeSystemAssets } from './lib/write-system-assets.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(__dirname, '..')
 const serverRoot = join(projectRoot, 'remote-backend-server')
+const shared = join(projectRoot, 'shared')
 
 const tsgo = join(
   projectRoot,
@@ -23,6 +27,9 @@ const tsgo = join(
 const dist = join(serverRoot, 'dist')
 rmSync(dist, { recursive: true, force: true })
 
+ensureVendor(projectRoot)
+generateSystemConfigKeys(shared)
+
 execSync(`"${tsgo}" --project "${join(serverRoot, 'tsconfig.json')}"`, {
   cwd: serverRoot,
   stdio: 'inherit',
@@ -30,25 +37,8 @@ execSync(`"${tsgo}" --project "${join(serverRoot, 'tsconfig.json')}"`, {
 
 // AgentDb resolves system data JSON files via `import.meta.dirname/../*.json`.
 // In the daemon's compiled tree, db/agent-db.js lives at dist/shared/db/, so
-// the JSONs must be at dist/shared/. They're produced by the main app's build
-// under dist/shared — copy them in if available, otherwise leave a clear
-// message for the user.
-const mainDist = join(projectRoot, 'dist', 'shared')
-const daemonAssetsDir = join(dist, 'shared')
-const assets = ['system-docs.json', 'system-views.json', 'system-config.json']
-let copied = 0
-for (const f of assets) {
-  const from = join(mainDist, f)
-  const to = join(daemonAssetsDir, f)
-  if (existsSync(from)) {
-    copyFileSync(from, to)
-    copied += 1
-  }
-}
-if (copied < assets.length) {
-  console.warn(
-    `agentwfy-remote-server: ${assets.length - copied}/${assets.length} system asset(s) missing — run \`npm run build\` in the main project first if the daemon fails to start.`,
-  )
-}
+// the JSONs must be at dist/shared/. Generate them from source here so this
+// per-host build produces a runnable daemon from a clean checkout.
+writeSystemAssets(projectRoot, join(dist, 'shared'))
 
 console.log('agentwfy-remote-server: build OK')
