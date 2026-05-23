@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url'
 import { ensureVendor } from './lib/ensure-vendor.mjs'
 import { inlinePreload } from './lib/inline-preload.mjs'
 import { generateSystemConfigKeys } from './lib/generate-system-config-keys.mjs'
+import { generateViewBootstrap } from './lib/generate-view-bootstrap.mjs'
 import { writeSystemAssets } from './lib/write-system-assets.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -47,6 +48,7 @@ writeSystemAssets(root, distShared)
 // Codegen the typed constants from system-config.json. Must run before tsgo
 // so the compiler sees any updates.
 generateSystemConfigKeys(shared)
+generateViewBootstrap(shared)
 
 // ── TypeScript compilation ──
 

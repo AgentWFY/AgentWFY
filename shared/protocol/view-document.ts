@@ -1,135 +1,8 @@
-function buildSharedBootstrapScript(): string {
-  return `
-<style id="agentview-design-tokens">
-  :root {
-    color-scheme: light dark;
-
-    /* Typography */
-    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
-
-    /* Layout constants */
-    --radius-sm: 4px;
-    --radius-md: 6px;
-
-    /* Timing */
-    --transition-fast: 120ms ease;
-    --transition-normal: 200ms ease-out;
-
-    /* Light mode (default) */
-    --color-bg1: #ffffff;
-    --color-bg2: #f8f8f8;
-    --color-bg3: #f0f0f0;
-    --color-surface: #ffffff;
-
-    --color-border: #e0e0e0;
-    --color-divider: #d0d0d0;
-
-    --color-text1: #6b6b6b;
-    --color-text2: #999999;
-    --color-text3: #444444;
-    --color-text4: #1a1a1a;
-    --color-placeholder: #b0b0b0;
-
-    --color-accent: #1a6fb5;
-    --color-accent-hover: #2080cc;
-    --color-focus-border: #1a6fb5;
-
-    --color-red-bg: #fdf0f0;
-    --color-red-fg: #c62828;
-
-    --color-green-bg: #f0fdf4;
-    --color-green-fg: #2e7d32;
-
-    --color-yellow-bg: #fffde7;
-    --color-yellow-fg: #f57f17;
-
-    --color-selection-bg: #1a6fb5;
-    --color-selection-fg: #ffffff;
-    --color-item-hover: rgba(0, 0, 0, 0.05);
-
-    --color-input-bg: #ffffff;
-    --color-input-border: #d0d0d0;
-
-    --color-code-bg: #f5f5f5;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --color-bg1: #1e1e1e;
-      --color-bg2: #252526;
-      --color-bg3: #1a1a1a;
-      --color-surface: #2d2d2d;
-
-      --color-border: #3d3d3d;
-      --color-divider: #4a4a4a;
-
-      --color-text1: #b0b0b0;
-      --color-text2: #808080;
-      --color-text3: #cccccc;
-      --color-text4: #e0e0e0;
-      --color-placeholder: #666666;
-
-      --color-accent: #2b7ab5;
-      --color-accent-hover: #3994d4;
-      --color-focus-border: #2b7ab5;
-
-      --color-red-bg: #3a1515;
-      --color-red-fg: #ff6b6b;
-
-      --color-green-bg: #1a3a1f;
-      --color-green-fg: #4caf50;
-
-      --color-yellow-bg: #3a3015;
-      --color-yellow-fg: #ffb74d;
-
-      --color-item-hover: rgba(255, 255, 255, 0.05);
-
-      --color-input-bg: #1a1a1a;
-      --color-input-border: #3d3d3d;
-
-      --color-code-bg: #1a1a1a;
-    }
-  }
-
-  /* Base reset */
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; font-family: var(--font-family); color: var(--color-text3); background: var(--color-bg1); }
-</style>
-<style id="agentview-initial-guard">
-  html:not([data-agentview-ready="1"]),
-  html:not([data-agentview-ready="1"]) body {
-    visibility: hidden !important;
-  }
-</style>
-<script>
-  (() => {
-    const root = document.documentElement;
-    root.dataset.agentviewReady = '0';
-
-    let presented = false;
-    let revealFallbackTimer = 0;
-
-    const presentView = () => {
-      if (presented) {
-        return;
-      }
-
-      presented = true;
-      if (revealFallbackTimer) {
-        window.clearTimeout(revealFallbackTimer);
-        revealFallbackTimer = 0;
-      }
-      root.dataset.agentviewReady = '1';
-    };
-
-    revealFallbackTimer = window.setTimeout(presentView, 5000);
-
-    window.requestAnimationFrame(presentView);
-  })();
-</script>
-`;
-}
+// Bootstrap HTML/CSS/JS injected into every agent view. Single source of
+// truth is shared/protocol/view-bootstrap.html — scripts/lib/generate-view-
+// bootstrap.mjs codegens the TS constant during the build; the Rust mobile
+// handler reads the same .html via include_str!.
+import { VIEW_BOOTSTRAP_HTML } from './view-bootstrap.generated.js';
 
 function injectBootstrapIntoHtml(source: string, bootstrap: string): string {
   if (/<\/head>/i.test(source)) {
@@ -170,8 +43,7 @@ export function parseViewName(url: URL): string {
 }
 
 export function buildViewDocument(content: string): string {
-  const bootstrap = buildSharedBootstrapScript();
-  return injectBootstrapIntoHtml(content, bootstrap);
+  return injectBootstrapIntoHtml(content, VIEW_BOOTSTRAP_HTML);
 }
 
 export function normalizeViewPathname(pathname: string): string {

@@ -7,6 +7,8 @@
 // names. Rust-side `#[tauri::command]` handlers grow alongside the
 // corresponding namespace here.
 
+import type { AgentDbChange } from '#shared/db/sqlite.js'
+
 interface TauriInternals {
   invoke<T>(
     cmd: string,
@@ -33,11 +35,48 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return tauri.invoke<T>(cmd, args)
 }
 
-// Domain namespaces will be added as Rust commands land.
-//   - mirrorDb: opens / queries / applies-change to the local SQLite mirror (Step 5)
-//   - backend: WS lifecycle if any of it ends up on the Rust side (Step 6)
-// For now the bridge only exposes the raw escape hatch.
+/** Result of `mirrorDb.open`. `not_initialized` means the on-disk mirror is
+ *  missing — the caller should fetch a snapshot from the daemon and call
+ *  `replaceSnapshot` before issuing queries. */
+export type MirrorDbOpenStatus = 'ready' | 'not_initialized'
+
+export interface MirrorDbOpenResult {
+  status: MirrorDbOpenStatus
+}
+
 export const bridge = {
+  /** Local SQLite mirror of the daemon's agent DB. See
+   *  mobile/src-tauri/src/mirror_db.rs for the Rust side. */
+  mirrorDb: {
+    open(agentId: string): Promise<MirrorDbOpenResult> {
+      return invoke<MirrorDbOpenResult>('mirror_db_open', { agentId })
+    },
+    query(
+      agentId: string,
+      sql: string,
+      params?: ReadonlyArray<unknown>,
+    ): Promise<Array<Record<string, unknown>>> {
+      return invoke<Array<Record<string, unknown>>>('mirror_db_query', {
+        agentId,
+        sql,
+        params: params ? Array.from(params) : [],
+      })
+    },
+    applyChange(agentId: string, change: AgentDbChange): Promise<void> {
+      return invoke<void>('mirror_db_apply_change', { agentId, change })
+    },
+    replaceSnapshot(agentId: string, bytes: ArrayBuffer | Uint8Array): Promise<void> {
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+      // Tauri's default IPC serializes Uint8Array as a JSON array of bytes —
+      // fine for snapshot sizes we expect (a few MB at most). If this turns
+      // into a hotspot, switch to the raw-request IPC body.
+      return invoke<void>('mirror_db_replace_snapshot', {
+        agentId,
+        bytes: Array.from(u8),
+      })
+    },
+  },
+
   /** Escape hatch for not-yet-typed Rust commands. Prefer adding a typed
    *  namespace once the command stabilizes. */
   raw: invoke,

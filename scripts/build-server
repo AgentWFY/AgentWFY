@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ensureVendor } from './lib/ensure-vendor.mjs'
 import { generateSystemConfigKeys } from './lib/generate-system-config-keys.mjs'
+import { generateViewBootstrap } from './lib/generate-view-bootstrap.mjs'
 import { writeSystemAssets } from './lib/write-system-assets.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -29,6 +30,7 @@ rmSync(dist, { recursive: true, force: true })
 
 ensureVendor(projectRoot)
 generateSystemConfigKeys(shared)
+generateViewBootstrap(shared)
 
 execSync(`"${tsgo}" --project "${join(serverRoot, 'tsconfig.json')}"`, {
   cwd: serverRoot,
