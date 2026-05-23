@@ -4,6 +4,9 @@ Tauri v2 mobile shell for the remote-only AgentWFY client. No npm — all
 tooling comes from the project's `vendor/` directory, populated by
 `./scripts/setup` at the repo root.
 
+The current implementation roadmap is tracked in
+[`MOBILE_APP_PLAN.md`](../MOBILE_APP_PLAN.md).
+
 ## Prerequisites
 
 - Xcode installed at `/Applications/Xcode.app`
