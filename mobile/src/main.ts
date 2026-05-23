@@ -25,7 +25,7 @@ if (app) {
         </label>
         <label>
           Daemon URL
-          <input name="baseUrl" value="http://127.0.0.1:9876" required />
+          <input name="baseUrl" value="http://127.0.0.1:9878" required />
         </label>
         <label>
           Agent token

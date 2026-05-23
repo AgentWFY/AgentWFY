@@ -75,6 +75,14 @@ function sendPlain(res: ServerResponse, status: number, body: string): void {
   res.end(body)
 }
 
+function setCorsHeaders(res: ServerResponse): void {
+  res.setHeader('access-control-allow-origin', '*')
+  res.setHeader('access-control-allow-methods', 'GET, OPTIONS')
+  res.setHeader('access-control-allow-headers', 'Authorization, Content-Type')
+  res.setHeader('access-control-expose-headers', DB_SNAPSHOT_VERSION_HEADER)
+  res.setHeader('access-control-max-age', '600')
+}
+
 function extractPresentedToken(req: IncomingMessage): string | null {
   const auth = req.headers[AUTH_HEADER]
   if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
@@ -324,6 +332,12 @@ function handleWebSocket(
 function makeHttpHandler(bundle: RuntimeBundle, token: string | null) {
   return function handleHttp(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+    setCorsHeaders(res)
+    if (req.method === 'OPTIONS' && url.pathname === DB_SNAPSHOT_PATH) {
+      res.writeHead(204)
+      res.end()
+      return
+    }
     if (req.method === 'GET' && url.pathname === DB_SNAPSHOT_PATH) {
       void sendDbSnapshot(req, res, bundle, token)
       return
