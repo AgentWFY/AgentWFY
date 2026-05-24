@@ -1,7 +1,8 @@
 import { BaseWindow, BrowserWindow, Menu, nativeTheme, View, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
-import { isViewDocumentRequest, parseViewName } from '#shared/protocol/view-document.js';
+import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/protocol/view-document.js';
+import { agentHostname } from '../protocol/agent-hostname.js';
 import { Channels } from '../ipc/channels.cjs';
 import type { SendToRenderer } from '../ipc/schema.js';
 import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
@@ -223,6 +224,7 @@ interface TabViewManagerDeps {
   focusMainRendererWindow: () => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;
+  agentId: string;
   session: Electron.Session;
   registerSender?: (webContentsId: number) => void;
   unregisterSender?: (webContentsId: number) => void;
@@ -349,6 +351,12 @@ export class TabViewManager {
 
     const isUrlTab = options?.tabType === 'url';
 
+    // The preload exposes window.agentwfy only when location.hostname matches
+    // this exact host. Passing it via additionalArguments lets the preload
+    // verify identity without an IPC roundtrip, and keeps the runtime
+    // un-exposed if a spoofed *.views.agentwfy.local name ever resolves
+    // through the user's DNS/mDNS/hosts.
+    const expectedAgentHost = agentHostname(this.deps.agentId);
     const view = new WebContentsView({
       webPreferences: {
         preload: path.join(import.meta.dirname, '..', 'preload.cjs'),
@@ -357,6 +365,7 @@ export class TabViewManager {
         webSecurity: isUrlTab,
         backgroundThrottling: false,
         session: this.deps.session,
+        additionalArguments: [`--agent-host=${expectedAgentHost}`],
       },
     });
     view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#ffffff');
@@ -624,11 +633,12 @@ export class TabViewManager {
 
     const encodedTabId = encodeURIComponent(tabId);
     const rev = Date.now();
+    const host = agentHostname(this.deps.agentId);
     let url: string;
     if (type === 'file') {
-      url = `agentview://view/${encodeURIComponent(target)}?source=file&rev=${rev}&tabId=${encodedTabId}`;
+      url = `https://${host}/view/${encodeURIComponent(target)}?source=file&rev=${rev}&tabId=${encodedTabId}`;
     } else {
-      url = `agentview://view/${encodeURIComponent(target)}?rev=${rev}&tabId=${encodedTabId}`;
+      url = `https://${host}/view/${encodeURIComponent(target)}?rev=${rev}&tabId=${encodedTabId}`;
     }
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -1048,12 +1058,12 @@ export class TabViewManager {
       // rejects with ERR_UNKNOWN_URL_SCHEME asynchronously — the catch on
       // loadURL below merely logs it, so the agent sees a blank tab with no
       // error. Reject up front with a hint pointing at the right field.
-      const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:', 'file:', 'agentview:']);
+      const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:', 'file:']);
       if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
         const hint = parsed.protocol === 'view:'
-          ? ' Did you mean to pass viewName instead of url, or use the agentview://view/<viewName> form?'
+          ? ' Did you mean to pass viewName instead of url?'
           : '';
-        throw new Error(`openTab url scheme "${parsed.protocol}" is not supported (got ${JSON.stringify(target)}). Use http(s):, file:, or agentview:.${hint}`);
+        throw new Error(`openTab url scheme "${parsed.protocol}" is not supported (got ${JSON.stringify(target)}). Use http(s): or file:.${hint}`);
       }
     } else if (type === 'file') {
       target = request.filePath!;
@@ -1421,7 +1431,7 @@ export class TabViewManager {
   // --- Webview tracking ---
 
   parseTrackedViewFromUrl(urlString: string): { viewName: string; tabId: string | null } | null {
-    if (typeof urlString !== 'string' || !urlString.startsWith('agentview://')) {
+    if (typeof urlString !== 'string' || !urlString.startsWith('https://')) {
       return null;
     }
 
@@ -1432,20 +1442,21 @@ export class TabViewManager {
       return null;
     }
 
-    if (!isViewDocumentRequest(parsedUrl)) {
+    if (!isAgentViewHostname(parsedUrl.hostname)) {
+      return null;
+    }
+    if (!isViewDocumentUrl(parsedUrl)) {
       return null;
     }
 
-    let viewName: string;
-    try {
-      viewName = parseViewName(parsedUrl);
-    } catch {
+    const info = parseAgentPath(parsedUrl.pathname);
+    if (!info || info.kind !== 'view') {
       return null;
     }
 
     const rawTabId = parsedUrl.searchParams.get('tabId');
     const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
-    return { viewName, tabId };
+    return { viewName: info.target, tabId };
   }
 
   updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {

@@ -7,7 +7,7 @@
 //   mirror_db_open                — open an existing mirror file, or report
 //                                   not_initialized so the TS side fetches a
 //                                   snapshot first
-//   mirror_db_query               — read-only SELECTs for the UI / agentview://
+//   mirror_db_query               — read-only SELECTs for the UI / view handler
 //   mirror_db_apply_change        — apply one daemon-emitted AgentDbChange
 //   mirror_db_replace_snapshot    — atomic file-replace from a daemon snapshot
 //
@@ -38,7 +38,7 @@ pub struct MirrorDbState {
 
 impl MirrorDbState {
     /// Run a read-only operation against the mirror connection for `agent_id`.
-    /// Used by the agentview:// scheme handler in view_protocol.rs.
+    /// Used by the view URI scheme handler in view_protocol.rs.
     pub fn with_connection<T>(
         &self,
         agent_id: &str,

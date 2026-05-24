@@ -1,7 +1,9 @@
-// The agentview:// scheme handler is a single, app-wide registration — it
+// The view URI scheme handler is a single, app-wide registration — it
 // can't be parameterised per-webview. So it consults this state to know
 // which agent's mirror DB to read from. mirror_db_open() sets this; if/when
-// multi-agent mobile UX lands, a dedicated setActive command can join it.
+// multi-agent mobile UX lands, a dedicated setActive command can join it
+// (or we encode agentId into the URL hostname, matching desktop's per-agent
+// subdomain scheme).
 
 use std::sync::Mutex;
 

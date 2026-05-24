@@ -1,4 +1,4 @@
-import { normalizeAgentViewUrl, isViewHostname, isFileHostname, normalizeViewPathname } from '#shared/protocol/view-document.js'
+import { parseAgentPath } from '#shared/protocol/view-document.js'
 
 interface TabLinkRequest {
   viewName?: string
@@ -7,27 +7,40 @@ interface TabLinkRequest {
   params?: Record<string, string>
 }
 
+// Parse a markdown link href into a tab-open request.
+// Accepts agent-emitted scheme-free paths: "/view/<name>" or "/file/<path>".
+// (Agents stay transport-agnostic — they never name a host or scheme.)
 export function parseTabLink(href: string): TabLinkRequest | null {
-  const url = normalizeAgentViewUrl(href)
-  if (!url) return null
+  if (typeof href !== 'string') return null
+  const trimmed = href.trim()
+  if (!trimmed) return null
 
-  const target = normalizeViewPathname(url.pathname)
-  if (!target) return null
+  // Reject anything that looks like an absolute URL with a scheme. We only
+  // route path-style refs; http(s):// links open externally in the caller.
+  if (/^[a-z][a-z0-9+\-.]*:/i.test(trimmed)) return null
 
-  const title = url.searchParams.get('title') || undefined
+  // Split off the query string so parseAgentPath sees a clean path. The href
+  // comes from the raw markdown so this is always a string, not a parsed URL.
+  const queryIdx = trimmed.indexOf('?')
+  const pathPart = queryIdx === -1 ? trimmed : trimmed.slice(0, queryIdx)
+  const queryPart = queryIdx === -1 ? '' : trimmed.slice(queryIdx + 1)
+
+  const info = parseAgentPath(pathPart)
+  if (!info) return null
+  if (info.kind !== 'view' && info.kind !== 'file') return null
+
+  const search = new URLSearchParams(queryPart)
+  const title = search.get('title') || undefined
   const params: Record<string, string> = {}
-  url.searchParams.forEach((v, k) => {
+  search.forEach((v, k) => {
     if (k !== 'title') params[k] = v
   })
   const hasParams = Object.keys(params).length > 0
 
-  if (isViewHostname(url.hostname)) {
-    return { viewName: target, title, params: hasParams ? params : undefined }
+  if (info.kind === 'view') {
+    return { viewName: info.target, title, params: hasParams ? params : undefined }
   }
-  if (isFileHostname(url.hostname)) {
-    return { filePath: target, title, params: hasParams ? params : undefined }
-  }
-  return null
+  return { filePath: info.target, title, params: hasParams ? params : undefined }
 }
 
 export function escapeHtml(str: string): string {

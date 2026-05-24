@@ -1,11 +1,16 @@
-// Handler for the agentview:// custom URI scheme. Reads view and module
-// content out of the local mirror SQLite and serves it back to the WebView
-// so iframes can do `<iframe src="agentview://view/dashboard">`.
+// Path-based handler for the agentview:// custom URI scheme. Reads view and
+// module content out of the local mirror SQLite and serves it back to the
+// WebView so iframes can do `<iframe src="agentview://localhost/view/dashboard?tabId=mobile">`.
 //
-// Mirrors the subset of desktop/protocol/view-handler.ts that mobile needs.
-// File-source views (`?source=file`) and `agentview://asset/*` are
-// intentionally deferred — mobile doesn't have a per-agent filesystem to
-// serve from, and bundled asset routes can be added when something uses them.
+// iOS WKWebView blocks WKURLSchemeHandler from claiming http/https, so we
+// can't mirror desktop's https-interception trick on mobile. A custom scheme
+// is the only available transport — but agents never see it, because they
+// emit scheme-free `/view/<name>` markdown links and views use relative
+// paths. The hostname is ignored; routing is by first path segment.
+//
+// File-source views (`?source=file`) and `/asset/*` are intentionally
+// deferred — mobile doesn't have a per-agent filesystem to serve from, and
+// bundled asset routes can be added when something uses them.
 
 use rusqlite::Connection;
 use tauri::http::{header, Request, Response, StatusCode};
@@ -21,8 +26,17 @@ const BOOTSTRAP_HTML: &str = include_str!("../../../shared/protocol/view-bootstr
 
 pub fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let uri = request.uri();
-    let host = uri.host().unwrap_or("").to_string();
-    let name = decode_name(uri.path());
+    let path = uri.path();
+    let query = uri.query().unwrap_or("");
+    let (kind, target) = match split_path(path) {
+        Some(parsed) => parsed,
+        None => {
+            return html_response(
+                StatusCode::NOT_FOUND,
+                "<pre>Unsupported agentview route</pre>",
+            );
+        }
+    };
 
     let app = ctx.app_handle();
     let active: tauri::State<ActiveAgent> = app.state();
@@ -38,14 +52,26 @@ pub fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>) -> Resp
         }
     };
 
-    match host.as_str() {
-        "view" => serve_view(&mirror, &agent_id, &name),
-        "module" => serve_module(&mirror, &agent_id, &name),
+    match kind {
+        "view" => {
+            if is_view_document_request(&target, query) {
+                serve_view(&mirror, &agent_id, &target)
+            } else {
+                // Sub-resource fetch under /view/... — mobile has no per-agent
+                // filesystem to serve from, mirror desktop's "file source"
+                // routing as a 404 here rather than silently returning HTML.
+                html_response(
+                    StatusCode::NOT_FOUND,
+                    &format!("<pre>File route not available on mobile: {}</pre>", html_escape(&target)),
+                )
+            }
+        }
+        "module" => serve_module(&mirror, &agent_id, &target),
         _ => html_response(
             StatusCode::NOT_FOUND,
             &format!(
                 "<pre>Unsupported agentview route: {}</pre>",
-                html_escape(&host)
+                html_escape(kind)
             ),
         ),
     }
@@ -164,9 +190,51 @@ fn find_body_open_end(haystack: &str) -> Option<usize> {
     Some(after_body + close_offset + 1)
 }
 
-fn decode_name(path: &str) -> String {
+/// Mirror of parseAgentPath in shared/protocol/view-document.ts.
+/// Returns (kind, target) where kind is "view"/"module"/"file"/"asset" and
+/// target is the percent-decoded remainder. The kind reference is returned as
+/// a &'static str slice of the original path so the caller can match cheaply.
+fn split_path(path: &str) -> Option<(&'static str, String)> {
     let stripped = path.trim_start_matches('/').trim();
-    percent_decode(stripped)
+    if stripped.is_empty() {
+        return None;
+    }
+    let (head, tail) = stripped.split_once('/')?;
+    let kind: &'static str = match head {
+        "view" => "view",
+        "module" => "module",
+        "file" => "file",
+        "asset" => "asset",
+        _ => return None,
+    };
+    let target = percent_decode(tail.trim());
+    if target.is_empty() {
+        return None;
+    }
+    Some((kind, target))
+}
+
+/// Mirror of isViewDocumentUrl in shared/protocol/view-document.ts.
+/// Documents carry `tabId`; sub-resource fetches resolve relative to the view
+/// URL and never inherit query params, so tabId reliably distinguishes them.
+fn is_view_document_request(target: &str, query: &str) -> bool {
+    if has_query_key(query, "tabId") {
+        return true;
+    }
+    !target.contains('/') && !target.contains('.')
+}
+
+fn has_query_key(query: &str, key: &str) -> bool {
+    if query.is_empty() {
+        return false;
+    }
+    for pair in query.split('&') {
+        let name = pair.split_once('=').map(|(k, _)| k).unwrap_or(pair);
+        if name == key {
+            return true;
+        }
+    }
+    false
 }
 
 /// Minimal percent-decoder for view/module names. Tolerates malformed

@@ -102,8 +102,12 @@ if (app) {
     evt.preventDefault()
     const viewName = String(new FormData(viewForm).get('viewName') ?? '').trim()
     if (!viewName) return
-    // Bypasses the iframe's history; setting src to the same URL re-fetches.
-    viewFrame.src = `agentview://view/${encodeURIComponent(viewName)}`
+    // Path-based routing matching desktop (https://<hash>.views.agentwfy.local/...).
+    // Mobile keeps the agentview:// scheme because iOS WKURLSchemeHandler
+    // can't claim http/https; hostname is ignored, the path drives the route.
+    // tabId marks this as a document request (not a sub-resource fetch).
+    const rev = Date.now()
+    viewFrame.src = `agentview://localhost/view/${encodeURIComponent(viewName)}?tabId=mobile&rev=${rev}`
   })
 
   runButton.addEventListener('click', async () => {

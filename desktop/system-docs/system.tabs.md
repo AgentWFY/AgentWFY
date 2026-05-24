@@ -30,4 +30,4 @@ For low-level CDP access (network intercept, screencast, PDF, perf), see `@docs/
 
 Always `reloadTab` after updating view content via SQL.
 
-Clickable links in chat messages: `[text](agentview://view/<viewName>)` or `[text](agentview://file/<filePath>)`. Optional `?title=...` query param sets the tab title.
+Clickable links in chat messages: `[text](/view/<viewName>)` or `[text](/file/<filePath>)`. Optional `?title=...` query param sets the tab title.

@@ -1,4 +1,4 @@
-import { session } from 'electron';
+import { net, session } from 'electron';
 import type { BaseWindow, WebContentsView } from 'electron';
 import fs from 'fs';
 import path from 'path';
@@ -23,6 +23,7 @@ import type { AgentDbChange } from '#shared/db/sqlite.js';
 import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
 import type { SendToRenderer } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
+import { agentHostname } from './protocol/agent-hostname.js';
 import { LocalFileSource, RemoteFileSource, type FileSource } from './protocol/file-source.js';
 import type { AgentContext, LocalAgentContext, RemoteAgentContext } from './agent-context.js';
 import type { CommandPaletteManager } from './command-palette/manager.js';
@@ -118,6 +119,7 @@ export class AgentContextFactory {
         return agentCtxRef?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;
       },
       handleAction: this.deps.handleShortcutAction,
+      agentId,
       session: agentSession,
       registerSender,
       unregisterSender,
@@ -199,7 +201,7 @@ export class AgentContextFactory {
       closeAgentDb(ctx.cacheRoot);
       const agentSession = this.agentSessions.get(ctx.agentId);
       if (agentSession) {
-        agentSession.protocol.unhandle('agentview');
+        agentSession.protocol.unhandle('https');
         this.agentSessions.delete(ctx.agentId);
       }
       return;
@@ -244,7 +246,7 @@ export class AgentContextFactory {
 
     const agentSession = this.agentSessions.get(agentId);
     if (agentSession) {
-      agentSession.protocol.unhandle('agentview');
+      agentSession.protocol.unhandle('https');
       this.agentSessions.delete(agentId);
     }
   }
@@ -258,20 +260,30 @@ export class AgentContextFactory {
   }
 
   // Idempotent: re-attaching for the same agentId replaces the previous handler.
+  // Intercepts https on the agent's session — requests whose hostname matches
+  // the agent's pseudo-host get routed to the view handler; everything else
+  // falls through to the real network via net.fetch.
   private attachAgentViewHandler(agentId: string, cacheRoot: string, fileSource: FileSource): void {
     const agentSession = this.agentSessions.get(agentId);
     if (!agentSession) {
       throw new Error(`No Electron session for agent ${agentId}; call ensureAgentSession first`);
     }
-    if (agentSession.protocol.isProtocolHandled('agentview')) {
-      agentSession.protocol.unhandle('agentview');
+    if (agentSession.protocol.isProtocolHandled('https')) {
+      agentSession.protocol.unhandle('https');
     }
-    const handler = createViewProtocolHandler({
+    const viewHandler = createViewProtocolHandler({
       cacheRoot,
       clientPath: this.deps.clientPath,
       fileSource,
     });
-    agentSession.protocol.handle('agentview', handler);
+    const ownHostname = agentHostname(agentId);
+    agentSession.protocol.handle('https', (request) => {
+      const url = new URL(request.url);
+      if (url.hostname === ownHostname) {
+        return viewHandler(request, url);
+      }
+      return net.fetch(request, { bypassCustomProtocolHandlers: true });
+    });
   }
 
   private createTabRuntime(
@@ -290,6 +302,7 @@ export class AgentContextFactory {
         return shortcutManager.match(key, meta, ctrl, shift, alt);
       },
       handleAction: this.deps.handleShortcutAction,
+      agentId: ownerAgentId,
       session: agentSession,
       registerSender,
       unregisterSender,

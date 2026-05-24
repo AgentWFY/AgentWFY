@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import type { TabHost } from '../hosts.js'
 import { getViewByName } from '../../db/views.js'
-import { normalizeAgentViewUrl, isViewHostname, isFileHostname, normalizeViewPathname } from '../../protocol/view-document.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type {
   WorkerHostMethodMap,
@@ -11,24 +10,6 @@ import type {
 
 const DOCS_HINT = 'Read `@docs/system.tabs` for the full function reference.'
 const DEBUGGER_DOCS_HINT = 'Read `@docs/system.tab-debugger` for the full function reference.'
-
-type RewrittenAgentUrl =
-  | { kind: 'view' | 'file'; target: string; params?: Record<string, string> }
-
-function rewriteAgentViewUrl(url: string): RewrittenAgentUrl | null {
-  const parsed = normalizeAgentViewUrl(url)
-  if (!parsed) return null
-
-  const kind = isViewHostname(parsed.hostname) ? 'view' : isFileHostname(parsed.hostname) ? 'file' : null
-  if (!kind) return null
-
-  const target = normalizeViewPathname(parsed.pathname)
-  if (!target) return null
-
-  const params: Record<string, string> = {}
-  parsed.searchParams.forEach((v, k) => { params[k] = v })
-  return { kind, target, params: Object.keys(params).length > 0 ? params : undefined }
-}
 
 function resolveTabId(params: unknown): string {
   if (typeof params === 'string') {
@@ -59,27 +40,11 @@ export function registerTabs(
       throw new Error(`openTab requires a request object. ${DOCS_HINT}`)
     }
 
-    // An agentview-style URL passed as `url:` would otherwise hit loadURL
-    // as a 'url' tab; if the scheme/host is mistyped (e.g. `agentwfy://views/...`)
-    // loadURL silently fails and the new tab's blank WebContentsView lets
-    // the previously-selected tab's content show through. Reroute through
-    // the viewName/filePath path so it gets a real protocol handler + tabId.
     const request = { ...original }
     if (typeof request.viewName !== 'string' && typeof request.view === 'string') {
       request.viewName = request.view
     }
     request.view = undefined
-    const rewritten = typeof request.url === 'string' && request.url.length > 0
-      ? rewriteAgentViewUrl(request.url)
-      : null
-    if (rewritten) {
-      request.url = undefined
-      if (rewritten.kind === 'view') request.viewName = rewritten.target
-      else request.filePath = rewritten.target
-      if (rewritten.params) {
-        request.params = { ...rewritten.params, ...(request.params ?? {}) }
-      }
-    }
 
     // Validate viewName exists and resolve title
     const hasViewName = typeof request.viewName === 'string' && request.viewName.length > 0

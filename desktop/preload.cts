@@ -58,7 +58,23 @@ function buildSqlApi() {
 
 // --- Protocol detection ---
 
-const isAgentView = window.location.protocol === 'agentview:';
+// The view tab webContents pass the agent's exact hostname via
+// webPreferences.additionalArguments (see desktop/tab-views/manager.ts). We
+// match on that string only — not on any *.views.agentwfy.local suffix —
+// so that if a spoofed hostname under the suffix resolves through real DNS
+// (mDNS / /etc/hosts) the agent runtime APIs do NOT get exposed to it.
+function readExpectedAgentHost(): string | null {
+  for (const arg of process.argv) {
+    if (typeof arg === 'string' && arg.startsWith('--agent-host=')) {
+      return arg.slice('--agent-host='.length);
+    }
+  }
+  return null;
+}
+const expectedAgentHost = readExpectedAgentHost();
+const isAgentView = expectedAgentHost !== null
+  && window.location.protocol === 'https:'
+  && window.location.hostname === expectedAgentHost;
 const isApp = window.location.protocol === 'app:';
 
 // --- app:// — expose window.ipc (domain-namespaced, all domains) ---
@@ -336,7 +352,7 @@ if (isApp) {
   contextBridge.exposeInMainWorld('ipc', api);
 }
 
-// --- agentview:// — expose window.agentwfy (flat API, agent tools subset only) ---
+// --- agent view — expose window.agentwfy (flat API, agent tools subset only) ---
 
 if (isAgentView) {
   let runtimeFunctionNames: string[] = [];

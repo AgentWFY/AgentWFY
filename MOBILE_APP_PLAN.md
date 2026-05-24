@@ -1,9 +1,9 @@
 # Mobile remote-agent app implementation plan
 
 This replaces the completed host-split plan. The repository now has the
-mobile host, remote daemon, native SQLite mirror, snapshot sync, and
-`agentview://` rendering path in place. The remaining work is to turn the
-debug harness into a usable remote-agent mobile app.
+mobile host, remote daemon, native SQLite mirror, snapshot sync, and the
+view rendering path in place. The remaining work is to turn the debug
+harness into a usable remote-agent mobile app.
 
 ## Current baseline
 
@@ -16,7 +16,10 @@ debug harness into a usable remote-agent mobile app.
 - `mobile/src-tauri/src/mirror_db.rs` owns the local SQLite mirror via
   `rusqlite`.
 - `mobile/src-tauri/src/view_protocol.rs` serves mirrored `views` and
-  `modules` through `agentview://`.
+  `modules` over the `agentview://` custom URI scheme using path-based
+  routing (`/view/<name>`, `/module/<name>`). The scheme is an iOS
+  WKWebView implementation detail — agents only ever see scheme-free
+  paths in markdown, and views use relative URLs internally.
 - `mobile/src/main.ts` is still a debug mirror harness. It should be replaced,
   not extended into the product UI.
 
@@ -34,8 +37,8 @@ work is not debugging transport at the same time.
   expectations, and the query/render checks.
 - Verify on simulator:
   connect, snapshot applied, `SELECT ... FROM views` returns rows,
-  `agentview://view/<name>` renders, and daemon-side DB changes reach the
-  mirror.
+  `agentview://localhost/view/<name>?tabId=mobile` renders, and daemon-side
+  DB changes reach the mirror.
 - Verify at least one non-localhost URL path. A real iOS device cannot reach
   the developer machine through `127.0.0.1`; use LAN IP, tunnel, or HTTPS
   daemon endpoint.
@@ -148,12 +151,13 @@ Expose agent views as first-class mobile screens.
 
 - Query mirrored `views` for name/title/description and keep the list fresh
   from `views` table DB-change notifications.
-- Open a selected view in an iframe using `agentview://view/<name>`.
+- Open a selected view in an iframe using `agentview://localhost/view/<name>?tabId=<id>`.
 - Preserve one active view while moving between chat and views.
 - Add reload and close controls.
 - Handle missing/deleted views, snapshot replacement, and reconnect refresh.
-- Keep `agentview://file/*` and asset routes deferred unless an MVP view
-  needs them.
+- Keep `/file/*` and `/asset/*` routes deferred unless an MVP view needs
+  them. (Desktop serves these from the agent's data dir / bundled client
+  assets; mobile would need a parallel filesystem mirror to match.)
 
 Done when: after chatting, the user can open a view produced by the agent, the
 view can call `window.agentwfy`, and the view refreshes when its DB row changes.
@@ -189,5 +193,5 @@ daemon restart.
 - Backup/restore UI.
 - Plugin management UI.
 - Push notifications from daemon to mobile.
-- File-backed `agentview://file/*` and bundled asset routes.
+- File-backed `/file/*` and bundled `/asset/*` routes on mobile.
 - QR-code profile import/export.

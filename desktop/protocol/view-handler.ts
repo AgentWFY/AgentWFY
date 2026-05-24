@@ -2,7 +2,7 @@ import { net } from 'electron';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { isInsideDir } from '#shared/security/path-policy.js';
-import { buildViewDocument, parseViewName, normalizeViewPathname, isViewDocumentRequest, isViewHostname, isFileHostname, isModuleHostname } from '#shared/protocol/view-document.js';
+import { buildViewDocument, parseAgentPath, isViewDocumentUrl } from '#shared/protocol/view-document.js';
 import { getViewContent } from '#shared/db/views.js';
 import { getModuleContent, getModuleContentType } from '#shared/db/modules.js';
 import type { FileSource } from './file-source.js';
@@ -17,7 +17,7 @@ function resolveViewAssetPath(relativePath: string, clientPath: string): string 
     return null;
   }
 
-  // Restrict agentview://asset/* to bundled client assets only.
+  // Restrict /asset/* to bundled client assets only.
   if (!normalizedRelativePath.startsWith('assets/')) {
     return null;
   }
@@ -50,59 +50,50 @@ function toHtmlResponse(status: number, html: string): Response {
   });
 }
 
+function notFound(message: string): Response {
+  return new Response(message, {
+    status: 404,
+    headers: { 'Cache-Control': 'no-store' },
+  });
+}
+
 export interface ViewProtocolHandlerOptions {
   cacheRoot: string;
   clientPath: string;
   fileSource: FileSource;
 }
 
-export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request) => Promise<Response> {
+// Handles a request whose hostname is already known to match this agent's
+// subdomain. Returns the response for /view/, /module/, /file/, /asset/ paths
+// under the agent's pseudo-host.
+export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): (request: Request, url: URL) => Promise<Response> {
   const { cacheRoot, clientPath, fileSource } = options;
 
-  return async (request: Request): Promise<Response> => {
-    const url = new URL(request.url);
-    const { hostname } = url;
+  return async (request: Request, url: URL): Promise<Response> => {
+    const info = parseAgentPath(url.pathname);
+    if (!info) {
+      return notFound('Unsupported agent-view route');
+    }
 
-    if (hostname === 'asset') {
-      const assetPath = resolveViewAssetPath(decodeURIComponent(url.pathname || ''), clientPath);
-      if (!assetPath) {
-        return new Response('Asset not found', {
-          status: 404,
-          headers: {
-            'Cache-Control': 'no-store',
-          },
-        });
-      }
-
+    if (info.kind === 'asset') {
+      const assetPath = resolveViewAssetPath(info.target, clientPath);
+      if (!assetPath) return notFound('Asset not found');
       return net.fetch(pathToFileURL(assetPath).toString());
     }
 
-    if (isModuleHostname(hostname)) {
-      const moduleName = normalizeViewPathname(url.pathname);
-      if (!moduleName) {
-        return new Response('Missing module name', {
-          status: 400,
-          headers: { 'Cache-Control': 'no-store' },
-        });
-      }
-
+    if (info.kind === 'module') {
       let record;
       try {
-        record = await getModuleContent(cacheRoot, moduleName);
+        record = await getModuleContent(cacheRoot, info.target);
       } catch (error: unknown) {
-        console.error('[agentview] failed to read module from agent DB', error);
+        console.error('[agent-view] failed to read module from agent DB', error);
         return new Response((error as Error)?.message || 'Failed to load module', {
           status: 500,
           headers: { 'Cache-Control': 'no-store' },
         });
       }
 
-      if (!record) {
-        return new Response(`Module not found: ${moduleName}`, {
-          status: 404,
-          headers: { 'Cache-Control': 'no-store' },
-        });
-      }
+      if (!record) return notFound(`Module not found: ${info.target}`);
 
       return new Response(record.content, {
         status: 200,
@@ -113,67 +104,36 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       });
     }
 
-    if (isFileHostname(hostname) || (isViewHostname(hostname) && !isViewDocumentRequest(url))) {
-      const normalizedPath = normalizeViewPathname(url.pathname);
-      if (!normalizedPath) {
-        return new Response('Asset not found', {
-          status: 404,
-          headers: { 'Cache-Control': 'no-store' },
-        });
-      }
+    // Sub-resource fetches that landed under /view/... resolve against the
+    // agent's data dir, matching how /file/... works.
+    if (info.kind === 'file' || (info.kind === 'view' && !isViewDocumentUrl(url))) {
       try {
-        return await fileSource.serve(request, normalizedPath);
+        return await fileSource.serve(request, info.target);
       } catch {
-        return new Response('Asset not found', {
-          status: 404,
-          headers: {
-            'Cache-Control': 'no-store',
-          },
-        });
+        return notFound('Asset not found');
       }
     }
 
-    if (!isViewHostname(hostname)) {
-      return new Response('Unsupported agentview route', {
-        status: 404,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
-      });
-    }
-
-    let viewName: string;
-    try {
-      viewName = parseViewName(url);
-    } catch (error: unknown) {
-      return toHtmlResponse(400, `<pre>${escapeHtml((error as Error)?.message || 'Invalid agent view URL')}</pre>`);
-    }
-
-    // File-sourced view (vs DB-sourced).
+    // info.kind === 'view' and isViewDocumentUrl(url)
     if (url.searchParams.get('source') === 'file') {
       try {
-        const content = await fileSource.readText(viewName);
-        const html = buildViewDocument(content);
-        return toHtmlResponse(200, html);
+        const content = await fileSource.readText(info.target);
+        return toHtmlResponse(200, buildViewDocument(content));
       } catch (error: unknown) {
-        console.error('[agentview] failed to read file view', error);
-        return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(viewName)}</pre>`);
+        console.error('[agent-view] failed to read file view', error);
+        return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(info.target)}</pre>`);
       }
     }
 
     let record;
     try {
-      record = await getViewContent(cacheRoot, viewName);
+      record = await getViewContent(cacheRoot, info.target);
     } catch (error: unknown) {
-      console.error('[agentview] failed to read view from agent DB', error);
+      console.error('[agent-view] failed to read view from agent DB', error);
       return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);
     }
 
-    if (!record) {
-      return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(viewName)}</pre>`);
-    }
-
-    const html = buildViewDocument(record.content);
-    return toHtmlResponse(200, html);
+    if (!record) return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(info.target)}</pre>`);
+    return toHtmlResponse(200, buildViewDocument(record.content));
   };
 }

@@ -467,7 +467,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables. A
 | `created_at` | INTEGER | Unix epoch seconds |
 | `updated_at` | INTEGER | Unix epoch seconds |
 
-Modules are reusable JS/CSS stored in the database and served via `agentview://module/<name>`. See [Modules](#modules) for details.
+Modules are reusable JS/CSS stored in the database and served at `/module/<name>` (relative to the view). See [Modules](#modules) for details.
 
 - **`system.*`** — Read-only system modules
 - **`plugin.*`** — Read-only plugin modules
@@ -610,14 +610,14 @@ const invoiceId = params.get('invoiceId')
 
 ### Modules
 
-Modules are reusable JS and CSS stored in the `modules` table and served via `agentview://module/<name>`. They let you split large views into independent, editable pieces and share code across views.
+Modules are reusable JS and CSS stored in the `modules` table and served at `/module/<name>` (relative to the view). They let you split large views into independent, editable pieces and share code across views.
 
 **Loading in views:**
 
 ```html
-<script src="agentview://module/my-chart-utils"></script>
-<script type="module" src="agentview://module/my-component"></script>
-<link rel="stylesheet" href="agentview://module/my-styles">
+<script src="/module/my-chart-utils"></script>
+<script type="module" src="/module/my-component"></script>
+<link rel="stylesheet" href="/module/my-styles">
 ```
 
 **Naming & Ownership:**
@@ -649,9 +649,9 @@ The view becomes a thin shell:
 
 ```html
 <!-- View: dashboard -->
-<script src="agentview://module/dashboard.filters.js"></script>
-<script src="agentview://module/dashboard.chart-panel.js"></script>
-<link rel="stylesheet" href="agentview://module/dashboard.layout.css">
+<script src="/module/dashboard.filters.js"></script>
+<script src="/module/dashboard.chart-panel.js"></script>
+<link rel="stylesheet" href="/module/dashboard.layout.css">
 
 <dashboard-filters></dashboard-filters>
 <dashboard-chart-panel metric="revenue"></dashboard-chart-panel>

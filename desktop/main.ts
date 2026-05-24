@@ -110,16 +110,6 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true,
       corsEnabled: true
     }
-  },
-  {
-    scheme: 'agentview',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
-      stream: true
-    }
   }
 ]);
 

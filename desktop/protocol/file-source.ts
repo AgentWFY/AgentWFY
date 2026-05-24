@@ -1,5 +1,5 @@
-// FileSource — backend-agnostic facade for reading agent files served via
-// the agentview:// protocol.
+// FileSource — backend-agnostic facade for reading agent files served from
+// /file/... and file-sourced /view/... routes.
 //
 // - LocalFileSource serves directly from the on-disk cacheRoot (the agent's
 //   own runtimeRoot, when the agent runs in-process).
@@ -13,9 +13,9 @@ import { serveFile } from '#shared/protocol/file-server.js'
 import type { AgentBackend } from '#shared/backend/interface.js'
 
 export interface FileSource {
-  /** Serve a file as an HTTP-style Response (for agentview://file/... raw serve). */
+  /** Serve a file as an HTTP-style Response (for /file/... raw serve). */
   serve(request: Request, relPath: string): Promise<Response>
-  /** Read the file as UTF-8 text (for agentview://view/...?source=file). */
+  /** Read the file as UTF-8 text (for /view/...?source=file). */
   readText(relPath: string): Promise<string>
 }
 
