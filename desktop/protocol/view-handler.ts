@@ -71,17 +71,15 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
 
   return async (request: Request, url: URL): Promise<Response> => {
     const info = parseAgentPath(url.pathname);
-    if (!info) {
-      return notFound('Unsupported agent-view route');
-    }
 
-    if (info.kind === 'asset') {
+    // Code-bearing routes — must match an explicit prefix.
+    if (info?.kind === 'asset') {
       const assetPath = resolveViewAssetPath(info.target, clientPath);
       if (!assetPath) return notFound('Asset not found');
       return net.fetch(pathToFileURL(assetPath).toString());
     }
 
-    if (info.kind === 'module') {
+    if (info?.kind === 'module') {
       let record;
       try {
         record = await getModuleContent(cacheRoot, info.target);
@@ -104,36 +102,43 @@ export function createViewProtocolHandler(options: ViewProtocolHandlerOptions): 
       });
     }
 
-    // Sub-resource fetches that landed under /view/... resolve against the
-    // agent's data dir, matching how /file/... works.
-    if (info.kind === 'file' || (info.kind === 'view' && !isViewDocumentUrl(url))) {
-      try {
-        return await fileSource.serve(request, info.target);
-      } catch {
-        return notFound('Asset not found');
+    if (info?.kind === 'view' && isViewDocumentUrl(url)) {
+      if (url.searchParams.get('source') === 'file') {
+        try {
+          const content = await fileSource.readText(info.target);
+          return toHtmlResponse(200, buildViewDocument(content));
+        } catch (error: unknown) {
+          console.error('[agent-view] failed to read file view', error);
+          return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(info.target)}</pre>`);
+        }
       }
-    }
 
-    // info.kind === 'view' and isViewDocumentUrl(url)
-    if (url.searchParams.get('source') === 'file') {
+      let record;
       try {
-        const content = await fileSource.readText(info.target);
-        return toHtmlResponse(200, buildViewDocument(content));
+        record = await getViewContent(cacheRoot, info.target);
       } catch (error: unknown) {
-        console.error('[agent-view] failed to read file view', error);
-        return toHtmlResponse(404, `<pre>File not found: ${escapeHtml(info.target)}</pre>`);
+        console.error('[agent-view] failed to read view from agent DB', error);
+        return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);
       }
+
+      if (!record) return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(info.target)}</pre>`);
+      return toHtmlResponse(200, buildViewDocument(record.content));
     }
 
-    let record;
+    // Fall-through: any other path resolves against the agent data dir. This
+    // is how root-relative refs from inside a view (e.g. `<img src="/screenshots/x.png">`)
+    // reach files outside the explicit `/file/...` namespace. `/file/<path>`
+    // strips the prefix; bare paths and unrecognised first segments pass the
+    // pathname through verbatim. fileSource.serve clamps reads to the data
+    // dir via assertPathAllowed.
+    const filePath = info?.kind === 'file' || info?.kind === 'view'
+      ? info.target
+      : url.pathname.replace(/^\/+/, '');
+    if (!filePath) return notFound('Empty path');
     try {
-      record = await getViewContent(cacheRoot, info.target);
-    } catch (error: unknown) {
-      console.error('[agent-view] failed to read view from agent DB', error);
-      return toHtmlResponse(500, `<pre>${escapeHtml((error as Error)?.message || 'Failed to load view')}</pre>`);
+      return await fileSource.serve(request, filePath);
+    } catch {
+      return notFound('Asset not found');
     }
-
-    if (!record) return toHtmlResponse(404, `<pre>View not found: ${escapeHtml(info.target)}</pre>`);
-    return toHtmlResponse(200, buildViewDocument(record.content));
   };
 }
