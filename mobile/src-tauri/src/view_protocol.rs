@@ -8,73 +8,181 @@
 // emit scheme-free `/view/<name>` markdown links and views use relative
 // paths. The hostname is ignored; routing is by first path segment.
 //
-// File-source views (`?source=file`) and `/asset/*` are intentionally
-// deferred — mobile doesn't have a per-agent filesystem to serve from, and
-// bundled asset routes can be added when something uses them.
+// File-source fetches (`<img src="/screenshots/foo.png">` inside a view) and
+// `/file/<path>` redirect to a short-lived HMAC-signed daemon URL — the same
+// scheme desktop uses, reimplemented in Rust here. Asset routes (`/asset/*`)
+// are intentionally deferred; mobile has no bundled assets on the daemon.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use hmac::{Hmac, Mac};
 use rusqlite::Connection;
+use sha2::Sha256;
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{Manager, UriSchemeContext, Wry};
 
-use crate::active_agent::ActiveAgent;
+use crate::active_agent::{ActiveAgent, EndpointInfo};
 use crate::mirror_db::MirrorDbState;
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// Bootstrap HTML/CSS/JS injected into every view document. Single source of
 /// truth is shared/protocol/view-bootstrap.html; the desktop TS path reads
 /// it via the codegen'd VIEW_BOOTSTRAP_HTML constant.
 const BOOTSTRAP_HTML: &str = include_str!("../../../shared/protocol/view-bootstrap.html");
 
+/// Mirrors DEFAULT_SIGNED_URL_TTL_MS / 1000 in shared/backend/signed-urls.ts.
+const SIGNED_URL_TTL_SECS: i64 = 60;
+
 pub fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let uri = request.uri();
     let path = uri.path();
     let query = uri.query().unwrap_or("");
-    let (kind, target) = match split_path(path) {
-        Some(parsed) => parsed,
-        None => {
-            return html_response(
-                StatusCode::NOT_FOUND,
-                "<pre>Unsupported agentview route</pre>",
-            );
-        }
-    };
 
     let app = ctx.app_handle();
     let active: tauri::State<ActiveAgent> = app.state();
     let mirror: tauri::State<MirrorDbState> = app.state();
 
-    let agent_id = match active.get() {
-        Some(id) => id,
-        None => {
-            return html_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "<pre>No active agent — mirror has not been opened yet.</pre>",
-            );
-        }
-    };
+    let parsed = split_path(path);
 
-    match kind {
-        "view" => {
-            if is_view_document_request(&target, query) {
-                serve_view(&mirror, &agent_id, &target)
-            } else {
-                // Sub-resource fetch under /view/... — mobile has no per-agent
-                // filesystem to serve from, mirror desktop's "file source"
-                // routing as a 404 here rather than silently returning HTML.
-                html_response(
-                    StatusCode::NOT_FOUND,
-                    &format!("<pre>File route not available on mobile: {}</pre>", html_escape(&target)),
-                )
+    // Doc / module routes hit the local mirror.
+    if let Some((kind, target)) = parsed.as_ref() {
+        match *kind {
+            "module" => {
+                return match active.get() {
+                    Some(id) => serve_module(&mirror, &id, target),
+                    None => no_active_agent_html(),
+                };
             }
+            "view" if is_view_document_request(target, query) => {
+                return match active.get() {
+                    Some(id) => serve_view(&mirror, &id, target),
+                    None => no_active_agent_html(),
+                };
+            }
+            "asset" => {
+                // Bundled client assets aren't replicated to mobile.
+                return text_response(
+                    StatusCode::NOT_FOUND,
+                    &format!("Asset not available on mobile: {}", target),
+                    "text/plain; charset=utf-8",
+                );
+            }
+            _ => {}
         }
-        "module" => serve_module(&mirror, &agent_id, &target),
-        _ => html_response(
-            StatusCode::NOT_FOUND,
-            &format!(
-                "<pre>Unsupported agentview route: {}</pre>",
-                html_escape(kind)
-            ),
-        ),
     }
+
+    // File-source fallback: bare paths, /file/<path>, and view sub-resource
+    // fetches all redirect to the daemon. The browser follows the 302 and
+    // pulls bytes directly over HTTP — no base64-over-WS pumping.
+    let rel_path = match parsed {
+        Some((_, target)) => target,
+        None => path.trim_start_matches('/').to_string(),
+    };
+    if rel_path.is_empty() {
+        return text_response(
+            StatusCode::NOT_FOUND,
+            "Empty path",
+            "text/plain; charset=utf-8",
+        );
+    }
+
+    redirect_to_daemon(&active, &rel_path)
+}
+
+fn redirect_to_daemon(active: &ActiveAgent, rel_path: &str) -> Response<Vec<u8>> {
+    let Some(endpoint) = active.endpoint() else {
+        return text_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Daemon endpoint not registered — connect first.",
+            "text/plain; charset=utf-8",
+        );
+    };
+    let exp = now_seconds().saturating_add(SIGNED_URL_TTL_SECS);
+    let location = sign_file_url(&endpoint, rel_path, exp);
+    Response::builder()
+        .status(StatusCode::FOUND)
+        .header(header::LOCATION, location)
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Vec::new())
+        .expect("static headers are always valid")
+}
+
+/// Mirror of signFileUrl in shared/backend/signed-urls.ts. The HMAC is over
+/// the canonical (decoded) relPath so encoding asymmetries between this
+/// helper and JS's encodeURIComponent don't break verification.
+fn sign_file_url(endpoint: &EndpointInfo, rel_path: &str, exp: i64) -> String {
+    let payload = format!("GET\n{}\n{}\n{}", endpoint.agent_id, rel_path, exp);
+    let mut mac = HmacSha256::new_from_slice(endpoint.token.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(payload.as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+    let encoded_agent = percent_encode_segment(&endpoint.agent_id);
+    let encoded_path = encode_rel_path(rel_path);
+    let base = endpoint.base_url.trim_end_matches('/');
+    format!(
+        "{}/agent/{}/files/{}?sig={}&exp={}",
+        base, encoded_agent, encoded_path, sig, exp
+    )
+}
+
+fn encode_rel_path(rel_path: &str) -> String {
+    rel_path
+        .split('/')
+        .map(percent_encode_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Encodes everything outside JS's `encodeURIComponent` unreserved set
+/// (A-Z a-z 0-9 - _ . ! ~ * ' ( )). Operates on UTF-8 bytes so non-ASCII
+/// filenames percent-encode their byte sequences correctly.
+fn percent_encode_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        if is_unreserved(byte) {
+            out.push(byte as char);
+        } else {
+            out.push('%');
+            out.push(hex_high(byte));
+            out.push(hex_low(byte));
+        }
+    }
+    out
+}
+
+fn is_unreserved(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
+            | b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+    )
+}
+
+fn hex_high(byte: u8) -> char {
+    HEX[(byte >> 4) as usize]
+}
+
+fn hex_low(byte: u8) -> char {
+    HEX[(byte & 0x0F) as usize]
+}
+
+const HEX: [char; 16] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+];
+
+fn now_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn no_active_agent_html() -> Response<Vec<u8>> {
+    html_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "<pre>No active agent — mirror has not been opened yet.</pre>",
+    )
 }
 
 fn serve_view(state: &MirrorDbState, agent_id: &str, name: &str) -> Response<Vec<u8>> {

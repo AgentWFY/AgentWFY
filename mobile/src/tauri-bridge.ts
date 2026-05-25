@@ -77,6 +77,17 @@ export const bridge = {
     },
   },
 
+  /** Daemon endpoint info shared with the Rust URI scheme handler so it can
+   *  mint signed file URLs for browser-driven asset fetches. */
+  activeAgent: {
+    setEndpoint(agentId: string, baseUrl: string, token: string): Promise<void> {
+      return invoke<void>('set_active_agent_endpoint', { agentId, baseUrl, token })
+    },
+    clearEndpoint(): Promise<void> {
+      return invoke<void>('clear_active_agent_endpoint')
+    },
+  },
+
   /** Escape hatch for not-yet-typed Rust commands. Prefer adding a typed
    *  namespace once the command stabilizes. */
   raw: invoke,

@@ -2,7 +2,7 @@ mod active_agent;
 mod mirror_db;
 mod view_protocol;
 
-use active_agent::ActiveAgent;
+use active_agent::{clear_active_agent_endpoint, set_active_agent_endpoint, ActiveAgent};
 use mirror_db::{
     mirror_db_apply_change, mirror_db_open, mirror_db_query, mirror_db_replace_snapshot,
     MirrorDbState,
@@ -19,6 +19,8 @@ pub fn run() {
             mirror_db_query,
             mirror_db_apply_change,
             mirror_db_replace_snapshot,
+            set_active_agent_endpoint,
+            clear_active_agent_endpoint,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

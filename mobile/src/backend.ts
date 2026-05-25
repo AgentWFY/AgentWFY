@@ -4,6 +4,7 @@
 import { RemoteBackend } from '#shared/backend/remote.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { MobileRemoteMirror } from './remote-mirror.js'
+import { bridge } from './tauri-bridge.js'
 
 export interface MobileBackend {
   backend: RemoteBackend
@@ -36,10 +37,19 @@ export async function createMobileBackend(opts: MobileBackendOptions): Promise<M
   backend.attachDbSync(mirror)
   await backend.start()
 
+  // The Rust URI handler needs the daemon endpoint to mint signed asset URLs
+  // when the WebView issues `<img src="/screenshots/foo.png">` against the
+  // agentview:// origin. Pushed here (not from Rust) so the same flow works
+  // for any future TS-driven connection mode.
+  await bridge.activeAgent.setEndpoint(opts.agentId, opts.baseUrl, opts.agentToken).catch((err) => {
+    console.warn('[mobile-backend] set_active_agent_endpoint failed:', err)
+  })
+
   return {
     backend,
     mirror,
     async stop() {
+      await bridge.activeAgent.clearEndpoint().catch(() => {})
       await backend.stop()
     },
   }
