@@ -1,10 +1,19 @@
 // Constructs a RemoteBackend pointed at the daemon and attaches the mobile
 // remote-mirror so the local SQLite mirror stays in sync with daemon state.
+//
+// Status/events subscribers are wired BEFORE backend.start() so no events
+// emitted during startup can be lost. Endpoint registration with the Rust
+// URI handler is NOT done here — the controller owns that lifecycle so a
+// superseded connect can't clobber the live session's endpoint via stop().
 
+import type {
+  AgentBackendEvent,
+  BackendStatusSnapshot,
+  Unsubscribe,
+} from '#shared/backend/interface.js'
 import { RemoteBackend } from '#shared/backend/remote.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { MobileRemoteMirror } from './remote-mirror.js'
-import { bridge } from './tauri-bridge.js'
 
 export interface MobileBackend {
   backend: RemoteBackend
@@ -18,6 +27,8 @@ export interface MobileBackendOptions {
   agentToken: string
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
+  onStatus?: (status: BackendStatusSnapshot) => void
+  onEvent?: (event: AgentBackendEvent) => void
 }
 
 export async function createMobileBackend(opts: MobileBackendOptions): Promise<MobileBackend> {
@@ -27,6 +38,10 @@ export async function createMobileBackend(opts: MobileBackendOptions): Promise<M
     agentToken: opts.agentToken,
   })
 
+  const subscriberUnsubs: Unsubscribe[] = []
+  if (opts.onStatus) subscriberUnsubs.push(backend.status.subscribe(opts.onStatus))
+  if (opts.onEvent) subscriberUnsubs.push(backend.events.subscribe(opts.onEvent))
+
   const mirror = new MobileRemoteMirror({
     agentId: opts.agentId,
     remoteBackend: backend,
@@ -35,21 +50,22 @@ export async function createMobileBackend(opts: MobileBackendOptions): Promise<M
   })
 
   backend.attachDbSync(mirror)
-  await backend.start()
-
-  // The Rust URI handler needs the daemon endpoint to mint signed asset URLs
-  // when the WebView issues `<img src="/screenshots/foo.png">` against the
-  // agentview:// origin. Pushed here (not from Rust) so the same flow works
-  // for any future TS-driven connection mode.
-  await bridge.activeAgent.setEndpoint(opts.agentId, opts.baseUrl, opts.agentToken).catch((err) => {
-    console.warn('[mobile-backend] set_active_agent_endpoint failed:', err)
-  })
+  try {
+    await backend.start()
+  } catch (err) {
+    // backend.start() may leave the WsClient mid-reconnect; tear it down
+    // before propagating so we don't leak timers / sockets for a connect
+    // that never committed.
+    for (const unsub of subscriberUnsubs) unsub()
+    await backend.stop().catch(() => {})
+    throw err
+  }
 
   return {
     backend,
     mirror,
     async stop() {
-      await bridge.activeAgent.clearEndpoint().catch(() => {})
+      for (const unsub of subscriberUnsubs) unsub()
       await backend.stop()
     },
   }

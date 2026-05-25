@@ -285,6 +285,10 @@ export class MobileRemoteMirror implements RemoteDbSync {
         continue
       }
       const result = await this.tryApply(change)
+      // Re-check stopped between the tryApply await and the callback so a
+      // mirror.stop() racing the drain can't fan a change out to a torn-down
+      // consumer (e.g. AppController whose session has already been nulled).
+      if (this.stopped) return
       if (result === 'applied' || (result === 'duplicate' && CHANGE_TRACKED_TABLES.has(change.table))) {
         this.onLocalDbChange?.(change)
       } else if (result === 'gap' || result === 'unreplayable') {
@@ -292,6 +296,8 @@ export class MobileRemoteMirror implements RemoteDbSync {
         this.buffered.push(change)
       }
     }
+
+    if (this.stopped) return
 
     this.resolveWaiters()
 

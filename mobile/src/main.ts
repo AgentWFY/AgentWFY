@@ -1,11 +1,13 @@
-// Debug shell for Step 6: lets you point at a daemon, start the backend, and
-// run a SELECT against the local mirror to confirm the snapshot landed and
-// `db:changed` events are flowing. A real touch-first UI replaces this in
-// Step 8.
+// Debug shell that drives the AppController. The form, run-query, and view
+// frame are still debug aids — Step 3 replaces them with proper profile and
+// chat screens. The point of this file at Step 2 is to prove the controller
+// is enough: connect, status, and snapshot observation all flow through
+// AppController.subscribe / AppController.connect rather than touching the
+// backend directly.
 
 import type { AgentBackend } from '#shared/backend/interface.js'
 import { bridge } from './tauri-bridge.js'
-import { createMobileBackend, type MobileBackend } from './backend.js'
+import { AppController } from './app-controller.js'
 
 const app = document.querySelector<HTMLDivElement>('#app')
 if (app) {
@@ -58,8 +60,19 @@ if (app) {
   const openViewButton = document.getElementById('open-view') as HTMLButtonElement
   const viewFrame = document.getElementById('view-frame') as HTMLIFrameElement
 
-  let session: MobileBackend | null = null
-  let statusUnsubscribe: (() => void) | null = null
+  const controller = new AppController()
+
+  controller.subscribe((state) => {
+    // Mirror ready (snapshot has landed) is what gates the debug query and
+    // view-render buttons — not WS-connected. RemoteBackend.start() returns
+    // before the WS hello, so a slow hello shouldn't lock the user out of
+    // the local mirror.
+    const mirrorReady = state.lastSyncAt !== null && !state.error
+    runButton.disabled = !mirrorReady
+    openViewButton.disabled = !mirrorReady
+
+    statusText.textContent = formatStatus(state)
+  })
 
   form.addEventListener('submit', async (evt) => {
     evt.preventDefault()
@@ -68,34 +81,7 @@ if (app) {
     const baseUrl = String(data.get('baseUrl') ?? '').trim()
     const agentToken = String(data.get('agentToken') ?? '').trim()
     if (!agentId || !baseUrl || !agentToken) return
-
-    statusUnsubscribe?.()
-    statusUnsubscribe = null
-    if (session) {
-      await session.stop().catch(() => {})
-      session = null
-    }
-    statusText.textContent = 'Connecting…'
-    try {
-      session = await createMobileBackend({
-        agentId,
-        baseUrl,
-        agentToken,
-        onLocalDbChange: (change) => {
-          statusText.textContent = `Change applied: ${change.op} ${change.table}/${change.rowId} (v${change.version})`
-        },
-        onSnapshotApplied: () => {
-          statusText.textContent = 'Snapshot applied'
-        },
-      })
-      runButton.disabled = false
-      openViewButton.disabled = false
-      statusUnsubscribe = session.backend.status.subscribe((s) => {
-        statusText.textContent = `Backend: ${s.state}${s.message ? ` — ${s.message}` : ''}`
-      })
-    } catch (err) {
-      statusText.textContent = `Connect failed: ${err instanceof Error ? err.message : String(err)}`
-    }
+    await controller.connect({ agentId, baseUrl, agentToken })
   })
 
   viewForm.addEventListener('submit', (evt) => {
@@ -111,11 +97,11 @@ if (app) {
   })
 
   runButton.addEventListener('click', async () => {
-    const agentId = String(new FormData(form).get('agentId') ?? '').trim()
-    if (!agentId) return
+    const profile = controller.getState().profile
+    if (!profile) return
     try {
       const rows = await bridge.mirrorDb.query(
-        agentId,
+        profile.agentId,
         'SELECT name, title, length(content) AS content_len FROM views ORDER BY name',
       )
       output.textContent = JSON.stringify(rows, null, 2)
@@ -123,6 +109,25 @@ if (app) {
       output.textContent = `Query failed: ${err instanceof Error ? err.message : String(err)}`
     }
   })
+}
+
+function formatStatus(state: ReturnType<AppController['getState']>): string {
+  if (state.error) return `Connect failed: ${state.error}`
+  // Before any connect attempt the controller's status is the bare
+  // IDLE_STATUS — show plain "Idle" rather than "Backend: disconnected".
+  if (state.profile === null && state.status.state === 'disconnected') return 'Idle'
+  const base = `Backend: ${state.status.state}${state.status.message ? ` — ${state.status.message}` : ''}`
+  const tail = describeRecentActivity(state)
+  return tail ? `${base} • ${tail}` : base
+}
+
+function describeRecentActivity(state: ReturnType<AppController['getState']>): string | null {
+  if (state.lastDbChange) {
+    const c = state.lastDbChange
+    return `change: ${c.op} ${c.table}/${c.rowId} (v${c.version})`
+  }
+  if (state.lastSyncAt !== null) return 'snapshot applied'
+  return null
 }
 
 export type { AgentBackend }

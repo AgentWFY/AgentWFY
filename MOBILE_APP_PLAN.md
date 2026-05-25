@@ -37,24 +37,19 @@ and daemon-side DB changes reach the mirror.
 
 Real-device / non-localhost daemon verification stays deferred to Step 8.
 
-## Step 2 - Introduce a mobile app state layer
+## Step 2 - Introduce a mobile app state layer - DONE
 
-Replace one-off DOM handlers with a small state/controller layer that owns the
-active backend and exposes plain render state to the UI.
-
-- Add a controller for one active remote agent:
-  profile, connection status, `MobileBackend`, active session, session list,
-  provider state, mirrored view list, and current screen.
-- Centralize backend lifecycle:
-  create, start, subscribe, reconnect, stop, and cleanup on profile switch.
-- Subscribe to `backend.status`, `backend.events`, and mirror DB-change
-  callbacks in one place.
-- Keep Tauri-specific calls behind `mobile/src/backend.ts` and
-  `mobile/src/tauri-bridge.ts`; UI code should talk to controller methods and
-  `AgentBackend` concepts.
-
-Done when: the debug form can be removed without losing the ability to connect
-and observe status/snapshot changes.
+`AppController` (`mobile/src/app-controller.ts`) owns the single active remote
+agent: profile, status, `MobileBackend`, sessions, active session, provider
+state, mirrored views, screen, last mirror sync, and last DB change. UI
+subscribes via `controller.subscribe(state => …)` and calls `connect` /
+`disconnect` / `setScreen`; the controller centralizes backend lifecycle
+(teardown-then-connect with a generation counter so overlapping connects
+don't leak a session) and routes `backend.status`, `backend.events`, and
+mirror callbacks into one state stream. `main.ts` is now a thin debug shell
+on top of the controller — the form, query button, and view frame all read
+controller state instead of touching the backend directly. Session, provider,
+and view loading remain stubs; Steps 4 and 7 fill them in.
 
 ## Step 3 - Add remote profile storage and connection UX
 
