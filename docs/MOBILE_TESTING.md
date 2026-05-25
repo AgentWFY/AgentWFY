@@ -112,30 +112,127 @@ connected at least once.
 process — this is where `eprintln!` from the Rust shell ends up, including
 the debug bridge's `[debug-bridge] listening …` line.
 
-## Smoke checklist (`MOBILE_APP_PLAN.md` Step 1)
+## End-to-end smoke flow (`MOBILE_APP_PLAN.md` Step 1)
+
+Walks the Step 1 verification: connect → snapshot → query → render view →
+mutate daemon-side → confirm `db:changed` propagation.
+
+### 1. Build and start a local daemon
 
 ```sh
-# 1. Start the preview (sim + build + install + launch)
-./scripts/mobile-preview
+./scripts/build-server
 
-# 2. Confirm the WebView loaded (defensive — the app should be visible in
-#    Simulator.app, but it's worth proving from the harness too).
-./scripts/mobile-preview --eval iPhone-16-Pro "document.title"
-./scripts/mobile-preview --screenshot iPhone-16-Pro initial.png
+# Pick any directory as the agent root and bootstrap it. The init command
+# prints a bearer token — save it for step 3.
+node remote-backend-server/dist/remote-backend-server/src/index.js init /tmp/agentwfy-smoke-agent
 
-# 3. In the sim's debug UI: enter daemon URL + agent ID + token, tap Connect.
-#    Then verify the mirror caught up:
-./scripts/mobile-preview --sqlite iPhone-16-Pro --agent local \
-  "SELECT name FROM views LIMIT 5"
-
-# 4. Mutate something on the daemon side, then re-query to confirm db:changed flowed
-./scripts/mobile-preview --sqlite iPhone-16-Pro --agent local \
-  "SELECT COUNT(*) FROM views"
+AGENTWFY_AGENT_ROOT=/tmp/agentwfy-smoke-agent \
+  node remote-backend-server/dist/remote-backend-server/src/index.js start
+# Listens on ws://127.0.0.1:9878/api/v1/ws by default.
+# Override port with AGENTWFY_REMOTE_PORT, bind host with AGENTWFY_REMOTE_HOST.
 ```
 
-A non-localhost path (LAN IP or tunnel) needs a real iOS device, which this
-harness does not yet drive — keep that step manual until device support
-lands.
+The daemon's own agent ID is the runtime-root path. The mobile-side `agentId`
+is just a local namespace — anything consistent works.
+
+### 2. Start the simulator preview
+
+```sh
+./scripts/mobile-preview                    # iPhone 16 Pro by default
+```
+
+### 3. Connect from inside the WebView
+
+Either tap through the debug form in Simulator.app, or drive it from the host
+with `--eval`:
+
+```sh
+./scripts/mobile-preview --eval iPhone-16-Pro "
+  const f = document.getElementById('connect-form');
+  f.querySelector('input[name=agentId]').value = 'smoke';
+  f.querySelector('input[name=baseUrl]').value = 'http://127.0.0.1:9878';
+  f.querySelector('input[name=agentToken]').value = '<TOKEN_FROM_STEP_1>';
+  f.requestSubmit();
+  'submitted'
+"
+```
+
+The iOS Simulator shares the host's loopback for outbound TCP, so the
+daemon at `127.0.0.1:9878` is reachable from inside the sim. On a real
+device this URL must point at a host-reachable address (LAN IP, tunnel, or
+HTTPS).
+
+### 4. Verify the mirror caught up
+
+```sh
+./scripts/mobile-preview --eval iPhone-16-Pro \
+  "document.getElementById('status-text').textContent"
+# → "Backend: connected — Remote agent connected" or "Snapshot applied"
+
+./scripts/mobile-preview --sqlite iPhone-16-Pro --agent smoke \
+  "SELECT name FROM views ORDER BY name LIMIT 5"
+# → home, system.docs, system.finder, …
+```
+
+### 5. Render a view
+
+```sh
+./scripts/mobile-preview --eval iPhone-16-Pro "
+  document.querySelector('#view-form input[name=viewName]').value = 'home';
+  document.querySelector('#view-form button[type=submit]').click();
+  'submitted'
+"
+./scripts/mobile-preview --screenshot iPhone-16-Pro home-view.png
+```
+
+The iframe loads `agentview://localhost/view/home?tabId=mobile&rev=…`, served
+by the Rust URI handler against the local SQLite mirror.
+
+### 6. Confirm `db:changed` flow
+
+Mutate the daemon-side DB from a separate WS client and watch the mobile
+mirror absorb the change. The repo doesn't ship a daemon CLI mutate helper,
+so use a one-off Node script — bind built-in `WebSocket` and call
+`functions.invoke(runSql)`:
+
+```sh
+cat > /tmp/agentwfy-ws-mutate.mjs <<'EOF'
+const token = process.env.AGENTWFY_TOKEN
+const url = `ws://127.0.0.1:9878/api/v1/ws?token=${encodeURIComponent(token)}`
+const sql = process.argv[2]
+const ws = new WebSocket(url)
+const id = 'mutate-' + Date.now()
+ws.addEventListener('message', (ev) => {
+  const msg = JSON.parse(ev.data)
+  if (msg.type === 'hello') {
+    ws.send(JSON.stringify({ type: 'rpc', id, method: 'functions.invoke',
+      params: { name: 'runSql', params: { target: 'agent', sql, params: [] } } }))
+  } else if (msg.type === 'rpc:result' && msg.id === id) {
+    console.log(JSON.stringify({ ok: msg.ok, value: msg.value, error: msg.error }, null, 2))
+    ws.close(); process.exit(msg.ok ? 0 : 1)
+  }
+})
+ws.addEventListener('error', (e) => { console.error('ws:', e.message); process.exit(1) })
+setTimeout(() => { console.error('timeout'); process.exit(1) }, 10_000)
+EOF
+
+AGENTWFY_TOKEN=<TOKEN> node /tmp/agentwfy-ws-mutate.mjs \
+  "INSERT INTO docs(name, content) VALUES('smoke-test', 'hello at ' || datetime('now'))"
+
+./scripts/mobile-preview --sqlite iPhone-16-Pro --agent smoke \
+  "SELECT name FROM docs WHERE name = 'smoke-test'"
+# → smoke-test
+```
+
+Done when all six steps pass on a clean simulator.
+
+### Real-device caveat
+
+The harness only drives the iOS simulator. To test on a physical device, run
+the daemon on a host-reachable address (LAN IP or tunnel), `tauri ios dev`
+straight to the device, and grant the Local Network permission prompt on
+first launch. Device automation is on the deferred list in
+[`MOBILE_APP_PLAN.md`](../MOBILE_APP_PLAN.md) Step 8.
 
 ## Gotchas
 

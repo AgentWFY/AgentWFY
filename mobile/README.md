@@ -57,9 +57,9 @@ so Xcode picks rustup's toolchain over Homebrew's `rustc`.
 
 ## Testing
 
-Drive the app on a simulator with screenshots, JS eval, on-device SQL, and
-restart-after-edit via `./scripts/mobile-preview`. See
-[`docs/MOBILE_TESTING.md`](../docs/MOBILE_TESTING.md) for the full surface.
+See [`docs/MOBILE_TESTING.md`](../docs/MOBILE_TESTING.md) for the
+`scripts/mobile-preview` harness and the end-to-end smoke flow (daemon
+init, connect, mirror sync, view rendering, `db:changed` propagation).
 
 ## Common failure
 
