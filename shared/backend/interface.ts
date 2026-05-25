@@ -160,9 +160,12 @@ export interface TasksApi {
 // ── Files ───────────────────────────────────────────────────────────────
 
 // Bytes-level access to files inside the agent's filesystem (runtimeRoot for
-// local agents; the daemon's per-agent dir for remote). Lets the desktop
-// open file-backed tab views on remote agents without a local file mirror —
-// the renderer fetches bytes lazily through this API on each load.
+// local agents; the daemon's per-agent dir for remote). Used by agent-
+// runtime callers that need bytes in memory (exec_js, plugins,
+// window.agentwfy.read). Browser-driven asset fetches inside a view
+// (`<img>`, `<video>`, etc.) do NOT go through here for remote agents —
+// the URI handler returns a 302 to a signed daemon URL instead. See
+// ./signed-urls.ts and desktop/protocol/file-source.ts.
 
 export interface FilesReadResult {
   size: number

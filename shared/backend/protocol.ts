@@ -9,6 +9,17 @@
 //   - Desktop clients pass the per-agent token as ?token=<token>.
 //   - Authorization: Bearer <token> is also accepted for non-browser clients.
 //
+// File reads have two transports, split by caller, not by content:
+//   - Agent-runtime reads (`window.agentwfy.read`, plugin code, exec_js)
+//     keep going through `files.read` over this WS — they need the bytes
+//     in memory and are already auth'd by the WS connection.
+//   - Browser-driven static fetches (`<img>`, `<video>`, `<link>` inside a
+//     view document) skip the WS entirely. The URI handler returns a 302
+//     to a short-lived HMAC-signed daemon URL; the browser pulls bytes
+//     direct with native HTTP semantics (Range, ETag, cacheability). See
+//     ./signed-urls.ts for the sign/verify helpers and the daemon route
+//     at /agent/<id>/files/<path> in remote-backend-server/src/index.ts.
+//
 // This file must remain free of:
 //   - Electron imports
 //   - node:* imports
@@ -290,10 +301,12 @@ export type TracesListResponse = TraceEvent[]
 // Files
 //
 // Reads run against the daemon's `runtimeRoot` (the agent's filesystem on
-// the host where the agent's code executes). The desktop uses this to fetch
-// file bytes for tab views that point at `filePath` on a remote agent —
-// where the desktop has only a local DB mirror and no direct access to the
-// agent's working files.
+// the host where the agent's code executes). Used by agent-runtime callers
+// (exec_js, plugin code, window.agentwfy.read). For browser-driven static
+// asset fetches issued by view documents, the URI handler redirects to a
+// signed daemon URL instead — see ./signed-urls.ts and the route at
+// /agent/<id>/files/<path>. The split keeps base64-over-JSON-over-WS out
+// of the hot path for <img>/<video>/<link> traffic.
 export interface FilesReadRequest {
   path: string
   /** Byte offset (0-based). Defaults to 0. */
