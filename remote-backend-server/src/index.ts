@@ -45,6 +45,14 @@ import type { RuntimeBundle } from './runtime-bootstrap.js'
 import { acceptWebSocket, isWebSocketUpgrade, type WsConnection } from './ws.js'
 import { ConnectedClientBridge } from './client-bridge.js'
 import { writeAgentDbSnapshotFile } from '#shared/db/agent-db.js'
+import { assertPathAllowed } from '#shared/security/path-policy.js'
+import { mimeFromPath } from '#shared/runtime/mime.js'
+import {
+  DEFAULT_SIGNED_URL_TTL_MS,
+  SIGNED_URL_PATH_PREFIX,
+  decodeRelPath,
+  verifyFileUrl,
+} from '#shared/backend/signed-urls.js'
 
 const DEFAULT_PORT = 9878
 
@@ -329,7 +337,7 @@ function handleWebSocket(
   console.log('agentwfy-remote-server: client connected')
 }
 
-function makeHttpHandler(bundle: RuntimeBundle, token: string | null) {
+function makeHttpHandler(bundle: RuntimeBundle, runtimeRoot: string, token: string | null) {
   return function handleHttp(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     setCorsHeaders(res)
@@ -342,8 +350,197 @@ function makeHttpHandler(bundle: RuntimeBundle, token: string | null) {
       void sendDbSnapshot(req, res, bundle, token)
       return
     }
+    const fileRoute = parseFileRoutePath(url.pathname)
+    if (fileRoute) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204)
+        res.end()
+        return
+      }
+      if (req.method === 'GET') {
+        void serveAgentFile(req, res, url, bundle, runtimeRoot, token, fileRoute)
+        return
+      }
+      sendPlain(res, 405, 'Method Not Allowed\n')
+      return
+    }
     sendPlain(res, 426, `Use WebSocket ${WS_PATH}\n`)
   }
+}
+
+interface FileRoute {
+  agentId: string
+  relPath: string
+}
+
+function parseFileRoutePath(pathname: string): FileRoute | null {
+  // /agent/<encodedAgentId>/files/<encodedPath...>
+  if (!pathname.startsWith(`${SIGNED_URL_PATH_PREFIX}/`)) return null
+  const rest = pathname.slice(SIGNED_URL_PATH_PREFIX.length + 1)
+  const slashIndex = rest.indexOf('/')
+  if (slashIndex <= 0) return null
+  const encodedAgentId = rest.slice(0, slashIndex)
+  const afterAgent = rest.slice(slashIndex + 1)
+  const FILES_SEG = 'files/'
+  if (!afterAgent.startsWith(FILES_SEG)) return null
+  const encodedRelPath = afterAgent.slice(FILES_SEG.length)
+  if (encodedRelPath.length === 0) return null
+  let agentId: string
+  let relPath: string
+  try {
+    agentId = decodeURIComponent(encodedAgentId)
+    relPath = decodeRelPath(encodedRelPath)
+  } catch {
+    return null
+  }
+  if (agentId.length === 0 || relPath.length === 0) return null
+  return { agentId, relPath }
+}
+
+async function serveAgentFile(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  _bundle: RuntimeBundle,
+  runtimeRoot: string,
+  token: string | null,
+  route: FileRoute,
+): Promise<void> {
+  // The agentId in the URL is a cache-key namespace (so two agents on the
+  // same daemon host don't share browser-cached bytes), not an identity
+  // claim — the HMAC is what authenticates. We deliberately don't compare
+  // it to bundle.backend.id: desktop labels remote agents with whatever the
+  // user typed during add-remote, which is decoupled from the daemon's
+  // runtime root.
+  let exp: number | null = null
+  if (token !== null) {
+    const sig = url.searchParams.get('sig')
+    const expRaw = url.searchParams.get('exp')
+    const parsedExp = expRaw === null ? NaN : Number(expRaw)
+    if (!sig || !Number.isFinite(parsedExp)) {
+      sendPlain(res, 401, 'Unauthorized\n')
+      return
+    }
+    const ok = verifyFileUrl({
+      agentId: route.agentId,
+      token,
+      method: 'GET',
+      path: route.relPath,
+      sig,
+      exp: parsedExp,
+    })
+    if (!ok) {
+      sendPlain(res, 401, 'Unauthorized\n')
+      return
+    }
+    exp = parsedExp
+  }
+  // token === null: daemon is running without auth (WS also accepts any
+  // bearer in this mode — see checkAuth). Skip HMAC entirely so the two
+  // surfaces stay consistent.
+
+  let absolutePath: string
+  try {
+    absolutePath = await assertPathAllowed(runtimeRoot, route.relPath, { allowMissing: false })
+  } catch {
+    sendPlain(res, 404, 'Not Found\n')
+    return
+  }
+
+  let info
+  try {
+    info = await stat(absolutePath)
+  } catch {
+    sendPlain(res, 404, 'Not Found\n')
+    return
+  }
+  if (!info.isFile()) {
+    sendPlain(res, 404, 'Not Found\n')
+    return
+  }
+
+  const size = info.size
+  const mtimeMs = info.mtimeMs
+  const etag = `W/"${size}-${Math.floor(mtimeMs)}"`
+  const defaultMaxAgeSec = Math.floor(DEFAULT_SIGNED_URL_TTL_MS / 1000)
+  const maxAgeSec = exp === null
+    ? defaultMaxAgeSec
+    : Math.max(0, exp - Math.floor(Date.now() / 1000))
+
+  res.setHeader('content-type', mimeFromPath(absolutePath))
+  res.setHeader('accept-ranges', 'bytes')
+  res.setHeader('cache-control', `private, max-age=${maxAgeSec}`)
+  res.setHeader('etag', etag)
+  res.setHeader('last-modified', new Date(mtimeMs).toUTCString())
+  res.setHeader('x-content-type-options', 'nosniff')
+
+  const range = parseRangeHeader(req.headers['range'], size)
+  if (range === 'invalid') {
+    res.setHeader('content-range', `bytes */${size}`)
+    sendPlain(res, 416, 'Range Not Satisfiable\n')
+    return
+  }
+
+  const start = range ? range.start : 0
+  const end = range ? range.end : (size === 0 ? 0 : size - 1)
+  const length = size === 0 ? 0 : end - start + 1
+  res.setHeader('content-length', String(length))
+  if (range) {
+    res.setHeader('content-range', `bytes ${start}-${end}/${size}`)
+    res.writeHead(206)
+  } else {
+    res.writeHead(200)
+  }
+
+  if (req.method === 'HEAD' || length === 0) {
+    res.end()
+    return
+  }
+
+  const stream = createReadStream(absolutePath, { start, end })
+  stream.on('error', (err) => {
+    console.warn('agentwfy-remote-server: file stream failed:', err)
+    if (!res.headersSent) {
+      sendPlain(res, 500, 'Failed to stream file\n')
+    } else {
+      res.destroy(err)
+    }
+  })
+  res.on('close', () => {
+    if (!stream.destroyed) stream.destroy()
+  })
+  stream.pipe(res)
+}
+
+function parseRangeHeader(
+  header: string | string[] | undefined,
+  size: number,
+): { start: number; end: number } | null | 'invalid' {
+  const value = Array.isArray(header) ? header[0] : header
+  if (!value) return null
+  if (!value.startsWith('bytes=')) return 'invalid'
+  const m = value.slice('bytes='.length).match(/^(\d*)-(\d*)$/)
+  if (!m) return 'invalid'
+  const hasStart = m[1] !== ''
+  const hasEnd = m[2] !== ''
+  if (!hasStart && !hasEnd) return 'invalid'
+  if (size === 0) return 'invalid'
+  let start: number
+  let end: number
+  if (hasStart) {
+    start = parseInt(m[1], 10)
+    end = hasEnd ? parseInt(m[2], 10) : size - 1
+  } else {
+    // Suffix range: bytes=-N → last N bytes.
+    const suffix = parseInt(m[2], 10)
+    if (!Number.isFinite(suffix) || suffix <= 0) return 'invalid'
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid'
+  if (start < 0 || end < start || start >= size) return 'invalid'
+  if (end >= size) end = size - 1
+  return { start, end }
 }
 
 async function sendDbSnapshot(
@@ -425,7 +622,7 @@ async function runServer(): Promise<void> {
   const bundle = await createAgentRuntime(runtimeRoot, clientBridge)
   console.log(`  runtime: ready (id=${bundle.backend.id})`)
 
-  const server = createServer(makeHttpHandler(bundle, token))
+  const server = createServer(makeHttpHandler(bundle, runtimeRoot, token))
   server.on('upgrade', (req, socket, head) => {
     if (!isWebSocketUpgrade(req)) {
       socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')

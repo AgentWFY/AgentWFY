@@ -97,7 +97,15 @@ export class AgentContextFactory {
     });
     backendRef = ctx.backend;
     resyncFromMirror();
-    this.attachAgentViewHandler(agentId, cacheRoot, new RemoteFileSource(ctx.backend));
+    this.attachAgentViewHandler(
+      agentId,
+      cacheRoot,
+      new RemoteFileSource(ctx.backend, {
+        agentId,
+        daemonBaseUrl: remoteConfig.baseUrl,
+        agentToken: remoteConfig.agentToken,
+      }),
+    );
     return ctx;
   }
 

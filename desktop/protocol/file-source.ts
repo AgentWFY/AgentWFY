@@ -3,14 +3,16 @@
 //
 // - LocalFileSource serves directly from the on-disk cacheRoot (the agent's
 //   own runtimeRoot, when the agent runs in-process).
-// - RemoteFileSource fetches bytes through the AgentBackend's files API, so
-//   the desktop can render files that live on the remote daemon without
-//   maintaining a parallel filesystem mirror.
+// - RemoteFileSource issues a 302 to a short-lived signed daemon URL for
+//   browser-driven static fetches (`<img>`, `<video>`, etc.) so bytes flow
+//   over plain HTTP instead of base64-over-WS. The agent runtime still uses
+//   `backend.files.read` over the WS — see readText below.
 
 import { readFile } from 'fs/promises'
 import { assertPathAllowed } from '#shared/security/path-policy.js'
 import { serveFile } from '#shared/protocol/file-server.js'
 import type { AgentBackend } from '#shared/backend/interface.js'
+import { signFileUrl } from '#shared/backend/signed-urls.js'
 
 export interface FileSource {
   /** Serve a file as an HTTP-style Response (for /file/... raw serve). */
@@ -33,89 +35,35 @@ export class LocalFileSource implements FileSource {
   }
 }
 
-function parseRangeHeader(header: string | null, size: number):
-  | { ok: true; start: number; end: number; isRange: boolean }
-  | { ok: false } {
-  if (!header || !header.startsWith('bytes=')) {
-    return { ok: true, start: 0, end: size - 1, isRange: false }
-  }
-  const m = header.match(/^bytes=(\d*)-(\d*)$/)
-  if (!m) return { ok: false }
-  const start = m[1] ? parseInt(m[1], 10) : 0
-  const end = m[2] ? parseInt(m[2], 10) : size - 1
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return { ok: false }
-  if (start >= size || end >= size || start > end) return { ok: false }
-  return { ok: true, start, end, isRange: true }
+export interface RemoteFileSourceConfig {
+  agentId: string
+  daemonBaseUrl: string
+  agentToken: string
 }
 
 export class RemoteFileSource implements FileSource {
-  constructor(private readonly backend: AgentBackend) {}
+  constructor(
+    private readonly backend: AgentBackend,
+    private readonly config: RemoteFileSourceConfig,
+  ) {}
 
-  async serve(request: Request, relPath: string): Promise<Response> {
-    let first
-    try {
-      // First read probes the file size and gets the head of the requested
-      // range; one round-trip is enough for files inside the daemon's per-read
-      // cap, larger files stream on through pull().
-      const rangeProbe = request.headers.get('Range')
-      const probeOffset = parseProbeOffset(rangeProbe)
-      first = await this.backend.files.read({ path: relPath, offset: probeOffset })
-    } catch (err) {
-      console.error('[agentview/remote-file] read failed:', err)
-      return new Response('Not Found', { status: 404 })
-    }
-
-    const { size, content: firstChunk, mimeType, offset: firstOffset } = first
-    const range = parseRangeHeader(request.headers.get('Range'), size)
-    if (!range.ok) {
-      return new Response('Range Not Satisfiable', {
-        status: 416,
-        headers: { 'Content-Range': `bytes */${size}` },
-      })
-    }
-    const { start, end, isRange } = range
-
-    const headers: Record<string, string> = {
-      'Content-Type': mimeType,
-      'Content-Length': (end - start + 1).toString(),
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    }
-    if (isRange) headers['Content-Range'] = `bytes ${start}-${end}/${size}`
-
-    const backend = this.backend
-    const firstChunkEnd = firstOffset + firstChunk.byteLength - 1
-    let cursor = start
-    const body = new ReadableStream<Uint8Array>({
-      pull: async (controller) => {
-        try {
-          if (cursor > end) { controller.close(); return }
-          if (cursor >= firstOffset && cursor <= firstChunkEnd) {
-            const sliceStart = cursor - firstOffset
-            const sliceEnd = Math.min(firstChunkEnd, end) - firstOffset + 1
-            controller.enqueue(firstChunk.subarray(sliceStart, sliceEnd))
-            cursor = firstOffset + sliceEnd
-            if (cursor > end) controller.close()
-            return
-          }
-          const { content } = await backend.files.read({
-            path: relPath,
-            offset: cursor,
-            limit: end - cursor + 1,
-          })
-          if (content.byteLength === 0) { controller.close(); return }
-          const take = Math.min(content.byteLength, end - cursor + 1)
-          controller.enqueue(take === content.byteLength ? content : content.subarray(0, take))
-          cursor += take
-          if (cursor > end) controller.close()
-        } catch (err) {
-          controller.error(err)
-        }
+  async serve(_request: Request, relPath: string): Promise<Response> {
+    // The redirect itself isn't cached; the signed target carries its own
+    // Cache-Control so the browser caches the file until the signature
+    // expires, then refetches via a fresh redirect.
+    const location = signFileUrl({
+      daemonBaseUrl: this.config.daemonBaseUrl,
+      agentId: this.config.agentId,
+      token: this.config.agentToken,
+      path: relPath,
+    })
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: location,
+        'Cache-Control': 'no-store',
       },
     })
-
-    return new Response(body, { status: isRange ? 206 : 200, headers })
   }
 
   async readText(relPath: string): Promise<string> {
@@ -141,12 +89,4 @@ export class RemoteFileSource implements FileSource {
     for (const c of chunks) { merged.set(c, off); off += c.byteLength }
     return new TextDecoder('utf-8').decode(merged)
   }
-}
-
-function parseProbeOffset(header: string | null): number {
-  if (!header || !header.startsWith('bytes=')) return 0
-  const m = header.match(/^bytes=(\d*)-/)
-  if (!m || !m[1]) return 0
-  const n = parseInt(m[1], 10)
-  return Number.isFinite(n) && n >= 0 ? n : 0
 }
