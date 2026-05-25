@@ -1,0 +1,421 @@
+#!/usr/bin/env node
+// Drive the mobile app on an iOS simulator from one command.
+//
+// Build path: `tauri ios build --debug --target aarch64-sim` produces a .app
+// that we install + launch via simctl. We avoid `tauri ios dev` because its
+// dev server binds to the host's 127.0.0.1 which the simulator can't reach.
+//
+// State lives in ~/.agentwfy/mobile-preview/<name>/ so subcommands attach.
+//
+// Usage:
+//   ./scripts/mobile-preview                              Start (or attach) on default sim
+//   ./scripts/mobile-preview --sim "iPhone 16"            Use a specific simulator
+//   ./scripts/mobile-preview --list                       Running previews
+//   ./scripts/mobile-preview --stop [name] [--shutdown]   Stop one or all
+//   ./scripts/mobile-preview --restart <name>             Rebuild and restart app
+//   ./scripts/mobile-preview --logs <name> [--device] [-n N]  tauri-cli log or device log
+//   ./scripts/mobile-preview --screenshot <name> <path>   simctl io screenshot
+//   ./scripts/mobile-preview --sqlite <name> [--agent <id>] <sql> SQL against on-device mirror
+//   ./scripts/mobile-preview --eval <name> <expr>         Run JS in the WebView via the debug bridge
+//   ./scripts/mobile-preview --doctor                     Check prereqs
+//
+// `--eval` talks to the Rust-side debug bridge on 127.0.0.1:9229, which is
+// only compiled into debug builds. See mobile/src-tauri/src/debug_bridge.rs.
+
+import { spawnSync, execSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, openSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const root = join(scriptDir, '..')
+const BUNDLE_ID = 'com.agentwfy.mobile'
+const DEFAULT_SIM = 'iPhone 16 Pro'
+const STATE_ROOT = join(homedir(), '.agentwfy', 'mobile-preview')
+
+const args = process.argv.slice(2)
+
+// ── helpers ──────────────────────────────────────────────────────────────
+
+function slug(s) { return s.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+function stateDir(name) { return join(STATE_ROOT, name) }
+function stateFile(name, f) { return join(stateDir(name), f) }
+function readState(name, f) {
+  const p = stateFile(name, f)
+  return existsSync(p) ? readFileSync(p, 'utf-8').trim() : null
+}
+function writeState(name, f, v) {
+  mkdirSync(stateDir(name), { recursive: true })
+  writeFileSync(stateFile(name, f), String(v))
+}
+
+function popFlag(flag) {
+  const i = args.indexOf(flag)
+  if (i < 0) return null
+  const v = args[i + 1]
+  args.splice(i, 2)
+  return v
+}
+
+function popBool(flag) {
+  const i = args.indexOf(flag)
+  if (i < 0) return false
+  args.splice(i, 1)
+  return true
+}
+
+function requireName(flag) {
+  // Default to the only running preview when there's exactly one.
+  let name = args[1] && !args[1].startsWith('--') ? args.splice(1, 1)[0] : null
+  if (!name) {
+    const all = listPreviews()
+    const running = all.filter((p) => p.alive)
+    if (running.length === 1) name = running[0].name
+    else if (running.length === 0) { console.error(`No previews running. Start one with ./scripts/mobile-preview.`); process.exit(1) }
+    else { console.error(`Multiple previews running; pass a name. (${running.map((p) => p.name).join(', ')})`); process.exit(1) }
+  }
+  if (!existsSync(stateDir(name))) { console.error(`No preview named "${name}". Use --list.`); process.exit(1) }
+  return name
+}
+
+function listPreviews() {
+  if (!existsSync(STATE_ROOT)) return []
+  return readdirSync(STATE_ROOT)
+    .filter((n) => existsSync(stateDir(n)) && statSync(stateDir(n)).isDirectory())
+    .map((name) => {
+      const udid = readState(name, 'udid')
+      return {
+        name,
+        udid,
+        appPath: readState(name, 'app.path'),
+        alive: udid ? simctlAppRunning(udid, BUNDLE_ID) : false,
+      }
+    })
+}
+
+function simctlAppRunning(udid, bundleId) {
+  try {
+    const out = execSync(`xcrun simctl spawn ${udid} launchctl list 2>/dev/null | grep ${bundleId}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
+    return out.trim().length > 0
+  } catch { return false }
+}
+
+// ── simulator + tooling probes ───────────────────────────────────────────
+
+function which(bin) {
+  try { return execSync(`command -v ${bin}`, { encoding: 'utf-8' }).trim() } catch { return null }
+}
+
+function findSimulator(deviceName) {
+  const raw = execSync('xcrun simctl list devices available -j', { encoding: 'utf-8' })
+  const all = JSON.parse(raw).devices
+  let best = null
+  for (const runtime of Object.keys(all)) {
+    for (const dev of all[runtime]) {
+      if (dev.name === deviceName) {
+        if (!best || dev.state === 'Booted') best = { ...dev, runtime }
+      }
+    }
+  }
+  return best
+}
+
+function bootSimulator(udid) {
+  try { execSync(`xcrun simctl boot ${udid}`, { stdio: 'pipe' }) } catch (e) {
+    const msg = e.stderr?.toString() || ''
+    if (!msg.includes('current state: Booted') && !msg.includes('Unable to boot device in current state: Booted')) {
+      throw new Error(`simctl boot failed: ${msg.trim() || e.message}`)
+    }
+  }
+  try { spawnSync('open', ['-a', 'Simulator'], { stdio: 'ignore' }) } catch {}
+}
+
+function simctlAppInstalled(udid, bundleId) {
+  try {
+    const out = execSync(`xcrun simctl get_app_container ${udid} ${bundleId}`, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' })
+    return out.trim().length > 0
+  } catch { return false }
+}
+
+async function waitFor(fn, timeoutMs, intervalMs = 1000) {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await fn()) return true
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return false
+}
+
+// ── start ────────────────────────────────────────────────────────────────
+
+async function startPreview() {
+  const sim = popFlag('--sim') || DEFAULT_SIM
+  const name = slug(sim)
+
+  const dev = findSimulator(sim)
+  if (!dev) { console.error(`[mobile-preview] simulator "${sim}" not found. List: xcrun simctl list devices available`); process.exit(1) }
+
+  mkdirSync(stateDir(name), { recursive: true })
+  writeState(name, 'udid', dev.udid)
+  writeState(name, 'sim', sim)
+
+  console.error(`[mobile-preview] booting "${sim}" (${dev.udid.slice(0, 8)}…)`)
+  bootSimulator(dev.udid)
+
+  buildInstallLaunch(name, dev.udid, sim)
+
+  console.log(`[mobile-preview] ready: ${name}`)
+  printRunningInfo(name)
+}
+
+// Build → locate .app → install in sim → launch. Synchronous and verbose so
+// failures surface immediately. Called from start and --restart.
+function buildInstallLaunch(name, udid, sim) {
+  const buildLog = stateFile(name, 'build.log')
+  // Tauri's iOS build refuses to overwrite an existing .app in its output
+  // directory ("rename ... Directory not empty"). Clear it ourselves.
+  const buildOutDir = join(root, 'mobile', 'src-tauri', 'gen', 'apple', 'build')
+  try { execSync(`rm -rf "${buildOutDir}"`, { stdio: 'ignore' }) } catch {}
+  console.error(`[mobile-preview] building (tauri ios build --debug --target aarch64-sim, logs: ${buildLog})`)
+  const out = openSync(buildLog, 'w')
+  const buildArgs = ['ios', 'build', '--debug', '--target', 'aarch64-sim', '--ci', '--no-sign']
+  const build = spawnSync(join(scriptDir, 'mobile-run'), buildArgs, {
+    cwd: root, stdio: ['ignore', out, out], env: { ...process.env, FORCE_COLOR: '0' },
+  })
+  if (build.status !== 0) {
+    console.error(`[mobile-preview] build failed (status ${build.status}). Tail of ${buildLog}:`)
+    spawnSync('tail', ['-n', '30', buildLog], { stdio: 'inherit' })
+    process.exit(1)
+  }
+
+  const appPath = findLatestAppBundle()
+  if (!appPath) {
+    console.error(`[mobile-preview] build succeeded but couldn't locate AgentWFY Mobile.app`)
+    process.exit(1)
+  }
+  writeState(name, 'app.path', appPath)
+  console.error(`[mobile-preview] app: ${appPath}`)
+
+  // Terminate any previous instance so simctl install picks up changes cleanly.
+  try { execSync(`xcrun simctl terminate ${udid} ${BUNDLE_ID}`, { stdio: 'ignore' }) } catch {}
+
+  console.error(`[mobile-preview] installing on ${udid.slice(0, 8)}…`)
+  const inst = spawnSync('xcrun', ['simctl', 'install', udid, appPath], { stdio: 'inherit' })
+  if (inst.status !== 0) { console.error('[mobile-preview] simctl install failed'); process.exit(1) }
+
+  console.error(`[mobile-preview] launching`)
+  const launch = spawnSync('xcrun', ['simctl', 'launch', udid, BUNDLE_ID], { stdio: 'inherit' })
+  if (launch.status !== 0) { console.error('[mobile-preview] simctl launch failed'); process.exit(1) }
+}
+
+// Tauri ios build lands the sim .app in gen/apple/build/arm64-sim/. We check
+// the tauri output first (authoritative), then fall back to DerivedData if
+// someone last built via tauri ios dev.
+function findLatestAppBundle() {
+  const candidates = [
+    join(root, 'mobile', 'src-tauri', 'gen', 'apple', 'build', 'arm64-sim', 'AgentWFY Mobile.app'),
+  ]
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  // Last resort: any sim-flavored .app under DerivedData.
+  try {
+    const dd = join(homedir(), 'Library', 'Developer', 'Xcode', 'DerivedData')
+    const out = execSync(`find "${dd}" -type d -name "AgentWFY Mobile.app" -path "*debug-iphonesimulator*" 2>/dev/null`, { encoding: 'utf-8' })
+    let best = null
+    for (const line of out.split('\n').map((s) => s.trim()).filter(Boolean)) {
+      const st = statSync(line)
+      if (!best || st.mtimeMs > best.mtime) best = { path: line, mtime: st.mtimeMs }
+    }
+    if (best) return best.path
+  } catch {}
+  return null
+}
+
+function printRunningInfo(name) {
+  const udid = readState(name, 'udid')
+  console.log(`  sim:          ${readState(name, 'sim')} (${udid?.slice(0, 8)}…)`)
+  console.log(`  bundle:       ${BUNDLE_ID}`)
+  console.log(`  build log:    ${stateFile(name, 'build.log')}`)
+  console.log(``)
+  console.log(`  eval:         ./scripts/mobile-preview --eval ${name} "document.title"`)
+  console.log(`  screenshot:   ./scripts/mobile-preview --screenshot ${name} out.png`)
+  console.log(`  sqlite:       ./scripts/mobile-preview --sqlite ${name} --agent local "SELECT name FROM views"`)
+  console.log(`  logs:         ./scripts/mobile-preview --logs ${name}`)
+  console.log(`  restart:      ./scripts/mobile-preview --restart ${name}`)
+  console.log(`  stop:         ./scripts/mobile-preview --stop ${name}`)
+}
+
+// ── eval (debug-bridge over UNIX socket) ─────────────────────────────────
+
+// Mirror socket_path() in mobile/src-tauri/src/debug_bridge.rs. The app binds
+// in /tmp/ because the sandbox path exceeds sockaddr_un's 104-byte limit,
+// and namespaces by SIMULATOR_UDID so parallel previews don't collide.
+function bridgeSocketPath(udid) {
+  return `/tmp/agentwfy-mobile-debug-bridge-${udid}.sock`
+}
+
+async function evalCmd() {
+  const name = requireName('--eval')
+  const expression = args.slice(1).join(' ').trim()
+  if (!expression) { console.error('Usage: --eval <name> <expression>'); process.exit(2) }
+  const udid = readState(name, 'udid')
+  if (!udid) { console.error(`no udid for preview "${name}"`); process.exit(1) }
+  const socketPath = bridgeSocketPath(udid)
+  if (!existsSync(socketPath)) {
+    console.error(`[mobile-preview --eval] debug-bridge socket not found at ${socketPath}`)
+    console.error(`[mobile-preview --eval] (bridge runs only in debug builds; make sure --restart succeeded and the app launched)`)
+    process.exit(1)
+  }
+
+  const body = JSON.stringify({ expression })
+  const request = `POST /eval HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`
+
+  const net = await import('node:net')
+  const res = await new Promise((resolveP, rejectP) => {
+    const chunks = []
+    const sock = net.createConnection({ path: socketPath })
+    sock.setTimeout(35_000)
+    sock.on('connect', () => sock.write(request))
+    sock.on('data', (c) => chunks.push(c))
+    sock.on('end', () => resolveP(Buffer.concat(chunks).toString('utf-8')))
+    sock.on('timeout', () => { sock.destroy(new Error('debug-bridge request timed out')) })
+    sock.on('error', rejectP)
+  }).catch((e) => {
+    console.error(`[mobile-preview --eval] socket error: ${e.message}`)
+    process.exit(1)
+  })
+
+  // Parse: split off headers, JSON-decode body.
+  const split = res.indexOf('\r\n\r\n')
+  const bodyText = split >= 0 ? res.slice(split + 4) : res
+  let parsed
+  try { parsed = JSON.parse(bodyText) } catch {
+    console.error(`[mobile-preview --eval] non-JSON response: ${res.slice(0, 400)}`)
+    process.exit(1)
+  }
+  if (!parsed.ok) {
+    console.error(`[mobile-preview --eval] error: ${parsed.error}`)
+    process.exit(1)
+  }
+  const value = parsed.value
+  process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value))
+  process.stdout.write('\n')
+}
+
+// ── sqlite (mirror DB) ───────────────────────────────────────────────────
+
+function sqliteCmd() {
+  const name = requireName('--sqlite')
+  const agent = popFlag('--agent') || 'local'
+  const sql = args.slice(1).join(' ').trim()
+  if (!sql) { console.error('Usage: --sqlite <name> [--agent <id>] <sql>'); process.exit(2) }
+  const udid = readState(name, 'udid')
+  if (!udid) { console.error('no udid recorded'); process.exit(1) }
+
+  // mirror_db.rs writes to <app_data_dir>/agents/<agent-id>/agent.db. On iOS
+  // app_data_dir is <sandbox>/Library/Application Support/<bundle-id>/.
+  let dataContainer
+  try {
+    dataContainer = execSync(`xcrun simctl get_app_container ${udid} ${BUNDLE_ID} data`, { encoding: 'utf-8' }).trim()
+  } catch { console.error(`app ${BUNDLE_ID} not installed on sim ${udid}`); process.exit(1) }
+  const dbPath = join(dataContainer, 'Library', 'Application Support', BUNDLE_ID, 'agents', agent, 'agent.db')
+  if (!existsSync(dbPath)) {
+    console.error(`agent DB not found at ${dbPath}`)
+    console.error(`(connect a profile in the app first — the DB is created on first agent connect.)`)
+    process.exit(1)
+  }
+
+  const r = spawnSync('sqlite3', ['-readonly', '-header', '-column', dbPath, sql], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+
+// ── subcommand dispatch ──────────────────────────────────────────────────
+
+if (args[0] === '--doctor') {
+  const checks = [
+    ['xcrun', !!which('xcrun')],
+    ['xcodebuild', !!which('xcodebuild')],
+    ['sqlite3', !!which('sqlite3')],
+  ]
+  for (const [k, ok] of checks) console.log(`${ok ? 'ok ' : 'MISS'}  ${k}`)
+  process.exit(checks.every(([, ok]) => ok) ? 0 : 1)
+}
+
+if (args[0] === '--list') {
+  const ps = listPreviews()
+  if (ps.length === 0) { console.log('No previews.'); process.exit(0) }
+  for (const p of ps) {
+    const state = p.alive ? 'running' : 'stopped'
+    console.log(`${p.name}  [${state}]  udid=${p.udid?.slice(0, 8)}…`)
+  }
+  process.exit(0)
+}
+
+if (args[0] === '--stop') {
+  const shutdown = popBool('--shutdown')
+  const explicit = args[1] && !args[1].startsWith('--') ? args[1] : null
+  const targets = explicit ? [{ name: explicit }] : listPreviews()
+  if (targets.length === 0) { console.log('No previews running.'); process.exit(0) }
+  for (const { name } of targets) {
+    if (!existsSync(stateDir(name))) { if (explicit) console.error(`No preview "${name}".`); continue }
+    const udid = readState(name, 'udid')
+    if (udid) { try { execSync(`xcrun simctl terminate ${udid} ${BUNDLE_ID}`, { stdio: 'ignore' }) } catch {} }
+    if (shutdown && udid) { try { execSync(`xcrun simctl shutdown ${udid}`, { stdio: 'ignore' }) } catch {} }
+    console.log(`[mobile-preview] stopped ${name}`)
+  }
+  process.exit(0)
+}
+
+if (args[0] === '--restart') {
+  const name = requireName('--restart')
+  const udid = readState(name, 'udid')
+  const sim = readState(name, 'sim') || DEFAULT_SIM
+  bootSimulator(udid)
+  buildInstallLaunch(name, udid, sim)
+  console.log(`[mobile-preview] restarted ${name}`)
+  process.exit(0)
+}
+
+if (args[0] === '--logs') {
+  const name = requireName('--logs')
+  const device = popBool('--device')
+  const nIdx = args.indexOf('-n')
+  const n = nIdx >= 0 && args[nIdx + 1] ? Number(args[nIdx + 1]) : null
+  if (device) {
+    const udid = readState(name, 'udid')
+    if (!udid) { console.error('no udid'); process.exit(1) }
+    console.error(`[mobile-preview] streaming sim log for ${BUNDLE_ID} — Ctrl+C to stop`)
+    const r = spawnSync('xcrun', ['simctl', 'spawn', udid, 'log', 'stream', '--predicate', `subsystem == "${BUNDLE_ID}" OR processImagePath CONTAINS "AgentWFY"`], { stdio: 'inherit' })
+    process.exit(r.status ?? 1)
+  }
+  const log = stateFile(name, 'build.log')
+  if (n && Number.isFinite(n)) { spawnSync('tail', ['-n', String(n), log], { stdio: 'inherit' }); process.exit(0) }
+  console.error(`[mobile-preview] streaming ${log} — Ctrl+C to stop (use -n N for a snapshot)`)
+  const r = spawnSync('tail', ['-F', log], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+
+if (args[0] === '--screenshot') {
+  const name = requireName('--screenshot')
+  const out = args[1] ? resolve(args[1]) : join(process.cwd(), 'mobile-preview.png')
+  const udid = readState(name, 'udid')
+  if (!udid) { console.error('no udid'); process.exit(1) }
+  const r = spawnSync('xcrun', ['simctl', 'io', udid, 'screenshot', out], { stdio: 'inherit' })
+  if (r.status === 0) console.log(out)
+  process.exit(r.status ?? 1)
+}
+
+if (args[0] === '--sqlite') { sqliteCmd() }
+
+if (args[0] === '--eval') { await evalCmd(); process.exit(0) }
+
+if (!args[0] || !args[0].startsWith('--')) {
+  await startPreview()
+  process.exit(0)
+}
+
+console.error(`Unknown subcommand: ${args[0]}`)
+console.error(`Run ./scripts/mobile-preview --help for usage.`)
+process.exit(2)

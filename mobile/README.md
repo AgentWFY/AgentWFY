@@ -55,6 +55,12 @@ wrapper (which `mobile-run` calls) forces
 `PATH="$HOME/.cargo/bin:..."` and `DEVELOPER_DIR=/Applications/Xcode.app/...`
 so Xcode picks rustup's toolchain over Homebrew's `rustc`.
 
+## Testing
+
+Drive the app on a simulator with screenshots, JS eval, on-device SQL, and
+restart-after-edit via `./scripts/mobile-preview`. See
+[`docs/MOBILE_TESTING.md`](../docs/MOBILE_TESTING.md) for the full surface.
+
 ## Common failure
 
 If the build says it cannot find crate `core` for `aarch64-apple-ios-sim`,
