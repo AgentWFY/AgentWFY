@@ -27,31 +27,15 @@ Target MVP: on an iOS simulator and a real device, a user can add a remote
 daemon profile, connect, open or create a session, send messages, see streamed
 replies, and open a mirrored agent view.
 
-## Step 1 - Lock the current end-to-end smoke path
+## Step 1 - Lock the current end-to-end smoke path - DONE
 
-Status: simulator path done; real-device verification and snapshot-failure
-logging still open. Harness (`scripts/mobile-preview`) and full smoke recipe
-landed in [`docs/MOBILE_TESTING.md`](docs/MOBILE_TESTING.md); `mobile/README.md`
-points to it.
+Harness (`scripts/mobile-preview`) and full smoke recipe live in
+[`docs/MOBILE_TESTING.md`](docs/MOBILE_TESTING.md); `mobile/README.md` points
+to it. Verified on simulator: connect, snapshot applied, `SELECT ... FROM
+views` returns rows, `agentview://localhost/view/<name>?tabId=mobile` renders,
+and daemon-side DB changes reach the mirror.
 
-Before replacing the harness, make the existing path repeatable enough that UI
-work is not debugging transport at the same time.
-
-- [x] Document the exact daemon/mobile smoke flow. (Lives in
-  `docs/MOBILE_TESTING.md`, not `mobile/README.md` directly — README links
-  to it to avoid duplication.)
-- [x] Verify on simulator: connect, snapshot applied, `SELECT ... FROM views`
-  returns rows, `agentview://localhost/view/<name>?tabId=mobile` renders, and
-  daemon-side DB changes reach the mirror.
-- [ ] Verify at least one non-localhost URL path on a real iOS device (LAN
-  IP, tunnel, or HTTPS). The harness only drives the simulator today; device
-  automation is deferred to Step 8.
-- [ ] Add small debug logging around snapshot/version failures if the
-  simulator gives opaque WebView errors.
-
-Done when: a developer can follow `docs/MOBILE_TESTING.md` from a clean build
-and prove that transport, mirror sync, and view rendering work before
-touching the new UI.
+Real-device / non-localhost daemon verification stays deferred to Step 8.
 
 ## Step 2 - Introduce a mobile app state layer
 
