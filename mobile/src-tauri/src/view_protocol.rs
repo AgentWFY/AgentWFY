@@ -75,9 +75,16 @@ pub fn handle(ctx: UriSchemeContext<'_, Wry>, request: Request<Vec<u8>>) -> Resp
     // File-source fallback: bare paths, /file/<path>, and view sub-resource
     // fetches all redirect to the daemon. The browser follows the 302 and
     // pulls bytes directly over HTTP — no base64-over-WS pumping.
+    //
+    // `split_path` decodes its target; the bare branch has to decode too so a
+    // src like "/screenshots/foo bar.png" (path = "/screenshots/foo%20bar.png")
+    // signs and routes against the canonical "screenshots/foo bar.png" path
+    // on disk. Without decoding, encode_rel_path would re-escape the %, the
+    // HMAC would cover the wrong string, and the daemon would look up a file
+    // literally named "foo%20bar.png".
     let rel_path = match parsed {
         Some((_, target)) => target,
-        None => path.trim_start_matches('/').to_string(),
+        None => percent_decode(path.trim_start_matches('/')),
     };
     if rel_path.is_empty() {
         return text_response(
