@@ -3,6 +3,12 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background: #f6f7f9;
   color: #18202a;
+  --accent: #1a6fb5;
+  --accent-press: #155a91;
+  --danger: #b1372f;
+  --border: #d7dce3;
+  --surface: #ffffff;
+  --muted: #667085;
 }
 
 * {
@@ -22,12 +28,17 @@ body {
   min-height: 100vh;
 }
 
+button {
+  font: inherit;
+  color: inherit;
+}
+
 .shell {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+  gap: 16px;
+  padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
 }
 
 .brand {
@@ -43,7 +54,7 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #1a6fb5;
+  background: var(--accent);
   color: #ffffff;
   font-weight: 700;
 }
@@ -57,9 +68,174 @@ h1 {
 
 p {
   margin: 4px 0 0;
-  color: #667085;
+  color: var(--muted);
   font-size: 14px;
 }
+
+.muted {
+  color: var(--muted);
+}
+
+/* ── Agents list ─────────────────────────────────────────────────── */
+
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agent-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.agent-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  min-height: 64px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-row-main:active {
+  background: rgba(26, 111, 181, 0.06);
+}
+
+.agent-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #18202a;
+}
+
+.agent-meta {
+  font-size: 13px;
+  color: #344054;
+}
+
+.agent-meta.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agent-row-edit {
+  padding: 0 16px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.agent-row-edit:active {
+  background: rgba(26, 111, 181, 0.08);
+}
+
+/* ── Form ────────────────────────────────────────────────────────── */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.field input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font-size: 16px;
+}
+
+.field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button.primary,
+button.danger,
+button.ghost {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+button.primary:active {
+  background: var(--accent-press);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--accent);
+  border-color: var(--border);
+}
+
+button.ghost:active {
+  background: rgba(26, 111, 181, 0.08);
+}
+
+button.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: rgba(177, 55, 47, 0.4);
+}
+
+button.danger:active {
+  background: rgba(177, 55, 47, 0.08);
+}
+
+/* ── Status / banner ─────────────────────────────────────────────── */
 
 .panel {
   display: flex;
@@ -67,9 +243,9 @@ p {
   gap: 8px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid #d7dce3;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--surface);
   color: #344054;
   font-size: 14px;
 }
@@ -78,23 +254,65 @@ p {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #22c55e;
+  background: #94a3b8;
   flex: 0 0 auto;
 }
+
+.status-dot[data-state="connected"] {
+  background: #22c55e;
+}
+
+.status-dot[data-state="connecting"] {
+  background: #f59e0b;
+}
+
+.status-dot[data-state="error"] {
+  background: var(--danger);
+}
+
+.banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.banner[data-tone="error"] {
+  background: rgba(177, 55, 47, 0.08);
+  border-color: rgba(177, 55, 47, 0.4);
+  color: var(--danger);
+}
+
+/* ── Dark mode ───────────────────────────────────────────────────── */
 
 @media (prefers-color-scheme: dark) {
   :root {
     background: #111418;
     color: #eef2f6;
+    --border: #303846;
+    --surface: #191d23;
+    --muted: #98a2b3;
   }
 
   p {
-    color: #98a2b3;
+    color: var(--muted);
+  }
+
+  .agent-label {
+    color: #eef2f6;
+  }
+
+  .agent-meta {
+    color: #d0d5dd;
   }
 
   .panel {
-    background: #191d23;
-    border-color: #303846;
     color: #d0d5dd;
+  }
+
+  button.ghost {
+    color: #6aa6dc;
+    border-color: var(--border);
   }
 }

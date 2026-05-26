@@ -70,5 +70,9 @@ pub fn set_active_agent_endpoint(
 
 #[tauri::command]
 pub fn clear_active_agent_endpoint(active: tauri::State<ActiveAgent>) {
+    // Drop both halves together — leaving agent_id behind would let the
+    // view URI handler keep reading the prior agent's mirror after the
+    // user disconnects.
+    active.set(None);
     active.set_endpoint(None);
 }

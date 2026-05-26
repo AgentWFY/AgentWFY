@@ -3,7 +3,7 @@
 // Tauri auto-injects `window.__TAURI_INTERNALS__.invoke(cmd, args)` into the
 // webview — no preload file needed. This module wraps that primitive into the
 // domain-typed object the rest of the renderer talks to (`bridge.mirrorDb.*`,
-// `bridge.backend.*`, …) so call sites never deal in stringly-typed command
+// `bridge.store.*`, …) so call sites never deal in stringly-typed command
 // names. Rust-side `#[tauri::command]` handlers grow alongside the
 // corresponding namespace here.
 
@@ -85,6 +85,21 @@ export const bridge = {
     },
     clearEndpoint(): Promise<void> {
       return invoke<void>('clear_active_agent_endpoint')
+    },
+  },
+
+  /** Generic JSON key/value store backed by `<appData>/config.json`. The same
+   *  shape as Electron's internal store on desktop (desktop/ipc/store.ts), so
+   *  helpers like `agent-meta.ts` can be ported one-for-one. */
+  store: {
+    get(key: string): Promise<unknown> {
+      return invoke<unknown>('store_get', { key })
+    },
+    set(key: string, value: unknown): Promise<void> {
+      return invoke<void>('store_set', { key, value })
+    },
+    remove(key: string): Promise<void> {
+      return invoke<void>('store_remove', { key })
     },
   },
 

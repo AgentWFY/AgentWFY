@@ -51,24 +51,34 @@ on top of the controller — the form, query button, and view frame all read
 controller state instead of touching the backend directly. Session, provider,
 and view loading remain stubs; Steps 4 and 7 fill them in.
 
-## Step 3 - Add remote profile storage and connection UX
+## Step 3 - Persist remote agents and add a connect UX - DONE
 
-The app needs persistent daemon profiles instead of a hard-coded debug form.
+Mirrors desktop's storage model rather than inventing a mobile-only "profile"
+concept:
 
-- Add typed profile commands behind `bridge.profiles.*`:
-  list, save, remove, get last active profile, set last active profile.
-- Store profile metadata in Tauri app data. Keep token access isolated behind
-  this bridge so it can move to Keychain/Keystore without touching the UI.
-- Profile fields for MVP:
-  `id`, `label`, `baseUrl`, `agentId`, `agentToken`, `lastConnectedAt`.
-- Build touch-first screens for profile list, add/edit profile, connection
-  error, reconnect, and forget profile.
-- Validate inputs before starting a backend:
-  absolute HTTP(S) URL, non-empty token when required, no trailing slash
-  dependency.
+- `mobile/src-tauri/src/store.rs` is a generic JSON key/value store at
+  `<appData>/config.json` exposing `store_get/set/remove`. Same shape as
+  the Electron internal store on desktop (`desktop/ipc/store.ts`).
+- `mobile/src/store.ts` is an async wrapper around `bridge.store.*`.
+- `mobile/src/agent-meta.ts` is a direct port of `desktop/agent-meta.ts`:
+  `RemoteAgentConfig`, `AgentMeta`, and `getAgentMeta/setAgentMeta/removeAgentMeta`
+  read/write the `installedAgentMeta` key. The same file owns the
+  `installedAgents` ordered-id list and a `listInstalledAgents()` join.
+- Mobile is remote-only, so `AgentMeta` here drops the `backend: 'local'`
+  variant the desktop union carries. If mobile ever caches a local copy,
+  this collapses back to the full desktop union without a schema rename.
+- `AppController` swaps `Profile` for `{ agentId, meta }` and validates
+  add inputs inline (same trim + http(s) regex + trailing-slash strip as
+  `desktop/command-palette/manager.ts` `add-remote-agent`). Methods:
+  `refreshAgents`, `addRemoteAgent`, `removeAgent`, `connect(agentId)`.
+- `mobile/src/main.ts` renders an agents-list screen (tap to connect,
+  per-row Remove) and an add-agent form (no edit — desktop has no edit
+  either; remove + re-add). Connected screen is a placeholder with
+  Disconnect / Remove until Step 5 lands real chat.
 
-Done when: app launch shows saved profiles, can add a daemon manually, can
-connect, can reconnect after restart, and can delete the profile.
+There is no "lastActive" or `lastConnectedAt` field — desktop doesn't have
+those either. Launch picks the first installed agent only as a UI hint;
+auto-connect is deferred.
 
 ## Step 4 - Build sessions and provider basics
 

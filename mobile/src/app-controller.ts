@@ -1,10 +1,13 @@
 // Mobile app state/controller layer.
 //
-// Owns the single active remote agent: profile, backend connection, status,
-// sessions, providers, views, screen. UI code subscribes to AppState and
-// calls controller methods; it never reaches into RemoteBackend or the
-// Tauri bridge directly. Sessions/providers/views start empty here — Steps
-// 4 and 7 populate them.
+// Owns the single active remote agent: installed-agents list, active agent
+// id, backend connection, status, sessions, providers, views, screen. UI code
+// subscribes to AppState and calls controller methods; it never reaches into
+// RemoteBackend or the Tauri bridge directly.
+//
+// Persistence model matches desktop: an ordered list of agent ids in
+// `installedAgents` and per-agent metadata in `installedAgentMeta` (see
+// agent-meta.ts). No mobile-only abstractions on top.
 
 import type {
   AgentBackendEvent,
@@ -15,16 +18,19 @@ import type {
 } from '#shared/backend/interface.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
+import {
+  addInstalledAgent,
+  listInstalledAgents,
+  removeInstalledAgent,
+  setAgentMeta,
+  type AgentMeta,
+  type InstalledAgent,
+  type RemoteAgentConfig,
+} from './agent-meta.js'
 import { createMobileBackend, type MobileBackend } from './backend.js'
 import { bridge } from './tauri-bridge.js'
 
-export type Screen = 'connect' | 'chat' | 'views'
-
-export interface ProfileFields {
-  agentId: string
-  baseUrl: string
-  agentToken: string
-}
+export type Screen = 'agents' | 'add-agent' | 'chat' | 'views'
 
 export interface ViewSummary {
   name: string
@@ -34,7 +40,14 @@ export interface ViewSummary {
 
 export interface AppState {
   screen: Screen
-  profile: ProfileFields | null
+  /** Installed agents loaded from disk; refreshed after add/remove. */
+  agents: InstalledAgent[]
+  /** Agent id the live backend is for, or null when disconnected. */
+  activeAgentId: string | null
+  /** Cached meta for the active agent so chat/view surfaces can read host
+   *  config without a follow-up await. Mirrors `agents[i].meta` for
+   *  activeAgentId. */
+  activeMeta: AgentMeta | null
   status: BackendStatusSnapshot
   sessions: SessionSummary[]
   activeSession: SessionState | null
@@ -55,8 +68,10 @@ const IDLE_STATUS: BackendStatusSnapshot = {
 
 function initialState(): AppState {
   return {
-    screen: 'connect',
-    profile: null,
+    screen: 'agents',
+    agents: [],
+    activeAgentId: null,
+    activeMeta: null,
     // Spread so callers can't accidentally mutate the module-level constant.
     status: { ...IDLE_STATUS },
     sessions: [],
@@ -112,15 +127,84 @@ export class AppController {
     this.patch({ screen })
   }
 
-  async connect(profile: ProfileFields): Promise<void> {
+  /** Load the installed-agents list from disk. Safe to call repeatedly. */
+  async refreshAgents(): Promise<InstalledAgent[]> {
+    try {
+      const agents = await listInstalledAgents()
+      this.patch({ agents, error: null })
+      return agents
+    } catch (err) {
+      this.patch({ error: `Loading agents failed: ${messageFromUnknown(err)}` })
+      return []
+    }
+  }
+
+  /** Persist a new remote agent. Mirrors desktop's add-remote-agent
+   *  command-palette action (command-palette/manager.ts): trim + require
+   *  agentId/baseUrl/agentToken, baseUrl must start with http(s)://, strip
+   *  a trailing slash. Throws on validation failure so the form can surface
+   *  the message inline.
+   *
+   *  Does NOT connect — the caller decides when to switch screens and call
+   *  connect(), so connect errors land on the destination screen instead of
+   *  a form DOM that has already been replaced by the screen flip. Returns
+   *  the normalized agent id. */
+  async addRemoteAgent(input: {
+    agentId: string
+    baseUrl: string
+    agentToken: string
+  }): Promise<string> {
+    const agentId = input.agentId.trim()
+    const baseUrl = input.baseUrl.trim().replace(/\/$/, '')
+    const agentToken = input.agentToken.trim()
+    if (!agentId) throw new Error('Local label is required')
+    if (!baseUrl || !/^https?:\/\//.test(baseUrl)) {
+      throw new Error('Server URL must start with http:// or https://')
+    }
+    if (!agentToken) throw new Error('Bearer token is required')
+
+    const meta: AgentMeta = { remoteConfig: { baseUrl, agentToken } }
+    await setAgentMeta(agentId, meta)
+    await addInstalledAgent(agentId)
+    await this.refreshAgents()
+    return agentId
+  }
+
+  /** Remove an installed agent. Disconnects first if it's the active one. */
+  async removeAgent(agentId: string): Promise<void> {
+    if (this.state.activeAgentId === agentId) {
+      await this.disconnect()
+    }
+    await removeInstalledAgent(agentId)
+    await this.refreshAgents()
+  }
+
+  /** Connect to an installed agent by id. */
+  async connect(agentId: string): Promise<void> {
+    const agent = this.state.agents.find((a) => a.agentId === agentId)
+    if (!agent) {
+      this.patch({ error: `Unknown agent: ${agentId}` })
+      return
+    }
+    const remoteConfig = agent.meta.remoteConfig
+
     const gen = ++this.connectGeneration
 
-    // Patch 'connecting' synchronously so the UI updates immediately,
-    // before the (potentially slow) teardown of a previous session.
+    // Patch 'connecting' synchronously so the UI updates immediately. Flip
+    // to the chat screen so connect errors appear next to the Disconnect /
+    // Remove controls that recover from them. Reset per-agent state
+    // (sessions/activeSession/providers/views) so a switch from A→B never
+    // shows A's session list under B's header.
     this.patch({
-      profile,
+      screen: 'chat',
+      activeAgentId: agentId,
+      activeMeta: agent.meta,
       status: { state: 'connecting', message: 'Connecting…', updatedAt: Date.now() },
       error: null,
+      sessions: [],
+      activeSession: null,
+      providers: null,
+      views: [],
       lastDbChange: null,
       lastSyncAt: null,
     })
@@ -137,9 +221,9 @@ export class AppController {
     let session: MobileBackend
     try {
       session = await createMobileBackend({
-        agentId: profile.agentId,
-        baseUrl: profile.baseUrl,
-        agentToken: profile.agentToken,
+        agentId,
+        baseUrl: remoteConfig.baseUrl,
+        agentToken: remoteConfig.agentToken,
         onLocalDbChange: (change) => {
           if (!isCurrent()) return
           this.patch({ lastDbChange: change, lastSyncAt: Date.now() })
@@ -160,7 +244,13 @@ export class AppController {
     } catch (err) {
       if (!isCurrent()) return
       const message = messageFromUnknown(err)
+      // Bounce back to the agents list so the renderer doesn't keep showing
+      // a chat header for an agent that never connected, and the user lands
+      // somewhere they can retry / remove.
       this.patch({
+        screen: 'agents',
+        activeAgentId: null,
+        activeMeta: null,
         status: { state: 'error', message: `Connect failed: ${message}`, updatedAt: Date.now() },
         error: message,
       })
@@ -168,24 +258,35 @@ export class AppController {
     }
 
     if (!isCurrent()) {
-      // A second connect()/disconnect() superseded this one while
-      // createMobileBackend was in flight. Drop the freshly-built session
-      // without touching bridge.activeAgent — the endpoint is owned by
-      // whichever connect committed.
+      // Superseded while createMobileBackend was in flight. Drop the
+      // freshly-built session; the endpoint has not been touched yet so the
+      // superseding connect owns it.
+      await session.stop().catch(() => {})
+      return
+    }
+
+    // Set the endpoint BEFORE committing this.session. A concurrent
+    // disconnect's teardownSession sees this.session == null and skips
+    // clearEndpoint — so the only way an endpoint can be leaked past
+    // disconnect is if we lose the gen check on the next await. The
+    // post-await re-check below catches that.
+    try {
+      await bridge.activeAgent.setEndpoint(agentId, remoteConfig.baseUrl, remoteConfig.agentToken)
+    } catch (err) {
+      console.warn('[app-controller] setEndpoint failed:', err)
+    }
+
+    if (!isCurrent()) {
+      // A disconnect/connect superseded us during the setEndpoint await.
+      // The superseding flow's teardownSession saw this.session == null and
+      // didn't clear the endpoint, so we must roll back the endpoint we
+      // just set and drop our session ourselves.
+      await bridge.activeAgent.clearEndpoint().catch(() => {})
       await session.stop().catch(() => {})
       return
     }
 
     this.session = session
-
-    // Tell the Rust URI scheme handler about the active daemon endpoint
-    // AFTER we commit the session, so a discarded (superseded) connect
-    // can't race a setEndpoint with a later clearEndpoint.
-    await bridge.activeAgent
-      .setEndpoint(profile.agentId, profile.baseUrl, profile.agentToken)
-      .catch((err) => {
-        console.warn('[app-controller] setEndpoint failed:', err)
-      })
   }
 
   async disconnect(): Promise<void> {
@@ -193,8 +294,8 @@ export class AppController {
     await this.teardownSession()
     this.patch({
       ...initialState(),
-      // Preserve the last-used profile so the UI can prefill on retry.
-      profile: this.state.profile,
+      // Preserve the loaded agents list so the UI doesn't have to re-fetch.
+      agents: this.state.agents,
     })
   }
 
@@ -251,3 +352,5 @@ export class AppController {
     }
   }
 }
+
+export type { InstalledAgent, AgentMeta, RemoteAgentConfig }
