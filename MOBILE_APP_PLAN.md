@@ -80,22 +80,30 @@ There is no "lastActive" or `lastConnectedAt` field — desktop doesn't have
 those either. Launch picks the first installed agent only as a UI hint;
 auto-connect is deferred.
 
-## Step 4 - Build sessions and provider basics
+## Step 4 - Build sessions and provider basics - DONE
 
-Give the user enough navigation to choose an existing conversation or start a
-new one.
+The connected mobile screen now gives the user enough navigation to choose an
+existing conversation or start a new one.
 
-- Load `backend.providers.getState()` after connect and expose provider names,
-  default provider, and status lines.
-- Load `backend.sessions.list()` and refresh from session events:
-  `session:created`, `session:removed`, `session:saved`, `session:loaded`.
-- Implement session selection with `backend.sessions.get({ sessionId })`.
-- Implement new-session creation through `backend.sessions.spawn(...)`.
-- Support removing a session with confirmation.
+- `AppController` loads `backend.providers.getState()` after connect and
+  exposes provider names, default provider, and status lines in `AppState`.
+- `AppController` loads `backend.sessions.list()` after connect and refreshes
+  from `session:created`, `session:removed`, `session:saved`, and
+  `session:loaded`.
+- Session selection uses `backend.sessions.get({ sessionId })` and stores the
+  full `SessionState` as `activeSession`.
+- New-session creation uses `backend.sessions.spawn(...)`, then loads the
+  created session so the UI can transition immediately.
+- Session removal uses `backend.sessions.remove({ sessionId })`, clears the
+  active session when needed, and the UI asks for confirmation before calling
+  it.
+- `shared/backend/local.ts` now emits the existing `session:created` backend
+  event from `sessions.spawn`, so mobile uses the same backend event stream as
+  desktop/server rather than a mobile-only path.
+- `mobile/src/main.ts` renders provider diagnostics, recent sessions, a
+  new-session prompt form, an active-session placeholder, and remove controls.
 
-Done when: after connecting, the app shows recent sessions, can open one, can
-start a new one, and provider/default status is visible enough to diagnose
-missing provider config.
+Verified with `./scripts/build` (desktop, mobile, and remote server).
 
 ## Step 5 - Implement the chat workflow
 

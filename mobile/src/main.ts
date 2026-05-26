@@ -9,6 +9,8 @@
 // Two screens map directly to desktop's flow: the agents list (== desktop
 // sidebar) and the add-agent form (== command-palette add-remote-agent).
 
+import type { ProviderInfo } from '#shared/agent/provider_types.js'
+import type { ProviderState, SessionSummary } from '#shared/backend/interface.js'
 import { AppController, type AppState, type InstalledAgent, type Screen } from './app-controller.js'
 
 const app = document.querySelector<HTMLDivElement>('#app')
@@ -40,6 +42,8 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
     } else {
       updateBanner(root, state)
       updateAgentsList(root, controller, state)
+      renderConnectedBody(root, controller, state)
+      updateProviders(root, state)
     }
   })
 }
@@ -206,7 +210,16 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
   updateBanner(root, state)
 }
 
-// ── Connected (placeholder until chat lands in Step 5) ───────────────
+// ── Connected ────────────────────────────────────────────────────────
+//
+// Single screen with three swappable bodies: a picker (sessions + provider
+// summary + "New session" button), an active-session placeholder (filled in
+// by Step 5), and a new-session prompt form. The form is the only piece of
+// transient UI state that isn't a function of AppState — `bodyMode` tracks
+// it so subscribe-fallthrough updates don't clobber an in-flight prompt.
+
+type ConnectedBodyMode = 'picker' | 'active' | 'new'
+let bodyMode: ConnectedBodyMode = 'picker'
 
 function renderConnected(root: HTMLDivElement, controller: AppController, state: AppState): void {
   const agentId = state.activeAgentId
@@ -215,6 +228,9 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
     controller.setScreen('agents')
     return
   }
+
+  // Reset transient mode on full re-render (i.e. agent switch / first entry).
+  bodyMode = state.activeSession ? 'active' : 'picker'
 
   root.innerHTML = `
     <section class="shell">
@@ -230,7 +246,8 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
         <span id="status-text">Idle</span>
       </div>
       <div class="banner" id="banner" hidden></div>
-      <p class="muted">Chat and view surfaces land in the next plan steps.</p>
+      <div id="providers-panel"></div>
+      <div id="connected-body"></div>
       <div class="form-actions">
         <button type="button" class="ghost" id="disconnect">Disconnect</button>
         <button type="button" class="danger" id="remove">Remove</button>
@@ -248,7 +265,242 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
     controller.setScreen('agents')
   })
 
+  updateProviders(root, state)
+  renderConnectedBody(root, controller, state)
   updateBanner(root, state)
+}
+
+function updateProviders(root: HTMLDivElement, state: AppState): void {
+  const panel = root.querySelector<HTMLDivElement>('#providers-panel')
+  if (!panel) return
+  if (state.activeAgentId === null) return
+  panel.innerHTML = renderProvidersHtml(state.providers)
+}
+
+function renderProvidersHtml(providers: ProviderState | null): string {
+  if (!providers) {
+    return `<p class="muted">Loading providers…</p>`
+  }
+  if (providers.providerList.length === 0) {
+    return `
+      <div class="banner" data-tone="error">
+        No providers configured on this daemon. Configure one in the daemon's settings before starting a session.
+      </div>
+    `
+  }
+  const defaultProvider = providers.providerList.find((p) => p.id === providers.defaultProviderId)
+  const defaultLabel = defaultProvider ? defaultProvider.name : providers.defaultProviderId || '—'
+  const statusByProvider = new Map(providers.providerStatusLines)
+  const rows = providers.providerList.map((p) => {
+    const line = statusByProvider.get(p.id) ?? ''
+    const isDefault = p.id === providers.defaultProviderId
+    return `
+      <div class="provider-row">
+        <span class="provider-name">${escapeHtml(p.name)}${isDefault ? ' <span class="provider-default">default</span>' : ''}</span>
+        ${line ? `<span class="provider-status">${escapeHtml(line)}</span>` : ''}
+      </div>
+    `
+  }).join('')
+  return `
+    <div class="providers">
+      <div class="providers-header">
+        <span class="providers-title">Providers</span>
+        <span class="providers-default">Default: ${escapeHtml(defaultLabel)}</span>
+      </div>
+      ${rows}
+    </div>
+  `
+}
+
+function renderConnectedBody(root: HTMLDivElement, controller: AppController, state: AppState): void {
+  const body = root.querySelector<HTMLDivElement>('#connected-body')
+  if (!body) return
+
+  // Don't replace the new-session form while the user is typing into it;
+  // only flip out once an activeSession has actually been loaded (i.e. the
+  // spawn the form initiated succeeded).
+  if (bodyMode === 'new' && !state.activeSession) return
+
+  if (state.activeSession) {
+    bodyMode = 'active'
+    renderActiveSessionBody(body, controller, state)
+    return
+  }
+
+  bodyMode = 'picker'
+  renderPickerBody(body, controller, state)
+}
+
+function renderPickerBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
+  body.innerHTML = `
+    <div class="session-picker">
+      <div class="section-header">
+        <span class="section-title">Sessions</span>
+        <button type="button" class="link" id="new-session">New session</button>
+      </div>
+      <div class="session-list" id="session-list">${renderSessionRowsHtml(state.sessions)}</div>
+    </div>
+  `
+  body.querySelector<HTMLButtonElement>('#new-session')!.addEventListener('click', () => {
+    bodyMode = 'new'
+    renderNewSessionForm(body, controller, state)
+  })
+  bindSessionRowHandlers(body, controller, state.sessions)
+}
+
+function renderSessionRowsHtml(sessions: SessionSummary[]): string {
+  if (sessions.length === 0) {
+    return `<p class="muted">No sessions yet. Start one to begin.</p>`
+  }
+  return sessions.map(renderSessionRow).join('')
+}
+
+function renderSessionRow(s: SessionSummary): string {
+  const title = s.title || 'Untitled session'
+  return `
+    <div class="agent-row">
+      <button type="button" class="agent-row-main" data-action="open" data-session-id="${escapeHtml(s.sessionId)}">
+        <span class="agent-label">${escapeHtml(title)}</span>
+        <span class="agent-meta">${escapeHtml(s.providerId || '—')} · ${escapeHtml(formatRelative(s.updatedAt))}</span>
+      </button>
+      <button type="button" class="agent-row-edit" data-action="remove-session" data-session-id="${escapeHtml(s.sessionId)}" aria-label="Remove session">Remove</button>
+    </div>
+  `
+}
+
+function bindSessionRowHandlers(
+  body: HTMLDivElement,
+  controller: AppController,
+  sessions: SessionSummary[],
+): void {
+  body.querySelectorAll<HTMLButtonElement>('[data-action="open"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void controller.loadSession(btn.dataset.sessionId!)
+    })
+  })
+  body.querySelectorAll<HTMLButtonElement>('[data-action="remove-session"]').forEach((btn) => {
+    btn.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      const sessionId = btn.dataset.sessionId!
+      const target = sessions.find((s) => s.sessionId === sessionId)
+      if (!target) return
+      const label = target.title || 'this session'
+      if (!confirm(`Remove session "${label}"?`)) return
+      void controller.removeSession(sessionId)
+    })
+  })
+}
+
+function renderActiveSessionBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
+  const session = state.activeSession!
+  const title = session.title || 'Untitled session'
+  body.innerHTML = `
+    <div class="session-active">
+      <div class="section-header">
+        <button type="button" class="link" id="close-session">← Sessions</button>
+      </div>
+      <div class="panel">
+        <span class="agent-label">${escapeHtml(title)}</span>
+      </div>
+      <p class="muted">Session loaded (${escapeHtml(String(session.messages.length))} message${session.messages.length === 1 ? '' : 's'}). Chat rendering lands in the next plan step.</p>
+      <div class="form-actions">
+        <button type="button" class="danger" id="remove-active-session">Remove session</button>
+      </div>
+    </div>
+  `
+  body.querySelector<HTMLButtonElement>('#close-session')!.addEventListener('click', () => {
+    controller.closeSession()
+  })
+  body.querySelector<HTMLButtonElement>('#remove-active-session')!.addEventListener('click', () => {
+    if (!confirm(`Remove session "${title}"?`)) return
+    void controller.removeSession(session.sessionId)
+  })
+}
+
+function renderNewSessionForm(body: HTMLDivElement, controller: AppController, state: AppState): void {
+  const providers = state.providers
+  const providerOptions = providers
+    ? providers.providerList.map((p: ProviderInfo) => {
+        const selected = p.id === providers.defaultProviderId ? 'selected' : ''
+        return `<option value="${escapeHtml(p.id)}" ${selected}>${escapeHtml(p.name)}</option>`
+      }).join('')
+    : ''
+  body.innerHTML = `
+    <form class="form" id="new-session-form" novalidate>
+      <div class="section-header">
+        <span class="section-title">New session</span>
+        <button type="button" class="link" id="cancel-new-session">Cancel</button>
+      </div>
+      ${providers && providers.providerList.length > 1 ? `
+        <label class="field">
+          <span>Provider</span>
+          <select name="providerId">${providerOptions}</select>
+        </label>
+      ` : ''}
+      <label class="field">
+        <span>Prompt</span>
+        <textarea name="prompt" rows="4" autocapitalize="sentences" required placeholder="Ask the agent anything…"></textarea>
+      </label>
+      <p class="field-error" id="new-session-error" hidden></p>
+      <div class="form-actions">
+        <button type="submit" class="primary">Start session</button>
+      </div>
+    </form>
+  `
+  const form = body.querySelector<HTMLFormElement>('#new-session-form')!
+  const errorEl = body.querySelector<HTMLParagraphElement>('#new-session-error')!
+  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+
+  body.querySelector<HTMLButtonElement>('#cancel-new-session')!.addEventListener('click', () => {
+    bodyMode = 'picker'
+    renderPickerBody(body, controller, controller.getState())
+  })
+
+  form.addEventListener('submit', async (evt) => {
+    evt.preventDefault()
+    if (submitBtn.disabled) return
+    const data = new FormData(form)
+    const prompt = String(data.get('prompt') ?? '').trim()
+    if (!prompt) {
+      errorEl.hidden = false
+      errorEl.textContent = 'Prompt is required.'
+      return
+    }
+    const providerId = data.get('providerId')
+    submitBtn.disabled = true
+    errorEl.hidden = true
+
+    const sessionId = await controller.newSession({
+      prompt,
+      providerId: providerId ? String(providerId) : undefined,
+    })
+
+    if (!sessionId) {
+      // Failure path: controller patched state.error → banner shows it.
+      // Keep the form mounted so the user can retry with their typed prompt.
+      submitBtn.disabled = false
+      bodyMode = 'new'
+      return
+    }
+    // Success: controller has loaded the new session, so the next subscribe
+    // tick will flip bodyMode to 'active' and re-render the body.
+  })
+}
+
+// Compact "5m ago" formatter — enough to spot stale sessions in the picker.
+function formatRelative(ts: number): string {
+  if (!ts) return 'unknown'
+  const delta = Date.now() - ts
+  if (delta < 0) return 'just now'
+  const sec = Math.floor(delta / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day}d ago`
+  return new Date(ts).toLocaleDateString()
 }
 
 // ── Shared status / banner ─────────────────────────────────────────

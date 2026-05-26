@@ -15,6 +15,7 @@ import type {
   ProviderState,
   SessionState,
   SessionSummary,
+  SpawnSessionRequest,
 } from '#shared/backend/interface.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
@@ -287,6 +288,119 @@ export class AppController {
     }
 
     this.session = session
+
+    // Kick off provider + session loads. Both run under the same generation
+    // guard as connect itself — a superseding disconnect/connect won't see
+    // a late-arriving response patched onto its state.
+    void this.loadInitialBackendState(session, isCurrent)
+  }
+
+  private async loadInitialBackendState(
+    session: MobileBackend,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    await Promise.all([
+      this.refreshProviders(session, isCurrent),
+      this.refreshSessions(session, isCurrent),
+    ])
+  }
+
+  private async refreshProviders(
+    session: MobileBackend,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    try {
+      const providers = await session.backend.providers.getState()
+      if (!isCurrent()) return
+      this.patch({ providers })
+    } catch (err) {
+      if (!isCurrent()) return
+      console.warn('[app-controller] providers.getState failed:', err)
+    }
+  }
+
+  private async refreshSessions(
+    session: MobileBackend,
+    isCurrent: () => boolean,
+  ): Promise<void> {
+    try {
+      const sessions = await session.backend.sessions.list()
+      if (!isCurrent()) return
+      this.patch({ sessions: sortSessions(sessions) })
+    } catch (err) {
+      if (!isCurrent()) return
+      console.warn('[app-controller] sessions.list failed:', err)
+    }
+  }
+
+  /** Load a session's full state into `activeSession`. Returns the loaded
+   *  state, or null if the session doesn't exist on the daemon (e.g. it was
+   *  removed between the list and the tap). */
+  async loadSession(sessionId: string): Promise<SessionState | null> {
+    const session = this.session
+    if (!session) return null
+    const gen = this.connectGeneration
+    try {
+      const state = await session.backend.sessions.get({ sessionId })
+      if (gen !== this.connectGeneration) return null
+      this.patch({ activeSession: state ?? null, error: null })
+      return state ?? null
+    } catch (err) {
+      if (gen !== this.connectGeneration) return null
+      this.patch({ error: `Loading session failed: ${messageFromUnknown(err)}` })
+      return null
+    }
+  }
+
+  /** Spawn a new session via the daemon. On success, loads the freshly-
+   *  created session into `activeSession` so the UI can show it without
+   *  waiting for a list refresh. */
+  async newSession(req: SpawnSessionRequest): Promise<string | null> {
+    const session = this.session
+    if (!session) return null
+    const gen = this.connectGeneration
+    try {
+      const { sessionId } = await session.backend.sessions.spawn(req)
+      if (gen !== this.connectGeneration) return null
+      this.patch({ error: null })
+      await this.loadSession(sessionId)
+      return sessionId
+    } catch (err) {
+      if (gen !== this.connectGeneration) return null
+      this.patch({ error: `Starting session failed: ${messageFromUnknown(err)}` })
+      return null
+    }
+  }
+
+  /** Remove a session from the daemon. Clears `activeSession` first if it
+   *  matches so the UI doesn't briefly render a session that's already
+   *  being torn down. */
+  async removeSession(sessionId: string): Promise<void> {
+    const session = this.session
+    if (!session) return
+    const gen = this.connectGeneration
+    if (this.state.activeSession?.sessionId === sessionId) {
+      this.patch({ activeSession: null })
+    }
+    try {
+      await session.backend.sessions.remove({ sessionId })
+      if (gen !== this.connectGeneration) return
+      // Patch the list locally; the session:removed event will also fire and
+      // re-trigger a refresh, but doing it here makes the row disappear
+      // before the daemon's event echoes back.
+      this.patch({
+        sessions: this.state.sessions.filter((s) => s.sessionId !== sessionId),
+      })
+    } catch (err) {
+      if (gen !== this.connectGeneration) return
+      this.patch({ error: `Removing session failed: ${messageFromUnknown(err)}` })
+    }
+  }
+
+  /** Clear the active session without touching the daemon. */
+  closeSession(): void {
+    if (this.state.activeSession === null) return
+    this.patch({ activeSession: null })
   }
 
   async disconnect(): Promise<void> {
@@ -310,9 +424,6 @@ export class AppController {
   }
 
   private handleBackendEvent(event: AgentBackendEvent): void {
-    // Sessions/providers wiring lands in Step 4 — for now the controller
-    // just owns the shape so consumers can subscribe without a second
-    // refactor later.
     switch (event.kind) {
       case 'session:state': {
         const active = this.state.activeSession
@@ -327,10 +438,32 @@ export class AppController {
         }
         return
       }
-      case 'session:created':
-      case 'session:removed':
+      case 'session:created': {
+        // Merge the new summary in. The daemon also emits session:saved
+        // shortly after as the first turn streams; that will refetch to pick
+        // up the title update.
+        const filtered = this.state.sessions.filter((s) => s.sessionId !== event.summary.sessionId)
+        this.patch({ sessions: sortSessions([event.summary, ...filtered]) })
+        return
+      }
+      case 'session:removed': {
+        const sessions = this.state.sessions.filter((s) => s.sessionId !== event.sessionId)
+        const activeSession =
+          this.state.activeSession?.sessionId === event.sessionId ? null : this.state.activeSession
+        this.patch({ sessions, activeSession })
+        return
+      }
       case 'session:saved':
-      case 'session:loaded':
+      case 'session:loaded': {
+        // Title / updatedAt may have changed. Refetch the list so the
+        // picker stays accurate. Fire-and-forget — the refresh helper
+        // guards against late responses.
+        const session = this.session
+        if (!session) return
+        const gen = this.connectGeneration
+        void this.refreshSessions(session, () => gen === this.connectGeneration)
+        return
+      }
       case 'task:started':
       case 'task:finished':
         return
@@ -354,3 +487,7 @@ export class AppController {
 }
 
 export type { InstalledAgent, AgentMeta, RemoteAgentConfig }
+
+function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
+  return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+}

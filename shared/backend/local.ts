@@ -194,6 +194,28 @@ export class LocalBackend implements AgentBackend {
         providerOptions: req.providerOptions,
         files: req.files,
       })
+      let state: SessionState | null = null
+      try {
+        state = await this.sessions.get({ sessionId })
+      } catch (err) {
+        console.warn('[LocalBackend] failed to build session:created summary:', err)
+      }
+      this.emit({
+        kind: 'session:created',
+        summary: state
+          ? {
+              sessionId: state.sessionId,
+              title: state.title,
+              providerId: state.providerId,
+              updatedAt: state.updatedAt,
+            }
+          : {
+              sessionId,
+              title: 'New session',
+              providerId: req.providerId ?? '',
+              updatedAt: Date.now(),
+            },
+      })
       return { sessionId }
     },
 

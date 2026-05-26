@@ -161,7 +161,9 @@ p {
   color: #344054;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -171,12 +173,21 @@ p {
   font-size: 16px;
 }
 
-.field input:focus {
+.field textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.field input[aria-invalid="true"] {
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
@@ -233,6 +244,76 @@ button.danger {
 
 button.danger:active {
   background: rgba(177, 55, 47, 0.08);
+}
+
+button.link {
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-title,
+.providers-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: #344054;
+}
+
+.session-picker,
+.session-active,
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.providers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.providers-header,
+.provider-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provider-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #18202a;
+}
+
+.provider-default {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.providers-default,
+.provider-status {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
 }
 
 /* ── Status / banner ─────────────────────────────────────────────── */
@@ -307,12 +388,22 @@ button.danger:active {
     color: #d0d5dd;
   }
 
-  .panel {
+  .panel,
+  .section-title,
+  .providers-title {
     color: #d0d5dd;
+  }
+
+  .provider-name {
+    color: #eef2f6;
   }
 
   button.ghost {
     color: #6aa6dc;
     border-color: var(--border);
+  }
+
+  button.link {
+    color: #6aa6dc;
   }
 }
