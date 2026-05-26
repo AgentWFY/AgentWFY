@@ -1,13 +1,10 @@
 // Mobile renderer entry. Owns the DOM and delegates state to AppController.
 //
-// The renderer is intentionally not a web-component framework — it's a
-// per-screen render function picked off the current AppState. Each render
-// fn wires its own listeners against the controller; the subscribe handler
-// re-renders only when the screen or active agent changes, so in-flight
-// form input survives background state patches (status, lastSyncAt, etc.).
-//
-// Two screens map directly to desktop's flow: the agents list (== desktop
-// sidebar) and the add-agent form (== command-palette add-remote-agent).
+// Layout shape: persistent two-pane shell with a Discord-style agent rail on
+// the left (icons only) and a main pane on the right whose content depends on
+// the current screen. Each render function builds the shell HTML and the
+// subscribe handler patches sub-regions in place when the screen group / agent
+// hasn't changed so the chat composer keeps draft text and focus.
 
 import type { Block, DisplayMessage } from '#shared/agent/provider_types.js'
 import type { FileContent, RetryState } from '#shared/agent/types.js'
@@ -24,6 +21,7 @@ if (app) {
 
 async function bootstrap(controller: AppController, root: HTMLDivElement): Promise<void> {
   installAgentViewBridge(controller)
+  installMenuDismissHandler()
   await controller.refreshAgents()
   const agents = controller.getState().agents
 
@@ -32,26 +30,41 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
   // agent" (main.ts), adapted for remote-only.
   if (agents.length === 0) controller.setScreen('add-agent')
 
-  let lastScreenGroup: ScreenGroup | null = null
-  let lastActiveAgentId: string | null | undefined
+  let lastKey: string | null = null
   controller.subscribe((state) => {
-    // Re-render the whole screen on screen-GROUP / active-agent transitions.
-    // 'chat' and 'views' share a group so a chat→views switch keeps the
-    // cached view iframe attached (preserving its WKWebView state) and
-    // just swaps the body sub-tree.
-    const group = screenGroup(state.screen)
-    if (group !== lastScreenGroup || state.activeAgentId !== lastActiveAgentId) {
-      lastScreenGroup = group
-      lastActiveAgentId = state.activeAgentId
+    // Re-render the whole shell whenever the *shape* changes: screen group,
+    // active agent, the chat/views sub-tab, OR whether a session/view is
+    // being viewed. The picker→active transition swaps header (agent name →
+    // back-to-picker) and body, so it can't be patched in place.
+    const key = `${screenGroup(state.screen)}|${state.activeAgentId ?? ''}|${state.screen}|${hasActiveContent(state) ? 'act' : 'pck'}`
+    if (key !== lastKey) {
+      lastKey = key
       renderScreen(root, controller, state)
     } else {
+      updateRail(root, controller, state)
       updateBanner(root, state)
-      updateAgentsList(root, controller, state)
-      renderConnectedBody(root, controller, state)
+      updateAgentsBody(root, controller, state)
       updateProviders(root, state)
-      updateConnectedTabs(root, state)
+      updateBottomTabs(root, state)
+      renderConnectedBody(root, controller, state)
+      updateMainHeader(root, state)
     }
   })
+}
+
+function isFullscreen(state: AppState): boolean {
+  // Every connected screen (chat or views, picker or active) is fullscreen:
+  // the rail only shows on the agents/add-agent surfaces. Navigation between
+  // chat/views happens via the bottom tab bar; the header's back button
+  // takes the user back to the agents list (or back to the picker when
+  // viewing an active session/view).
+  return state.screen === 'chat' || state.screen === 'views'
+}
+
+function hasActiveContent(state: AppState): boolean {
+  if (state.screen === 'chat') return state.activeSession !== null
+  if (state.screen === 'views') return state.activeViewName !== null
+  return false
 }
 
 type ScreenGroup = 'agents' | 'add-agent' | 'connected'
@@ -77,108 +90,250 @@ function renderScreen(root: HTMLDivElement, controller: AppController, state: Ap
   }
 }
 
-// ── Agents list ─────────────────────────────────────────────────────
+// ── Shell ────────────────────────────────────────────────────────────
 
-function renderAgents(root: HTMLDivElement, controller: AppController, state: AppState): void {
+function renderShell(
+  root: HTMLDivElement,
+  mainHtml: string,
+  controller: AppController,
+  state: AppState,
+  options: { fullscreen?: boolean } = {},
+): void {
+  const fsClass = options.fullscreen ? ' is-fullscreen' : ''
   root.innerHTML = `
-    <section class="shell">
-      <header class="brand">
-        <span class="mark">A</span>
-        <div>
-          <h1>AgentWFY</h1>
-          <p>Pick an agent to connect to.</p>
-        </div>
-      </header>
-      <div class="agent-list" id="agent-list"></div>
-      <div class="banner" id="banner" hidden></div>
-      <button type="button" class="primary" id="add-agent">Add remote agent</button>
-    </section>
+    <div class="shell${fsClass}">
+      <aside class="rail">
+        <div class="rail-brand" aria-hidden="true">A</div>
+        <div class="rail-sep"></div>
+        <div id="rail-agents" class="rail-agents"></div>
+        <div class="rail-sep"></div>
+        <button type="button" class="rail-add" id="rail-add" aria-label="Add agent" title="Add agent">
+          ${ICON_PLUS}
+        </button>
+      </aside>
+      <main class="main">${mainHtml}</main>
+    </div>
   `
 
-  root.querySelector<HTMLButtonElement>('#add-agent')!.addEventListener('click', () => {
+  root.querySelector<HTMLButtonElement>('#rail-add')?.addEventListener('click', () => {
     controller.setScreen('add-agent')
   })
 
-  updateAgentsList(root, controller, state)
+  updateRail(root, controller, state)
+}
+
+// ── Rail ─────────────────────────────────────────────────────────────
+
+function updateRail(root: HTMLDivElement, controller: AppController, state: AppState): void {
+
+  const railAgents = root.querySelector<HTMLDivElement>('#rail-agents')
+  if (!railAgents) return
+  if (state.agents.length === 0) {
+    railAgents.innerHTML = ''
+    return
+  }
+  railAgents.innerHTML = state.agents.map((a) => renderRailSlot(a, state)).join('')
+  railAgents.querySelectorAll<HTMLButtonElement>('[data-action="rail-connect"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const agentId = btn.dataset.agentId
+      if (!agentId) return
+      const active = state.activeAgentId === agentId
+      if (active && (state.screen === 'add-agent')) {
+        controller.setScreen('chat')
+        return
+      }
+      if (!active) {
+        void controller.connect(agentId)
+      } else if (state.screen !== 'chat' && state.screen !== 'views') {
+        controller.setScreen('chat')
+      }
+    })
+
+    // Long-press to remove.
+    let pressTimer: ReturnType<typeof setTimeout> | null = null
+    const startPress = () => {
+      if (pressTimer) clearTimeout(pressTimer)
+      pressTimer = setTimeout(() => {
+        const agentId = btn.dataset.agentId
+        if (!agentId) return
+        if (confirm(`Remove agent "${agentId}"?`)) {
+          void controller.removeAgent(agentId)
+        }
+      }, 650)
+    }
+    const cancelPress = () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer)
+        pressTimer = null
+      }
+    }
+    btn.addEventListener('pointerdown', startPress)
+    btn.addEventListener('pointerup', cancelPress)
+    btn.addEventListener('pointerleave', cancelPress)
+    btn.addEventListener('pointercancel', cancelPress)
+  })
+}
+
+function renderRailSlot(agent: InstalledAgent, state: AppState): string {
+  const isActive = state.activeAgentId === agent.agentId
+  const onChatOrViews = state.screen === 'chat' || state.screen === 'views'
+  const activeClass = isActive && onChatOrViews ? ' is-active' : ''
+  const status = isActive ? statusFromState(state) : 'disconnected'
+  const initials = getInitials(agent.agentId)
+  return `
+    <div class="rail-slot${activeClass}" data-status="${status}">
+      <span class="rail-indicator"></span>
+      <button type="button" class="rail-icon" data-action="rail-connect" data-agent-id="${escapeHtml(agent.agentId)}"
+        title="${escapeHtml(agent.agentId)} (${escapeHtml(displayHost(agent.meta.remoteConfig.baseUrl))})"
+        aria-label="${escapeHtml(agent.agentId)}">
+        ${escapeHtml(initials)}
+      </button>
+    </div>
+  `
+}
+
+function statusFromState(state: AppState): string {
+  return state.status.state
+}
+
+function getInitials(name: string): string {
+  const parts = name.split(/[-_\s.]+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  if (name.length >= 2) return name.slice(0, 2).toUpperCase()
+  return name.toUpperCase() || '?'
+}
+
+// ── Agents (no active agent) ────────────────────────────────────────
+
+function renderAgents(root: HTMLDivElement, controller: AppController, state: AppState): void {
+
+  const hasAgents = state.agents.length > 0
+  const mainHtml = `
+    <header class="main-header">
+      <div class="main-header-title">
+        <h1>AgentWFY</h1>
+        <span class="main-header-sub">${hasAgents ? 'Pick an agent to connect' : 'Get started'}</span>
+      </div>
+    </header>
+    <div class="banner hidden" id="banner"></div>
+    <div class="body" id="body">
+      ${hasAgents ? renderAgentsListBody(state) : renderAgentsEmptyBody()}
+    </div>
+  `
+
+  renderShell(root, mainHtml, controller, state)
+  bindAgentsBody(root, controller)
   updateBanner(root, state)
 }
 
-// Rewrites #agent-list innerHTML AND re-binds row handlers. Called from
-// renderAgents on full re-render and from the subscribe-fallthrough path
-// when state.agents changes without a screen transition (e.g. after
-// removing a non-active agent). Skipping the rebind would leave the new
-// rows tap-dead.
-function updateAgentsList(root: HTMLDivElement, controller: AppController, state: AppState): void {
-  const list = root.querySelector<HTMLDivElement>('#agent-list')
-  if (!list) return
-  if (state.agents.length === 0) {
-    list.innerHTML = `<p class="muted">No agents added yet.</p>`
-    return
-  }
-  list.innerHTML = state.agents.map(renderAgentRow).join('')
-  list.querySelectorAll<HTMLButtonElement>('[data-action="connect"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      void controller.connect(btn.dataset.agentId!)
-    })
-  })
-  list.querySelectorAll<HTMLButtonElement>('[data-action="remove"]').forEach((btn) => {
-    btn.addEventListener('click', (evt) => {
-      evt.stopPropagation()
-      const agentId = btn.dataset.agentId!
-      const target = state.agents.find((a) => a.agentId === agentId)
-      if (!target) return
-      if (!confirm(`Remove agent "${target.agentId}"?`)) return
-      void controller.removeAgent(agentId)
-    })
-  })
+function updateAgentsBody(root: HTMLDivElement, controller: AppController, state: AppState): void {
+  if (state.screen !== 'agents') return
+  const body = root.querySelector<HTMLDivElement>('#body')
+  if (!body) return
+
+  const hasAgents = state.agents.length > 0
+  body.innerHTML = hasAgents ? renderAgentsListBody(state) : renderAgentsEmptyBody()
+  bindAgentsBody(root, controller)
+
+  const subtitle = root.querySelector<HTMLSpanElement>('.main-header-sub')
+  if (subtitle) subtitle.textContent = hasAgents ? 'Pick an agent to connect' : 'Get started'
 }
 
-function renderAgentRow(a: InstalledAgent): string {
+function renderAgentsEmptyBody(): string {
   return `
-    <div class="agent-row">
-      <button type="button" class="agent-row-main" data-action="connect" data-agent-id="${escapeHtml(a.agentId)}">
-        <span class="agent-label">${escapeHtml(a.agentId)}</span>
-        <span class="agent-meta">${escapeHtml(displayHost(a.meta.remoteConfig.baseUrl))}</span>
-      </button>
-      <button type="button" class="agent-row-edit" data-action="remove" data-agent-id="${escapeHtml(a.agentId)}" aria-label="Remove ${escapeHtml(a.agentId)}">Remove</button>
+    <div class="empty-state">
+      <div class="empty-glyph">${ICON_BOLT}</div>
+      <h2>No agents yet</h2>
+      <p>Connect to a daemon running <code>agentwfy-server</code>. The desktop app's "Add remote agent" command exposes the bearer token.</p>
+      <button type="button" class="btn primary compact" id="empty-add">${ICON_PLUS_SM}<span>Add remote agent</span></button>
     </div>
   `
+}
+
+function renderAgentsListBody(state: AppState): string {
+  const rows = state.agents.map((a) => `
+    <div class="row">
+      <button type="button" class="row-main" data-action="connect" data-agent-id="${escapeHtml(a.agentId)}">
+        <span class="row-title">${escapeHtml(a.agentId)}</span>
+        <span class="row-meta">${escapeHtml(displayHost(a.meta.remoteConfig.baseUrl))}</span>
+      </button>
+      <button type="button" class="row-action" data-action="remove" data-agent-id="${escapeHtml(a.agentId)}" aria-label="Remove ${escapeHtml(a.agentId)}" title="Remove">
+        ${ICON_TRASH}
+      </button>
+    </div>
+  `).join('')
+  return `
+    <div class="section-header">
+      <span class="section-title">Agents</span>
+    </div>
+    <div class="scroll-list">${rows}</div>
+  `
+}
+
+function bindAgentsBody(root: HTMLDivElement, controller: AppController): void {
+  root.querySelector<HTMLButtonElement>('#empty-add')?.addEventListener('click', () => {
+    controller.setScreen('add-agent')
+  })
+  root.querySelectorAll<HTMLButtonElement>('[data-action="connect"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.agentId
+      if (id) void controller.connect(id)
+    })
+  })
+  root.querySelectorAll<HTMLButtonElement>('[data-action="remove"]').forEach((btn) => {
+    btn.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      const id = btn.dataset.agentId
+      if (!id) return
+      if (!confirm(`Remove agent "${id}"?`)) return
+      void controller.removeAgent(id)
+    })
+  })
 }
 
 // ── Add agent form ──────────────────────────────────────────────────
 
 function renderAddAgent(root: HTMLDivElement, controller: AppController, state: AppState): void {
-  root.innerHTML = `
-    <section class="shell">
-      <header class="brand">
-        <span class="mark">A</span>
-        <div>
-          <h1>Add remote agent</h1>
-          <p>Connect to a daemon running ${'`agentwfy-server`'}.</p>
-        </div>
-      </header>
-      <form class="form" id="add-form" novalidate>
-        <label class="field">
-          <span>Local label</span>
-          <input name="agentId" autocomplete="off" autocapitalize="none" autocorrect="off" placeholder="my-daemon" required />
-        </label>
-        <label class="field">
-          <span>Server URL</span>
-          <input name="baseUrl" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" value="http://127.0.0.1:9878" required />
-        </label>
-        <label class="field">
-          <span>Bearer token</span>
-          <input name="agentToken" type="password" autocomplete="off" autocapitalize="none" autocorrect="off" required />
-        </label>
-        <p class="field-error" id="form-error" hidden></p>
-        <div class="form-actions">
-          <button type="submit" class="primary">Add &amp; connect</button>
-          ${state.agents.length > 0 ? `<button type="button" class="ghost" id="cancel">Cancel</button>` : ''}
-        </div>
-      </form>
-      <div class="banner" id="banner" hidden></div>
-    </section>
+
+  const cancellable = state.agents.length > 0
+  const mainHtml = `
+    <header class="main-header">
+      <div class="main-header-title">
+        <h1>Add remote agent</h1>
+        <span class="main-header-sub">Connect to a daemon</span>
+      </div>
+      <div class="main-header-actions">
+        ${cancellable ? `<button type="button" class="icon-btn" id="cancel-x" aria-label="Cancel" title="Cancel">${ICON_X}</button>` : ''}
+      </div>
+    </header>
+    <div class="banner hidden" id="banner"></div>
+    <div class="body">
+      <div class="form-pane">
+        <form class="form" id="add-form" novalidate>
+          <div class="field">
+            <label class="field-label" for="add-agent-id">Local label</label>
+            <input id="add-agent-id" name="agentId" autocomplete="off" autocapitalize="none" autocorrect="off" placeholder="my-daemon" required />
+            <span class="field-help">Used locally only — anything unique.</span>
+          </div>
+          <div class="field">
+            <label class="field-label" for="add-base-url">Server URL</label>
+            <input id="add-base-url" name="baseUrl" autocomplete="off" autocapitalize="none" autocorrect="off" inputmode="url" value="http://127.0.0.1:9878" required />
+          </div>
+          <div class="field">
+            <label class="field-label" for="add-token">Bearer token</label>
+            <input id="add-token" name="agentToken" type="password" autocomplete="off" autocapitalize="none" autocorrect="off" required />
+          </div>
+          <p class="field-error hidden" id="form-error"></p>
+          <div class="form-actions">
+            <button type="submit" class="btn primary">${ICON_PLUG}<span>Connect</span></button>
+            ${cancellable ? `<button type="button" class="btn ghost" id="cancel">Cancel</button>` : ''}
+          </div>
+        </form>
+      </div>
+    </div>
   `
+
+  renderShell(root, mainHtml, controller, state)
 
   const form = root.querySelector<HTMLFormElement>('#add-form')!
   const errorEl = root.querySelector<HTMLParagraphElement>('#form-error')!
@@ -186,12 +341,9 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
 
   form.addEventListener('submit', async (evt) => {
     evt.preventDefault()
-    // Lock the button to prevent a double-tap from firing two concurrent
-    // addRemoteAgent calls, which would race on the agent-meta read-modify-
-    // write helpers and on connect()'s generation counter.
     if (submitBtn.disabled) return
     submitBtn.disabled = true
-    errorEl.hidden = true
+    errorEl.classList.add('hidden')
     const data = new FormData(form)
     let agentId: string
     try {
@@ -201,37 +353,31 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
         agentToken: String(data.get('agentToken') ?? ''),
       })
     } catch (err) {
-      // Save failed (validation or store write). Form is still mounted —
-      // surface the message in place and let the user fix and retry.
       submitBtn.disabled = false
-      errorEl.hidden = false
+      errorEl.classList.remove('hidden')
       errorEl.textContent = err instanceof Error ? err.message : String(err)
       return
     }
-    // Navigate AWAY from the form before kicking off connect. connect()
-    // flips the screen to 'chat' and (on failure) bounces back to 'agents'
-    // with state.error set — both surface naturally on the destination
-    // screen's banner without the form catch having to touch a detached
-    // errorEl.
     controller.setScreen('agents')
     void controller.connect(agentId)
   })
 
-  root.querySelector<HTMLButtonElement>('#cancel')?.addEventListener('click', () => {
-    controller.setScreen('agents')
-  })
+  const cancel = () => controller.setScreen(state.activeAgentId ? 'chat' : 'agents')
+  root.querySelector<HTMLButtonElement>('#cancel')?.addEventListener('click', cancel)
+  root.querySelector<HTMLButtonElement>('#cancel-x')?.addEventListener('click', cancel)
 
   updateBanner(root, state)
 }
 
 // ── Connected ────────────────────────────────────────────────────────
 //
-// Single screen with two stable bodies: a session picker with a first-message
-// composer and an active chat. Streaming patches update the message/status
-// regions in place so the composer keeps focus and draft text.
+// Two visual modes, picked at every full re-render from isFullscreen(state):
+//   • picker:    rail visible + dark header (agent name) + bottom tabs.
+//                Body is the sessions list or views list.
+//   • fullscreen: rail hidden + dark header with back button. Body is the
+//                 active chat (messages + composer) or the iframe.
 
-type ConnectedBodyMode = 'picker' | 'active'
-let bodyMode: ConnectedBodyMode = 'picker'
+let bodyMode: 'picker' | 'active' = 'picker'
 
 function renderConnected(root: HTMLDivElement, controller: AppController, state: AppState): void {
   const agentId = state.activeAgentId
@@ -241,65 +387,191 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
     return
   }
 
-  // Reset transient mode on full re-render (i.e. agent switch / first entry).
+  const fullscreen = isFullscreen(state)
+  const active = hasActiveContent(state)
   bodyMode = state.activeSession ? 'active' : 'picker'
 
-  root.innerHTML = `
-    <section class="shell">
-      <header class="brand">
-        <span class="mark">A</span>
-        <div>
-          <h1>${escapeHtml(agentId)}</h1>
-          <p>${escapeHtml(displayHost(meta.remoteConfig.baseUrl))}</p>
-        </div>
-      </header>
-      <div class="panel">
-        <span class="status-dot" id="status-dot"></span>
-        <span id="status-text">Idle</span>
-      </div>
-      <div class="banner" id="banner" hidden></div>
-      <div id="providers-panel"></div>
-      <nav class="connected-tabs" id="connected-tabs">
-        <button type="button" class="connected-tab" data-screen="chat">Chat</button>
-        <button type="button" class="connected-tab" data-screen="views">Views</button>
-      </nav>
-      <div id="connected-body"></div>
-      <div class="form-actions">
-        <button type="button" class="ghost" id="disconnect">Disconnect</button>
-        <button type="button" class="danger" id="remove">Remove</button>
-      </div>
-    </section>
-  `
+  const mainHtml = active
+    ? buildActiveContentMainHtml(state)
+    : buildPickerMainHtml(state, agentId)
 
-  root.querySelector<HTMLButtonElement>('#disconnect')!.addEventListener('click', async () => {
-    await controller.disconnect()
-    controller.setScreen('agents')
-  })
-  root.querySelector<HTMLButtonElement>('#remove')!.addEventListener('click', async () => {
-    if (!confirm(`Remove agent "${agentId}"?`)) return
-    await controller.removeAgent(agentId)
-    controller.setScreen('agents')
-  })
+  renderShell(root, mainHtml, controller, state, { fullscreen })
 
-  root.querySelectorAll<HTMLButtonElement>('.connected-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.screen as Screen | undefined
-      if (target === 'chat' || target === 'views') controller.setScreen(target)
-    })
-  })
+  if (active) {
+    bindActiveContentHandlers(root, controller, state)
+  } else {
+    bindPickerHandlers(root, controller, state, agentId)
+  }
 
+  updateBottomTabs(root, state)
   updateProviders(root, state)
-  updateConnectedTabs(root, state)
   renderConnectedBody(root, controller, state)
   updateBanner(root, state)
 }
 
-function updateConnectedTabs(root: HTMLElement, state: AppState): void {
-  const nav = root.querySelector<HTMLElement>('#connected-tabs')
+function buildPickerMainHtml(state: AppState, agentId: string): string {
+  return `
+    <header class="main-header">
+      <button type="button" class="icon-btn back-btn" id="back-to-agents" aria-label="Agents" title="Agents">${ICON_BACK}</button>
+      <div class="main-header-title">
+        <h1 id="header-title">${escapeHtml(agentId)}</h1>
+      </div>
+      <div class="main-header-actions">
+        <span class="status-dot" id="status-dot" data-state="${state.status.state}" title="${escapeHtml(formatStatus(state))}"></span>
+        <button type="button" class="icon-btn" id="header-menu" aria-label="Menu" title="Menu">${ICON_KEBAB}</button>
+        <div class="menu hidden" id="header-menu-list">
+          <button type="button" class="menu-item" id="menu-disconnect">${ICON_PLUG}<span>Disconnect</span></button>
+          <button type="button" class="menu-item danger" id="menu-remove">${ICON_TRASH}<span>Remove agent</span></button>
+        </div>
+      </div>
+    </header>
+    <div class="banner hidden" id="banner"></div>
+    <div id="providers-panel"></div>
+    <div class="body" id="connected-body"></div>
+    <nav class="bottom-tabs" id="bottom-tabs">
+      <button type="button" class="bottom-tab-btn" data-screen="chat">${ICON_CHAT}<span>Chat</span></button>
+      <button type="button" class="bottom-tab-btn" data-screen="views">${ICON_GRID}<span>Views</span></button>
+    </nav>
+  `
+}
+
+function buildActiveContentMainHtml(state: AppState): string {
+  if (state.activeSession) {
+    const title = state.activeSession.title || 'Chat'
+    return `
+      <header class="main-header">
+        <button type="button" class="icon-btn back-btn" id="back-btn" aria-label="Back" title="Back">${ICON_BACK}</button>
+        <div class="main-header-title">
+          <h1 id="header-title">${escapeHtml(title)}</h1>
+        </div>
+        <div class="main-header-actions">
+          <span class="status-dot" id="status-dot" data-state="${state.status.state}" title="${escapeHtml(formatStatus(state))}"></span>
+          <button type="button" class="icon-btn" id="header-menu" aria-label="Menu" title="Menu">${ICON_KEBAB}</button>
+          <div class="menu hidden" id="header-menu-list">
+            <button type="button" class="menu-item danger" id="menu-remove-session">${ICON_TRASH}<span>Remove session</span></button>
+          </div>
+        </div>
+      </header>
+      <div class="banner hidden" id="banner"></div>
+      <div class="body" id="connected-body"></div>
+    `
+  }
+  const view = state.views.find((v) => v.name === state.activeViewName)
+  const title = view?.title || state.activeViewName || 'View'
+  return `
+    <header class="main-header">
+      <button type="button" class="icon-btn back-btn" id="back-btn" aria-label="Back" title="Back">${ICON_BACK}</button>
+      <div class="main-header-title">
+        <h1 id="header-title">${escapeHtml(title)}</h1>
+      </div>
+      <div class="main-header-actions">
+        <button type="button" class="icon-btn" id="view-reload" aria-label="Reload" title="Reload">${ICON_REFRESH}</button>
+      </div>
+    </header>
+    <div class="body" id="connected-body"></div>
+  `
+}
+
+function bindPickerHandlers(
+  root: HTMLDivElement,
+  controller: AppController,
+  state: AppState,
+  agentId: string,
+): void {
+  root.querySelector<HTMLButtonElement>('#back-to-agents')?.addEventListener('click', () => {
+    // Stack-style back: leave the connected pair (chat/views) and surface
+    // the agents list so the rail re-appears and the user can switch agents.
+    // We don't disconnect — the active session keeps streaming and the user
+    // can re-enter by tapping the same agent.
+    controller.setScreen('agents')
+  })
+
+  root.querySelectorAll<HTMLButtonElement>('.bottom-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const t = btn.dataset.screen as Screen | undefined
+      if (t === 'chat' || t === 'views') controller.setScreen(t)
+    })
+  })
+
+  const menuBtn = root.querySelector<HTMLButtonElement>('#header-menu')
+  const menuList = root.querySelector<HTMLDivElement>('#header-menu-list')
+  if (menuBtn && menuList) {
+    menuBtn.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      menuList.classList.toggle('hidden')
+    })
+  }
+  root.querySelector<HTMLButtonElement>('#menu-disconnect')?.addEventListener('click', async () => {
+    menuList?.classList.add('hidden')
+    await controller.disconnect()
+    controller.setScreen('agents')
+  })
+  root.querySelector<HTMLButtonElement>('#menu-remove')?.addEventListener('click', async () => {
+    menuList?.classList.add('hidden')
+    if (!confirm(`Remove agent "${agentId}"?`)) return
+    await controller.removeAgent(agentId)
+    controller.setScreen('agents')
+  })
+  void state
+}
+
+function bindActiveContentHandlers(
+  root: HTMLDivElement,
+  controller: AppController,
+  state: AppState,
+): void {
+  root.querySelector<HTMLButtonElement>('#back-btn')?.addEventListener('click', () => {
+    if (state.activeSession) controller.closeSession()
+    else if (state.activeViewName) controller.closeView()
+  })
+
+  root.querySelector<HTMLButtonElement>('#view-reload')?.addEventListener('click', () => {
+    controller.reloadView()
+  })
+
+  const menuBtn = root.querySelector<HTMLButtonElement>('#header-menu')
+  const menuList = root.querySelector<HTMLDivElement>('#header-menu-list')
+  if (menuBtn && menuList) {
+    menuBtn.addEventListener('click', (evt) => {
+      evt.stopPropagation()
+      menuList.classList.toggle('hidden')
+    })
+  }
+  root.querySelector<HTMLButtonElement>('#menu-remove-session')?.addEventListener('click', () => {
+    menuList?.classList.add('hidden')
+    const current = controller.getState().activeSession
+    if (!current) return
+    const label = current.title || 'Untitled session'
+    if (!confirm(`Remove session "${label}"?`)) return
+    void controller.removeSession(current.sessionId)
+  })
+}
+
+function updateMainHeader(root: HTMLDivElement, state: AppState): void {
+  const title = root.querySelector<HTMLHeadingElement>('#header-title')
+  const dot = root.querySelector<HTMLSpanElement>('#status-dot')
+  if (title) {
+    if (state.activeSession) {
+      title.textContent = state.activeSession.title || 'Chat'
+    } else if (state.activeViewName) {
+      const view = state.views.find((v) => v.name === state.activeViewName)
+      title.textContent = view?.title || state.activeViewName
+    } else if (state.activeAgentId) {
+      title.textContent = state.activeAgentId
+    }
+  }
+  if (dot) {
+    dot.dataset.state = state.status.state
+    dot.title = formatStatus(state)
+  }
+}
+
+function updateBottomTabs(root: HTMLElement, state: AppState): void {
+  const nav = root.querySelector<HTMLElement>('#bottom-tabs')
   if (!nav) return
-  nav.querySelectorAll<HTMLButtonElement>('.connected-tab').forEach((btn) => {
-    const target = btn.dataset.screen
-    const active = target === state.screen
+  nav.querySelectorAll<HTMLButtonElement>('.bottom-tab-btn').forEach((btn) => {
+    const t = btn.dataset.screen
+    const active = t === state.screen
     btn.classList.toggle('is-active', active)
     btn.setAttribute('aria-current', active ? 'page' : 'false')
   })
@@ -308,41 +580,30 @@ function updateConnectedTabs(root: HTMLElement, state: AppState): void {
 function updateProviders(root: HTMLDivElement, state: AppState): void {
   const panel = root.querySelector<HTMLDivElement>('#providers-panel')
   if (!panel) return
-  if (state.activeAgentId === null) return
-  panel.innerHTML = renderProvidersHtml(state.providers)
+  if (state.activeAgentId === null) {
+    panel.innerHTML = ''
+    return
+  }
+  panel.innerHTML = renderProvidersHtml(state.providers, state.screen)
 }
 
-function renderProvidersHtml(providers: ProviderState | null): string {
-  if (!providers) {
-    return `<p class="muted">Loading providers…</p>`
-  }
+function renderProvidersHtml(providers: ProviderState | null, screen: Screen): string {
+  // Only show providers strip on chat — clutters the views screen.
+  if (screen !== 'chat') return ''
+  if (!providers) return ''
   if (providers.providerList.length === 0) {
     return `
-      <div class="banner" data-tone="error">
+      <div class="banner" data-tone="error" style="margin-top: 10px">
         No providers configured on this daemon. Configure one in the daemon's settings before starting a session.
       </div>
     `
   }
-  const defaultProvider = providers.providerList.find((p) => p.id === providers.defaultProviderId)
-  const defaultLabel = defaultProvider ? defaultProvider.name : providers.defaultProviderId || '—'
-  const statusByProvider = new Map(providers.providerStatusLines)
-  const rows = providers.providerList.map((p) => {
-    const line = statusByProvider.get(p.id) ?? ''
-    const isDefault = p.id === providers.defaultProviderId
-    return `
-      <div class="provider-row">
-        <span class="provider-name">${escapeHtml(p.name)}${isDefault ? ' <span class="provider-default">default</span>' : ''}</span>
-        ${line ? `<span class="provider-status">${escapeHtml(line)}</span>` : ''}
-      </div>
-    `
-  }).join('')
+  const def = providers.providerList.find((p) => p.id === providers.defaultProviderId)
+  const defLabel = def ? def.name : (providers.defaultProviderId || '—')
   return `
-    <div class="providers">
-      <div class="providers-header">
-        <span class="providers-title">Providers</span>
-        <span class="providers-default">Default: ${escapeHtml(defaultLabel)}</span>
-      </div>
-      ${rows}
+    <div class="providers-line">
+      <span>Default provider</span>
+      <span class="pill">${escapeHtml(defLabel)}</span>
     </div>
   `
 }
@@ -355,22 +616,14 @@ function renderConnectedBody(root: HTMLDivElement, controller: AppController, st
     renderViewsBody(body, controller, state)
     return
   }
-
   if (state.activeSession) {
     renderActiveSessionBody(body, controller, state)
     return
   }
-
   renderPickerBody(body, controller, state)
 }
 
-// ── Views body ─────────────────────────────────────────────────────
-//
-// The iframe element is cached at module scope and reattached on each render
-// so chat→views→chat round-trips don't tear down the WKWebView and lose
-// scroll/form state. The iframe's `src` includes a `viewVersion` query param
-// so a controller-side bump (reload, snapshot apply, DB change) forces a
-// reload without rebuilding the element.
+// ── Views body ──────────────────────────────────────────────────────
 
 let cachedViewFrame: HTMLIFrameElement | null = null
 let cachedViewFrameName: string | null = null
@@ -386,33 +639,9 @@ function renderViewsBody(body: HTMLDivElement, controller: AppController, state:
   if (body.dataset.mode !== wantMode) {
     body.dataset.mode = wantMode
     if (wantMode === 'view-list') {
-      body.innerHTML = `
-        <div class="view-picker">
-          <div class="section-header">
-            <span class="section-title">Views</span>
-          </div>
-          <div class="view-list" id="view-list"></div>
-        </div>
-      `
+      body.innerHTML = `<div class="scroll-list" id="view-list"></div>`
     } else {
-      body.innerHTML = `
-        <div class="view-active">
-          <div class="section-header">
-            <span class="view-active-title" id="view-active-title"></span>
-            <div class="view-active-actions">
-              <button type="button" class="link" id="view-reload">Reload</button>
-              <button type="button" class="link" id="view-close">Close</button>
-            </div>
-          </div>
-          <div class="view-frame-wrap" id="view-frame-wrap"></div>
-        </div>
-      `
-      body.querySelector<HTMLButtonElement>('#view-reload')!.addEventListener('click', () => {
-        controller.reloadView()
-      })
-      body.querySelector<HTMLButtonElement>('#view-close')!.addEventListener('click', () => {
-        controller.closeView()
-      })
+      body.innerHTML = `<div class="view-frame-wrap" id="view-frame-wrap"></div>`
     }
   }
 
@@ -423,16 +652,9 @@ function renderViewsBody(body: HTMLDivElement, controller: AppController, state:
     return
   }
 
-  // Active view: mount/refresh the cached iframe.
   if (!activeName) return
   const wrap = body.querySelector<HTMLDivElement>('#view-frame-wrap')
   if (!wrap) return
-
-  const titleEl = body.querySelector<HTMLSpanElement>('#view-active-title')
-  if (titleEl) {
-    const summary = state.views.find((v) => v.name === activeName)
-    titleEl.textContent = summary?.title || activeName
-  }
 
   if (!cachedViewFrame) {
     cachedViewFrame = document.createElement('iframe')
@@ -451,16 +673,12 @@ function renderViewsBody(body: HTMLDivElement, controller: AppController, state:
 }
 
 function buildViewSrc(name: string, version: number): string {
-  // tabId carries a stable mobile-only token so the agentview:// handler
-  // classifies the request as a view DOCUMENT (vs. a sub-resource fetch);
-  // see is_view_document_request in view_protocol.rs. rev bumps to force
-  // WKWebView to treat src changes as a fresh navigation.
   return `agentview://localhost/view/${encodeURIComponent(name)}?tabId=mobile-view&rev=${version}`
 }
 
 function renderViewRowsHtml(views: ViewSummary[]): string {
   if (views.length === 0) {
-    return `<p class="muted">No views yet. Ask the agent to create one.</p>`
+    return `<div class="empty-list">No views yet. Ask the agent to create one.</div>`
   }
   return views.map(renderViewRow).join('')
 }
@@ -469,10 +687,10 @@ function renderViewRow(v: ViewSummary): string {
   const title = v.title || v.name
   const subtitle = v.title ? v.name : ''
   return `
-    <div class="agent-row">
-      <button type="button" class="agent-row-main" data-action="open-view" data-view-name="${escapeHtml(v.name)}">
-        <span class="agent-label">${escapeHtml(title)}</span>
-        ${subtitle ? `<span class="agent-meta">${escapeHtml(subtitle)}</span>` : ''}
+    <div class="row">
+      <button type="button" class="row-main" data-action="open-view" data-view-name="${escapeHtml(v.name)}">
+        <span class="row-title">${escapeHtml(title)}</span>
+        ${subtitle ? `<span class="row-meta">${escapeHtml(subtitle)}</span>` : ''}
       </button>
     </div>
   `
@@ -487,6 +705,8 @@ function bindViewRowHandlers(body: HTMLDivElement, controller: AppController): v
   })
 }
 
+// ── Session picker ──────────────────────────────────────────────────
+
 function renderPickerBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
   const providerKey = composerProviderKey(state.providers)
   if (bodyMode !== 'picker' || body.dataset.mode !== 'picker' || body.dataset.providerKey !== providerKey) {
@@ -495,13 +715,8 @@ function renderPickerBody(body: HTMLDivElement, controller: AppController, state
     body.dataset.providerKey = providerKey
     delete body.dataset.sessionId
     body.innerHTML = `
-      <div class="session-picker">
-        <div class="section-header">
-          <span class="section-title">Sessions</span>
-        </div>
-        <div class="session-list" id="session-list"></div>
-        ${renderComposerHtml(state, 'start')}
-      </div>
+      <div class="scroll-list" id="session-list"></div>
+      ${renderComposerHtml(state, 'start')}
     `
     bindComposer(body, controller)
   }
@@ -513,7 +728,7 @@ function renderPickerBody(body: HTMLDivElement, controller: AppController, state
 
 function renderSessionRowsHtml(sessions: SessionSummary[]): string {
   if (sessions.length === 0) {
-    return `<p class="muted">No sessions yet. Start one to begin.</p>`
+    return `<div class="empty-list">No sessions yet. Send a message to start one.</div>`
   }
   return sessions.map(renderSessionRow).join('')
 }
@@ -521,12 +736,14 @@ function renderSessionRowsHtml(sessions: SessionSummary[]): string {
 function renderSessionRow(s: SessionSummary): string {
   const title = s.title || 'Untitled session'
   return `
-    <div class="agent-row">
-      <button type="button" class="agent-row-main" data-action="open" data-session-id="${escapeHtml(s.sessionId)}">
-        <span class="agent-label">${escapeHtml(title)}</span>
-        <span class="agent-meta">${escapeHtml(s.providerId || '—')} · ${escapeHtml(formatRelative(s.updatedAt))}</span>
+    <div class="row">
+      <button type="button" class="row-main" data-action="open" data-session-id="${escapeHtml(s.sessionId)}">
+        <span class="row-title">${escapeHtml(title)}</span>
+        <span class="row-meta">${escapeHtml(s.providerId || '—')} · ${escapeHtml(formatRelative(s.updatedAt))}</span>
       </button>
-      <button type="button" class="agent-row-edit" data-action="remove-session" data-session-id="${escapeHtml(s.sessionId)}" aria-label="Remove session">Remove</button>
+      <button type="button" class="row-action" data-action="remove-session" data-session-id="${escapeHtml(s.sessionId)}" aria-label="Remove session" title="Remove">
+        ${ICON_TRASH}
+      </button>
     </div>
   `
 }
@@ -544,94 +761,97 @@ function bindSessionRowHandlers(
   body.querySelectorAll<HTMLButtonElement>('[data-action="remove-session"]').forEach((btn) => {
     btn.addEventListener('click', (evt) => {
       evt.stopPropagation()
-      const sessionId = btn.dataset.sessionId!
-      const target = sessions.find((s) => s.sessionId === sessionId)
-      if (!target) return
-      const label = target.title || 'this session'
+      const id = btn.dataset.sessionId!
+      const t = sessions.find((s) => s.sessionId === id)
+      if (!t) return
+      const label = t.title || 'this session'
       if (!confirm(`Remove session "${label}"?`)) return
-      void controller.removeSession(sessionId)
+      void controller.removeSession(id)
     })
   })
 }
 
+// ── Active session ──────────────────────────────────────────────────
+
 function renderActiveSessionBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
   const session = state.activeSession!
-  const title = session.title || 'Untitled session'
   if (bodyMode !== 'active' || body.dataset.mode !== 'active' || body.dataset.sessionId !== session.sessionId) {
     bodyMode = 'active'
     body.dataset.mode = 'active'
     body.dataset.sessionId = session.sessionId
     body.innerHTML = `
-      <div class="session-active">
-        <div class="section-header">
-          <button type="button" class="link" id="close-session">Sessions</button>
-          <button type="button" class="link danger-link" id="remove-active-session">Remove</button>
-        </div>
-        <div class="chat-title-row">
-          <span class="agent-label" id="session-title"></span>
-          <span class="agent-meta" id="session-provider"></span>
-        </div>
-        <div class="chat-live" id="chat-live"></div>
-        <div class="message-list" id="message-list"></div>
-        ${renderComposerHtml(state, 'followup')}
-      </div>
+      <div class="chat-live-row" id="chat-live"></div>
+      <div class="message-list" id="message-list"></div>
+      ${renderComposerHtml(state, 'followup')}
     `
-    body.querySelector<HTMLButtonElement>('#close-session')!.addEventListener('click', () => {
-      controller.closeSession()
-    })
-    body.querySelector<HTMLButtonElement>('#remove-active-session')!.addEventListener('click', () => {
-      const current = controller.getState().activeSession
-      if (!current) return
-      const label = current.title || 'Untitled session'
-      if (!confirm(`Remove session "${label}"?`)) return
-      void controller.removeSession(current.sessionId)
-    })
     bindComposer(body, controller)
   }
 
-  body.querySelector<HTMLSpanElement>('#session-title')!.textContent = title
-  body.querySelector<HTMLSpanElement>('#session-provider')!.textContent = session.providerId || 'default provider'
   const live = body.querySelector<HTMLDivElement>('#chat-live')!
-  live.innerHTML = renderLiveStatusHtml(state)
+  applyLiveStatus(live, state)
   updateMessages(body.querySelector<HTMLDivElement>('#message-list')!, state)
   updateComposerState(body, state)
 }
+
+function applyLiveStatus(el: HTMLElement, state: AppState): void {
+  const live = state.activeSession?.live
+  if (state.status.state !== 'connected') {
+    el.dataset.tone = 'error'
+    el.textContent = state.status.message || 'Disconnected'
+    return
+  }
+  if (live?.retryState) {
+    el.dataset.tone = 'warn'
+    el.textContent = formatRetry(live.retryState)
+    return
+  }
+  if (live?.stalledSince) {
+    el.dataset.tone = 'warn'
+    el.textContent = `No response for ${formatDuration(Date.now() - live.stalledSince)}.`
+    return
+  }
+  delete el.dataset.tone
+  if (live?.statusLine) {
+    el.textContent = live.statusLine
+    return
+  }
+  if (live?.isStreaming) {
+    el.textContent = 'Streaming response…'
+    return
+  }
+  el.textContent = 'Ready'
+}
+
+// ── Composer ────────────────────────────────────────────────────────
 
 type ComposerMode = 'start' | 'followup'
 
 function renderComposerHtml(state: AppState, mode: ComposerMode): string {
   const providerSelect = mode === 'start' ? renderComposerProviderSelectHtml(state.providers) : ''
   const placeholder = mode === 'start' ? 'Ask the agent anything…' : 'Send a follow-up…'
-  const buttonLabel = mode === 'start' ? 'Start chat' : 'Send'
   return `
-    <form class="chat-composer" data-mode="${mode}" novalidate>
-      ${providerSelect}
-      <label class="field composer-field">
-        <span>${mode === 'start' ? 'Prompt' : 'Message'}</span>
-        <textarea name="prompt" rows="3" autocapitalize="sentences" required placeholder="${placeholder}"></textarea>
-      </label>
-      <p class="field-error composer-error" hidden></p>
-      <p class="composer-hint muted"></p>
-      <div class="form-actions composer-actions">
-        <button type="submit" class="primary">${buttonLabel}</button>
-        <button type="button" class="danger composer-abort" hidden>Abort</button>
+    <form class="composer chat-composer" data-mode="${mode}" novalidate>
+      <div class="composer-field">
+        <textarea name="prompt" rows="1" autocapitalize="sentences" required placeholder="${placeholder}"></textarea>
+        <button type="submit" class="composer-send" aria-label="Send" title="Send">${ICON_SEND}</button>
       </div>
+      <div class="composer-meta">
+        ${providerSelect}
+        <span class="composer-hint" hidden></span>
+        <button type="button" class="composer-abort" hidden>Abort</button>
+      </div>
+      <p class="field-error composer-error hidden"></p>
     </form>
   `
 }
 
 function renderComposerProviderSelectHtml(providers: ProviderState | null): string {
-  if (!providers || providers.providerList.length <= 1) return ''
+  if (!providers || providers.providerList.length <= 1) return `<span></span>`
   const options = providers.providerList.map((p) => {
-    const selected = p.id === providers.defaultProviderId ? 'selected' : ''
-    return `<option value="${escapeHtml(p.id)}" ${selected}>${escapeHtml(p.name)}</option>`
+    const sel = p.id === providers.defaultProviderId ? 'selected' : ''
+    return `<option value="${escapeHtml(p.id)}" ${sel}>${escapeHtml(p.name)}</option>`
   }).join('')
-  return `
-    <label class="field">
-      <span>Provider</span>
-      <select name="providerId">${options}</select>
-    </label>
-  `
+  return `<select name="providerId">${options}</select>`
 }
 
 function composerProviderKey(providers: ProviderState | null): string {
@@ -644,12 +864,12 @@ function bindComposer(scope: HTMLElement, controller: AppController): void {
   if (!form) return
   const textarea = form.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')!
   const errorEl = form.querySelector<HTMLParagraphElement>('.composer-error')!
-  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+  const submitBtn = form.querySelector<HTMLButtonElement>('.composer-send')!
   const abortBtn = form.querySelector<HTMLButtonElement>('.composer-abort')!
 
   textarea.addEventListener('input', () => {
     autoSizeTextarea(textarea)
-    errorEl.hidden = true
+    errorEl.classList.add('hidden')
   })
 
   form.addEventListener('submit', (evt) => {
@@ -657,7 +877,7 @@ function bindComposer(scope: HTMLElement, controller: AppController): void {
     if (submitBtn.disabled) return
     const prompt = textarea.value.trim()
     if (!prompt) {
-      errorEl.hidden = false
+      errorEl.classList.remove('hidden')
       errorEl.textContent = 'Prompt is required.'
       textarea.focus()
       return
@@ -666,7 +886,7 @@ function bindComposer(scope: HTMLElement, controller: AppController): void {
     const providerId = data.get('providerId')
     form.dataset.sending = 'true'
     submitBtn.disabled = true
-    errorEl.hidden = true
+    errorEl.classList.add('hidden')
     textarea.value = ''
     autoSizeTextarea(textarea)
     void controller.sendMessage({
@@ -699,9 +919,9 @@ function updateComposerState(scope: HTMLElement, state: AppState): void {
   if (!form) return
   const textarea = form.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')
   const select = form.querySelector<HTMLSelectElement>('select[name="providerId"]')
-  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')
+  const submitBtn = form.querySelector<HTMLButtonElement>('.composer-send')
   const abortBtn = form.querySelector<HTMLButtonElement>('.composer-abort')
-  const hint = form.querySelector<HTMLParagraphElement>('.composer-hint')
+  const hint = form.querySelector<HTMLSpanElement>('.composer-hint')
   const reason = composerDisabledReason(state)
   const canSend = reason === null
   const sending = form.dataset.sending === 'true'
@@ -739,6 +959,8 @@ function canAbort(state: AppState): boolean {
   return state.status.state === 'connected' && !!state.activeSession && hasLiveWork(state)
 }
 
+// ── Messages ────────────────────────────────────────────────────────
+
 function updateMessages(container: HTMLDivElement, state: AppState): void {
   const wasNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
   container.innerHTML = renderMessagesHtml(getDisplayMessagesForRender(state))
@@ -758,7 +980,7 @@ function getDisplayMessagesForRender(state: AppState): DisplayMessage[] {
 
 function renderMessagesHtml(messages: DisplayMessage[]): string {
   if (messages.length === 0) {
-    return `<div class="empty-chat muted">No messages yet.</div>`
+    return `<div class="empty-chat">No messages yet.</div>`
   }
   return messages.map((message) => renderMessageHtml(message)).join('')
 }
@@ -776,9 +998,9 @@ function renderMessageHtml(message: DisplayMessage): string {
 function renderBlockHtml(block: Block): string {
   switch (block.type) {
     case 'text':
-      return `<div class="message-text">${escapeTextBlock(block.text)}</div>`
+      return `<div class="message-text">${escapeHtml(block.text)}</div>`
     case 'thinking':
-      return `<details class="thinking-block"><summary>Thinking</summary><div>${escapeTextBlock(block.text)}</div></details>`
+      return `<details class="thinking-block"><summary>Thinking</summary><div class="message-text">${escapeHtml(block.text)}</div></details>`
     case 'file':
       return renderFileHtml({ type: 'file', data: block.data, mimeType: block.mimeType })
     case 'attachment':
@@ -798,7 +1020,7 @@ function renderBlockHtml(block: Block): string {
         </details>
       `
     case 'error':
-      return `<div class="message-error">${escapeTextBlock(block.text)}</div>`
+      return `<div class="message-error">${escapeHtml(block.text)}</div>`
   }
 }
 
@@ -812,26 +1034,6 @@ function renderFileHtml(file: FileContent): string {
     return `<img class="message-image" src="data:${escapeHtml(file.mimeType)};base64,${escapeHtml(file.data)}" alt="attachment">`
   }
   return `<div class="file-chip">${escapeHtml(file.mimeType)}</div>`
-}
-
-function renderLiveStatusHtml(state: AppState): string {
-  const live = state.activeSession?.live
-  if (state.status.state !== 'connected') {
-    return `<div class="chat-live-row" data-tone="error">${escapeHtml(state.status.message || 'Disconnected')}</div>`
-  }
-  if (live?.retryState) {
-    return `<div class="chat-live-row" data-tone="warn">${escapeHtml(formatRetry(live.retryState))}</div>`
-  }
-  if (live?.stalledSince) {
-    return `<div class="chat-live-row" data-tone="warn">No response for ${escapeHtml(formatDuration(Date.now() - live.stalledSince))}.</div>`
-  }
-  if (live?.statusLine) {
-    return `<div class="chat-live-row">${escapeHtml(live.statusLine)}</div>`
-  }
-  if (live?.isStreaming) {
-    return `<div class="chat-live-row">Streaming response…</div>`
-  }
-  return `<div class="chat-live-row">Ready</div>`
 }
 
 function formatRetry(retry: RetryState): string {
@@ -854,16 +1056,11 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function escapeTextBlock(text: string): string {
-  return escapeHtml(text).replace(/\n/g, '<br>')
-}
-
 function autoSizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(160, Math.max(72, textarea.scrollHeight))}px`
+  textarea.style.height = `${Math.min(140, Math.max(36, textarea.scrollHeight))}px`
 }
 
-// Compact "5m ago" formatter — enough to spot stale sessions in the picker.
 function formatRelative(ts: number): string {
   if (!ts) return 'unknown'
   const delta = Date.now() - ts
@@ -879,26 +1076,21 @@ function formatRelative(ts: number): string {
   return new Date(ts).toLocaleDateString()
 }
 
-// ── Shared status / banner ─────────────────────────────────────────
+// ── Banner / status ─────────────────────────────────────────────────
 
 function updateBanner(root: HTMLDivElement, state: AppState): void {
   const banner = root.querySelector<HTMLDivElement>('#banner')
   if (banner) {
     const message = bannerMessage(state)
     if (message) {
-      banner.hidden = false
+      banner.classList.remove('hidden')
       banner.textContent = message
       banner.dataset.tone = bannerTone(state)
     } else {
-      banner.hidden = true
+      banner.classList.add('hidden')
       banner.textContent = ''
     }
   }
-
-  const statusText = root.querySelector<HTMLSpanElement>('#status-text')
-  const statusDot = root.querySelector<HTMLSpanElement>('#status-dot')
-  if (statusText) statusText.textContent = formatStatus(state)
-  if (statusDot) statusDot.dataset.state = state.status.state
 }
 
 function bannerMessage(state: AppState): string | null {
@@ -917,8 +1109,6 @@ function formatStatus(state: AppState): string {
   if (state.lastSyncAt !== null) return `${base} · synced`
   return base
 }
-
-// ── Small utilities ────────────────────────────────────────────────
 
 function capitalize(s: string): string {
   return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1)
@@ -944,6 +1134,33 @@ function escapeHtml(s: string): string {
     }
   })
 }
+
+// Close kebab menu on outside click / touch.
+function installMenuDismissHandler(): void {
+  const dismiss = (evt: Event) => {
+    const target = evt.target as HTMLElement | null
+    if (!target) return
+    if (target.closest('#header-menu') || target.closest('#header-menu-list')) return
+    document.querySelectorAll<HTMLDivElement>('.menu').forEach((m) => m.classList.add('hidden'))
+  }
+  document.addEventListener('click', dismiss)
+  document.addEventListener('touchstart', dismiss, { passive: true })
+}
+
+// ── Icons (inline SVG) ──────────────────────────────────────────────
+
+const ICON_PLUS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+const ICON_PLUS_SM = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+const ICON_TRASH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>`
+const ICON_KEBAB = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>`
+const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`
+const ICON_REFRESH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15A9 9 0 0 1 5.64 18.36L1 14"/></svg>`
+const ICON_CHAT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`
+const ICON_GRID = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
+const ICON_SEND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`
+const ICON_PLUG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M6 8h12v4a6 6 0 1 1-12 0V8z"/><path d="M12 18v4"/></svg>`
+const ICON_BOLT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
 
 // ── Agent view bridge ───────────────────────────────────────────────
 //
