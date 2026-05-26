@@ -37,7 +37,6 @@ export type Screen = 'agents' | 'add-agent' | 'chat' | 'views'
 export interface ViewSummary {
   name: string
   title: string | null
-  description: string | null
 }
 
 export interface AppState {
@@ -55,6 +54,13 @@ export interface AppState {
   activeSession: SessionState | null
   providers: ProviderState | null
   views: ViewSummary[]
+  /** Name of the view currently open in the view frame, or null. */
+  activeViewName: string | null
+  /** Monotonic counter bumped whenever the active view's iframe should be
+   *  reloaded (user clicked Reload, snapshot was applied, or the underlying
+   *  `views` row changed). Used as a query-param on the iframe src so the
+   *  WebView treats it as a fresh navigation. */
+  viewVersion: number
   /** Wall-clock of the most recent mirror snapshot/apply, for diagnostics. */
   lastSyncAt: number | null
   /** Last mirror DB change observed, for diagnostics. */
@@ -87,6 +93,8 @@ function initialState(): AppState {
     activeSession: null,
     providers: null,
     views: [],
+    activeViewName: null,
+    viewVersion: 0,
     lastSyncAt: null,
     lastDbChange: null,
     error: null,
@@ -218,6 +226,8 @@ export class AppController {
       activeSession: null,
       providers: null,
       views: [],
+      activeViewName: null,
+      viewVersion: 0,
       lastDbChange: null,
       lastSyncAt: null,
     })
@@ -240,10 +250,20 @@ export class AppController {
         onLocalDbChange: (change) => {
           if (!isCurrent()) return
           this.patch({ lastDbChange: change, lastSyncAt: Date.now() })
+          if (change.table === 'views') {
+            void this.handleViewsChange(isCurrent)
+          }
         },
         onSnapshotApplied: () => {
           if (!isCurrent()) return
-          this.patch({ lastSyncAt: Date.now() })
+          // Snapshot replacement may have rewritten every row in `views` —
+          // refresh the catalog and force the active iframe to reload so
+          // stale content (or a deleted view) doesn't keep rendering.
+          this.patch({
+            lastSyncAt: Date.now(),
+            viewVersion: this.state.viewVersion + 1,
+          })
+          void this.refreshViews(isCurrent)
         },
         onStatus: (status) => {
           if (!isCurrent()) return
@@ -324,6 +344,7 @@ export class AppController {
     await Promise.all([
       this.refreshProviders(session, isCurrent),
       this.refreshSessions(session, isCurrent),
+      this.refreshViews(isCurrent),
     ])
     await this.restoreActiveSession(session, isCurrent, preferredSessionId)
   }
@@ -336,6 +357,7 @@ export class AppController {
     await Promise.all([
       this.refreshProviders(session, isCurrent),
       this.refreshSessions(session, isCurrent),
+      this.refreshViews(isCurrent),
       this.restoreActiveSession(session, isCurrent, preferredSessionId),
     ])
   }
@@ -366,6 +388,91 @@ export class AppController {
       if (!isCurrent()) return
       console.warn('[app-controller] sessions.list failed:', err)
     }
+  }
+
+  /** Query the mirrored `views` table for name/title and update state. Mirrors
+   *  the ORDER BY used by shared/db/views.ts:listViews so the mobile list
+   *  matches what desktop's command palette / source explorer show. */
+  private async refreshViews(isCurrent: () => boolean): Promise<void> {
+    const agentId = this.state.activeAgentId
+    if (!agentId) return
+    try {
+      const rows = await bridge.mirrorDb.query(
+        agentId,
+        `SELECT name, title FROM views
+ORDER BY
+  CASE
+    WHEN name NOT LIKE 'system.%' AND name NOT LIKE 'plugin.%' THEN 0
+    WHEN name LIKE 'system.%' THEN 1
+    WHEN name LIKE 'plugin.%' THEN 2
+  END,
+  updated_at DESC`,
+      )
+      if (!isCurrent()) return
+      const views: ViewSummary[] = rows.map((row) => ({
+        name: String(row.name ?? ''),
+        title: typeof row.title === 'string' && row.title.length > 0 ? row.title : null,
+      })).filter((v) => v.name.length > 0)
+
+      // If the active view was deleted between snapshots, drop it so the
+      // frame doesn't keep rendering the daemon's "View not found" stub.
+      const active = this.state.activeViewName
+      const stillPresent = active === null || views.some((v) => v.name === active)
+      const patch: Partial<AppState> = { views }
+      if (!stillPresent) {
+        patch.activeViewName = null
+        patch.error = `View "${active}" was removed.`
+      }
+      this.patch(patch)
+    } catch (err) {
+      if (!isCurrent()) return
+      console.warn('[app-controller] views refresh failed:', err)
+    }
+  }
+
+  /** Called when a row in the `views` table changes. Refreshes the catalog
+   *  and, if the change targets the active view, bumps viewVersion so the
+   *  iframe reloads with the new content. */
+  private async handleViewsChange(isCurrent: () => boolean): Promise<void> {
+    const change = this.state.lastDbChange
+    await this.refreshViews(isCurrent)
+    if (!isCurrent()) return
+    const active = this.state.activeViewName
+    if (!active) return
+    // change.rowId is the view's `name` (primary key). Updates that rename a
+    // view carry the old key in previousRowId; treat either match as "the
+    // active view changed".
+    if (change && (change.rowId === active || change.previousRowId === active)) {
+      this.patch({ viewVersion: this.state.viewVersion + 1 })
+    }
+  }
+
+  /** Open a view in the view frame and switch to the views screen. */
+  openView(name: string): void {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    if (this.state.activeViewName === trimmed) {
+      this.patch({ screen: 'views', error: null })
+      return
+    }
+    this.patch({
+      screen: 'views',
+      activeViewName: trimmed,
+      viewVersion: this.state.viewVersion + 1,
+      error: null,
+    })
+  }
+
+  /** Close the active view without leaving the views screen. */
+  closeView(): void {
+    if (this.state.activeViewName === null) return
+    this.patch({ activeViewName: null })
+  }
+
+  /** Force the active view's iframe to reload. */
+  reloadView(): void {
+    if (this.state.activeViewName === null) return
+    this.patch({ viewVersion: this.state.viewVersion + 1 })
   }
 
   /** Load a session's full state into `activeSession`. Returns the loaded

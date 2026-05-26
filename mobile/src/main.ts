@@ -12,7 +12,7 @@
 import type { Block, DisplayMessage } from '#shared/agent/provider_types.js'
 import type { FileContent, RetryState } from '#shared/agent/types.js'
 import type { ProviderState, SessionSummary } from '#shared/backend/interface.js'
-import { AppController, type AppState, type InstalledAgent, type Screen } from './app-controller.js'
+import { AppController, type AppState, type InstalledAgent, type Screen, type ViewSummary } from './app-controller.js'
 
 const app = document.querySelector<HTMLDivElement>('#app')
 if (app) {
@@ -32,13 +32,16 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
   // agent" (main.ts), adapted for remote-only.
   if (agents.length === 0) controller.setScreen('add-agent')
 
-  let lastScreen: Screen | null = null
+  let lastScreenGroup: ScreenGroup | null = null
   let lastActiveAgentId: string | null | undefined
   controller.subscribe((state) => {
-    // Re-render the whole screen on screen / active-agent transitions.
-    // Within a screen, partial updaters refresh just status and banners.
-    if (state.screen !== lastScreen || state.activeAgentId !== lastActiveAgentId) {
-      lastScreen = state.screen
+    // Re-render the whole screen on screen-GROUP / active-agent transitions.
+    // 'chat' and 'views' share a group so a chat→views switch keeps the
+    // cached view iframe attached (preserving its WKWebView state) and
+    // just swaps the body sub-tree.
+    const group = screenGroup(state.screen)
+    if (group !== lastScreenGroup || state.activeAgentId !== lastActiveAgentId) {
+      lastScreenGroup = group
       lastActiveAgentId = state.activeAgentId
       renderScreen(root, controller, state)
     } else {
@@ -46,8 +49,17 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
       updateAgentsList(root, controller, state)
       renderConnectedBody(root, controller, state)
       updateProviders(root, state)
+      updateConnectedTabs(root, state)
     }
   })
+}
+
+type ScreenGroup = 'agents' | 'add-agent' | 'connected'
+
+function screenGroup(screen: Screen): ScreenGroup {
+  if (screen === 'agents') return 'agents'
+  if (screen === 'add-agent') return 'add-agent'
+  return 'connected'
 }
 
 function renderScreen(root: HTMLDivElement, controller: AppController, state: AppState): void {
@@ -247,6 +259,10 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
       </div>
       <div class="banner" id="banner" hidden></div>
       <div id="providers-panel"></div>
+      <nav class="connected-tabs" id="connected-tabs">
+        <button type="button" class="connected-tab" data-screen="chat">Chat</button>
+        <button type="button" class="connected-tab" data-screen="views">Views</button>
+      </nav>
       <div id="connected-body"></div>
       <div class="form-actions">
         <button type="button" class="ghost" id="disconnect">Disconnect</button>
@@ -265,9 +281,28 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
     controller.setScreen('agents')
   })
 
+  root.querySelectorAll<HTMLButtonElement>('.connected-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.screen as Screen | undefined
+      if (target === 'chat' || target === 'views') controller.setScreen(target)
+    })
+  })
+
   updateProviders(root, state)
+  updateConnectedTabs(root, state)
   renderConnectedBody(root, controller, state)
   updateBanner(root, state)
+}
+
+function updateConnectedTabs(root: HTMLElement, state: AppState): void {
+  const nav = root.querySelector<HTMLElement>('#connected-tabs')
+  if (!nav) return
+  nav.querySelectorAll<HTMLButtonElement>('.connected-tab').forEach((btn) => {
+    const target = btn.dataset.screen
+    const active = target === state.screen
+    btn.classList.toggle('is-active', active)
+    btn.setAttribute('aria-current', active ? 'page' : 'false')
+  })
 }
 
 function updateProviders(root: HTMLDivElement, state: AppState): void {
@@ -316,12 +351,140 @@ function renderConnectedBody(root: HTMLDivElement, controller: AppController, st
   const body = root.querySelector<HTMLDivElement>('#connected-body')
   if (!body) return
 
+  if (state.screen === 'views') {
+    renderViewsBody(body, controller, state)
+    return
+  }
+
   if (state.activeSession) {
     renderActiveSessionBody(body, controller, state)
     return
   }
 
   renderPickerBody(body, controller, state)
+}
+
+// ── Views body ─────────────────────────────────────────────────────
+//
+// The iframe element is cached at module scope and reattached on each render
+// so chat→views→chat round-trips don't tear down the WKWebView and lose
+// scroll/form state. The iframe's `src` includes a `viewVersion` query param
+// so a controller-side bump (reload, snapshot apply, DB change) forces a
+// reload without rebuilding the element.
+
+let cachedViewFrame: HTMLIFrameElement | null = null
+let cachedViewFrameName: string | null = null
+let cachedViewFrameVersion: number | null = null
+
+function renderViewsBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
+  bodyMode = 'picker'
+  delete body.dataset.providerKey
+  delete body.dataset.sessionId
+
+  const activeName = state.activeViewName
+  const wantMode = activeName ? 'view-frame' : 'view-list'
+  if (body.dataset.mode !== wantMode) {
+    body.dataset.mode = wantMode
+    if (wantMode === 'view-list') {
+      body.innerHTML = `
+        <div class="view-picker">
+          <div class="section-header">
+            <span class="section-title">Views</span>
+          </div>
+          <div class="view-list" id="view-list"></div>
+        </div>
+      `
+    } else {
+      body.innerHTML = `
+        <div class="view-active">
+          <div class="section-header">
+            <span class="view-active-title" id="view-active-title"></span>
+            <div class="view-active-actions">
+              <button type="button" class="link" id="view-reload">Reload</button>
+              <button type="button" class="link" id="view-close">Close</button>
+            </div>
+          </div>
+          <div class="view-frame-wrap" id="view-frame-wrap"></div>
+        </div>
+      `
+      body.querySelector<HTMLButtonElement>('#view-reload')!.addEventListener('click', () => {
+        controller.reloadView()
+      })
+      body.querySelector<HTMLButtonElement>('#view-close')!.addEventListener('click', () => {
+        controller.closeView()
+      })
+    }
+  }
+
+  if (wantMode === 'view-list') {
+    const list = body.querySelector<HTMLDivElement>('#view-list')
+    if (list) list.innerHTML = renderViewRowsHtml(state.views)
+    bindViewRowHandlers(body, controller)
+    return
+  }
+
+  // Active view: mount/refresh the cached iframe.
+  if (!activeName) return
+  const wrap = body.querySelector<HTMLDivElement>('#view-frame-wrap')
+  if (!wrap) return
+
+  const titleEl = body.querySelector<HTMLSpanElement>('#view-active-title')
+  if (titleEl) {
+    const summary = state.views.find((v) => v.name === activeName)
+    titleEl.textContent = summary?.title || activeName
+  }
+
+  if (!cachedViewFrame) {
+    cachedViewFrame = document.createElement('iframe')
+    cachedViewFrame.className = 'view-frame'
+    cachedViewFrame.setAttribute('title', 'Agent view')
+    cachedViewFrame.setAttribute('referrerpolicy', 'no-referrer')
+  }
+  if (cachedViewFrame.parentElement !== wrap) {
+    wrap.replaceChildren(cachedViewFrame)
+  }
+  if (cachedViewFrameName !== activeName || cachedViewFrameVersion !== state.viewVersion) {
+    cachedViewFrame.setAttribute('src', buildViewSrc(activeName, state.viewVersion))
+    cachedViewFrameName = activeName
+    cachedViewFrameVersion = state.viewVersion
+  }
+}
+
+function buildViewSrc(name: string, version: number): string {
+  // tabId carries a stable mobile-only token so the agentview:// handler
+  // classifies the request as a view DOCUMENT (vs. a sub-resource fetch);
+  // see is_view_document_request in view_protocol.rs. rev bumps to force
+  // WKWebView to treat src changes as a fresh navigation.
+  return `agentview://localhost/view/${encodeURIComponent(name)}?tabId=mobile-view&rev=${version}`
+}
+
+function renderViewRowsHtml(views: ViewSummary[]): string {
+  if (views.length === 0) {
+    return `<p class="muted">No views yet. Ask the agent to create one.</p>`
+  }
+  return views.map(renderViewRow).join('')
+}
+
+function renderViewRow(v: ViewSummary): string {
+  const title = v.title || v.name
+  const subtitle = v.title ? v.name : ''
+  return `
+    <div class="agent-row">
+      <button type="button" class="agent-row-main" data-action="open-view" data-view-name="${escapeHtml(v.name)}">
+        <span class="agent-label">${escapeHtml(title)}</span>
+        ${subtitle ? `<span class="agent-meta">${escapeHtml(subtitle)}</span>` : ''}
+      </button>
+    </div>
+  `
+}
+
+function bindViewRowHandlers(body: HTMLDivElement, controller: AppController): void {
+  body.querySelectorAll<HTMLButtonElement>('[data-action="open-view"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.viewName
+      if (name) controller.openView(name)
+    })
+  })
 }
 
 function renderPickerBody(body: HTMLDivElement, controller: AppController, state: AppState): void {

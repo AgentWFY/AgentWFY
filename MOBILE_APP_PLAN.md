@@ -163,22 +163,45 @@ covered: connect/snapshot, a mirrored DB view calling
 appearing in the mobile mirror DB, and a `normal` chat turn streaming through
 `test-provider`.
 
-## Step 7 - Build the view surface
+## Step 7 - Build the view surface - DONE
 
-Expose agent views as first-class mobile screens.
+Agent views are now first-class mobile screens. The connected screen has a
+Chat / Views tab nav; the Views tab lists every mirrored view and opens one
+in an iframe.
 
-- Query mirrored `views` for name/title/description and keep the list fresh
-  from `views` table DB-change notifications.
-- Open a selected view in an iframe using `agentview://localhost/view/<name>?tabId=<id>`.
-- Preserve one active view while moving between chat and views.
-- Add reload and close controls.
-- Handle missing/deleted views, snapshot replacement, and reconnect refresh.
-- Keep `/file/*` and `/asset/*` routes deferred unless an MVP view needs
-  them. (Desktop serves these from the agent's data dir / bundled client
-  assets; mobile would need a parallel filesystem mirror to match.)
+- `AppController` queries the mirrored `views` table for `name, title` after
+  connect and reloads from `onLocalDbChange` whenever the `views` table
+  changes (insert, update, delete). The query reuses the desktop ORDER BY
+  from `shared/db/views.ts:listViews`.
+- `openView(name)` flips `screen` to `views`, sets `activeViewName`, and
+  bumps a monotonic `viewVersion` counter. `closeView` clears
+  `activeViewName`; `reloadView` only bumps `viewVersion`.
+- The iframe src is
+  `agentview://localhost/view/<name>?tabId=mobile-view&rev=<viewVersion>` —
+  tabId carries a stable mobile-only token so the Rust handler classifies
+  the request as a view DOCUMENT, and `rev` forces WKWebView to treat each
+  bump as a fresh navigation.
+- The iframe element is cached at module scope and reattached on each render
+  so chat↔views round-trips keep WKWebView state. `src` is only rewritten
+  when the active view name or version changes.
+- Snapshot apply also bumps `viewVersion`, so a reconnect/snapshot refresh
+  reloads the open view automatically. If the active view disappears from
+  the catalog (deleted upstream), `activeViewName` is cleared and the banner
+  surfaces "View "<name>" was removed."
+- A DB change on the active view's row (matching `change.rowId` or
+  `previousRowId`) bumps `viewVersion` so live updates land without a
+  manual reload.
+- `/file/*` and `/asset/*` mobile routes remain deferred — no MVP view needs
+  them yet.
 
-Done when: after chatting, the user can open a view produced by the agent, the
-view can call `window.agentwfy`, and the view refreshes when its DB row changes.
+Verified with `./scripts/build-mobile`, `./scripts/build-server`, and the
+iOS simulator preview (`./scripts/mobile-preview`) against the local daemon.
+Smoke covered: listing the seeded `home` / `system.*` views, opening the
+`home` view (iframe loads `agentview://localhost/view/home?tabId=mobile-view&rev=N`),
+Reload bumping the rev, Close returning to the list, switching Chat↔Views
+keeping the cached iframe (rev unchanged), a daemon-side INSERT showing up
+as a new list row, an UPDATE on the active view bumping the iframe rev, and
+a DELETE on the active view clearing the frame with the banner message.
 
 ## Step 8 - Mobile reliability and device readiness
 
