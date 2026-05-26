@@ -135,26 +135,33 @@ connect, first prompt streaming/commit, follow-up send, aborting a slow
 stream, showing and aborting a retry state, and preserving/reloading the
 active chat after daemon restart.
 
-## Step 6 - Implement `window.agentwfy` for mobile views
+## Step 6 - Implement `window.agentwfy` for mobile views - DONE
 
 Static view rendering is already present, but real AgentWFY views expect host
 APIs through `window.agentwfy.<method>(...)`.
 
-- Inject a mobile view-host script into served view documents, or extend the
-  shared view bootstrap with a host-provided hook.
-- In the view frame, expose `window.agentwfy` as an async function proxy.
-  Calls should post messages to the parent app with `{ id, name, params }`.
-- In the mobile parent UI, validate the message source and route calls through
-  `activeBackend.functions.invoke({ name, params })`.
-- Ensure `runSql` uses the mobile mirror path already implemented by
-  `MobileRemoteMirror`, so read queries are local and mutating queries wait for
-  daemon catch-up.
-- Return structured errors to the frame so existing views can handle failures.
-- Add a small compatibility check with existing system/user views that call
-  `window.agentwfy.runSql(...)`.
+Mobile now mirrors the desktop preload bridge for `agentview://` documents:
 
-Done when: a mirrored view that calls `window.agentwfy.runSql` can read and
-mutate agent DB state from the mobile app.
+- `mobile/src-tauri/src/view_protocol.rs` injects a small mobile host script
+  into served DB views alongside the existing shared view bootstrap.
+- The view frame exposes `window.agentwfy` as an async method proxy. Calls post
+  `{ id, name, params }` messages to the parent app and receive structured
+  success/error replies.
+- `mobile/src/main.ts` validates that messages came from an iframe whose source
+  is `agentview://localhost/...`, checks the call against the active backend's
+  sync function-name list, and routes through
+  `backend.functions.invoke({ name, params })`.
+- `runSql` automatically uses the existing `MobileRemoteMirror` path:
+  read-only agent queries hit the local mirror, while mutating queries go to
+  the daemon and wait for mirror catch-up before resolving.
+
+Verified with `./scripts/build-mobile`, `./scripts/build-server`, and the iOS
+simulator preview (`./scripts/mobile-preview`) against a local daemon with
+`plugins/test-provider` installed and selected as the default provider. Smoke
+covered: connect/snapshot, a mirrored DB view calling
+`window.agentwfy.runSql` for both SELECT and INSERT/UPSERT, the inserted row
+appearing in the mobile mirror DB, and a `normal` chat turn streaming through
+`test-provider`.
 
 ## Step 7 - Build the view surface
 

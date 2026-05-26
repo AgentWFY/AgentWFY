@@ -31,6 +31,73 @@ type HmacSha256 = Hmac<Sha256>;
 /// it via the codegen'd VIEW_BOOTSTRAP_HTML constant.
 const BOOTSTRAP_HTML: &str = include_str!("../../../shared/protocol/view-bootstrap.html");
 
+/// Mobile equivalent of the desktop agent-view preload. WKWebView does not
+/// give Tauri a per-frame preload hook for `agentview://`, so DB-backed views
+/// get this tiny bridge inline with the existing bootstrap. The parent app
+/// validates the iframe source before invoking backend functions.
+const MOBILE_VIEW_HOST_HTML: &str = r#"<script>
+  (() => {
+    if (window.agentwfy || window.parent === window) return;
+
+    const CALL_CHANNEL = 'agentwfy:view-call';
+    const RESULT_CHANNEL = 'agentwfy:view-result';
+    let nextId = 1;
+    const pending = new Map();
+
+    function normalizeError(error) {
+      if (!error || typeof error !== 'object') {
+        return new Error(String(error || 'Unknown agentwfy error'));
+      }
+      const err = new Error(typeof error.message === 'string' ? error.message : 'Unknown agentwfy error');
+      if (typeof error.name === 'string' && error.name) err.name = error.name;
+      if ('code' in error) err.code = error.code;
+      if ('details' in error) err.details = error.details;
+      return err;
+    }
+
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || data.channel !== RESULT_CHANNEL || typeof data.id !== 'string') return;
+      const waiter = pending.get(data.id);
+      if (!waiter) return;
+      pending.delete(data.id);
+      if (data.ok) {
+        waiter.resolve(data.value);
+      } else {
+        waiter.reject(normalizeError(data.error));
+      }
+    });
+
+    function invoke(name, params) {
+      return new Promise((resolve, reject) => {
+        const id = 'mobile-view-' + Date.now().toString(36) + '-' + (nextId++).toString(36);
+        pending.set(id, { resolve, reject });
+        window.parent.postMessage({ channel: CALL_CHANNEL, id, name, params }, '*');
+      });
+    }
+
+    const cache = new Map();
+    const api = new Proxy({}, {
+      get(_target, prop) {
+        if (typeof prop !== 'string' || prop === 'then') return undefined;
+        let fn = cache.get(prop);
+        if (!fn) {
+          fn = (params) => invoke(prop, params);
+          cache.set(prop, fn);
+        }
+        return fn;
+      },
+    });
+
+    Object.defineProperty(window, 'agentwfy', {
+      value: api,
+      configurable: false,
+      enumerable: true,
+      writable: false,
+    });
+  })();
+</script>"#;
+
 /// Mirrors DEFAULT_SIGNED_URL_TTL_MS / 1000 in shared/backend/signed-urls.ts.
 const SIGNED_URL_TTL_SECS: i64 = 60;
 
@@ -197,7 +264,10 @@ fn serve_view(state: &MirrorDbState, agent_id: &str, name: &str) -> Response<Vec
         return html_response(StatusCode::BAD_REQUEST, "<pre>Missing view name</pre>");
     }
     match fetch_single_string(state, agent_id, "SELECT content FROM views WHERE name = ? LIMIT 1", name) {
-        Ok(Some(content)) => html_response(StatusCode::OK, &inject_bootstrap(&content, BOOTSTRAP_HTML)),
+        Ok(Some(content)) => {
+            let bootstrap = format!("{}{}", MOBILE_VIEW_HOST_HTML, BOOTSTRAP_HTML);
+            html_response(StatusCode::OK, &inject_bootstrap(&content, &bootstrap))
+        }
         Ok(None) => html_response(
             StatusCode::NOT_FOUND,
             &format!("<pre>View not found: {}</pre>", html_escape(name)),
