@@ -17,6 +17,7 @@ import type {
   SessionSummary,
   SpawnSessionRequest,
 } from '#shared/backend/interface.js'
+import type { FileContent } from '#shared/agent/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 import {
@@ -61,6 +62,13 @@ export interface AppState {
   error: string | null
 }
 
+export interface SendMessageRequest {
+  text: string
+  providerId?: string
+  providerOptions?: Record<string, unknown>
+  files?: FileContent[]
+}
+
 const IDLE_STATUS: BackendStatusSnapshot = {
   state: 'disconnected',
   message: '',
@@ -90,6 +98,7 @@ export class AppController {
   private readonly subscribers = new Set<(state: AppState) => void>()
 
   private session: MobileBackend | null = null
+  private readonly rememberedActiveSessionIds = new Map<string, string>()
   /** Increments on every connect()/disconnect() so callbacks captured by a
    *  prior attempt can detect they've been superseded and no-op. Critical
    *  for races where the underlying mirror emits a buffered change after
@@ -190,6 +199,9 @@ export class AppController {
     const remoteConfig = agent.meta.remoteConfig
 
     const gen = ++this.connectGeneration
+    const preferredSessionId = this.state.activeAgentId === agentId
+      ? this.state.activeSession?.sessionId ?? this.rememberedActiveSessionIds.get(agentId) ?? null
+      : this.rememberedActiveSessionIds.get(agentId) ?? null
 
     // Patch 'connecting' synchronously so the UI updates immediately. Flip
     // to the chat screen so connect errors appear next to the Disconnect /
@@ -235,7 +247,16 @@ export class AppController {
         },
         onStatus: (status) => {
           if (!isCurrent()) return
+          const previousState = this.state.status.state
           this.patch({ status })
+          if (status.state === 'connected' && previousState !== 'connected') {
+            const currentSession = this.session
+            if (!currentSession) return
+            const sessionId = this.state.activeSession?.sessionId
+              ?? this.rememberedActiveSessionIds.get(agentId)
+              ?? preferredSessionId
+            void this.refreshAfterReconnect(currentSession, isCurrent, sessionId)
+          }
         },
         onEvent: (event) => {
           if (!isCurrent()) return
@@ -292,16 +313,30 @@ export class AppController {
     // Kick off provider + session loads. Both run under the same generation
     // guard as connect itself — a superseding disconnect/connect won't see
     // a late-arriving response patched onto its state.
-    void this.loadInitialBackendState(session, isCurrent)
+    void this.loadInitialBackendState(session, isCurrent, preferredSessionId)
   }
 
   private async loadInitialBackendState(
     session: MobileBackend,
     isCurrent: () => boolean,
+    preferredSessionId: string | null,
   ): Promise<void> {
     await Promise.all([
       this.refreshProviders(session, isCurrent),
       this.refreshSessions(session, isCurrent),
+    ])
+    await this.restoreActiveSession(session, isCurrent, preferredSessionId)
+  }
+
+  private async refreshAfterReconnect(
+    session: MobileBackend,
+    isCurrent: () => boolean,
+    preferredSessionId: string | null,
+  ): Promise<void> {
+    await Promise.all([
+      this.refreshProviders(session, isCurrent),
+      this.refreshSessions(session, isCurrent),
+      this.restoreActiveSession(session, isCurrent, preferredSessionId),
     ])
   }
 
@@ -343,6 +378,8 @@ export class AppController {
     try {
       const state = await session.backend.sessions.get({ sessionId })
       if (gen !== this.connectGeneration) return null
+      if (state) this.rememberActiveSession(state.sessionId)
+      else this.forgetActiveSession(sessionId)
       this.patch({ activeSession: state ?? null, error: null })
       return state ?? null
     } catch (err) {
@@ -362,6 +399,7 @@ export class AppController {
     try {
       const { sessionId } = await session.backend.sessions.spawn(req)
       if (gen !== this.connectGeneration) return null
+      this.rememberActiveSession(sessionId)
       this.patch({ error: null })
       await this.loadSession(sessionId)
       return sessionId
@@ -382,6 +420,7 @@ export class AppController {
     if (this.state.activeSession?.sessionId === sessionId) {
       this.patch({ activeSession: null })
     }
+    this.forgetActiveSession(sessionId)
     try {
       await session.backend.sessions.remove({ sessionId })
       if (gen !== this.connectGeneration) return
@@ -400,7 +439,74 @@ export class AppController {
   /** Clear the active session without touching the daemon. */
   closeSession(): void {
     if (this.state.activeSession === null) return
+    this.forgetActiveSession(this.state.activeSession.sessionId)
     this.patch({ activeSession: null })
+  }
+
+  async sendMessage(req: SendMessageRequest): Promise<string | null> {
+    const session = this.session
+    if (!session) {
+      this.patch({ error: 'Remote agent is not connected.' })
+      return null
+    }
+    if (this.state.status.state !== 'connected') {
+      this.patch({ error: 'Remote agent is disconnected. Wait for it to reconnect before sending.' })
+      return null
+    }
+
+    const text = req.text.trim()
+    const hasFiles = (req.files?.length ?? 0) > 0
+    if (!text && !hasFiles) {
+      this.patch({ error: 'Prompt is required.' })
+      return null
+    }
+
+    const active = this.state.activeSession
+    if (!active) {
+      return this.newSession({
+        prompt: text || ' ',
+        providerId: req.providerId,
+        providerOptions: req.providerOptions,
+        files: req.files,
+      })
+    }
+
+    const gen = this.connectGeneration
+    try {
+      await session.backend.sessions.send({
+        sessionId: active.sessionId,
+        text: text || ' ',
+        files: req.files,
+      })
+      if (gen !== this.connectGeneration) return null
+      this.rememberActiveSession(active.sessionId)
+      this.patch({ error: null })
+      return active.sessionId
+    } catch (err) {
+      if (gen !== this.connectGeneration) return null
+      this.patch({ error: `Sending message failed: ${messageFromUnknown(err)}` })
+      return null
+    }
+  }
+
+  async abortActiveSession(): Promise<void> {
+    const session = this.session
+    const active = this.state.activeSession
+    if (!session || !active) return
+    if (this.state.status.state !== 'connected') {
+      this.patch({ error: 'Remote agent is disconnected. Reconnect before aborting.' })
+      return
+    }
+
+    const gen = this.connectGeneration
+    try {
+      await session.backend.sessions.abort({ sessionId: active.sessionId })
+      if (gen !== this.connectGeneration) return
+      this.patch({ error: null })
+    } catch (err) {
+      if (gen !== this.connectGeneration) return
+      this.patch({ error: `Abort failed: ${messageFromUnknown(err)}` })
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -427,6 +533,12 @@ export class AppController {
     switch (event.kind) {
       case 'session:state': {
         const active = this.state.activeSession
+        let sessions = this.state.sessions
+        if (event.title !== undefined) {
+          sessions = sessions.map((s) => (
+            s.sessionId === event.sessionId ? { ...s, title: event.title ?? s.title } : s
+          ))
+        }
         if (active && active.sessionId === event.sessionId) {
           const next: SessionState = {
             ...active,
@@ -434,7 +546,10 @@ export class AppController {
             title: event.title ?? active.title,
             live: event.live,
           }
-          this.patch({ activeSession: next })
+          this.rememberActiveSession(next.sessionId)
+          this.patch({ activeSession: next, sessions })
+        } else if (sessions !== this.state.sessions) {
+          this.patch({ sessions })
         }
         return
       }
@@ -447,6 +562,7 @@ export class AppController {
         return
       }
       case 'session:removed': {
+        this.forgetActiveSession(event.sessionId)
         const sessions = this.state.sessions.filter((s) => s.sessionId !== event.sessionId)
         const activeSession =
           this.state.activeSession?.sessionId === event.sessionId ? null : this.state.activeSession
@@ -482,6 +598,49 @@ export class AppController {
     const subs = Array.from(this.subscribers)
     for (const sub of subs) {
       if (this.subscribers.has(sub)) sub(this.state)
+    }
+  }
+
+  private async restoreActiveSession(
+    session: MobileBackend,
+    isCurrent: () => boolean,
+    sessionId: string | null,
+  ): Promise<void> {
+    if (!sessionId || !isCurrent()) return
+    const current = this.state.activeSession
+    if (current && current.sessionId !== sessionId) return
+    try {
+      const state = await session.backend.sessions.get({ sessionId })
+      if (!isCurrent()) return
+      const latest = this.state.activeSession
+      if (latest && latest.sessionId !== sessionId) return
+      if (state) {
+        this.rememberActiveSession(state.sessionId)
+        this.patch({ activeSession: state, error: null })
+      } else {
+        this.forgetActiveSession(sessionId)
+      }
+    } catch (err) {
+      if (!isCurrent()) return
+      console.warn('[app-controller] restore active session failed:', err)
+    }
+  }
+
+  private rememberActiveSession(sessionId: string): void {
+    const agentId = this.state.activeAgentId
+    if (!agentId) return
+    this.rememberedActiveSessionIds.set(agentId, sessionId)
+  }
+
+  private forgetActiveSession(sessionId: string, agentId: string | null = this.state.activeAgentId): void {
+    if (agentId) {
+      if (this.rememberedActiveSessionIds.get(agentId) === sessionId) {
+        this.rememberedActiveSessionIds.delete(agentId)
+      }
+      return
+    }
+    for (const [rememberedAgentId, remembered] of this.rememberedActiveSessionIds) {
+      if (remembered === sessionId) this.rememberedActiveSessionIds.delete(rememberedAgentId)
     }
   }
 }

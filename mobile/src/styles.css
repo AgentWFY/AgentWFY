@@ -226,6 +226,11 @@ button.primary:active {
   background: var(--accent-press);
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 button.ghost {
   background: transparent;
   color: var(--accent);
@@ -257,6 +262,10 @@ button.link {
   cursor: pointer;
 }
 
+button.link.danger-link {
+  color: var(--danger);
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -277,6 +286,181 @@ button.link {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+#connected-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-active {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.chat-live-row {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: #344054;
+  font-size: 13px;
+}
+
+.chat-live-row[data-tone="warn"] {
+  border-color: rgba(176, 114, 0, 0.35);
+  background: rgba(176, 114, 0, 0.08);
+  color: #8a5a00;
+}
+
+.chat-live-row[data-tone="error"] {
+  border-color: rgba(177, 55, 47, 0.4);
+  background: rgba(177, 55, 47, 0.08);
+  color: var(--danger);
+}
+
+.message-list {
+  flex: 1;
+  min-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.empty-chat {
+  margin: auto;
+}
+
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 92%;
+}
+
+.chat-message[data-role="user"] {
+  align-self: flex-end;
+}
+
+.chat-message[data-role="assistant"] {
+  align-self: flex-start;
+}
+
+.message-role {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.chat-message[data-role="user"] .message-role {
+  text-align: right;
+}
+
+.message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eef4fb;
+  color: #18202a;
+  line-height: 1.45;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.chat-message[data-role="user"] .message-body {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.thinking-block,
+.tool-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.thinking-block summary,
+.tool-card summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.tool-card.is-error {
+  border-color: rgba(177, 55, 47, 0.35);
+}
+
+.tool-card pre,
+.tool-result pre {
+  margin: 8px 0 0;
+  padding: 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: rgba(24, 32, 42, 0.08);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.message-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(177, 55, 47, 0.08);
+  color: var(--danger);
+}
+
+.file-chip {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #344054;
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.message-image {
+  max-width: min(100%, 280px);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.composer-field textarea {
+  min-height: 72px;
+  max-height: 160px;
+}
+
+.composer-hint {
+  margin: 0;
 }
 
 .providers {
@@ -398,6 +582,26 @@ button.link {
     color: #eef2f6;
   }
 
+  .chat-live-row,
+  .file-chip {
+    color: #d0d5dd;
+  }
+
+  .message-body {
+    background: #222a35;
+    color: #eef2f6;
+  }
+
+  .thinking-block,
+  .tool-card {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .tool-card pre,
+  .tool-result pre {
+    background: rgba(0, 0, 0, 0.24);
+  }
+
   button.ghost {
     color: #6aa6dc;
     border-color: var(--border);
@@ -405,5 +609,9 @@ button.link {
 
   button.link {
     color: #6aa6dc;
+  }
+
+  button.link.danger-link {
+    color: #ff8a80;
   }
 }

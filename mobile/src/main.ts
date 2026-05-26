@@ -9,7 +9,8 @@
 // Two screens map directly to desktop's flow: the agents list (== desktop
 // sidebar) and the add-agent form (== command-palette add-remote-agent).
 
-import type { ProviderInfo } from '#shared/agent/provider_types.js'
+import type { Block, DisplayMessage } from '#shared/agent/provider_types.js'
+import type { FileContent, RetryState } from '#shared/agent/types.js'
 import type { ProviderState, SessionSummary } from '#shared/backend/interface.js'
 import { AppController, type AppState, type InstalledAgent, type Screen } from './app-controller.js'
 
@@ -212,13 +213,11 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
 
 // ── Connected ────────────────────────────────────────────────────────
 //
-// Single screen with three swappable bodies: a picker (sessions + provider
-// summary + "New session" button), an active-session placeholder (filled in
-// by Step 5), and a new-session prompt form. The form is the only piece of
-// transient UI state that isn't a function of AppState — `bodyMode` tracks
-// it so subscribe-fallthrough updates don't clobber an in-flight prompt.
+// Single screen with two stable bodies: a session picker with a first-message
+// composer and an active chat. Streaming patches update the message/status
+// regions in place so the composer keeps focus and draft text.
 
-type ConnectedBodyMode = 'picker' | 'active' | 'new'
+type ConnectedBodyMode = 'picker' | 'active'
 let bodyMode: ConnectedBodyMode = 'picker'
 
 function renderConnected(root: HTMLDivElement, controller: AppController, state: AppState): void {
@@ -316,36 +315,36 @@ function renderConnectedBody(root: HTMLDivElement, controller: AppController, st
   const body = root.querySelector<HTMLDivElement>('#connected-body')
   if (!body) return
 
-  // Don't replace the new-session form while the user is typing into it;
-  // only flip out once an activeSession has actually been loaded (i.e. the
-  // spawn the form initiated succeeded).
-  if (bodyMode === 'new' && !state.activeSession) return
-
   if (state.activeSession) {
-    bodyMode = 'active'
     renderActiveSessionBody(body, controller, state)
     return
   }
 
-  bodyMode = 'picker'
   renderPickerBody(body, controller, state)
 }
 
 function renderPickerBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
-  body.innerHTML = `
-    <div class="session-picker">
-      <div class="section-header">
-        <span class="section-title">Sessions</span>
-        <button type="button" class="link" id="new-session">New session</button>
+  const providerKey = composerProviderKey(state.providers)
+  if (bodyMode !== 'picker' || body.dataset.mode !== 'picker' || body.dataset.providerKey !== providerKey) {
+    bodyMode = 'picker'
+    body.dataset.mode = 'picker'
+    body.dataset.providerKey = providerKey
+    delete body.dataset.sessionId
+    body.innerHTML = `
+      <div class="session-picker">
+        <div class="section-header">
+          <span class="section-title">Sessions</span>
+        </div>
+        <div class="session-list" id="session-list"></div>
+        ${renderComposerHtml(state, 'start')}
       </div>
-      <div class="session-list" id="session-list">${renderSessionRowsHtml(state.sessions)}</div>
-    </div>
-  `
-  body.querySelector<HTMLButtonElement>('#new-session')!.addEventListener('click', () => {
-    bodyMode = 'new'
-    renderNewSessionForm(body, controller, state)
-  })
+    `
+    bindComposer(body, controller)
+  }
+  const list = body.querySelector<HTMLDivElement>('#session-list')
+  if (list) list.innerHTML = renderSessionRowsHtml(state.sessions)
   bindSessionRowHandlers(body, controller, state.sessions)
+  updateComposerState(body, state)
 }
 
 function renderSessionRowsHtml(sessions: SessionSummary[]): string {
@@ -394,97 +393,310 @@ function bindSessionRowHandlers(
 function renderActiveSessionBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
   const session = state.activeSession!
   const title = session.title || 'Untitled session'
-  body.innerHTML = `
-    <div class="session-active">
-      <div class="section-header">
-        <button type="button" class="link" id="close-session">← Sessions</button>
+  if (bodyMode !== 'active' || body.dataset.mode !== 'active' || body.dataset.sessionId !== session.sessionId) {
+    bodyMode = 'active'
+    body.dataset.mode = 'active'
+    body.dataset.sessionId = session.sessionId
+    body.innerHTML = `
+      <div class="session-active">
+        <div class="section-header">
+          <button type="button" class="link" id="close-session">Sessions</button>
+          <button type="button" class="link danger-link" id="remove-active-session">Remove</button>
+        </div>
+        <div class="chat-title-row">
+          <span class="agent-label" id="session-title"></span>
+          <span class="agent-meta" id="session-provider"></span>
+        </div>
+        <div class="chat-live" id="chat-live"></div>
+        <div class="message-list" id="message-list"></div>
+        ${renderComposerHtml(state, 'followup')}
       </div>
-      <div class="panel">
-        <span class="agent-label">${escapeHtml(title)}</span>
-      </div>
-      <p class="muted">Session loaded (${escapeHtml(String(session.messages.length))} message${session.messages.length === 1 ? '' : 's'}). Chat rendering lands in the next plan step.</p>
-      <div class="form-actions">
-        <button type="button" class="danger" id="remove-active-session">Remove session</button>
-      </div>
-    </div>
-  `
-  body.querySelector<HTMLButtonElement>('#close-session')!.addEventListener('click', () => {
-    controller.closeSession()
-  })
-  body.querySelector<HTMLButtonElement>('#remove-active-session')!.addEventListener('click', () => {
-    if (!confirm(`Remove session "${title}"?`)) return
-    void controller.removeSession(session.sessionId)
-  })
+    `
+    body.querySelector<HTMLButtonElement>('#close-session')!.addEventListener('click', () => {
+      controller.closeSession()
+    })
+    body.querySelector<HTMLButtonElement>('#remove-active-session')!.addEventListener('click', () => {
+      const current = controller.getState().activeSession
+      if (!current) return
+      const label = current.title || 'Untitled session'
+      if (!confirm(`Remove session "${label}"?`)) return
+      void controller.removeSession(current.sessionId)
+    })
+    bindComposer(body, controller)
+  }
+
+  body.querySelector<HTMLSpanElement>('#session-title')!.textContent = title
+  body.querySelector<HTMLSpanElement>('#session-provider')!.textContent = session.providerId || 'default provider'
+  const live = body.querySelector<HTMLDivElement>('#chat-live')!
+  live.innerHTML = renderLiveStatusHtml(state)
+  updateMessages(body.querySelector<HTMLDivElement>('#message-list')!, state)
+  updateComposerState(body, state)
 }
 
-function renderNewSessionForm(body: HTMLDivElement, controller: AppController, state: AppState): void {
-  const providers = state.providers
-  const providerOptions = providers
-    ? providers.providerList.map((p: ProviderInfo) => {
-        const selected = p.id === providers.defaultProviderId ? 'selected' : ''
-        return `<option value="${escapeHtml(p.id)}" ${selected}>${escapeHtml(p.name)}</option>`
-      }).join('')
-    : ''
-  body.innerHTML = `
-    <form class="form" id="new-session-form" novalidate>
-      <div class="section-header">
-        <span class="section-title">New session</span>
-        <button type="button" class="link" id="cancel-new-session">Cancel</button>
-      </div>
-      ${providers && providers.providerList.length > 1 ? `
-        <label class="field">
-          <span>Provider</span>
-          <select name="providerId">${providerOptions}</select>
-        </label>
-      ` : ''}
-      <label class="field">
-        <span>Prompt</span>
-        <textarea name="prompt" rows="4" autocapitalize="sentences" required placeholder="Ask the agent anything…"></textarea>
+type ComposerMode = 'start' | 'followup'
+
+function renderComposerHtml(state: AppState, mode: ComposerMode): string {
+  const providerSelect = mode === 'start' ? renderComposerProviderSelectHtml(state.providers) : ''
+  const placeholder = mode === 'start' ? 'Ask the agent anything…' : 'Send a follow-up…'
+  const buttonLabel = mode === 'start' ? 'Start chat' : 'Send'
+  return `
+    <form class="chat-composer" data-mode="${mode}" novalidate>
+      ${providerSelect}
+      <label class="field composer-field">
+        <span>${mode === 'start' ? 'Prompt' : 'Message'}</span>
+        <textarea name="prompt" rows="3" autocapitalize="sentences" required placeholder="${placeholder}"></textarea>
       </label>
-      <p class="field-error" id="new-session-error" hidden></p>
-      <div class="form-actions">
-        <button type="submit" class="primary">Start session</button>
+      <p class="field-error composer-error" hidden></p>
+      <p class="composer-hint muted"></p>
+      <div class="form-actions composer-actions">
+        <button type="submit" class="primary">${buttonLabel}</button>
+        <button type="button" class="danger composer-abort" hidden>Abort</button>
       </div>
     </form>
   `
-  const form = body.querySelector<HTMLFormElement>('#new-session-form')!
-  const errorEl = body.querySelector<HTMLParagraphElement>('#new-session-error')!
-  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+}
 
-  body.querySelector<HTMLButtonElement>('#cancel-new-session')!.addEventListener('click', () => {
-    bodyMode = 'picker'
-    renderPickerBody(body, controller, controller.getState())
+function renderComposerProviderSelectHtml(providers: ProviderState | null): string {
+  if (!providers || providers.providerList.length <= 1) return ''
+  const options = providers.providerList.map((p) => {
+    const selected = p.id === providers.defaultProviderId ? 'selected' : ''
+    return `<option value="${escapeHtml(p.id)}" ${selected}>${escapeHtml(p.name)}</option>`
+  }).join('')
+  return `
+    <label class="field">
+      <span>Provider</span>
+      <select name="providerId">${options}</select>
+    </label>
+  `
+}
+
+function composerProviderKey(providers: ProviderState | null): string {
+  if (!providers) return 'loading'
+  return `${providers.defaultProviderId}\0${providers.providerList.map((p) => p.id).join('\0')}`
+}
+
+function bindComposer(scope: HTMLElement, controller: AppController): void {
+  const form = scope.querySelector<HTMLFormElement>('.chat-composer')
+  if (!form) return
+  const textarea = form.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')!
+  const errorEl = form.querySelector<HTMLParagraphElement>('.composer-error')!
+  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+  const abortBtn = form.querySelector<HTMLButtonElement>('.composer-abort')!
+
+  textarea.addEventListener('input', () => {
+    autoSizeTextarea(textarea)
+    errorEl.hidden = true
   })
 
-  form.addEventListener('submit', async (evt) => {
+  form.addEventListener('submit', (evt) => {
     evt.preventDefault()
     if (submitBtn.disabled) return
-    const data = new FormData(form)
-    const prompt = String(data.get('prompt') ?? '').trim()
+    const prompt = textarea.value.trim()
     if (!prompt) {
       errorEl.hidden = false
       errorEl.textContent = 'Prompt is required.'
+      textarea.focus()
       return
     }
+    const data = new FormData(form)
     const providerId = data.get('providerId')
+    form.dataset.sending = 'true'
     submitBtn.disabled = true
     errorEl.hidden = true
-
-    const sessionId = await controller.newSession({
-      prompt,
+    textarea.value = ''
+    autoSizeTextarea(textarea)
+    void controller.sendMessage({
+      text: prompt,
       providerId: providerId ? String(providerId) : undefined,
+    }).then((sessionId) => {
+      if (!sessionId && document.contains(form)) {
+        textarea.value = prompt
+        autoSizeTextarea(textarea)
+      }
+    }).finally(() => {
+      delete form.dataset.sending
+      if (document.contains(form)) updateComposerState(scope, controller.getState())
     })
-
-    if (!sessionId) {
-      // Failure path: controller patched state.error → banner shows it.
-      // Keep the form mounted so the user can retry with their typed prompt.
-      submitBtn.disabled = false
-      bodyMode = 'new'
-      return
-    }
-    // Success: controller has loaded the new session, so the next subscribe
-    // tick will flip bodyMode to 'active' and re-render the body.
   })
+
+  abortBtn.addEventListener('click', () => {
+    if (abortBtn.disabled) return
+    abortBtn.disabled = true
+    void controller.abortActiveSession().finally(() => {
+      if (document.contains(abortBtn)) abortBtn.disabled = false
+    })
+  })
+
+  autoSizeTextarea(textarea)
+}
+
+function updateComposerState(scope: HTMLElement, state: AppState): void {
+  const form = scope.querySelector<HTMLFormElement>('.chat-composer')
+  if (!form) return
+  const textarea = form.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')
+  const select = form.querySelector<HTMLSelectElement>('select[name="providerId"]')
+  const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')
+  const abortBtn = form.querySelector<HTMLButtonElement>('.composer-abort')
+  const hint = form.querySelector<HTMLParagraphElement>('.composer-hint')
+  const reason = composerDisabledReason(state)
+  const canSend = reason === null
+  const sending = form.dataset.sending === 'true'
+  if (textarea) textarea.disabled = !canSend
+  if (select) select.disabled = !canSend
+  if (submitBtn) submitBtn.disabled = !canSend || sending
+  if (hint) {
+    hint.hidden = reason === null
+    hint.textContent = reason ?? ''
+  }
+  if (abortBtn) {
+    const abortable = canAbort(state)
+    abortBtn.hidden = !hasLiveWork(state)
+    abortBtn.disabled = !abortable
+  }
+}
+
+function composerDisabledReason(state: AppState): string | null {
+  if (state.status.state !== 'connected') {
+    return state.status.message || 'Remote agent is disconnected.'
+  }
+  if (!state.activeSession && !state.providers) return 'Loading providers…'
+  if (!state.activeSession && state.providers?.providerList.length === 0) {
+    return 'No providers are configured on this daemon.'
+  }
+  return null
+}
+
+function hasLiveWork(state: AppState): boolean {
+  const live = state.activeSession?.live
+  return !!(live?.isStreaming || live?.retryState)
+}
+
+function canAbort(state: AppState): boolean {
+  return state.status.state === 'connected' && !!state.activeSession && hasLiveWork(state)
+}
+
+function updateMessages(container: HTMLDivElement, state: AppState): void {
+  const wasNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120
+  container.innerHTML = renderMessagesHtml(getDisplayMessagesForRender(state))
+  if (wasNearBottom || state.activeSession?.live?.isStreaming) {
+    container.scrollTop = container.scrollHeight
+  }
+}
+
+function getDisplayMessagesForRender(state: AppState): DisplayMessage[] {
+  const session = state.activeSession
+  if (!session) return []
+  const messages = [...session.messages]
+  const streaming = session.live?.streamingMessage
+  if (streaming) messages.push(streaming)
+  return messages
+}
+
+function renderMessagesHtml(messages: DisplayMessage[]): string {
+  if (messages.length === 0) {
+    return `<div class="empty-chat muted">No messages yet.</div>`
+  }
+  return messages.map((message) => renderMessageHtml(message)).join('')
+}
+
+function renderMessageHtml(message: DisplayMessage): string {
+  const roleLabel = message.role === 'user' ? 'You' : 'Agent'
+  return `
+    <article class="chat-message" data-role="${message.role}">
+      <div class="message-role">${roleLabel}</div>
+      <div class="message-body">${message.blocks.map(renderBlockHtml).join('')}</div>
+    </article>
+  `
+}
+
+function renderBlockHtml(block: Block): string {
+  switch (block.type) {
+    case 'text':
+      return `<div class="message-text">${escapeTextBlock(block.text)}</div>`
+    case 'thinking':
+      return `<details class="thinking-block"><summary>Thinking</summary><div>${escapeTextBlock(block.text)}</div></details>`
+    case 'file':
+      return renderFileHtml({ type: 'file', data: block.data, mimeType: block.mimeType })
+    case 'attachment':
+      return `<div class="file-chip">${escapeHtml(block.label)} · ${formatBytes(block.size)}</div>`
+    case 'exec_js':
+      return `
+        <details class="tool-card">
+          <summary>${escapeHtml(block.description || 'Running JavaScript')}</summary>
+          <pre>${escapeHtml(block.code)}</pre>
+        </details>
+      `
+    case 'exec_js_result':
+      return `
+        <details class="tool-card ${block.isError ? 'is-error' : ''}">
+          <summary>${block.isError ? 'JavaScript error' : 'JavaScript result'}</summary>
+          <div class="tool-result">${block.content.map(renderToolContentHtml).join('')}</div>
+        </details>
+      `
+    case 'error':
+      return `<div class="message-error">${escapeTextBlock(block.text)}</div>`
+  }
+}
+
+function renderToolContentHtml(content: FileContent | { type: 'text'; text: string }): string {
+  if (content.type === 'file') return renderFileHtml(content)
+  return `<pre>${escapeHtml(content.text)}</pre>`
+}
+
+function renderFileHtml(file: FileContent): string {
+  if (file.mimeType.startsWith('image/')) {
+    return `<img class="message-image" src="data:${escapeHtml(file.mimeType)};base64,${escapeHtml(file.data)}" alt="attachment">`
+  }
+  return `<div class="file-chip">${escapeHtml(file.mimeType)}</div>`
+}
+
+function renderLiveStatusHtml(state: AppState): string {
+  const live = state.activeSession?.live
+  if (state.status.state !== 'connected') {
+    return `<div class="chat-live-row" data-tone="error">${escapeHtml(state.status.message || 'Disconnected')}</div>`
+  }
+  if (live?.retryState) {
+    return `<div class="chat-live-row" data-tone="warn">${escapeHtml(formatRetry(live.retryState))}</div>`
+  }
+  if (live?.stalledSince) {
+    return `<div class="chat-live-row" data-tone="warn">No response for ${escapeHtml(formatDuration(Date.now() - live.stalledSince))}.</div>`
+  }
+  if (live?.statusLine) {
+    return `<div class="chat-live-row">${escapeHtml(live.statusLine)}</div>`
+  }
+  if (live?.isStreaming) {
+    return `<div class="chat-live-row">Streaming response…</div>`
+  }
+  return `<div class="chat-live-row">Ready</div>`
+}
+
+function formatRetry(retry: RetryState): string {
+  const delay = Math.max(0, retry.nextRetryAt - Date.now())
+  return `Retrying in ${formatDuration(delay)} (attempt ${retry.attempt}/${retry.maxAttempts}): ${retry.lastError}`
+}
+
+function formatDuration(ms: number): string {
+  const sec = Math.ceil(Math.max(0, ms) / 1000)
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  const rem = sec % 60
+  return rem === 0 ? `${min}m` : `${min}m ${rem}s`
+}
+
+function formatBytes(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return 'unknown size'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function escapeTextBlock(text: string): string {
+  return escapeHtml(text).replace(/\n/g, '<br>')
+}
+
+function autoSizeTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(160, Math.max(72, textarea.scrollHeight))}px`
 }
 
 // Compact "5m ago" formatter — enough to spot stale sessions in the picker.

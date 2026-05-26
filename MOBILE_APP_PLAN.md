@@ -105,25 +105,35 @@ existing conversation or start a new one.
 
 Verified with `./scripts/build` (desktop, mobile, and remote server).
 
-## Step 5 - Implement the chat workflow
+## Step 5 - Implement the chat workflow - DONE
 
-This is the first user-facing product slice.
+This is now the first user-facing product slice:
 
-- Render display messages from `SessionState.messages`.
-- Apply live patches from `session:state`:
-  streaming message, status line, retry state, stalled state, title updates,
-  and message replacement when the backend sends a fresh message array.
-- Composer behavior:
-  send first prompt by spawning a session, send follow-up messages to the
-  active session, disable impossible actions while disconnected, and support
-  abort while streaming.
-- Preserve the active session across reconnect when possible; show a clear
-  disconnected state without destroying local UI state.
-- Defer file attachments unless needed for MVP; keep the controller method
-  shape compatible with `FileContent[]`.
+- `AppController` exposes `sendMessage(...)` and `abortActiveSession()`.
+  `sendMessage` spawns a session when no session is active, sends follow-up
+  messages to the active session, validates disconnected/empty-prompt states,
+  and keeps the call shape compatible with `FileContent[]`.
+- `AppController` remembers the active session id per agent and reloads it
+  after reconnect when the daemon still has that session. Temporary remote
+  disconnect/reconnect status changes keep the local chat UI mounted.
+- `session:state` patches now drive the active chat surface: fresh message
+  arrays replace committed messages, `streamingMessage` renders live at the
+  end of the transcript, title updates flow into both active chat and the
+  session list, and retry/stalled/status-line states are visible.
+- `mobile/src/main.ts` renders a real chat screen: session picker with a
+  first-message composer, active transcript, follow-up composer, abort button,
+  and live status row. The message/status areas update in place so streaming
+  patches do not erase composer drafts.
+- `mobile/src/styles.css` adds the mobile chat layout, message bubbles,
+  tool/error/file rendering, retry/stall tones, composer states, and dark-mode
+  variants.
 
-Done when: "connect -> new chat -> send prompt -> stream reply -> send
-follow-up -> abort/retry state behaves sanely" works on iOS simulator.
+Verified with `./scripts/build-mobile` and the iOS simulator preview
+(`./scripts/mobile-preview`) against a local remote daemon with
+`plugins/test-provider` installed and selected by default. Smoke covered:
+connect, first prompt streaming/commit, follow-up send, aborting a slow
+stream, showing and aborting a retry state, and preserving/reloading the
+active chat after daemon restart.
 
 ## Step 6 - Implement `window.agentwfy` for mobile views
 
