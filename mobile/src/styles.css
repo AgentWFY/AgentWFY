@@ -139,7 +139,9 @@ p { margin: 0; }
   background: var(--bg);
 }
 
-/* Fullscreen mode: hide the rail entirely for a stack-style push */
+/* Fullscreen mode: hide the rail entirely so the active session / view gets
+   the full width. The picker screens (chat session list, views list,
+   add-agent) keep the rail. */
 .shell.is-fullscreen {
   grid-template-columns: 1fr;
 }

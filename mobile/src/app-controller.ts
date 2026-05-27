@@ -32,7 +32,7 @@ import {
 import { createMobileBackend, type MobileBackend } from './backend.js'
 import { bridge } from './tauri-bridge.js'
 
-export type Screen = 'agents' | 'add-agent' | 'chat' | 'views'
+export type Screen = 'add-agent' | 'chat' | 'views'
 
 export interface ViewSummary {
   name: string
@@ -87,7 +87,10 @@ const IDLE_STATUS: BackendStatusSnapshot = {
 
 function initialState(): AppState {
   return {
-    screen: 'agents',
+    // Placeholder — bootstrap picks the real screen (chat once an agent is
+    // active, or add-agent when nothing is installed). Mirrors desktop where
+    // the first persisted agent is selected by default.
+    screen: 'add-agent',
     agents: [],
     activeAgentId: null,
     activeMeta: null,
@@ -193,13 +196,23 @@ export class AppController {
     return agentId
   }
 
-  /** Remove an installed agent. Disconnects first if it's the active one. */
+  /** Remove an installed agent. Disconnects first if it's the active one.
+   *  After the removal, the renderer needs *some* agent to focus on (the
+   *  agents-list screen is gone): connect to the next remaining agent, or
+   *  drop to add-agent when nothing is left. */
   async removeAgent(agentId: string): Promise<void> {
-    if (this.state.activeAgentId === agentId) {
+    const wasActive = this.state.activeAgentId === agentId
+    if (wasActive) {
       await this.disconnect()
     }
     await removeInstalledAgent(agentId)
-    await this.refreshAgents()
+    const agents = await this.refreshAgents()
+    if (!wasActive) return
+    if (agents.length > 0) {
+      void this.connect(agents[0].agentId)
+    } else {
+      this.patch({ screen: 'add-agent' })
+    }
   }
 
   /** Connect to an installed agent by id. */
@@ -292,11 +305,11 @@ export class AppController {
     } catch (err) {
       if (!isCurrent()) return
       const message = messageFromUnknown(err)
-      // Bounce back to the agents list so the renderer doesn't keep showing
-      // a chat header for an agent that never connected, and the user lands
-      // somewhere they can retry / remove.
+      // Bounce back to add-agent so the renderer doesn't keep showing a chat
+      // header for an agent that never connected. The sidebar stays available
+      // so the user can pick another agent; the error surfaces as a banner.
       this.patch({
-        screen: 'agents',
+        screen: 'add-agent',
         activeAgentId: null,
         activeMeta: null,
         status: { state: 'error', message: `Connect failed: ${message}`, updatedAt: Date.now() },
@@ -655,8 +668,11 @@ ORDER BY
     await this.teardownSession()
     this.patch({
       ...initialState(),
-      // Preserve the loaded agents list so the UI doesn't have to re-fetch.
+      // Preserve the loaded agents list so the UI doesn't have to re-fetch,
+      // and the current screen so callers (removeAgent / menu actions) can
+      // decide where to navigate next.
       agents: this.state.agents,
+      screen: this.state.screen,
     })
   }
 

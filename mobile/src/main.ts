@@ -2,9 +2,11 @@
 //
 // Layout shape: persistent two-pane shell with a Discord-style agent rail on
 // the left (icons only) and a main pane on the right whose content depends on
-// the current screen. Each render function builds the shell HTML and the
-// subscribe handler patches sub-regions in place when the screen group / agent
-// hasn't changed so the chat composer keeps draft text and focus.
+// the current screen. The rail stays visible across every screen so the user
+// can switch agents the way they do on desktop. Each render function builds
+// the shell HTML; the subscribe handler patches sub-regions in place when the
+// screen group / agent hasn't changed so the chat composer keeps draft text
+// and focus.
 
 import type { Block, DisplayMessage } from '#shared/agent/provider_types.js'
 import type { FileContent, RetryState } from '#shared/agent/types.js'
@@ -25,40 +27,34 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
   await controller.refreshAgents()
   const agents = controller.getState().agents
 
-  // First-launch UX: jump straight into the add-agent form when nothing's
-  // configured. Mirrors desktop "no installed agents -> create a default
-  // agent" (main.ts), adapted for remote-only.
-  if (agents.length === 0) controller.setScreen('add-agent')
+  // Mirror desktop's "first persisted agent is selected by default" flow.
+  // On a fresh install with no agents yet, drop the user straight into the
+  // add-agent form so the rail's empty state isn't a dead-end.
+  if (agents.length === 0) {
+    controller.setScreen('add-agent')
+  } else {
+    void controller.connect(agents[0].agentId)
+  }
 
   let lastKey: string | null = null
   controller.subscribe((state) => {
-    // Re-render the whole shell whenever the *shape* changes: screen group,
-    // active agent, the chat/views sub-tab, OR which "active kind" is showing
-    // (session / draft / view / picker). Each kind owns a different header
-    // and body so they can't be patched in place.
-    const key = `${screenGroup(state.screen)}|${state.activeAgentId ?? ''}|${state.screen}|${activeKind(state)}`
+    // Re-render the whole shell whenever the *shape* changes: screen, active
+    // agent, OR which "active kind" is showing (session / draft / view /
+    // picker). Each kind owns a different header and body so they can't be
+    // patched in place.
+    const key = `${state.activeAgentId ?? ''}|${state.screen}|${activeKind(state)}`
     if (key !== lastKey) {
       lastKey = key
       renderScreen(root, controller, state)
     } else {
       updateRail(root, controller, state)
       updateBanner(root, state)
-      updateAgentsBody(root, controller, state)
       updateProviders(root, state)
       updateBottomTabs(root, state)
       renderConnectedBody(root, controller, state)
       updateMainHeader(root, state)
     }
   })
-}
-
-function isFullscreen(state: AppState): boolean {
-  // Every connected screen (chat or views, picker or active) is fullscreen:
-  // the rail only shows on the agents/add-agent surfaces. Navigation between
-  // chat/views happens via the bottom tab bar; the header's back button
-  // takes the user back to the agents list (or back to the picker when
-  // viewing an active session/view).
-  return state.screen === 'chat' || state.screen === 'views'
 }
 
 function hasActiveContent(state: AppState): boolean {
@@ -83,19 +79,8 @@ function activeKind(state: AppState): ActiveKind {
   return 'pck'
 }
 
-type ScreenGroup = 'agents' | 'add-agent' | 'connected'
-
-function screenGroup(screen: Screen): ScreenGroup {
-  if (screen === 'agents') return 'agents'
-  if (screen === 'add-agent') return 'add-agent'
-  return 'connected'
-}
-
 function renderScreen(root: HTMLDivElement, controller: AppController, state: AppState): void {
   switch (state.screen) {
-    case 'agents':
-      renderAgents(root, controller, state)
-      return
     case 'add-agent':
       renderAddAgent(root, controller, state)
       return
@@ -115,6 +100,10 @@ function renderShell(
   state: AppState,
   options: { fullscreen?: boolean } = {},
 ): void {
+  // The rail is visible on every "picker"-style screen (add-agent, chat
+  // session list, views list). Mobile real estate is tight, so when the user
+  // drills into an active session/draft/view we hide the rail to give the
+  // chat/iframe the full width; tapping back restores it.
   const fsClass = options.fullscreen ? ' is-fullscreen' : ''
   root.innerHTML = `
     <div class="shell${fsClass}">
@@ -154,10 +143,6 @@ function updateRail(root: HTMLDivElement, controller: AppController, state: AppS
       const agentId = btn.dataset.agentId
       if (!agentId) return
       const active = state.activeAgentId === agentId
-      if (active && (state.screen === 'add-agent')) {
-        controller.setScreen('chat')
-        return
-      }
       if (!active) {
         void controller.connect(agentId)
       } else if (state.screen !== 'chat' && state.screen !== 'views') {
@@ -192,8 +177,7 @@ function updateRail(root: HTMLDivElement, controller: AppController, state: AppS
 
 function renderRailSlot(agent: InstalledAgent, state: AppState): string {
   const isActive = state.activeAgentId === agent.agentId
-  const onChatOrViews = state.screen === 'chat' || state.screen === 'views'
-  const activeClass = isActive && onChatOrViews ? ' is-active' : ''
+  const activeClass = isActive ? ' is-active' : ''
   const status = isActive ? statusFromState(state) : 'disconnected'
   const initials = getInitials(agent.agentId)
   return `
@@ -217,94 +201,6 @@ function getInitials(name: string): string {
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
   if (name.length >= 2) return name.slice(0, 2).toUpperCase()
   return name.toUpperCase() || '?'
-}
-
-// ── Agents (no active agent) ────────────────────────────────────────
-
-function renderAgents(root: HTMLDivElement, controller: AppController, state: AppState): void {
-
-  const hasAgents = state.agents.length > 0
-  const mainHtml = `
-    <header class="main-header">
-      <div class="main-header-title">
-        <h1>AgentWFY</h1>
-        <span class="main-header-sub">${hasAgents ? 'Pick an agent to connect' : 'Get started'}</span>
-      </div>
-    </header>
-    <div class="banner hidden" id="banner"></div>
-    <div class="body" id="body">
-      ${hasAgents ? renderAgentsListBody(state) : renderAgentsEmptyBody()}
-    </div>
-  `
-
-  renderShell(root, mainHtml, controller, state)
-  bindAgentsBody(root, controller)
-  updateBanner(root, state)
-}
-
-function updateAgentsBody(root: HTMLDivElement, controller: AppController, state: AppState): void {
-  if (state.screen !== 'agents') return
-  const body = root.querySelector<HTMLDivElement>('#body')
-  if (!body) return
-
-  const hasAgents = state.agents.length > 0
-  body.innerHTML = hasAgents ? renderAgentsListBody(state) : renderAgentsEmptyBody()
-  bindAgentsBody(root, controller)
-
-  const subtitle = root.querySelector<HTMLSpanElement>('.main-header-sub')
-  if (subtitle) subtitle.textContent = hasAgents ? 'Pick an agent to connect' : 'Get started'
-}
-
-function renderAgentsEmptyBody(): string {
-  return `
-    <div class="empty-state">
-      <div class="empty-glyph">${ICON_BOLT}</div>
-      <h2>No agents yet</h2>
-      <p>Connect to a daemon running <code>agentwfy-server</code>. The desktop app's "Add remote agent" command exposes the bearer token.</p>
-      <button type="button" class="btn primary compact" id="empty-add">${ICON_PLUS_SM}<span>Add remote agent</span></button>
-    </div>
-  `
-}
-
-function renderAgentsListBody(state: AppState): string {
-  const rows = state.agents.map((a) => `
-    <div class="row">
-      <button type="button" class="row-main" data-action="connect" data-agent-id="${escapeHtml(a.agentId)}">
-        <span class="row-title">${escapeHtml(a.agentId)}</span>
-        <span class="row-meta">${escapeHtml(displayHost(a.meta.remoteConfig.baseUrl))}</span>
-      </button>
-      <button type="button" class="row-action" data-action="remove" data-agent-id="${escapeHtml(a.agentId)}" aria-label="Remove ${escapeHtml(a.agentId)}" title="Remove">
-        ${ICON_TRASH}
-      </button>
-    </div>
-  `).join('')
-  return `
-    <div class="section-header">
-      <span class="section-title">Agents</span>
-    </div>
-    <div class="scroll-list">${rows}</div>
-  `
-}
-
-function bindAgentsBody(root: HTMLDivElement, controller: AppController): void {
-  root.querySelector<HTMLButtonElement>('#empty-add')?.addEventListener('click', () => {
-    controller.setScreen('add-agent')
-  })
-  root.querySelectorAll<HTMLButtonElement>('[data-action="connect"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.agentId
-      if (id) void controller.connect(id)
-    })
-  })
-  root.querySelectorAll<HTMLButtonElement>('[data-action="remove"]').forEach((btn) => {
-    btn.addEventListener('click', (evt) => {
-      evt.stopPropagation()
-      const id = btn.dataset.agentId
-      if (!id) return
-      if (!confirm(`Remove agent "${id}"?`)) return
-      void controller.removeAgent(id)
-    })
-  })
 }
 
 // ── Add agent form ──────────────────────────────────────────────────
@@ -374,11 +270,20 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
       errorEl.textContent = err instanceof Error ? err.message : String(err)
       return
     }
-    controller.setScreen('agents')
     void controller.connect(agentId)
   })
 
-  const cancel = () => controller.setScreen(state.activeAgentId ? 'chat' : 'agents')
+  const cancel = () => {
+    if (state.activeAgentId) {
+      controller.setScreen('chat')
+      return
+    }
+    // Cancel is only rendered when at least one agent exists. Fall back to
+    // the first installed agent so the user lands somewhere with the rail
+    // populated.
+    const fallback = state.agents[0]
+    if (fallback) void controller.connect(fallback.agentId)
+  }
   root.querySelector<HTMLButtonElement>('#cancel')?.addEventListener('click', cancel)
   root.querySelector<HTMLButtonElement>('#cancel-x')?.addEventListener('click', cancel)
 
@@ -387,11 +292,11 @@ function renderAddAgent(root: HTMLDivElement, controller: AppController, state: 
 
 // ── Connected ────────────────────────────────────────────────────────
 //
-// Two visual modes, picked at every full re-render from isFullscreen(state):
-//   • picker:    rail visible + dark header (agent name) + bottom tabs.
-//                Body is the sessions list or views list.
-//   • fullscreen: rail hidden + dark header with back button. Body is the
-//                 active chat (messages + composer) or the iframe.
+// The rail is always visible. Two body modes:
+//   • picker:    dark header (agent name) + bottom tabs. Body is the
+//                sessions list or views list.
+//   • active:    dark header with back button. Body is the active chat
+//                (messages + composer) or the iframe.
 
 let bodyMode: 'picker' | 'active' = 'picker'
 
@@ -399,11 +304,12 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
   const agentId = state.activeAgentId
   const meta = state.activeMeta
   if (!agentId || !meta) {
-    controller.setScreen('agents')
+    // No active agent (e.g. fresh state). Fall back to add-agent so the form
+    // is shown; the sidebar still lets the user pick an existing agent.
+    controller.setScreen('add-agent')
     return
   }
 
-  const fullscreen = isFullscreen(state)
   const active = hasActiveContent(state)
   bodyMode = state.activeSession || state.draftProviderId !== null ? 'active' : 'picker'
 
@@ -411,7 +317,7 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
     ? buildActiveContentMainHtml(state)
     : buildPickerMainHtml(state, agentId)
 
-  renderShell(root, mainHtml, controller, state, { fullscreen })
+  renderShell(root, mainHtml, controller, state, { fullscreen: active })
 
   if (active) {
     bindActiveContentHandlers(root, controller, state)
@@ -428,7 +334,6 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
 function buildPickerMainHtml(state: AppState, agentId: string): string {
   return `
     <header class="main-header">
-      <button type="button" class="icon-btn back-btn" id="back-to-agents" aria-label="Agents" title="Agents">${ICON_BACK}</button>
       <div class="main-header-title">
         <h1 id="header-title">${escapeHtml(agentId)}</h1>
       </div>
@@ -436,7 +341,6 @@ function buildPickerMainHtml(state: AppState, agentId: string): string {
         <span class="status-dot" id="status-dot" data-state="${state.status.state}" title="${escapeHtml(formatStatus(state))}"></span>
         <button type="button" class="icon-btn" id="header-menu" aria-label="Menu" title="Menu">${ICON_KEBAB}</button>
         <div class="menu hidden" id="header-menu-list">
-          <button type="button" class="menu-item" id="menu-disconnect">${ICON_PLUG}<span>Disconnect</span></button>
           <button type="button" class="menu-item danger" id="menu-remove">${ICON_TRASH}<span>Remove agent</span></button>
         </div>
       </div>
@@ -509,14 +413,6 @@ function bindPickerHandlers(
   state: AppState,
   agentId: string,
 ): void {
-  root.querySelector<HTMLButtonElement>('#back-to-agents')?.addEventListener('click', () => {
-    // Stack-style back: leave the connected pair (chat/views) and surface
-    // the agents list so the rail re-appears and the user can switch agents.
-    // We don't disconnect — the active session keeps streaming and the user
-    // can re-enter by tapping the same agent.
-    controller.setScreen('agents')
-  })
-
   root.querySelectorAll<HTMLButtonElement>('.bottom-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const t = btn.dataset.screen as Screen | undefined
@@ -532,16 +428,12 @@ function bindPickerHandlers(
       menuList.classList.toggle('hidden')
     })
   }
-  root.querySelector<HTMLButtonElement>('#menu-disconnect')?.addEventListener('click', async () => {
-    menuList?.classList.add('hidden')
-    await controller.disconnect()
-    controller.setScreen('agents')
-  })
   root.querySelector<HTMLButtonElement>('#menu-remove')?.addEventListener('click', async () => {
     menuList?.classList.add('hidden')
     if (!confirm(`Remove agent "${agentId}"?`)) return
+    // removeAgent handles the post-removal screen — connect to the next
+    // remaining agent or fall through to add-agent.
     await controller.removeAgent(agentId)
-    controller.setScreen('agents')
   })
   void state
 }
@@ -1274,7 +1166,6 @@ const ICON_CHAT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const ICON_GRID = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`
 const ICON_SEND = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`
 const ICON_PLUG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M6 8h12v4a6 6 0 1 1-12 0V8z"/><path d="M12 18v4"/></svg>`
-const ICON_BOLT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
 
 // ── Agent view bridge ───────────────────────────────────────────────
 //
