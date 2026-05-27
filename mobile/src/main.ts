@@ -33,10 +33,10 @@ async function bootstrap(controller: AppController, root: HTMLDivElement): Promi
   let lastKey: string | null = null
   controller.subscribe((state) => {
     // Re-render the whole shell whenever the *shape* changes: screen group,
-    // active agent, the chat/views sub-tab, OR whether a session/view is
-    // being viewed. The picker→active transition swaps header (agent name →
-    // back-to-picker) and body, so it can't be patched in place.
-    const key = `${screenGroup(state.screen)}|${state.activeAgentId ?? ''}|${state.screen}|${hasActiveContent(state) ? 'act' : 'pck'}`
+    // active agent, the chat/views sub-tab, OR which "active kind" is showing
+    // (session / draft / view / picker). Each kind owns a different header
+    // and body so they can't be patched in place.
+    const key = `${screenGroup(state.screen)}|${state.activeAgentId ?? ''}|${state.screen}|${activeKind(state)}`
     if (key !== lastKey) {
       lastKey = key
       renderScreen(root, controller, state)
@@ -62,9 +62,25 @@ function isFullscreen(state: AppState): boolean {
 }
 
 function hasActiveContent(state: AppState): boolean {
-  if (state.screen === 'chat') return state.activeSession !== null
+  if (state.screen === 'chat') {
+    return state.activeSession !== null || state.draftProviderId !== null
+  }
   if (state.screen === 'views') return state.activeViewName !== null
   return false
+}
+
+type ActiveKind = 'session' | 'draft' | 'view' | 'pck'
+
+function activeKind(state: AppState): ActiveKind {
+  if (state.screen === 'chat') {
+    if (state.activeSession) return 'session'
+    if (state.draftProviderId !== null) return 'draft'
+    return 'pck'
+  }
+  if (state.screen === 'views') {
+    return state.activeViewName !== null ? 'view' : 'pck'
+  }
+  return 'pck'
 }
 
 type ScreenGroup = 'agents' | 'add-agent' | 'connected'
@@ -389,7 +405,7 @@ function renderConnected(root: HTMLDivElement, controller: AppController, state:
 
   const fullscreen = isFullscreen(state)
   const active = hasActiveContent(state)
-  bodyMode = state.activeSession ? 'active' : 'picker'
+  bodyMode = state.activeSession || state.draftProviderId !== null ? 'active' : 'picker'
 
   const mainHtml = active
     ? buildActiveContentMainHtml(state)
@@ -450,6 +466,21 @@ function buildActiveContentMainHtml(state: AppState): string {
           <div class="menu hidden" id="header-menu-list">
             <button type="button" class="menu-item danger" id="menu-remove-session">${ICON_TRASH}<span>Remove session</span></button>
           </div>
+        </div>
+      </header>
+      <div class="banner hidden" id="banner"></div>
+      <div class="body" id="connected-body"></div>
+    `
+  }
+  if (state.draftProviderId !== null) {
+    return `
+      <header class="main-header">
+        <button type="button" class="icon-btn back-btn" id="back-btn" aria-label="Cancel" title="Cancel">${ICON_BACK}</button>
+        <div class="main-header-title">
+          <h1 id="header-title">New session</h1>
+        </div>
+        <div class="main-header-actions">
+          <span class="status-dot" id="status-dot" data-state="${state.status.state}" title="${escapeHtml(formatStatus(state))}"></span>
         </div>
       </header>
       <div class="banner hidden" id="banner"></div>
@@ -522,6 +553,7 @@ function bindActiveContentHandlers(
 ): void {
   root.querySelector<HTMLButtonElement>('#back-btn')?.addEventListener('click', () => {
     if (state.activeSession) controller.closeSession()
+    else if (state.draftProviderId !== null) controller.cancelDraft()
     else if (state.activeViewName) controller.closeView()
   })
 
@@ -553,6 +585,8 @@ function updateMainHeader(root: HTMLDivElement, state: AppState): void {
   if (title) {
     if (state.activeSession) {
       title.textContent = state.activeSession.title || 'Chat'
+    } else if (state.draftProviderId !== null) {
+      title.textContent = 'New session'
     } else if (state.activeViewName) {
       const view = state.views.find((v) => v.name === state.activeViewName)
       title.textContent = view?.title || state.activeViewName
@@ -588,7 +622,8 @@ function updateProviders(root: HTMLDivElement, state: AppState): void {
 }
 
 function renderProvidersHtml(providers: ProviderState | null, screen: Screen): string {
-  // Only show providers strip on chat — clutters the views screen.
+  // Only used to surface the empty-providers warning on the session list;
+  // when providers exist, "New session" auto-picks the default.
   if (screen !== 'chat') return ''
   if (!providers) return ''
   if (providers.providerList.length === 0) {
@@ -598,14 +633,7 @@ function renderProvidersHtml(providers: ProviderState | null, screen: Screen): s
       </div>
     `
   }
-  const def = providers.providerList.find((p) => p.id === providers.defaultProviderId)
-  const defLabel = def ? def.name : (providers.defaultProviderId || '—')
-  return `
-    <div class="providers-line">
-      <span>Default provider</span>
-      <span class="pill">${escapeHtml(defLabel)}</span>
-    </div>
-  `
+  return ''
 }
 
 function renderConnectedBody(root: HTMLDivElement, controller: AppController, state: AppState): void {
@@ -618,6 +646,10 @@ function renderConnectedBody(root: HTMLDivElement, controller: AppController, st
   }
   if (state.activeSession) {
     renderActiveSessionBody(body, controller, state)
+    return
+  }
+  if (state.draftProviderId !== null) {
+    renderDraftBody(body, controller, state)
     return
   }
   renderPickerBody(body, controller, state)
@@ -708,22 +740,53 @@ function bindViewRowHandlers(body: HTMLDivElement, controller: AppController): v
 // ── Session picker ──────────────────────────────────────────────────
 
 function renderPickerBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
-  const providerKey = composerProviderKey(state.providers)
-  if (bodyMode !== 'picker' || body.dataset.mode !== 'picker' || body.dataset.providerKey !== providerKey) {
+  if (bodyMode !== 'picker' || body.dataset.mode !== 'picker') {
     bodyMode = 'picker'
     body.dataset.mode = 'picker'
-    body.dataset.providerKey = providerKey
+    delete body.dataset.providerKey
     delete body.dataset.sessionId
     body.innerHTML = `
       <div class="scroll-list" id="session-list"></div>
-      ${renderComposerHtml(state, 'start')}
+      <div class="picker-actions">
+        <button type="button" class="btn primary" id="new-session-btn">
+          ${ICON_PLUS_SM}<span>New session</span>
+        </button>
+      </div>
     `
-    bindComposer(body, controller)
   }
+
   const list = body.querySelector<HTMLDivElement>('#session-list')
   if (list) list.innerHTML = renderSessionRowsHtml(state.sessions)
   bindSessionRowHandlers(body, controller, state.sessions)
-  updateComposerState(body, state)
+
+  const newBtn = body.querySelector<HTMLButtonElement>('#new-session-btn')
+  if (newBtn) {
+    const reason = newSessionDisabledReason(state)
+    newBtn.disabled = reason !== null
+    newBtn.title = reason ?? 'Start a new session'
+    newBtn.onclick = () => {
+      if (newBtn.disabled) return
+      const providerId = defaultDraftProviderId(state.providers)
+      if (providerId) controller.startDraft(providerId)
+    }
+  }
+}
+
+function defaultDraftProviderId(providers: ProviderState | null): string | null {
+  if (!providers || providers.providerList.length === 0) return null
+  const def = providers.providerList.find((p) => p.id === providers.defaultProviderId)
+  return def ? def.id : providers.providerList[0].id
+}
+
+function newSessionDisabledReason(state: AppState): string | null {
+  if (state.status.state !== 'connected') {
+    return state.status.message || 'Remote agent is disconnected.'
+  }
+  if (!state.providers) return 'Loading providers…'
+  if (state.providers.providerList.length === 0) {
+    return 'No providers are configured on this daemon.'
+  }
+  return null
 }
 
 function renderSessionRowsHtml(sessions: SessionSummary[]): string {
@@ -780,17 +843,77 @@ function renderActiveSessionBody(body: HTMLDivElement, controller: AppController
     body.dataset.mode = 'active'
     body.dataset.sessionId = session.sessionId
     body.innerHTML = `
-      <div class="chat-live-row" id="chat-live"></div>
       <div class="message-list" id="message-list"></div>
       ${renderComposerHtml(state, 'followup')}
+      <div class="composer-status" id="composer-status"></div>
     `
     bindComposer(body, controller)
   }
 
-  const live = body.querySelector<HTMLDivElement>('#chat-live')!
-  applyLiveStatus(live, state)
   updateMessages(body.querySelector<HTMLDivElement>('#message-list')!, state)
+  applyLiveStatus(body.querySelector<HTMLDivElement>('#composer-status')!, state)
   updateComposerState(body, state)
+}
+
+// ── Draft session ───────────────────────────────────────────────────
+//
+// Compose surface shown after the user tapped "New session" but before
+// they've sent the first message. Mirrors the desktop chat panel's
+// new-session view: a grid of provider cards (default pre-selected) and
+// the composer with a status line below it. Tapping a card swaps
+// draftProviderId; the first sendMessage() spawns the session under it.
+
+function renderDraftBody(body: HTMLDivElement, controller: AppController, state: AppState): void {
+  if (bodyMode !== 'active' || body.dataset.mode !== 'draft') {
+    bodyMode = 'active'
+    body.dataset.mode = 'draft'
+    delete body.dataset.sessionId
+    delete body.dataset.providerKey
+    delete body.dataset.subMode
+    body.innerHTML = `
+      <div class="provider-grid" id="provider-grid"></div>
+      ${renderComposerHtml(state, 'draft')}
+      <div class="composer-status" id="composer-status"></div>
+    `
+    bindComposer(body, controller)
+  }
+
+  const grid = body.querySelector<HTMLDivElement>('#provider-grid')!
+  renderProviderGrid(grid, controller, state)
+  applyLiveStatus(body.querySelector<HTMLDivElement>('#composer-status')!, state)
+  updateComposerState(body, state)
+}
+
+function renderProviderGrid(host: HTMLDivElement, controller: AppController, state: AppState): void {
+  const providers = state.providers
+  if (!providers || providers.providerList.length === 0) {
+    host.innerHTML = `<div class="empty-list">No providers configured.</div>`
+    return
+  }
+  const selectedId = state.draftProviderId
+  const statusLines = new Map(providers.providerStatusLines)
+  host.innerHTML = providers.providerList.map((p) => {
+    const isSelected = p.id === selectedId
+    const isDefault = p.id === providers.defaultProviderId
+    const status = statusLines.get(p.id) || ''
+    return `
+      <button type="button"
+              class="provider-card${isSelected ? ' selected' : ''}"
+              data-provider-id="${escapeHtml(p.id)}">
+        <span class="provider-card-name">${escapeHtml(p.name)}</span>
+        <span class="provider-card-status">${escapeHtml(status)}</span>
+        ${isDefault ? `<span class="provider-card-badge">default</span>` : ''}
+      </button>
+    `
+  }).join('')
+
+  host.querySelectorAll<HTMLButtonElement>('.provider-card[data-provider-id]').forEach((card) => {
+    card.onclick = () => {
+      const id = card.dataset.providerId
+      if (!id || id === selectedId) return
+      controller.startDraft(id)
+    }
+  })
 }
 
 function applyLiveStatus(el: HTMLElement, state: AppState): void {
@@ -819,16 +942,22 @@ function applyLiveStatus(el: HTMLElement, state: AppState): void {
     el.textContent = 'Streaming response…'
     return
   }
+  // Draft: surface the selected provider's status line so the user knows
+  // what they're about to spawn under.
+  if (!state.activeSession && state.draftProviderId !== null) {
+    const lines = new Map(state.providers?.providerStatusLines ?? [])
+    el.textContent = lines.get(state.draftProviderId) || ''
+    return
+  }
   el.textContent = 'Ready'
 }
 
 // ── Composer ────────────────────────────────────────────────────────
 
-type ComposerMode = 'start' | 'followup'
+type ComposerMode = 'draft' | 'followup'
 
-function renderComposerHtml(state: AppState, mode: ComposerMode): string {
-  const providerSelect = mode === 'start' ? renderComposerProviderSelectHtml(state.providers) : ''
-  const placeholder = mode === 'start' ? 'Ask the agent anything…' : 'Send a follow-up…'
+function renderComposerHtml(_state: AppState, mode: ComposerMode): string {
+  const placeholder = mode === 'draft' ? 'Ask the agent anything…' : 'Send a follow-up…'
   return `
     <form class="composer chat-composer" data-mode="${mode}" novalidate>
       <div class="composer-field">
@@ -836,27 +965,12 @@ function renderComposerHtml(state: AppState, mode: ComposerMode): string {
         <button type="submit" class="composer-send" aria-label="Send" title="Send">${ICON_SEND}</button>
       </div>
       <div class="composer-meta">
-        ${providerSelect}
         <span class="composer-hint" hidden></span>
         <button type="button" class="composer-abort" hidden>Abort</button>
       </div>
       <p class="field-error composer-error hidden"></p>
     </form>
   `
-}
-
-function renderComposerProviderSelectHtml(providers: ProviderState | null): string {
-  if (!providers || providers.providerList.length <= 1) return `<span></span>`
-  const options = providers.providerList.map((p) => {
-    const sel = p.id === providers.defaultProviderId ? 'selected' : ''
-    return `<option value="${escapeHtml(p.id)}" ${sel}>${escapeHtml(p.name)}</option>`
-  }).join('')
-  return `<select name="providerId">${options}</select>`
-}
-
-function composerProviderKey(providers: ProviderState | null): string {
-  if (!providers) return 'loading'
-  return `${providers.defaultProviderId}\0${providers.providerList.map((p) => p.id).join('\0')}`
 }
 
 function bindComposer(scope: HTMLElement, controller: AppController): void {

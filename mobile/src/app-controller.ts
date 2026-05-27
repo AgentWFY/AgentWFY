@@ -56,6 +56,10 @@ export interface AppState {
   views: ViewSummary[]
   /** Name of the view currently open in the view frame, or null. */
   activeViewName: string | null
+  /** When non-null, the user has tapped "New session" and picked a provider.
+   *  We're showing the compose surface but haven't spawned a session yet —
+   *  the first sendMessage() call will create it under this provider. */
+  draftProviderId: string | null
   /** Monotonic counter bumped whenever the active view's iframe should be
    *  reloaded (user clicked Reload, snapshot was applied, or the underlying
    *  `views` row changed). Used as a query-param on the iframe src so the
@@ -94,6 +98,7 @@ function initialState(): AppState {
     providers: null,
     views: [],
     activeViewName: null,
+    draftProviderId: null,
     viewVersion: 0,
     lastSyncAt: null,
     lastDbChange: null,
@@ -227,6 +232,7 @@ export class AppController {
       providers: null,
       views: [],
       activeViewName: null,
+      draftProviderId: null,
       viewVersion: 0,
       lastDbChange: null,
       lastSyncAt: null,
@@ -550,6 +556,25 @@ ORDER BY
     this.patch({ activeSession: null })
   }
 
+  /** Begin a "new session" draft. The compose surface opens with the chosen
+   *  provider locked in; the first sendMessage() spawns the session. */
+  startDraft(providerId: string): void {
+    const id = providerId.trim()
+    if (!id) return
+    this.patch({
+      screen: 'chat',
+      activeSession: null,
+      draftProviderId: id,
+      error: null,
+    })
+  }
+
+  /** Abandon a draft, returning to the session list. */
+  cancelDraft(): void {
+    if (this.state.draftProviderId === null) return
+    this.patch({ draftProviderId: null })
+  }
+
   async sendMessage(req: SendMessageRequest): Promise<string | null> {
     const session = this.session
     if (!session) {
@@ -570,12 +595,21 @@ ORDER BY
 
     const active = this.state.activeSession
     if (!active) {
-      return this.newSession({
+      const providerId = req.providerId ?? this.state.draftProviderId ?? undefined
+      // Keep draftProviderId set across the spawn so the renderer stays on the
+      // draft surface (instead of flickering through the picker) until
+      // activeSession lands. activeSession takes render precedence, then
+      // draftProviderId clears once newSession returns successfully.
+      const sessionId = await this.newSession({
         prompt: text || ' ',
-        providerId: req.providerId,
+        providerId,
         providerOptions: req.providerOptions,
         files: req.files,
       })
+      if (sessionId !== null && this.state.draftProviderId !== null) {
+        this.patch({ draftProviderId: null })
+      }
+      return sessionId
     }
 
     const gen = this.connectGeneration
