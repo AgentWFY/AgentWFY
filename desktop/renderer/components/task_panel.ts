@@ -15,6 +15,7 @@ interface TaskLogHistoryItem {
   origin?: TaskOrigin
 }
 import { escapeHtml } from './chat_utils.js'
+import { listen, type DesktopEventMap } from '../events.js'
 
 interface TaskItem {
   name: string
@@ -462,6 +463,7 @@ export class TlTaskPanel extends HTMLElement {
   private activeRuns: Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private runFinishedUnsub: (() => void) | null = null
   private runStartedUnsub: (() => void) | null = null
+  private eventUnsubs: Array<() => void> = []
   private runningTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
@@ -505,11 +507,13 @@ export class TlTaskPanel extends HTMLElement {
       }
     }, 1000)
 
-    window.addEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
-    window.addEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
-    window.addEventListener('agentwfy:config-db-changed', this.onConfigChanged as EventListener)
-    window.addEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
-    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    this.eventUnsubs.push(
+      listen('tasks-db-changed', this.onTasksChanged),
+      listen('triggers-db-changed', this.onTriggersChanged),
+      listen('config-db-changed', this.onConfigChanged),
+      listen('run-task', this.onRunTaskEvent),
+      listen('agent-switched', this.onAgentSwitched),
+    )
   }
 
   disconnectedCallback() {
@@ -525,17 +529,14 @@ export class TlTaskPanel extends HTMLElement {
       clearTimeout(this.pendingDeleteResetTimer)
       this.pendingDeleteResetTimer = null
     }
-    window.removeEventListener('agentwfy:tasks-db-changed', this.onTasksChanged)
-    window.removeEventListener('agentwfy:triggers-db-changed', this.onTriggersChanged)
-    window.removeEventListener('agentwfy:config-db-changed', this.onConfigChanged as EventListener)
-    window.removeEventListener('agentwfy:run-task', this.onRunTaskEvent as EventListener)
-    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    for (const off of this.eventUnsubs) off()
+    this.eventUnsubs.length = 0
   }
 
   private onTasksChanged = () => { this.loadTasks() }
   private onTriggersChanged = () => { this.loadTriggers() }
-  private onConfigChanged = (e: CustomEvent<{ key: string }>) => {
-    if (e.detail?.key?.startsWith('shortcuts.task.')) this.loadTaskShortcuts()
+  private onConfigChanged = ({ key }: DesktopEventMap['config-db-changed']) => {
+    if (key.startsWith('shortcuts.task.')) this.loadTaskShortcuts()
   }
   private onAgentSwitched = () => {
     this.detailView = null
@@ -546,12 +547,10 @@ export class TlTaskPanel extends HTMLElement {
     this.loadRunningTasks()
   }
 
-  private onRunTaskEvent = (e: CustomEvent<{ taskName: string; input?: string }>) => {
-    const taskName = e.detail?.taskName
+  private onRunTaskEvent = ({ taskName, input }: DesktopEventMap['run-task']) => {
     if (typeof taskName === 'string' && taskName) {
       const ipc = window.ipc
       if (ipc) {
-        const input = e.detail?.input
         ipc.tasks.start(taskName, input || undefined, { type: 'command-palette' } as any).catch(err => {
           console.error('[TlTaskPanel] run task failed', err)
         })

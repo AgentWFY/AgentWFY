@@ -1,4 +1,5 @@
-import { agentSessionStore } from '../stores/agent-session-store.js'
+import { listen } from '../events.js'
+import { agentSession, type AgentSessionState } from '../services/agent-session.js'
 
 const COLLAPSE_THRESHOLD = 2
 
@@ -127,7 +128,7 @@ export class TlSessionTabs extends HTMLElement {
     this.appendChild(this._styleEl)
 
     this.buildLayout()
-    this.subscribeToStore()
+    this.subscribeToEvents()
     this.update()
 
     this._resizeObserver = new ResizeObserver(() => this.scheduleMaskUpdate())
@@ -149,8 +150,8 @@ export class TlSessionTabs extends HTMLElement {
       if (!item) return
       e.preventDefault()
       const idx = parseInt(item.dataset.idx!, 10)
-      const session = agentSessionStore.state.openSessions[idx]
-      if (session && session.sessionId !== agentSessionStore.state.activeSessionId) {
+      const session = agentSession.state.openSessions[idx]
+      if (session && session.sessionId !== agentSession.state.activeSessionId) {
         this.loadSession(session.sessionId)
       }
     })
@@ -160,8 +161,8 @@ export class TlSessionTabs extends HTMLElement {
       if (item) {
         e.preventDefault()
         const idx = parseInt(item.dataset.idx!, 10)
-        const session = agentSessionStore.state.openSessions[idx]
-        if (session) agentSessionStore.removeOpenSession(session.sessionId)
+        const session = agentSession.state.openSessions[idx]
+        if (session) agentSession.removeOpenSession(session.sessionId)
       }
     })
     this._listEl.addEventListener('contextmenu', (e) => {
@@ -169,8 +170,8 @@ export class TlSessionTabs extends HTMLElement {
       if (!item) return
       e.preventDefault()
       const idx = parseInt(item.dataset.idx!, 10)
-      const session = agentSessionStore.state.openSessions[idx]
-      if (session) agentSessionStore.removeOpenSession(session.sessionId)
+      const session = agentSession.state.openSessions[idx]
+      if (session) agentSession.removeOpenSession(session.sessionId)
     })
     this.appendChild(this._listEl)
 
@@ -194,16 +195,21 @@ export class TlSessionTabs extends HTMLElement {
     })
   }
 
-  private subscribeToStore() {
-    this._unsubs.push(agentSessionStore.select(s => s.openSessions, () => this.scheduleUpdate()))
-    this._unsubs.push(agentSessionStore.select(s => s.activeSessionId, () => this.scheduleUpdate()))
-    this._unsubs.push(agentSessionStore.select(s => s.streamingSessionIds, () => this.scheduleUpdate()))
-    this._unsubs.push(agentSessionStore.select(s => s.label, () => this.scheduleUpdate()))
+  private subscribeToEvents() {
+    const keys: Array<keyof AgentSessionState> = [
+      'openSessions',
+      'activeSessionId',
+      'streamingSessionIds',
+      'label',
+    ]
+    this._unsubs.push(listen('agent-state-changed', ({ changedKeys }) => {
+      if (keys.some((key) => changedKeys.includes(key))) this.scheduleUpdate()
+    }))
   }
 
   private update() {
     if (!this._listEl) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const open = s.openSessions
 
     // Hide the strip entirely when empty — a lone + button looks orphaned.
@@ -257,7 +263,7 @@ export class TlSessionTabs extends HTMLElement {
   }
 
   private loadSession(sessionId: string) {
-    agentSessionStore.loadSession(sessionId).catch(err => {
+    agentSession.loadSession(sessionId).catch(err => {
       this.dispatchEvent(new CustomEvent('session-error', {
         bubbles: true,
         detail: { message: err instanceof Error ? err.message : String(err) }
@@ -266,7 +272,7 @@ export class TlSessionTabs extends HTMLElement {
   }
 
   private createSession() {
-    agentSessionStore.createSession().catch(err => {
+    agentSession.createSession().catch(err => {
       this.dispatchEvent(new CustomEvent('session-error', {
         bubbles: true,
         detail: { message: err instanceof Error ? err.message : String(err) }

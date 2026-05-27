@@ -1,4 +1,6 @@
 import type { InstalledAgent } from '../ipc-types/index.js'
+import { listen } from '../events.js'
+import { agentRegistry } from '../services/agent-registry.js'
 
 const PLUS_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
   <line x1="12" y1="5" x2="12" y2="19"/>
@@ -13,7 +15,7 @@ const SPINNER_SVG = `<svg class="agent-spinner" viewBox="0 0 24 24" fill="none" 
 export class TlAgentSidebar extends HTMLElement {
   private agents: InstalledAgent[] = []
   private listEl!: HTMLDivElement
-  private unlistenSwitched: (() => void) | null = null
+  private unsubs: Array<() => void> = []
   private dragSourceIndex: number = -1
   private dropTargetIndex: number = -1
 
@@ -250,28 +252,22 @@ export class TlAgentSidebar extends HTMLElement {
   }
 
   disconnectedCallback() {
-    this.unlistenSwitched?.()
-    this.unlistenSwitched = null
+    for (const off of this.unsubs) off()
+    this.unsubs.length = 0
   }
 
   private async loadAgents() {
-    const ipc = window.ipc
-    if (!ipc) return
-    this.agents = await ipc.agentSidebar.getInstalled()
+    this.agents = await agentRegistry.refresh()
     this.render()
   }
 
   private subscribeToSwitches() {
-    const ipc = window.ipc
-    if (!ipc) return
-    this.unlistenSwitched = ipc.agentSidebar.onSwitched((data) => {
-      this.agents = data.agents
-      this.render()
-      // Dispatch global event so all components refresh their agent-specific data
-      window.dispatchEvent(new CustomEvent('agentwfy:agent-switched', {
-        detail: { agentId: data.agentId, agents: data.agents },
-      }))
-    })
+    this.unsubs.push(
+      listen('agents-changed', ({ agents }) => {
+        this.agents = agents
+        this.render()
+      }),
+    )
   }
 
   private render() {
@@ -310,12 +306,12 @@ export class TlAgentSidebar extends HTMLElement {
       }
 
       item.addEventListener('click', () => {
-        if (!agent.active) window.ipc?.agentSidebar.switch(agent.agentId)
+        if (!agent.active) void agentRegistry.switch(agent.agentId)
       })
 
       item.addEventListener('contextmenu', (e) => {
         e.preventDefault()
-        window.ipc?.agentSidebar.showContextMenu(agent.agentId)
+        void agentRegistry.showContextMenu(agent.agentId)
       })
 
       wrapper.addEventListener('dragstart', (e) => {
@@ -328,7 +324,7 @@ export class TlAgentSidebar extends HTMLElement {
         wrapper.classList.remove('dragging')
         this.clearDropIndicators()
         if (this.dropTargetIndex !== -1 && this.dropTargetIndex !== this.dragSourceIndex) {
-          window.ipc?.agentSidebar.reorder(this.dragSourceIndex, this.dropTargetIndex)
+          void agentRegistry.reorder(this.dragSourceIndex, this.dropTargetIndex)
         }
         this.dragSourceIndex = -1
         this.dropTargetIndex = -1

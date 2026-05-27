@@ -168,12 +168,13 @@ const STYLES = `
   }
 `
 
-import { agentSessionStore } from '../stores/agent-session-store.js'
+import { dispatch, listen } from '../events.js'
+import { agentSession } from '../services/agent-session.js'
 
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
-  private _storeUnsub: (() => void) | null = null
+  private eventUnsubs: Array<() => void> = []
   private _runningTasks: Array<{ runId: string; title: string }> = []
   private _taskStartedUnsub: (() => void) | null = null
   private _taskFinishedUnsub: (() => void) | null = null
@@ -185,15 +186,13 @@ export class TlStatusLine extends HTMLElement {
 
   private notificationTimeout: ReturnType<typeof setTimeout> | null = null
 
-  private onPluginChanged = (event: Event) => {
-    const detail = (event as CustomEvent)?.detail
+  private onPluginChanged = (detail: { message?: string } | undefined) => {
     if (detail?.message) {
       this.showNotification(detail.message)
     }
   }
 
-  private onBackupChanged = (event: Event) => {
-    const detail = (event as CustomEvent)?.detail
+  private onBackupChanged = (detail: { version?: number | null; skipped?: boolean; restored?: number | null } | undefined) => {
     if (detail?.version != null) {
       this.showNotification(`Backed up v${detail.version}`)
     } else if (detail?.skipped) {
@@ -230,21 +229,20 @@ export class TlStatusLine extends HTMLElement {
     this.loadBackupInfo()
     this.loadRunningTasks()
     this._clicksBound = true
-    window.addEventListener('agentwfy:backup-changed', this.onBackupChanged)
-    window.addEventListener('agentwfy:plugin-changed', this.onPluginChanged)
-    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    this.eventUnsubs.push(
+      listen('backup-changed', this.onBackupChanged),
+      listen('plugin-changed', this.onPluginChanged),
+      listen('agent-switched', this.onAgentSwitched),
+    )
   }
 
   disconnectedCallback() {
-    this._storeUnsub?.()
-    this._storeUnsub = null
+    for (const off of this.eventUnsubs) off()
+    this.eventUnsubs.length = 0
     this._taskStartedUnsub?.()
     this._taskStartedUnsub = null
     this._taskFinishedUnsub?.()
     this._taskFinishedUnsub = null
-    window.removeEventListener('agentwfy:backup-changed', this.onBackupChanged)
-    window.removeEventListener('agentwfy:plugin-changed', this.onPluginChanged)
-    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
   }
 
@@ -273,13 +271,13 @@ export class TlStatusLine extends HTMLElement {
   }
 
   private subscribeToSnapshots() {
-    this._storeUnsub = agentSessionStore.select(
-      s => s.streamingSessionsCount,
-      (count) => {
-        this._agentCount = count
-        this.updateAgentIndicator()
-      }
-    )
+    this._agentCount = agentSession.state.streamingSessionsCount
+    this.updateAgentIndicator()
+    this.eventUnsubs.push(listen('agent-state-changed', ({ state, changedKeys }) => {
+      if (!changedKeys.includes('streamingSessionsCount')) return
+      this._agentCount = state.streamingSessionsCount
+      this.updateAgentIndicator()
+    }))
   }
 
   private updateAgentIndicator() {
@@ -389,7 +387,7 @@ export class TlStatusLine extends HTMLElement {
   private bindIndicatorClicks() {
     for (const [id, panel] of [['agent-indicator', 'agent-chat'], ['task-indicator', 'tasks']]) {
       this.shadow.querySelector(`#${id}`)?.addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel } }))
+        dispatch('open-sidebar-panel', { panel })
       })
     }
   }

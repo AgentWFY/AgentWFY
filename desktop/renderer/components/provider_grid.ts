@@ -1,4 +1,5 @@
-import { agentSessionStore } from '../stores/agent-session-store.js'
+import { listen } from '../events.js'
+import { agentSession, type AgentSessionState } from '../services/agent-session.js'
 
 const STYLES = `
   awfy-provider-grid {
@@ -132,7 +133,7 @@ export class TlProviderGrid extends HTMLElement {
     this.appendChild(this._styleEl)
 
     this.addEventListener('mousedown', this.onMouseDown)
-    this.subscribeToStore()
+    this.subscribeToEvents()
     this.render()
   }
 
@@ -151,11 +152,16 @@ export class TlProviderGrid extends HTMLElement {
     })
   }
 
-  private subscribeToStore() {
-    this._unsubs.push(agentSessionStore.select(s => s.providerList, () => this.scheduleRender()))
-    this._unsubs.push(agentSessionStore.select(s => s.selectedProviderId, () => this.scheduleRender()))
-    this._unsubs.push(agentSessionStore.select(s => s.defaultProviderId, () => this.scheduleRender()))
-    this._unsubs.push(agentSessionStore.select(s => s.providerStatusLines, () => this.scheduleRender()))
+  private subscribeToEvents() {
+    const providerKeys: Array<keyof AgentSessionState> = [
+      'providerList',
+      'selectedProviderId',
+      'defaultProviderId',
+      'providerStatusLines',
+    ]
+    this._unsubs.push(listen('agent-state-changed', ({ changedKeys }) => {
+      if (providerKeys.some((key) => changedKeys.includes(key))) this.scheduleRender()
+    }))
   }
 
   private onMouseDown = (e: Event) => {
@@ -188,12 +194,12 @@ export class TlProviderGrid extends HTMLElement {
     const card = target.closest('.provider-card[data-provider-id]') as HTMLElement | null
     if (card) {
       me.preventDefault()
-      agentSessionStore.selectProvider(card.dataset.providerId!)
+      agentSession.selectProvider(card.dataset.providerId!)
     }
   }
 
   private render() {
-    const s = agentSessionStore.state
+    const s = agentSession.state
     // Keep the style element, rebuild the rest
     const frag = document.createDocumentFragment()
     if (this._styleEl) frag.appendChild(this._styleEl)
@@ -268,7 +274,7 @@ export class TlProviderGrid extends HTMLElement {
   }
 
   private handleSetDefault(providerId: string) {
-    agentSessionStore.setDefaultProvider(providerId).catch(e => {
+    agentSession.setDefaultProvider(providerId).catch(e => {
       this.dispatchEvent(new CustomEvent('provider-error', {
         bubbles: true,
         detail: { message: e instanceof Error ? e.message : String(e) }

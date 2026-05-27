@@ -1,5 +1,6 @@
 import type { TabData, TabState } from '../ipc-types/index.js'
 import { SystemConfigKeys } from '#shared/system-config/keys.js'
+import { dispatch, listen } from '../events.js'
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
@@ -38,6 +39,7 @@ export class TlTabs extends HTMLElement {
   private hiddenTabsExpanded = false
   private unsubscribeStateChanged: (() => void) | null = null
   private unsubscribeSettingChanged: (() => void) | null = null
+  private eventUnsubs: Array<() => void> = []
   private lastDispatchedSelectedTabId: string | null = null
   private showTabSource: boolean | null = null
 
@@ -97,8 +99,10 @@ export class TlTabs extends HTMLElement {
     // Three triggers: IPC settingChanged (global config writes),
     // config-db-changed (agent-DB config writes), agent-switched (DB swap).
     void this.loadConfig()
-    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
-    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    this.eventUnsubs.push(
+      listen('config-db-changed', this.onConfigDbChanged),
+      listen('agent-switched', this.onAgentSwitched),
+    )
     if (ipc) {
       this.unsubscribeSettingChanged = ipc.onSettingChanged(({ key }) => {
         if (key !== SystemConfigKeys.showTabSource) return
@@ -118,14 +122,13 @@ export class TlTabs extends HTMLElement {
       this.unsubscribeSettingChanged()
       this.unsubscribeSettingChanged = null
     }
-    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
-    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    for (const off of this.eventUnsubs) off()
+    this.eventUnsubs.length = 0
     document.documentElement.classList.remove('tabs-show-source')
     this.showTabSource = null
   }
 
-  private onConfigDbChanged = (e: Event) => {
-    const key = (e as CustomEvent<{ key?: string }>).detail?.key
+  private onConfigDbChanged = ({ key }: { key?: string }) => {
     if (key && key !== SystemConfigKeys.showTabSource) return
     void this.loadConfig()
   }
@@ -161,9 +164,7 @@ export class TlTabs extends HTMLElement {
 
   private dispatchTabSelected() {
     const tab = this.tabs.find(t => t.id === this.selectedTabId) || null
-    window.dispatchEvent(new CustomEvent('agentwfy:tab-selected', {
-      detail: { tab }
-    }))
+    dispatch('tab-selected', { tab })
   }
 
   private hiddenTabs(): TabData[] {

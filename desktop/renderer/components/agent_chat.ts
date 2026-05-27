@@ -9,7 +9,8 @@ import {
   type ToolPair,
 } from './chat_message_renderer.js'
 import { parseTabLink, copyToButton, CLOSE_ICON_SVG } from './chat_utils.js'
-import { agentSessionStore } from '../stores/agent-session-store.js'
+import { dispatch, listen, type DesktopEventMap } from '../events.js'
+import { agentSession, type AgentSessionState } from '../services/agent-session.js'
 import type { TlChatInput } from './chat_input.js'
 import type { TlTracePanel } from './trace_panel.js'
 
@@ -924,14 +925,8 @@ export class TlAgentChat extends HTMLElement {
   }
 
   disconnectedCallback() {
-    window.removeEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
-    window.removeEventListener('agentwfy:load-session', this.onLoadSession)
-    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     this._unlistenZenMode?.()
     this._unlistenZenMode = null
-    window.removeEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
-    window.removeEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
-    window.removeEventListener('agentwfy:cycle-session', this.onCycleSession)
     document.removeEventListener('keydown', this.onPopupKeydown, true)
     this._closeLightbox?.()
     for (const unsub of this._unsubs) unsub()
@@ -944,26 +939,23 @@ export class TlAgentChat extends HTMLElement {
     this._renderMode = null
   }
 
-  private onOpenSessionInChat = (e: Event) => {
-    const { sessionId, label } = (e as CustomEvent<{ sessionId: string; label: string }>).detail
+  private onOpenSessionInChat = ({ sessionId, label }: DesktopEventMap['open-session-in-chat']) => {
     if (sessionId) {
-      agentSessionStore.addOpenSession(sessionId, label || 'Session')
+      agentSession.addOpenSession(sessionId, label || 'Session')
     }
-    window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
+    dispatch('open-sidebar-panel', { panel: 'agent-chat' })
   }
 
-  private onLoadSession = (e: Event) => {
-    const { sessionId, label } = (e as CustomEvent<{ sessionId: string; label: string }>).detail
+  private onLoadSession = ({ sessionId, label }: DesktopEventMap['load-session']) => {
     if (!sessionId) return
-    agentSessionStore.addOpenSession(sessionId, label || 'Session')
+    agentSession.addOpenSession(sessionId, label || 'Session')
     this.loadSession(sessionId)
-    window.dispatchEvent(new CustomEvent('agentwfy:open-sidebar-panel', { detail: { panel: 'agent-chat' } }))
+    dispatch('open-sidebar-panel', { panel: 'agent-chat' })
   }
 
-  private onAgentSwitched = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    const newAgentId: string | null = detail?.agentId ?? null
-    const agents: Array<{ agentId: string }> | undefined = detail?.agents
+  private onAgentSwitched = (detail: DesktopEventMap['agent-switched']) => {
+    const newAgentId = detail.agentId
+    const agents = detail.agents
 
     if (newAgentId === this._currentAgentId) return
 
@@ -994,28 +986,26 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private onCloseCurrentSession = () => {
-    const s = agentSessionStore.state
+    const s = agentSession.state
     if (s.activeSessionId) {
-      agentSessionStore.removeOpenSession(s.activeSessionId)
+      agentSession.removeOpenSession(s.activeSessionId)
     }
   }
 
-  private onSwitchToSession = (e: Event) => {
-    const { index } = (e as CustomEvent<{ index: number }>).detail
-    const open = agentSessionStore.state.openSessions
+  private onSwitchToSession = ({ index }: DesktopEventMap['switch-to-session']) => {
+    const open = agentSession.state.openSessions
     if (index >= 0 && index < open.length) {
       const session = open[index]
-      if (session.sessionId !== agentSessionStore.state.activeSessionId) {
+      if (session.sessionId !== agentSession.state.activeSessionId) {
         this.loadSession(session.sessionId)
       }
     }
   }
 
-  private onCycleSession = (e: Event) => {
-    const { direction } = (e as CustomEvent<{ direction: number }>).detail
-    const open = agentSessionStore.state.openSessions
+  private onCycleSession = ({ direction }: DesktopEventMap['cycle-session']) => {
+    const open = agentSession.state.openSessions
     if (open.length <= 1) return
-    const activeSessionId = agentSessionStore.state.activeSessionId
+    const activeSessionId = agentSession.state.activeSessionId
     const currentIdx = open.findIndex(s => s.sessionId === activeSessionId)
     const nextIdx = (currentIdx + direction + open.length) % open.length
     const session = open[nextIdx]
@@ -1025,28 +1015,28 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private init() {
-    window.addEventListener('agentwfy:open-session-in-chat', this.onOpenSessionInChat)
-    window.addEventListener('agentwfy:load-session', this.onLoadSession)
-    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
+    this._unsubs.push(
+      listen('open-session-in-chat', this.onOpenSessionInChat),
+      listen('load-session', this.onLoadSession),
+      listen('agent-switched', this.onAgentSwitched),
+      listen('close-current-session', this.onCloseCurrentSession),
+      listen('switch-to-session', this.onSwitchToSession),
+      listen('cycle-session', this.onCycleSession),
+    )
     this._unlistenZenMode = window.ipc?.zenMode?.onChanged((isZen: boolean) => {
       this._isZenMode = isZen
     }) ?? null
-    window.addEventListener('agentwfy:close-current-session', this.onCloseCurrentSession)
-    window.addEventListener('agentwfy:switch-to-session', this.onSwitchToSession)
-    window.addEventListener('agentwfy:cycle-session', this.onCycleSession)
     document.addEventListener('keydown', this.onPopupKeydown, true)
 
-    if (!window.ipc?.agent) {
+    if (!agentSession.hasAgentApi()) {
       this.isInitializing = false
       this.render()
       return
     }
 
-    // Subscribe to targeted store slices instead of blanket subscribe()
-    this.subscribeToStore()
+    this.subscribeToEvents()
 
-    // Wait for the store to be ready
-    if (agentSessionStore.state.ready) {
+    if (agentSession.state.ready) {
       this.isInitializing = false
     }
 
@@ -1061,37 +1051,26 @@ export class TlAgentChat extends HTMLElement {
     })
   }
 
-  private subscribeToStore() {
-    this._unsubs.push(agentSessionStore.select(
-      s => s.activeSessionId,
-      (newSessionId) => this.onActiveSessionChanged(newSessionId)
-    ))
+  private subscribeToEvents() {
+    this._unsubs.push(listen('agent-state-changed', ({ state, changedKeys }) => {
+      const has = (key: keyof AgentSessionState) => changedKeys.includes(key)
 
-    this._unsubs.push(agentSessionStore.select(
-      s => s.activeSessionId,
-      () => this.updateTraceBtn()
-    ))
+      if (has('activeSessionId')) {
+        this.onActiveSessionChanged(state.activeSessionId)
+        this.updateTraceBtn()
+      }
 
-    // Streaming message deltas (hot path) — only update messages area
-    this._unsubs.push(agentSessionStore.select(
-      s => s.streamingMessage,
-      () => this.scheduleUpdateMessages()
-    ))
+      if (has('streamingMessage')) {
+        this.scheduleUpdateMessages()
+      }
 
-    // Messages array changed (new messages, session loaded)
-    this._unsubs.push(agentSessionStore.select(
-      s => s.messages,
-      () => {
+      if (has('messages')) {
         this.error = null
         this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
       }
-    ))
 
-    // Streaming state toggled (start/stop)
-    this._unsubs.push(agentSessionStore.select(
-      s => s.isStreaming,
-      () => {
+      if (has('isStreaming')) {
         this.error = null
         this.scheduleUpdateMessages()
         this.updateProviderGridVisibility()
@@ -1099,52 +1078,34 @@ export class TlAgentChat extends HTMLElement {
         this.updateStopBtn()
         this.updateScrollToBottomBtn()
       }
-    ))
 
-    // Ready state
-    this._unsubs.push(agentSessionStore.select(
-      s => s.ready,
-      (ready) => {
-        if (ready && this.isInitializing) {
-          this.isInitializing = false
-          this.render()
-        }
+      if (has('ready') && state.ready && this.isInitializing) {
+        this.isInitializing = false
+        this.render()
       }
-    ))
 
-    // Retry state
-    this._unsubs.push(agentSessionStore.select(
-      s => s.retryState,
-      () => this.updateRetryBanner()
-    ))
+      if (has('retryState')) this.updateRetryBanner()
+      if (has('notifyOnFinish')) this.updateNotifyBtn()
 
-    // Notify state
-    this._unsubs.push(agentSessionStore.select(
-      s => s.notifyOnFinish,
-      () => this.updateNotifyBtn()
-    ))
-
-    // Provider info — selector returns a change-detection key; listener re-reads state
-    this._unsubs.push(agentSessionStore.select(
-      s => {
-        const hasMessages = s.messages.length > 0 || s.isStreaming
-        const providerId = hasMessages ? s.providerId : s.selectedProviderId
-        const provider = s.providerList.find(p => p.id === providerId)
-        const name = provider?.name || providerId || ''
-        const status = s.statusLine || (hasMessages
-          ? s.configStatusLine
-          : (s.providerStatusLines.get(providerId) || ''))
-        return `${name}\0${status}`
-      },
-      () => this.updateStatus()
-    ))
+      const providerKeys: Array<keyof AgentSessionState> = [
+        'messages',
+        'isStreaming',
+        'providerId',
+        'selectedProviderId',
+        'providerList',
+        'statusLine',
+        'configStatusLine',
+        'providerStatusLines',
+      ]
+      if (providerKeys.some((key) => has(key))) this.updateStatus()
+    }))
   }
 
   // ── Retry banner ──
 
   private updateRetryBanner() {
     if (!this._retryBanner) return
-    const retryState = agentSessionStore.state.retryState
+    const retryState = agentSession.state.retryState
     if (retryState) {
       this._retryBanner.style.display = ''
       this.renderRetryBannerContent(retryState)
@@ -1175,8 +1136,8 @@ export class TlAgentChat extends HTMLElement {
         const target = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null
         if (!target) return
         const action = target.dataset.action
-        if (action === 'retry-now') agentSessionStore.retryNow()
-        else if (action === 'stop-retry') agentSessionStore.abort()
+        if (action === 'retry-now') agentSession.retryNow()
+        else if (action === 'stop-retry') agentSession.abort()
       }
     }
 
@@ -1200,7 +1161,7 @@ export class TlAgentChat extends HTMLElement {
   private static PHASE_THRESHOLD_MS = 30_000
   private static DOTS_HTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'
 
-  private getCurrentPhase(s: typeof agentSessionStore.state): string | null {
+  private getCurrentPhase(s: typeof agentSession.state): string | null {
     if (!s.isStreaming || s.retryState) return null
 
     const blocks = s.streamingMessage?.blocks
@@ -1233,7 +1194,7 @@ export class TlAgentChat extends HTMLElement {
     }
   }
 
-  private updatePhaseLabel(s: typeof agentSessionStore.state): void {
+  private updatePhaseLabel(s: typeof agentSession.state): void {
     if (!this.messagesEl) return
     const indicator = this.messagesEl.querySelector<HTMLElement>('#streaming-indicator')
     if (!indicator) return
@@ -1256,7 +1217,7 @@ export class TlAgentChat extends HTMLElement {
     this.clearPhaseLabelTimer()
 
     this._phaseLabelTimer = setInterval(() => {
-      const phase = this.getCurrentPhase(agentSessionStore.state)
+      const phase = this.getCurrentPhase(agentSession.state)
 
       if (phase !== this._currentPhase) {
         this._currentPhase = phase
@@ -1289,7 +1250,7 @@ export class TlAgentChat extends HTMLElement {
   // ── Session actions ──
 
   private loadSession(sessionId: string) {
-    agentSessionStore.loadSession(sessionId).catch(err => {
+    agentSession.loadSession(sessionId).catch(err => {
       this.error = err instanceof Error ? err.message : String(err)
       this.updateErrorBanner()
     })
@@ -1328,7 +1289,7 @@ export class TlAgentChat extends HTMLElement {
   // ── Scroll management ──
 
   private onActiveSessionChanged(newSessionId: string | null): void {
-    const openSessionIds = new Set(agentSessionStore.state.openSessions.map(s => s.sessionId))
+    const openSessionIds = new Set(agentSession.state.openSessions.map(s => s.sessionId))
     // DOM still reflects the previous session here (messages re-render on rAF).
     if (this._currentSessionId && this.messagesEl) {
       if (this.userScrolledUp && openSessionIds.has(this._currentSessionId)) {
@@ -1391,7 +1352,7 @@ export class TlAgentChat extends HTMLElement {
 
   private updateScrollToBottomBtn() {
     if (!this._scrollToBottomBtn) return
-    const show = this.userScrolledUp && agentSessionStore.state.isStreaming
+    const show = this.userScrolledUp && agentSession.state.isStreaming
     if (show !== this._scrollBtnVisible) {
       this._scrollBtnVisible = show
       this._scrollToBottomBtn.style.display = show ? 'flex' : 'none'
@@ -1403,7 +1364,7 @@ export class TlAgentChat extends HTMLElement {
   private render() {
     if (!this.containerEl) return
 
-    const mode = (this.isInitializing || !agentSessionStore.state.ready) ? 'initializing' : 'chat'
+    const mode = (this.isInitializing || !agentSession.state.ready) ? 'initializing' : 'chat'
 
     if (mode === 'initializing') {
       this.clearChatRefs()
@@ -1575,7 +1536,7 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn = makeIconBtn(
       'Notify when finished',
       NOTIFY_SVG + '<span class="icon-badge"></span>',
-      () => agentSessionStore.setNotifyOnFinish(!agentSessionStore.state.notifyOnFinish),
+      () => agentSession.setNotifyOnFinish(!agentSession.state.notifyOnFinish),
     )
     bar.appendChild(this._notifyBtn)
     bar.appendChild(makeIconBtn('All sessions', HISTORY_SVG, () => window.ipc?.commandPalette?.show({ screen: 'sessions' })))
@@ -1622,7 +1583,7 @@ export class TlAgentChat extends HTMLElement {
     const panel = this._tracePanelEl
     if (!panel) return
     if (panel.isOpen()) { panel.close(); return }
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const sessionId = s.activeSessionId
     if (!sessionId) {
       this.error = 'No active session to show traces for'
@@ -1699,7 +1660,7 @@ export class TlAgentChat extends HTMLElement {
 
   private findActiveTool(): ToolPair | null {
     if (!this._activeToolId) return null
-    const s = agentSessionStore.state
+    const s = agentSession.state
     if (s.streamingMessage) {
       const fromStream = findToolPair([s.streamingMessage], this._activeToolId)
       if (fromStream) return fromStream
@@ -1767,7 +1728,7 @@ export class TlAgentChat extends HTMLElement {
 
   private async handleStop() {
     try {
-      await agentSessionStore.abort()
+      await agentSession.abort()
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e)
       this.updateErrorBanner()
@@ -1790,7 +1751,7 @@ export class TlAgentChat extends HTMLElement {
 
   /** Update the messages area only (hot path during streaming). */
   private updateMessages() {
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
     const inlineActive = this._inlineSlot !== 'messages'
     const target = (hasMessages && !inlineActive) ? '' : 'none'
@@ -1836,7 +1797,7 @@ export class TlAgentChat extends HTMLElement {
 
   private updateProviderGridVisibility() {
     if (!this._providerGridEl) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
     if (hasMessages) {
       this._providerGridEl.style.display = 'none'
@@ -1859,25 +1820,25 @@ export class TlAgentChat extends HTMLElement {
 
   private updateNotifyBtn() {
     if (!this._notifyBtn) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
   }
 
   private updateStopBtn() {
     if (!this._stopBtn) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     this._stopBtn.style.display = s.isStreaming ? '' : 'none'
   }
 
   private updateTraceBtn() {
     if (!this._traceBtn) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     this._traceBtn.style.display = s.activeSessionId ? '' : 'none'
   }
 
   private updateStatus() {
     if (!this._statusEl || !this._statusProviderEl || !this._statusStatsEl) return
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const hasMessages = s.messages.length > 0 || s.isStreaming
     const providerId = hasMessages ? s.providerId : s.selectedProviderId
     const provider = s.providerList.find(p => p.id === providerId)
@@ -1896,7 +1857,7 @@ export class TlAgentChat extends HTMLElement {
   // ── Provider actions ──
 
   private openActiveProviderSettings() {
-    const s = agentSessionStore.state
+    const s = agentSession.state
     const providerId = s.messages.length > 0 ? s.providerId : s.selectedProviderId
     const provider = s.providerList.find(p => p.id === providerId)
     if (provider?.settingsView) {

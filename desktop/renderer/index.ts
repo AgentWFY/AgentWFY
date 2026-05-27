@@ -10,7 +10,9 @@ import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
 import { TlAgentSidebar } from './components/agent_sidebar.js'
 import { TlTracePanel } from './components/trace_panel.js'
-import { agentSessionStore } from './stores/agent-session-store.js'
+import { agentRegistry } from './services/agent-registry.js'
+import { agentSession } from './services/agent-session.js'
+import { dbEvents } from './services/db-events.js'
 
 function defineElement(tagName: string, ctor: CustomElementConstructor) {
   if (!customElements.get(tagName)) {
@@ -32,7 +34,9 @@ async function init() {
   defineElement('awfy-trace-panel', TlTracePanel)
   defineElement('awfy-app', TlApp)
 
-  agentSessionStore.init()
+  agentRegistry.install()
+  agentSession.install()
+  dbEvents.install()
 
   document.body.appendChild(document.createElement('awfy-app'))
 }

@@ -1,5 +1,5 @@
-import type { AgentDbChange } from '../ipc-types/index.js'
 import { SystemConfigKeys } from '#shared/system-config/keys.js'
+import { listen } from '../events.js'
 
 const SIDEBAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -34,9 +34,9 @@ export class TlApp extends HTMLElement {
   private taskPanelEl!: HTMLElement
   private tabsEl!: HTMLElement
   private statusLineEl!: HTMLElement
-  private unlistenAgentDbChanged: (() => void) | null = null
   private unlistenZenMode: (() => void) | null = null
   private unlistenSettingChanged: (() => void) | null = null
+  private eventUnsubs: Array<() => void> = []
   private isPanelSwitcherHidden = false
   private isPanelToggleHidden = false
   private isStatusLineHidden = false
@@ -87,8 +87,8 @@ export class TlApp extends HTMLElement {
     this.togglePanel('tasks')
   }
 
-  private onOpenSidebarPanel = (e: Event) => {
-    this.openPanel((e as CustomEvent<{ panel: string }>).detail.panel)
+  private onOpenSidebarPanel = ({ panel }: { panel: string }) => {
+    this.openPanel(panel)
   }
 
   private onZenModeChanged = (isZen: boolean) => {
@@ -490,12 +490,15 @@ export class TlApp extends HTMLElement {
 
     // Event listeners
     this.addEventListener('panel-toggle', this.onPanelToggle)
-    window.addEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
-    window.addEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
-    window.addEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    this.eventUnsubs.push(
+      listen('toggle-agent-chat', this.onToggleAgentChat),
+      listen('toggle-task-panel', this.onToggleTaskPanel),
+      listen('open-sidebar-panel', this.onOpenSidebarPanel),
+      listen('focus-chat-input', this.onFocusChatInput),
+      listen('config-db-changed', this.onConfigDbChanged),
+      listen('agent-switched', this.onAgentSwitched),
+    )
     this.unlistenZenMode = window.ipc?.zenMode?.onChanged(this.onZenModeChanged) ?? null
-    window.addEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
-    this.subscribeToAgentDbChanges()
     // Three triggers: IPC settingChanged (global config writes),
     // config-db-changed (agent-DB config writes), agent-switched (DB swap).
     this.loadChromeConfig()
@@ -503,8 +506,6 @@ export class TlApp extends HTMLElement {
       if (!CHROME_CONFIG_KEYS.has(key)) return
       this.loadChromeConfig()
     }) ?? null
-    window.addEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
-    window.addEventListener('agentwfy:agent-switched', this.onAgentSwitched)
 
     // Sync initial sidebar state (open chat panel by default)
     this.updateSidebar()
@@ -512,20 +513,14 @@ export class TlApp extends HTMLElement {
 
   disconnectedCallback() {
     this.removeEventListener('panel-toggle', this.onPanelToggle)
-    window.removeEventListener('agentwfy:toggle-agent-chat', this.onToggleAgentChat)
-    window.removeEventListener('agentwfy:toggle-task-panel', this.onToggleTaskPanel)
-    window.removeEventListener('agentwfy:open-sidebar-panel', this.onOpenSidebarPanel)
+    for (const off of this.eventUnsubs) off()
+    this.eventUnsubs.length = 0
     this.unlistenZenMode?.()
     this.unlistenZenMode = null
     this.unlistenSettingChanged?.()
     this.unlistenSettingChanged = null
-    window.removeEventListener('agentwfy:focus-chat-input', this.onFocusChatInput)
-    window.removeEventListener('agentwfy:config-db-changed', this.onConfigDbChanged)
-    window.removeEventListener('agentwfy:agent-switched', this.onAgentSwitched)
     document.removeEventListener('mousemove', this.onResizeMouseMove)
     document.removeEventListener('mouseup', this.onResizeMouseUp)
-    this.unlistenAgentDbChanged?.()
-    this.unlistenAgentDbChanged = null
   }
 
   private updateSidebar() {
@@ -633,47 +628,12 @@ export class TlApp extends HTMLElement {
     this.updateSidebar()
   }
 
-  private onConfigDbChanged = (e: Event) => {
-    const key = (e as CustomEvent<{ key?: string }>).detail?.key
+  private onConfigDbChanged = ({ key }: { key?: string }) => {
     if (!key || !CHROME_CONFIG_KEYS.has(key)) return
     this.loadChromeConfig()
   }
 
   private onAgentSwitched = () => {
     this.loadChromeConfig()
-  }
-
-  private subscribeToAgentDbChanges() {
-    const ipc = window.ipc
-    if (!ipc) {
-      return
-    }
-
-    this.unlistenAgentDbChanged?.()
-    this.unlistenAgentDbChanged = ipc.db.onDbChanged((change: AgentDbChange) => {
-      if (!change) return
-      if (change.op !== 'insert' && change.op !== 'update' && change.op !== 'delete') return
-      if (change.rowId == null) return
-
-      if (change.table === 'views') {
-        window.dispatchEvent(new CustomEvent<{ change: AgentDbChange }>('agentwfy:views-db-changed', {
-          detail: { change }
-        }))
-      }
-
-      if (change.table === 'tasks') {
-        window.dispatchEvent(new CustomEvent('agentwfy:tasks-db-changed'))
-      }
-
-      if (change.table === 'triggers') {
-        window.dispatchEvent(new CustomEvent('agentwfy:triggers-db-changed'))
-      }
-
-      if (change.table === 'config') {
-        window.dispatchEvent(new CustomEvent<{ key: string }>('agentwfy:config-db-changed', {
-          detail: { key: String(change.rowId) },
-        }))
-      }
-    })
   }
 }

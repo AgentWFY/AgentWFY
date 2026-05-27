@@ -1,5 +1,6 @@
 import { escapeHtml, imageDataUrl } from './chat_utils.js'
-import { agentSessionStore } from '../stores/agent-session-store.js'
+import { listen, type DesktopEventMap } from '../events.js'
+import { agentSession } from '../services/agent-session.js'
 import type { FileContent } from '#shared/agent/types.js'
 
 type PendingAttachment = FileContent & { name: string }
@@ -162,7 +163,7 @@ export class TlChatInput extends HTMLElement {
   private _pastePreviewEl: HTMLElement | null = null
   private _attachmentStripEl: HTMLElement | null = null
   private _fileInputEl: HTMLInputElement | null = null
-  private _storeUnsub: (() => void) | null = null
+  private _unsubs: Array<() => void> = []
 
   // Per-agent state cache
   private _inputStateCache = new Map<string, InputStateCache>()
@@ -176,23 +177,21 @@ export class TlChatInput extends HTMLElement {
     this._currentAgentId = window.ipc?.agentId ?? null
     this.buildLayout()
 
-    this._storeUnsub = agentSessionStore.select(
-      s => s.isStreaming,
-      (isStreaming) => {
+    this._unsubs.push(
+      listen('agent-state-changed', ({ state, changedKeys }) => {
+        if (!changedKeys.includes('isStreaming')) return
         if (this._textarea) {
-          const p = isStreaming ? 'Send follow-up message...' : 'Type your message here...'
+          const p = state.isStreaming ? 'Send follow-up message...' : 'Type your message here...'
           if (this._textarea.placeholder !== p) this._textarea.placeholder = p
         }
-      }
+      }),
+      listen('agent-switched', this._onAgentSwitched),
     )
-
-    window.addEventListener('agentwfy:agent-switched', this._onAgentSwitched)
   }
 
   disconnectedCallback() {
-    this._storeUnsub?.()
-    this._storeUnsub = null
-    window.removeEventListener('agentwfy:agent-switched', this._onAgentSwitched)
+    for (const off of this._unsubs) off()
+    this._unsubs.length = 0
   }
 
   focusInput() {
@@ -203,10 +202,9 @@ export class TlChatInput extends HTMLElement {
     this._fileInputEl?.click()
   }
 
-  private _onAgentSwitched = (e: Event) => {
-    const detail = (e as CustomEvent).detail
-    const newAgentId: string | null = detail?.agentId ?? null
-    const agents: Array<{ agentId: string }> | undefined = detail?.agents
+  private _onAgentSwitched = (detail: DesktopEventMap['agent-switched']) => {
+    const newAgentId = detail.agentId
+    const agents = detail.agents
 
     if (newAgentId === this._currentAgentId) return
 
@@ -338,7 +336,7 @@ export class TlChatInput extends HTMLElement {
     this._textarea = document.createElement('textarea')
     this._textarea.id = 'msg-input'
     this._textarea.rows = 1
-    this._textarea.placeholder = agentSessionStore.state.isStreaming
+    this._textarea.placeholder = agentSession.state.isStreaming
       ? 'Send follow-up message...'
       : 'Type your message here...'
     this._textarea.value = this._inputValue
@@ -401,7 +399,7 @@ export class TlChatInput extends HTMLElement {
     this.dispatchEvent(new CustomEvent('chat-send', { bubbles: true }))
 
     try {
-      await agentSessionStore.sendMessage(text, files)
+      await agentSession.sendMessage(text, files)
     } catch (e) {
       this.dispatchEvent(new CustomEvent('chat-error', {
         bubbles: true,
