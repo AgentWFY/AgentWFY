@@ -1,30 +1,51 @@
-// Status line shown below the composer. Reports retry/stall state when the
-// active session has live work, the selected draft provider's status line
-// for a fresh draft, or a plain "Ready" otherwise.
+// Status line shown below the composer. Reads its data from three
+// independent sources:
+//   • `live` attribute mirrored by the parent (agent_chat) with the
+//     current SessionLivePatch — empty for drafts
+//   • status-changed events (disconnected/error overrides)
+//   • providers-changed events (provider-specific status line for the
+//     current draft, looked up from a draft-provider-id attribute set by
+//     awfy-draft-compose via awfy-chat-input ancestry — but we accept it
+//     simpler: just read the same providers map and try to find a hint)
+//
+// Pure presentation; no actions.
 
-import { controller } from '../controller.js'
-import type { AppState } from '../app-state.js'
+import { backendSession } from '../services/backend-session.js'
+import { listen } from '../events.js'
+import type { BackendStatusSnapshot, ProviderState, SessionLivePatch } from '#shared/backend/interface.js'
 import type { RetryState } from '#shared/agent/types.js'
 import { formatDuration } from './util.js'
 
 export class TlLiveStatus extends HTMLElement {
-  private unsubscribe: (() => void) | null = null
+  static get observedAttributes() { return ['live', 'draft-provider-id'] }
+
+  private status: BackendStatusSnapshot = backendSession.getStatus()
+  private providers: ProviderState | null = backendSession.getProviders()
+  private unsubs: Array<() => void> = []
 
   connectedCallback() {
     this.className = 'composer-status'
-    this.unsubscribe = controller.subscribe((state) => this.update(state))
+    this.unsubs.push(
+      listen('status-changed', ({ status }) => { this.status = status; this.render() }),
+      listen('providers-changed', ({ providers }) => { this.providers = providers; this.render() }),
+    )
+    this.render()
   }
 
   disconnectedCallback() {
-    this.unsubscribe?.()
-    this.unsubscribe = null
+    for (const off of this.unsubs) off()
+    this.unsubs.length = 0
   }
 
-  private update(state: AppState) {
-    const live = state.activeSession?.live
-    if (state.status.state !== 'connected') {
+  attributeChangedCallback() {
+    if (this.isConnected) this.render()
+  }
+
+  private render() {
+    const live = this.readLive()
+    if (this.status.state !== 'connected') {
       this.dataset.tone = 'error'
-      this.textContent = state.status.message || 'Disconnected'
+      this.textContent = this.status.message || 'Disconnected'
       return
     }
     if (live?.retryState) {
@@ -46,12 +67,25 @@ export class TlLiveStatus extends HTMLElement {
       this.textContent = 'Streaming response…'
       return
     }
-    if (!state.activeSession && state.draftProviderId !== null) {
-      const lines = new Map(state.providers?.providerStatusLines ?? [])
-      this.textContent = lines.get(state.draftProviderId) || ''
+    const draftProviderId = this.getAttribute('draft-provider-id')
+    if (draftProviderId) {
+      const lines = new Map(this.providers?.providerStatusLines ?? [])
+      this.textContent = lines.get(draftProviderId) || ''
       return
     }
     this.textContent = 'Ready'
+  }
+
+  private readLive(): SessionLivePatch | null {
+    const raw = this.getAttribute('live')
+    if (!raw) return null
+    try {
+      const obj = JSON.parse(raw)
+      if (obj && typeof obj === 'object') return obj as SessionLivePatch
+    } catch {
+      return null
+    }
+    return null
   }
 }
 

@@ -1,16 +1,20 @@
-// Discord-style agent rail on the left of the shell. Mirrors desktop's
-// awfy-agent-sidebar — same purpose (switch between installed agents),
-// adapted for touch (long-press to remove). Hidden when the shell is in
-// `.is-fullscreen` mode (see [[feedback-mobile-rail-visibility]]).
+// Discord-style agent rail. Owns no shared state — listens to the two
+// things it actually needs: the installed-agents list and the active
+// agent / connection status. Tapping a slot dispatches switch-agent;
+// long-press dispatches remove-agent; tapping + asks for the add-agent
+// screen.
 
-import { controller } from '../controller.js'
-import type { AppState, InstalledAgent } from '../app-state.js'
+import { agentRegistry } from '../services/agent-registry.js'
+import { backendSession } from '../services/backend-session.js'
+import type { BackendStatusSnapshot } from '#shared/backend/interface.js'
+import { dispatch, listen } from '../events.js'
+import type { InstalledAgent } from '../agent-meta.js'
 import { ICON_PLUS } from './icons.js'
 import { displayHost, escapeHtml } from './util.js'
 
 export class TlAgentSidebar extends HTMLElement {
   private slotsEl!: HTMLDivElement
-  private unsubscribe: (() => void) | null = null
+  private unsubs: Array<() => void> = []
 
   connectedCallback() {
     this.innerHTML = `
@@ -24,31 +28,37 @@ export class TlAgentSidebar extends HTMLElement {
     `
     this.slotsEl = this.querySelector<HTMLDivElement>('[data-role="slots"]')!
     this.querySelector<HTMLButtonElement>('[data-role="add"]')!.addEventListener('click', () => {
-      controller.setScreen('add-agent')
+      dispatch('set-screen', { screen: 'add-agent' })
     })
 
-    this.unsubscribe = controller.subscribe((state) => this.renderSlots(state))
+    this.unsubs.push(
+      listen('agents-changed', ({ agents }) => this.renderSlots(agents)),
+      listen('agent-switched', () => this.renderSlots(agentRegistry.getAgents())),
+      listen('status-changed', () => this.renderSlots(agentRegistry.getAgents())),
+    )
+    this.renderSlots(agentRegistry.getAgents())
   }
 
   disconnectedCallback() {
-    this.unsubscribe?.()
-    this.unsubscribe = null
+    for (const off of this.unsubs) off()
+    this.unsubs.length = 0
   }
 
-  private renderSlots(state: AppState) {
-    if (state.agents.length === 0) {
+  private renderSlots(agents: InstalledAgent[]) {
+    if (agents.length === 0) {
       this.slotsEl.innerHTML = ''
       return
     }
-    this.slotsEl.innerHTML = state.agents.map((a) => renderSlot(a, state)).join('')
+    const activeAgentId = backendSession.getActiveAgentId()
+    const status = backendSession.getStatus()
+    this.slotsEl.innerHTML = agents.map((a) => renderSlot(a, activeAgentId, status)).join('')
     this.slotsEl.querySelectorAll<HTMLButtonElement>('[data-action="connect"]').forEach((btn) => {
       const agentId = btn.dataset.agentId!
       btn.addEventListener('click', () => {
-        const isActive = controller.getState().activeAgentId === agentId
-        if (!isActive) {
-          void controller.connect(agentId)
-        } else if (controller.getState().screen !== 'chat' && controller.getState().screen !== 'views') {
-          controller.setScreen('chat')
+        if (backendSession.getActiveAgentId() !== agentId) {
+          dispatch('switch-agent', { agentId })
+        } else {
+          dispatch('set-screen', { screen: 'chat' })
         }
       })
       bindLongPressRemove(btn, agentId)
@@ -56,13 +66,17 @@ export class TlAgentSidebar extends HTMLElement {
   }
 }
 
-function renderSlot(agent: InstalledAgent, state: AppState): string {
-  const isActive = state.activeAgentId === agent.agentId
+function renderSlot(
+  agent: InstalledAgent,
+  activeAgentId: string | null,
+  status: BackendStatusSnapshot,
+): string {
+  const isActive = activeAgentId === agent.agentId
   const activeClass = isActive ? ' is-active' : ''
-  const status = isActive ? state.status.state : 'disconnected'
+  const dotState = isActive ? status.state : 'disconnected'
   const initials = getInitials(agent.agentId)
   return `
-    <div class="rail-slot${activeClass}" data-status="${status}">
+    <div class="rail-slot${activeClass}" data-status="${dotState}">
       <span class="rail-indicator"></span>
       <button type="button" class="rail-icon" data-action="connect" data-agent-id="${escapeHtml(agent.agentId)}"
         title="${escapeHtml(agent.agentId)} (${escapeHtml(displayHost(agent.meta.remoteConfig.baseUrl))})"
@@ -79,7 +93,7 @@ function bindLongPressRemove(btn: HTMLButtonElement, agentId: string): void {
     if (pressTimer) clearTimeout(pressTimer)
     pressTimer = setTimeout(() => {
       if (!confirm(`Remove agent "${agentId}"?`)) return
-      void controller.removeAgent(agentId)
+      dispatch('remove-agent', { agentId })
     }, 650)
   }
   const cancel = () => {

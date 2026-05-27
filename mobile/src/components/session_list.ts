@@ -1,17 +1,25 @@
 // Session picker body: scrollable list of past sessions + "New session"
-// CTA. Tapping a row loads that session into activeSession; tapping the CTA
-// starts a draft under the daemon's default provider.
+// CTA. On mount, asks the backend to refresh the sessions list. Listens
+// for sessions-listed / session-created / session-removed /
+// providers-changed / status-changed and updates accordingly.
+//
+// Tapping a row dispatches open-session; tapping the CTA dispatches
+// start-draft under the daemon's default provider.
 
-import { controller } from '../controller.js'
-import type { AppState } from '../app-state.js'
+import { backendSession, sortSessions } from '../services/backend-session.js'
+import { dispatch, listen } from '../events.js'
 import type { ProviderState, SessionSummary } from '#shared/backend/interface.js'
+import type { BackendStatusSnapshot } from '#shared/backend/interface.js'
 import { ICON_PLUS_SM, ICON_TRASH } from './icons.js'
 import { escapeHtml, formatRelative } from './util.js'
 
 export class TlSessionList extends HTMLElement {
   private listEl!: HTMLDivElement
   private newBtn!: HTMLButtonElement
-  private unsubscribe: (() => void) | null = null
+  private sessions: SessionSummary[] = []
+  private providers: ProviderState | null = backendSession.getProviders()
+  private status: BackendStatusSnapshot = backendSession.getStatus()
+  private unsubs: Array<() => void> = []
 
   connectedCallback() {
     this.innerHTML = `
@@ -26,42 +34,86 @@ export class TlSessionList extends HTMLElement {
     this.newBtn = this.querySelector<HTMLButtonElement>('[data-role="new"]')!
     this.newBtn.addEventListener('click', () => {
       if (this.newBtn.disabled) return
-      const providerId = defaultDraftProviderId(controller.getState().providers)
-      if (providerId) controller.startDraft(providerId)
+      const providerId = defaultDraftProviderId(this.providers)
+      if (providerId) dispatch('start-draft', { providerId })
     })
 
-    this.unsubscribe = controller.subscribe((state) => this.update(state))
+    this.unsubs.push(
+      listen('sessions-listed', ({ sessions }) => {
+        this.sessions = sessions
+        this.render()
+      }),
+      listen('session-created', ({ summary }) => {
+        const filtered = this.sessions.filter((s) => s.sessionId !== summary.sessionId)
+        this.sessions = sortSessions([summary, ...filtered])
+        this.render()
+      }),
+      listen('session-removed', ({ sessionId }) => {
+        this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
+        this.render()
+      }),
+      listen('providers-changed', ({ providers }) => {
+        this.providers = providers
+        this.updateNewBtn()
+      }),
+      listen('status-changed', ({ status }) => {
+        this.status = status
+        this.updateNewBtn()
+      }),
+      listen('agent-switched', () => {
+        this.sessions = []
+        this.render()
+        void backendSession.refreshSessions()
+      }),
+    )
+
+    void backendSession.refreshSessions()
+    this.render()
   }
 
   disconnectedCallback() {
-    this.unsubscribe?.()
-    this.unsubscribe = null
+    for (const off of this.unsubs) off()
+    this.unsubs.length = 0
   }
 
-  private update(state: AppState) {
-    this.listEl.innerHTML = renderRowsHtml(state.sessions)
-    this.bindRowHandlers(state.sessions)
+  private render() {
+    this.listEl.innerHTML = renderRowsHtml(this.sessions)
+    this.bindRowHandlers()
+    this.updateNewBtn()
+  }
 
-    const reason = newSessionDisabledReason(state)
+  private updateNewBtn() {
+    const reason = this.newSessionDisabledReason()
     this.newBtn.disabled = reason !== null
     this.newBtn.title = reason ?? 'Start a new session'
   }
 
-  private bindRowHandlers(sessions: SessionSummary[]) {
+  private newSessionDisabledReason(): string | null {
+    if (this.status.state !== 'connected') {
+      return this.status.message || 'Remote agent is disconnected.'
+    }
+    if (!this.providers) return 'Loading providers…'
+    if (this.providers.providerList.length === 0) {
+      return 'No providers are configured on this daemon.'
+    }
+    return null
+  }
+
+  private bindRowHandlers() {
     this.listEl.querySelectorAll<HTMLButtonElement>('[data-action="open"]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        void controller.loadSession(btn.dataset.sessionId!)
+        const sid = btn.dataset.sessionId!
+        dispatch('open-session', { sessionId: sid })
       })
     })
     this.listEl.querySelectorAll<HTMLButtonElement>('[data-action="remove"]').forEach((btn) => {
       btn.addEventListener('click', (evt) => {
         evt.stopPropagation()
         const id = btn.dataset.sessionId!
-        const t = sessions.find((s) => s.sessionId === id)
-        if (!t) return
-        const label = t.title || 'this session'
+        const t = this.sessions.find((s) => s.sessionId === id)
+        const label = t?.title || 'this session'
         if (!confirm(`Remove session "${label}"?`)) return
-        void controller.removeSession(id)
+        dispatch('remove-session', { sessionId: id })
       })
     })
   }
@@ -71,17 +123,6 @@ function defaultDraftProviderId(providers: ProviderState | null): string | null 
   if (!providers || providers.providerList.length === 0) return null
   const def = providers.providerList.find((p) => p.id === providers.defaultProviderId)
   return def ? def.id : providers.providerList[0].id
-}
-
-function newSessionDisabledReason(state: AppState): string | null {
-  if (state.status.state !== 'connected') {
-    return state.status.message || 'Remote agent is disconnected.'
-  }
-  if (!state.providers) return 'Loading providers…'
-  if (state.providers.providerList.length === 0) {
-    return 'No providers are configured on this daemon.'
-  }
-  return null
 }
 
 function renderRowsHtml(sessions: SessionSummary[]): string {

@@ -5,8 +5,7 @@
 // calls here; this parent-side handler mirrors desktop/ipc/runtime-functions.ts
 // by routing through the active backend.
 
-import type { AppController } from './app-controller.js'
-import type { MobileBackend } from './backend.js'
+import { backendSession } from './services/backend-session.js'
 
 const AGENT_VIEW_CALL_CHANNEL = 'agentwfy:view-call'
 const AGENT_VIEW_RESULT_CHANNEL = 'agentwfy:view-result'
@@ -23,7 +22,7 @@ interface AgentViewErrorPayload {
   message: string
 }
 
-export function installAgentViewBridge(controller: AppController): void {
+export function installAgentViewBridge(): void {
   window.addEventListener('message', (event) => {
     const message = parseAgentViewCall(event.data)
     if (!message) return
@@ -34,18 +33,17 @@ export function installAgentViewBridge(controller: AppController): void {
       return
     }
 
-    void handleAgentViewCall(controller, frame, event.origin, message)
+    void handleAgentViewCall(frame, event.origin, message)
   })
 }
 
 async function handleAgentViewCall(
-  controller: AppController,
   frame: HTMLIFrameElement,
   origin: string,
   message: AgentViewCallMessage,
 ): Promise<void> {
   try {
-    const backend: MobileBackend['backend'] | null = controller.getBackend()
+    const backend = backendSession.getBackend()
     if (!backend) {
       throw new Error('Remote agent is not connected.')
     }

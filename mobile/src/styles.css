@@ -146,7 +146,6 @@ awfy-agent-sidebar {
 }
 
 awfy-add-agent-screen,
-awfy-connected-pane,
 awfy-session-list,
 awfy-agent-chat,
 awfy-draft-compose,
@@ -183,6 +182,9 @@ awfy-live-status {
 }
 
 .shell.is-fullscreen .rail { display: none; }
+/* Collapse the sidebar host too — otherwise it stays in the grid as an
+   auto-sized row and eats vertical space even with the inner rail hidden. */
+.shell.is-fullscreen awfy-agent-sidebar { display: none; }
 
 /* ── Agent rail (Discord-style) ────────────────────────────────── */
 

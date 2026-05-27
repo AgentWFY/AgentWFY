@@ -1,9 +1,13 @@
 // Full-screen "connect to a daemon" form. Shown on first launch and when
 // the user taps + on the agent sidebar. Mobile-only — desktop adds remote
 // agents via the command palette.
+//
+// Re-renders the cancel buttons when the installed-agents count crosses
+// zero (no Cancel when there's nothing to fall back to).
 
-import { controller } from '../controller.js'
-import type { AppState } from '../app-state.js'
+import { agentRegistry } from '../services/agent-registry.js'
+import { backendSession } from '../services/backend-session.js'
+import { dispatch, listen } from '../events.js'
 import { ICON_PLUG, ICON_X } from './icons.js'
 
 export class TlAddAgentScreen extends HTMLElement {
@@ -12,23 +16,25 @@ export class TlAddAgentScreen extends HTMLElement {
   private submitBtn!: HTMLButtonElement
   private cancelXBtn: HTMLButtonElement | null = null
   private cancelBtn: HTMLButtonElement | null = null
-  private unsubscribe: (() => void) | null = null
   private latestAgentsCount = 0
+  private unsubs: Array<() => void> = []
 
   connectedCallback() {
-    this.latestAgentsCount = controller.getState().agents.length
+    this.latestAgentsCount = agentRegistry.getAgents().length
     this.render(this.latestAgentsCount > 0)
-    this.unsubscribe = controller.subscribe((state) => {
-      if (state.agents.length !== this.latestAgentsCount) {
-        this.latestAgentsCount = state.agents.length
-        this.render(state.agents.length > 0)
-      }
-    })
+    this.unsubs.push(
+      listen('agents-changed', ({ agents }) => {
+        if (agents.length !== this.latestAgentsCount) {
+          this.latestAgentsCount = agents.length
+          this.render(agents.length > 0)
+        }
+      }),
+    )
   }
 
   disconnectedCallback() {
-    this.unsubscribe?.()
-    this.unsubscribe = null
+    for (const off of this.unsubs) off()
+    this.unsubs.length = 0
   }
 
   private render(cancellable: boolean) {
@@ -88,32 +94,29 @@ export class TlAddAgentScreen extends HTMLElement {
     this.submitBtn.disabled = true
     this.errorEl.classList.add('hidden')
     const data = new FormData(this.formEl)
-    let agentId: string
     try {
-      agentId = await controller.addRemoteAgent({
+      const agentId = await agentRegistry.add({
         agentId: String(data.get('agentId') ?? ''),
         baseUrl: String(data.get('baseUrl') ?? ''),
         agentToken: String(data.get('agentToken') ?? ''),
       })
+      // backend-session listens for add-agent normally, but here we already
+      // persisted (via agentRegistry.add). Dispatch switch-agent directly to
+      // connect without double-saving.
+      dispatch('switch-agent', { agentId })
     } catch (err) {
       this.submitBtn.disabled = false
       this.errorEl.classList.remove('hidden')
       this.errorEl.textContent = err instanceof Error ? err.message : String(err)
-      return
     }
-    void controller.connect(agentId)
   }
 
   private cancel() {
-    const state: AppState = controller.getState()
-    if (state.activeAgentId) {
-      controller.setScreen('chat')
+    if (backendSession.getActiveAgentId()) {
+      dispatch('set-screen', { screen: 'chat' })
       return
     }
-    // Cancel is only rendered when at least one agent exists. Fall back to
-    // the first installed agent so the user lands somewhere with the rail
-    // populated.
-    const fallback = state.agents[0]
-    if (fallback) void controller.connect(fallback.agentId)
+    const fallback = agentRegistry.getAgents()[0]
+    if (fallback) dispatch('switch-agent', { agentId: fallback.agentId })
   }
 }
