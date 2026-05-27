@@ -761,7 +761,7 @@ export class TlTaskPanel extends HTMLElement {
         <div class="trig-top">
           <span class="tb tb-${escapeHtml(trigger.type)}">${escapeHtml(trigger.type)}</span>
           <span class="trig-name">${escapeHtml(taskName)}</span>
-          <button class="trig-toggle${disabled ? ' off' : ''}" data-trigger-toggle="${escapeHtml(trigger.name)}"></button>
+          <button class="trig-toggle${disabled ? ' off' : ''}" type="button" role="switch" aria-checked="${disabled ? 'false' : 'true'}" data-trigger-toggle="${escapeHtml(trigger.name)}"></button>
           <button class="tc-icon${isDeletePending ? ' confirm' : ''}" data-delete-trigger="${escapeHtml(trigger.name)}" title="${isDeletePending ? 'Click again to confirm' : 'Delete trigger'}" aria-label="Delete trigger">${isDeletePending ? 'Confirm' : TRASH_SVG}</button>
         </div>`
       if (trigger.description) {
@@ -933,6 +933,15 @@ export class TlTaskPanel extends HTMLElement {
       })
     })
 
+    // Toggle trigger enabled state
+    this.shadow.querySelectorAll('[data-trigger-toggle]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const triggerName = (btn as HTMLElement).dataset.triggerToggle!
+        this.toggleTrigger(triggerName)
+      })
+    })
+
     // Run button — runs task immediately (no input)
     this.shadow.querySelectorAll('.tc-run[data-run-task]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -1062,6 +1071,31 @@ export class TlTaskPanel extends HTMLElement {
       })
     } catch (err) {
       console.error('[TlTaskPanel] delete trigger failed', err)
+    }
+  }
+
+  private async toggleTrigger(triggerName: string) {
+    const ipc = window.ipc
+    if (!ipc) return
+    const trigger = this.triggers.find(t => t.name === triggerName)
+    if (!trigger) return
+
+    const previousEnabled = trigger.enabled ? 1 : 0
+    const nextEnabled = previousEnabled ? 0 : 1
+    trigger.enabled = nextEnabled
+    this.clearPendingDelete()
+    this.updateContent()
+
+    try {
+      await ipc.sql.run({
+        target: 'agent',
+        sql: 'UPDATE triggers SET enabled = ? WHERE name = ?',
+        params: [nextEnabled, triggerName],
+      })
+    } catch (err) {
+      trigger.enabled = previousEnabled
+      this.updateContent()
+      console.error('[TlTaskPanel] toggle trigger failed', err)
     }
   }
 
