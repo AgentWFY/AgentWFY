@@ -53,6 +53,8 @@ import {
   type TasksListRunningResponse,
   type TasksReadLogRequest,
   type TasksReadLogResponse,
+  type TasksReadRunRequest,
+  type TasksReadRunResponse,
   type TasksStartRequest,
   type TasksStartResponse,
   type TasksStopRequest,
@@ -256,6 +258,9 @@ export class RemoteBackend implements AgentBackend {
     },
     listRunning: async () => {
       return this.ws.rpc<Record<string, never>, TasksListRunningResponse>('tasks.listRunning', {})
+    },
+    readRun: async ({ runId }) => {
+      return this.ws.rpc<TasksReadRunRequest, TasksReadRunResponse>('tasks.readRun', { runId })
     },
     listLogHistory: async () => {
       return this.ws.rpc<Record<string, never>, TasksListLogHistoryResponse>('tasks.listLogHistory', {})

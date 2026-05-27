@@ -14,9 +14,31 @@ import type { DbApi } from './db.js'
 import type { TasksApi } from './tasks.js'
 import type { TracesApi } from './traces.js'
 import type { FileContent } from '#shared/agent/types.js'
-import type { AgentSnapshot, InstalledAgent, ProviderState, SessionLivePatch, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload } from '../../ipc/schema.js'
+import type {
+  AgentSnapshot,
+  InstalledAgent,
+  ProviderState,
+  SessionLivePatch,
+  SettingChangedPayload,
+  SidebarSwitchedPayload,
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunRead,
+  TaskRunStartedPayload,
+} from '../../ipc/schema.js'
 
-export type { ProviderState, AgentSnapshot, SessionLivePatch, InstalledAgent, SettingChangedPayload, SidebarSwitchedPayload, TaskRunFinishedPayload, TaskRunStartedPayload }
+export type {
+  ProviderState,
+  AgentSnapshot,
+  SessionLivePatch,
+  InstalledAgent,
+  SettingChangedPayload,
+  SidebarSwitchedPayload,
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunRead,
+  TaskRunStartedPayload,
+}
 
 export interface CommandPaletteApi {
   show(options?: { screen?: string; params?: Record<string, unknown> }): Promise<void>

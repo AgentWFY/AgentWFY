@@ -25,6 +25,10 @@ export function registerTaskRunnerHandlers(
     return getBackend(event).tasks.listRunning();
   });
 
+  ipcMain.handle(Channels.tasks.readRun, async (event, runId: string) => {
+    return getBackend(event).tasks.readRun({ runId });
+  });
+
   ipcMain.handle(Channels.tasks.listShortcuts, async (event) => {
     const sm = getShortcutManager(event);
     const tasks = await listTasks(getRoot(event));

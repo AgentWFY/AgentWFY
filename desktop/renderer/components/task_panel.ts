@@ -463,8 +463,10 @@ export class TlTaskPanel extends HTMLElement {
   private activeRuns: Array<{ runId: string; taskName: string; title: string; status: string; origin: TaskOrigin; startedAt: number }> = []
   private runFinishedUnsub: (() => void) | null = null
   private runStartedUnsub: (() => void) | null = null
+  private runLogUnsub: (() => void) | null = null
   private eventUnsubs: Array<() => void> = []
   private runningTimer: ReturnType<typeof setInterval> | null = null
+  private detailRequestSeq = 0
 
   constructor() {
     super()
@@ -483,6 +485,24 @@ export class TlTaskPanel extends HTMLElement {
       if (payload?.runId) {
         this.activeRuns = this.activeRuns.filter(r => r.runId !== payload.runId)
       }
+      const detailView = this.detailView
+      if (payload?.runId && detailView && detailView.runId === payload.runId) {
+        const existingInput = detailView.detail?.input
+        const existingLogs = detailView.detail?.logs ?? []
+        detailView.type = 'history'
+        detailView.file = payload.logFile ?? undefined
+        detailView.taskName = payload.title || payload.taskName || detailView.taskName
+        detailView.detail = {
+          status: payload.status || 'completed',
+          origin: payload.origin,
+          startedAt: payload.startedAt,
+          finishedAt: payload.finishedAt,
+          input: existingInput,
+          error: payload.error,
+          result: payload.result,
+          logs: Array.isArray(payload.logs) ? payload.logs : existingLogs,
+        }
+      }
       if (payload?.logFile) {
         this.logHistory.unshift({
           file: payload.logFile,
@@ -499,6 +519,10 @@ export class TlTaskPanel extends HTMLElement {
     this.runStartedUnsub = window.ipc?.tasks.onRunStarted((payload: any) => {
       this.activeRuns.unshift(payload)
       this.updateContent()
+    }) ?? null
+
+    this.runLogUnsub = window.ipc?.tasks.onRunLog((payload: any) => {
+      this.handleRunLog(payload)
     }) ?? null
 
     this.runningTimer = setInterval(() => {
@@ -521,6 +545,8 @@ export class TlTaskPanel extends HTMLElement {
     this.runFinishedUnsub = null
     this.runStartedUnsub?.()
     this.runStartedUnsub = null
+    this.runLogUnsub?.()
+    this.runLogUnsub = null
     if (this.runningTimer) {
       clearInterval(this.runningTimer)
       this.runningTimer = null
@@ -539,6 +565,7 @@ export class TlTaskPanel extends HTMLElement {
     if (key.startsWith('shortcuts.task.')) this.loadTaskShortcuts()
   }
   private onAgentSwitched = () => {
+    this.detailRequestSeq++
     this.detailView = null
     this.clearPendingDelete()
     this.loadTasks()
@@ -981,6 +1008,7 @@ export class TlTaskPanel extends HTMLElement {
   private attachDetailListeners() {
     // Back button
     this.shadow.querySelector('.d-back')?.addEventListener('click', () => {
+      this.detailRequestSeq++
       this.detailView = null
       this.updateContent()
     })
@@ -1114,7 +1142,34 @@ export class TlTaskPanel extends HTMLElement {
     }
   }
 
-  private openRunningDetail(run: typeof this.activeRuns[0]) {
+  private handleRunLog(payload: any) {
+    if (!payload || typeof payload.runId !== 'string' || !payload.log) return
+    if (this.detailView?.type !== 'running' || this.detailView.runId !== payload.runId) return
+
+    const detail: LogDetail = this.detailView.detail ?? {
+      status: 'running',
+      origin: payload.origin as TaskOrigin | undefined,
+      startedAt: payload.startedAt,
+      logs: [],
+    }
+    detail.status = payload.status || detail.status || 'running'
+    detail.origin = payload.origin ?? detail.origin
+    detail.startedAt = payload.startedAt ?? detail.startedAt
+    if (!Array.isArray(detail.logs)) detail.logs = []
+
+    const logIndex = typeof payload.logIndex === 'number' ? payload.logIndex : detail.logs.length
+    if (logIndex >= 0 && logIndex < detail.logs.length) {
+      detail.logs[logIndex] = payload.log
+    } else {
+      detail.logs.push(payload.log)
+    }
+
+    this.detailView.detail = detail
+    this.updateContent()
+  }
+
+  private async openRunningDetail(run: typeof this.activeRuns[0]) {
+    const requestSeq = ++this.detailRequestSeq
     this.detailView = {
       type: 'running',
       runId: run.runId,
@@ -1127,11 +1182,32 @@ export class TlTaskPanel extends HTMLElement {
       },
     }
     this.updateContent()
-    // Note: live log streaming for running tasks would require additional IPC
-    // For now the detail shows metadata; logs appear when the task finishes
+
+    const ipc = window.ipc
+    if (!ipc) return
+
+    try {
+      const detail = await ipc.tasks.readRun(run.runId)
+      if (requestSeq !== this.detailRequestSeq || this.detailView?.runId !== run.runId) return
+      this.detailView.taskName = detail.title || run.title
+      this.detailView.detail = {
+        status: detail.status || 'running',
+        origin: detail.origin as TaskOrigin,
+        startedAt: detail.startedAt,
+        finishedAt: detail.finishedAt ?? undefined,
+        input: detail.input,
+        error: detail.error ?? undefined,
+        result: detail.result,
+        logs: Array.isArray(detail.logs) ? detail.logs : [],
+      }
+      this.updateContent()
+    } catch (err) {
+      console.error('[TlTaskPanel] read running task failed', err)
+    }
   }
 
   private async openHistoryDetail(item: TaskLogHistoryItem) {
+    this.detailRequestSeq++
     this.detailView = {
       type: 'history',
       file: item.file,

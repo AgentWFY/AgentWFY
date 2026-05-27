@@ -36,6 +36,7 @@ import {
   type SessionsSendRequest,
   type SessionsSpawnRequest,
   type TasksReadLogRequest,
+  type TasksReadRunRequest,
   type TasksStartRequest,
   type TasksStopRequest,
   type TracesListRequest,
@@ -189,6 +190,8 @@ async function dispatchBackendRpc(
     }
     case 'tasks.listRunning':
       return bundle.backend.tasks.listRunning()
+    case 'tasks.readRun':
+      return bundle.backend.tasks.readRun(params as TasksReadRunRequest)
     case 'tasks.listLogHistory':
       return bundle.backend.tasks.listLogHistory()
     case 'tasks.readLog': {

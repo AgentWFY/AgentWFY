@@ -42,6 +42,17 @@ export interface TaskRunFinishedPayload {
 
 export type TaskRunStatus = 'running' | 'completed' | 'failed'
 
+export interface TaskRunLogPayload {
+  runId: string
+  taskName: string
+  title: string
+  status: TaskRunStatus
+  origin: TaskOrigin
+  startedAt: number
+  log: ExecJsLogEntry
+  logIndex: number
+}
+
 interface TaskRun {
   runId: string
   taskName: string
@@ -144,6 +155,7 @@ interface TaskRunnerDeps {
 
 export interface TaskLifecycleListener {
   onRunStarted?: (payload: TaskRunStartedPayload) => void
+  onRunLog?: (payload: TaskRunLogPayload) => void
   onRunFinished?: (payload: TaskRunFinishedPayload) => void
 }
 
@@ -427,7 +439,21 @@ export class TaskRunner {
     const runtime = this.deps.getJsRuntime()
 
     try {
-      const details = await runtime.executeExecJs(run.runId, code, timeoutMs, undefined, input) as ExecJsDetails
+      const details = await runtime.executeExecJs(run.runId, code, timeoutMs, undefined, input, undefined, (log) => {
+        const logIndex = run.logs.push(log) - 1
+        const payload: TaskRunLogPayload = {
+          runId: run.runId,
+          taskName: run.taskName,
+          title: run.title,
+          status: run.status,
+          origin: run.origin,
+          startedAt: run.startedAt,
+          log,
+          logIndex,
+        }
+        this.deps.busPublish(`task:run:${run.runId}:log`, payload)
+        this.emitLifecycle('onRunLog', payload)
+      }) as ExecJsDetails
 
       run.logs = details.logs ?? []
 

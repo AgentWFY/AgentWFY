@@ -104,6 +104,8 @@ export class AgentOrchestrator {
       if (this.activeAgentId !== agentCtx.agentId) return;
       if (event.kind === 'task:started') {
         this.deps.sendToRenderer(Channels.tasks.runStarted, event.payload);
+      } else if (event.kind === 'task:log') {
+        this.deps.sendToRenderer(Channels.tasks.runLog, event.payload);
       } else if (event.kind === 'task:finished') {
         this.deps.sendToRenderer(Channels.tasks.runFinished, event.payload);
       }

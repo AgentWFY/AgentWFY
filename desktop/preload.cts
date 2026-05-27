@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { Channels } from './ipc/channels.cjs';
 import type { PushMap, PushChannel } from './ipc/schema.js';
-import type { AppIpc, TraceEvent } from './renderer/ipc-types/index.js';
+import type { AppIpc, TaskRunRead, TraceEvent } from './renderer/ipc-types/index.js';
 
 // --- Helpers ---
 
@@ -217,6 +217,9 @@ if (isApp) {
       listRunning(): Promise<Array<{ runId: string; taskName: string; title: string; status: string; origin: unknown; startedAt: number }>> {
         return ipcRenderer.invoke(Channels.tasks.listRunning);
       },
+      readRun(runId: string): Promise<TaskRunRead> {
+        return ipcRenderer.invoke(Channels.tasks.readRun, runId);
+      },
       listLogHistory(): Promise<Array<{ file: string; updatedAt: number; taskName: string; status: string }>> {
         return ipcRenderer.invoke(Channels.tasks.listLogHistory);
       },
@@ -228,6 +231,9 @@ if (isApp) {
       },
       onRunStarted(callback: (payload: PushMap['tasks:runStarted']) => void): () => void {
         return typedOn(Channels.tasks.runStarted, callback);
+      },
+      onRunLog(callback: (payload: PushMap['tasks:runLog']) => void): () => void {
+        return typedOn(Channels.tasks.runLog, callback);
       },
       listShortcuts(): Promise<Record<string, string>> {
         return ipcRenderer.invoke(Channels.tasks.listShortcuts);

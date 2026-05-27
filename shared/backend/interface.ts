@@ -12,7 +12,13 @@
 import type { DisplayMessage, ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent, SessionLivePatch } from '../agent/types.js'
 import type { TraceEvent } from '../runtime/trace_types.js'
-import type { TaskOrigin, TaskRunFinishedPayload, TaskRunStartedPayload } from '../task-runner/task_runner.js'
+import type {
+  TaskOrigin,
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunRead,
+  TaskRunStartedPayload,
+} from '../task-runner/task_runner.js'
 import type {
   BackupCreateResult,
   BackupRestoreResult,
@@ -150,6 +156,7 @@ export interface TasksApi {
   start(req: { taskName: string; input?: unknown; origin?: TaskOrigin }): Promise<{ runId: string }>
   stop(req: { runId: string }): Promise<void>
   listRunning(): Promise<RunningTaskSummary[]>
+  readRun(req: { runId: string }): Promise<TaskRunRead>
   listLogHistory(): Promise<TaskLogHistoryItem[]>
   /** Read a single task log file by its name (sanitized against
    *  `/^[A-Za-z0-9._-]+\.json$/`). The path is resolved inside the agent's
@@ -225,6 +232,7 @@ export type AgentBackendEvent =
   | { kind: 'session:saved'; sessionId: string }
   | { kind: 'session:loaded'; sessionId: string }
   | { kind: 'task:started'; payload: TaskRunStartedPayload }
+  | { kind: 'task:log'; payload: TaskRunLogPayload }
   | { kind: 'task:finished'; payload: TaskRunFinishedPayload }
 
 export interface EventsApi {

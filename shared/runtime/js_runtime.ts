@@ -3,6 +3,7 @@ import path from 'path'
 import crypto from 'crypto'
 import type {
   ExecJsDetails,
+  ExecJsLogEntry,
   ExecJsSerializedError,
   HostToWorkerMessage,
   WorkerHostCallMessage,
@@ -33,6 +34,7 @@ type PendingExecution = {
   traceStartedAt?: number
   traceTimeoutMs?: number
   traceSessionId?: string
+  onLog?: (logEntry: ExecJsLogEntry) => void
 }
 
 type ChildEntry = {
@@ -187,6 +189,7 @@ export class JsRuntime {
     signal?: AbortSignal,
     input?: unknown,
     description?: string,
+    onLog?: (logEntry: ExecJsLogEntry) => void,
   ): Promise<ExecJsDetails> {
     const normalizedSessionId = normalizeSessionId(sessionId)
     this.ensureWorker(normalizedSessionId)
@@ -227,6 +230,7 @@ export class JsRuntime {
         traceStartedAt: Date.now(),
         traceTimeoutMs: timeout,
         traceSessionId: normalizedSessionId,
+        onLog,
       }
 
       if (signal) {
@@ -254,6 +258,13 @@ export class JsRuntime {
         input,
         methods: this.deps.functionRegistry.getMethodNames(),
       } satisfies HostToWorkerMessage)
+
+      if (onLog) {
+        entry.child.send({
+          type: 'exec:watch',
+          requestId,
+        } satisfies HostToWorkerMessage)
+      }
     })
   }
 
@@ -276,6 +287,12 @@ export class JsRuntime {
         }
 
         entry.pendingExecutions.delete(message.requestId)
+        if (pending.onLog) {
+          entry.child.send({
+            type: 'exec:unwatch',
+            requestId: message.requestId,
+          } satisfies HostToWorkerMessage)
+        }
         pending.cleanup?.()
         try {
           this.emitExecTrace(pending, message.requestId, message.details)
@@ -285,6 +302,19 @@ export class JsRuntime {
           console.error('[trace] emitExecTrace failed:', err)
         }
         pending.resolve(message.details)
+        return
+      }
+      case 'exec:log': {
+        const pending = entry.pendingExecutions.get(message.requestId)
+        if (!pending?.onLog) {
+          return
+        }
+
+        try {
+          pending.onLog(message.logEntry)
+        } catch (err) {
+          console.error('[JsRuntime] exec log listener threw:', err)
+        }
         return
       }
       case 'host:call': {

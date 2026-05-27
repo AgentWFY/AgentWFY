@@ -149,6 +149,7 @@ export class LocalBackend implements AgentBackend {
 
     this.taskLifecycleUnsubscribe = this.ctx.taskRunner.subscribeLifecycle({
       onRunStarted: (payload) => this.emit({ kind: 'task:started', payload }),
+      onRunLog: (payload) => this.emit({ kind: 'task:log', payload }),
       onRunFinished: (payload) => this.emit({ kind: 'task:finished', payload }),
     })
   }
@@ -296,6 +297,9 @@ export class LocalBackend implements AgentBackend {
     },
     listRunning: async (): Promise<RunningTaskSummary[]> => {
       return this.ctx.taskRunner.listRunning()
+    },
+    readRun: async ({ runId }) => {
+      return this.ctx.taskRunner.readTaskRun(runId)
     },
     listLogHistory: async () => {
       return listAgentTaskLogHistory(this.ctx.runtimeRoot)

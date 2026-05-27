@@ -33,10 +33,12 @@ export const Channels = {
     start: 'tasks:start',
     stop: 'tasks:stop',
     listRunning: 'tasks:listRunning',
+    readRun: 'tasks:readRun',
     listLogHistory: 'tasks:listLogHistory',
     readLog: 'tasks:readLog',
     runFinished: 'tasks:runFinished',
     runStarted: 'tasks:runStarted',
+    runLog: 'tasks:runLog',
     listShortcuts: 'tasks:listShortcuts',
   },
   providers: {

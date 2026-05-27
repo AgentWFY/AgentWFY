@@ -46,7 +46,7 @@ import type {
 import type { ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent } from '../agent/types.js'
 import type { TraceEvent } from '../runtime/trace_types.js'
-import type { TaskOrigin } from '../task-runner/task_runner.js'
+import type { TaskOrigin, TaskRunRead } from '../task-runner/task_runner.js'
 
 export const PROTOCOL_VERSION = 'v1' as const
 export const API_PREFIX = `/api/${PROTOCOL_VERSION}` as const
@@ -126,6 +126,7 @@ export type BackendRpcMethod =
   | 'tasks.start'
   | 'tasks.stop'
   | 'tasks.listRunning'
+  | 'tasks.readRun'
   | 'tasks.listLogHistory'
   | 'tasks.readLog'
   | 'traces.list'
@@ -290,6 +291,8 @@ export interface TasksStartResponse { runId: string }
 export interface TasksStopRequest { runId: string }
 export type TasksStopResponse = { ok: true }
 export type TasksListRunningResponse = RunningTaskSummary[]
+export interface TasksReadRunRequest { runId: string }
+export type TasksReadRunResponse = TaskRunRead
 export type TasksListLogHistoryResponse = TaskLogHistoryItem[]
 export interface TasksReadLogRequest { logFileName: string }
 export interface TasksReadLogResponse { content: string }

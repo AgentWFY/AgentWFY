@@ -11,6 +11,7 @@ import type { AgentSnapshot, SessionLivePatch } from '#shared/agent/types.js'
 import type { BackendConnectionState, ProviderState } from '#shared/backend/interface.js'
 import type {
   TaskRunStartedPayload,
+  TaskRunLogPayload,
   TaskRunFinishedPayload,
 } from '#shared/task-runner/task_runner.js'
 
@@ -20,7 +21,9 @@ export type { AgentSnapshot, SessionLivePatch } from '#shared/agent/types.js'
 export type { ProviderState } from '#shared/backend/interface.js'
 export type {
   TaskRunStartedPayload,
+  TaskRunLogPayload,
   TaskRunFinishedPayload,
+  TaskRunRead,
 } from '#shared/task-runner/task_runner.js'
 
 // ── Canonical payload types ──
@@ -62,6 +65,7 @@ export interface PushMap {
   'agent-sidebar:switched': SidebarSwitchedPayload
   'tasks:runFinished': TaskRunFinishedPayload
   'tasks:runStarted': TaskRunStartedPayload
+  'tasks:runLog': TaskRunLogPayload
   'app:settingChanged': SettingChangedPayload
 }
 
