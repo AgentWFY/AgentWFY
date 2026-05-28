@@ -14,6 +14,8 @@ export class PaletteController {
   private filtered: CommandPaletteItem[] = []
   private selectedIndex = 0
   private actionInFlight = false
+  private lastMouseX = -1
+  private lastMouseY = -1
 
   constructor(
     bridge: CommandPaletteBridge,
@@ -479,7 +481,13 @@ export class PaletteController {
       void this.handleKeyDown(event)
     }, true)
 
-    this.resultsEl.addEventListener('mouseover', (event) => {
+    this.resultsEl.addEventListener('mousemove', (event) => {
+      // Skip if the mouse didn't actually move (guards against synthetic
+      // mousemove events some browsers fire after layout changes).
+      if (event.clientX === this.lastMouseX && event.clientY === this.lastMouseY) return
+      this.lastMouseX = event.clientX
+      this.lastMouseY = event.clientY
+
       const target = event.target
       if (!(target instanceof Element)) return
       const itemEl = target.closest('.item')
