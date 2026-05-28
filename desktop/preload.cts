@@ -123,9 +123,6 @@ if (isApp) {
       togglePin(tabId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.togglePin, tabId);
       },
-      revealTab(tabId: string): Promise<void> {
-        return ipcRenderer.invoke(Channels.tabs.revealTab, tabId);
-      },
       toggleDevTools(tabId: string): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.toggleDevTools, tabId);
       },
@@ -371,8 +368,17 @@ if (isAgentView) {
 
   const runtimeFunctions: Record<string, Function> = {};
   for (const name of runtimeFunctionNames) {
-    runtimeFunctions[name] = (params: unknown) =>
-      ipcRenderer.invoke(Channels.runtimeFunctions.call, name, params);
+    runtimeFunctions[name] = (params: unknown) => {
+      let nextParams = params;
+      if (name === 'openTab' && params && typeof params === 'object') {
+        const request = { ...params as Record<string, unknown> };
+        if (typeof request.headless !== 'boolean') {
+          request.headless = false;
+        }
+        nextParams = request;
+      }
+      return ipcRenderer.invoke(Channels.runtimeFunctions.call, name, nextParams);
+    };
   }
 
   contextBridge.exposeInMainWorld('agentwfy', {

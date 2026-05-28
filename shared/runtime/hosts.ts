@@ -26,10 +26,65 @@ export interface ExternalLauncher {
   openExternal(url: string): Promise<void>
 }
 
-// ── Tab host ─────────────────────────────────────────────────────────────
-// Surfaces the tab/browser-view operations used by runtime/functions/tabs.ts.
-// The Electron app supplies this via TabViewManager; daemon deployments leave
-// it undefined so tab functions aren't registered.
+// ── Tab hosts ────────────────────────────────────────────────────────────
+// Surfaces the tab/browser-page operations used by runtime/functions/tabs.ts.
+// VisibleTabHost owns user-facing tabs; BrowserHost owns headless rendered
+// pages. TabRouter combines them into the single agent-facing TabApi.
+
+export type ViewportAlias = 'mobile' | 'tablet' | 'desktop'
+
+export interface ViewportSpec {
+  width?: number
+  height?: number
+}
+
+export interface Viewport {
+  width: number
+  height: number
+}
+
+export type ViewportInput = ViewportAlias | ViewportSpec
+
+export type TabDataType = 'view' | 'file' | 'url'
+
+export interface TabData {
+  id: string
+  tabId: string
+  type: TabDataType
+  title: string
+  target: string | null
+  headless: boolean
+  viewport: Viewport | null
+  viewUpdatedAt: number | null
+  viewChanged: boolean
+  pinned: boolean
+  selected: boolean
+  params: Record<string, string> | null
+}
+
+const VIEWPORT_ALIASES: Record<ViewportAlias, Viewport> = {
+  mobile: { width: 375, height: 667 },
+  tablet: { width: 768, height: 1024 },
+  desktop: { width: 1280, height: 720 },
+}
+
+export function resolveViewport(input?: ViewportInput): Viewport {
+  if (typeof input === 'string') {
+    return VIEWPORT_ALIASES[input] ?? VIEWPORT_ALIASES.desktop
+  }
+
+  const width = normalizeViewportDimension(input?.width, VIEWPORT_ALIASES.desktop.width)
+  const height = normalizeViewportDimension(input?.height, VIEWPORT_ALIASES.desktop.height)
+  return { width, height }
+}
+
+function normalizeViewportDimension(value: unknown, fallback: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+  return Math.max(1, Math.floor(parsed))
+}
 
 export interface TabOpenRequest {
   viewName?: string
@@ -37,8 +92,14 @@ export interface TabOpenRequest {
   filePath?: string
   url?: string
   title?: string
-  hidden?: boolean
+  headless?: boolean
+  viewport?: ViewportInput
   params?: Record<string, string>
+}
+
+export interface BrowserOpenRequest extends Omit<TabOpenRequest, 'headless'> {
+  headless: true
+  viewport: Viewport
 }
 
 export interface TabCaptureResult {
@@ -64,6 +125,33 @@ export interface TabDebuggerPollResult {
   closed: boolean
 }
 
+export interface BrowserCdpSubscription {
+  poll(request?: { maxBatch?: number; maxWaitMs?: number }): Promise<TabDebuggerPollResult>
+  close(): Promise<void>
+}
+
+export interface BrowserScreencastFrame {
+  data: string
+  mimeType: 'image/png' | 'image/jpeg'
+  metadata?: unknown
+}
+
+export interface BrowserPageHandle {
+  tabId: string
+  viewport: Viewport
+  sendCdp(method: string, params?: unknown, sessionId?: string): Promise<unknown>
+  subscribeCdp(events: string[]): BrowserCdpSubscription
+  startScreencast?(opts: { format?: 'png' | 'jpeg'; quality?: number; maxFps?: number }): AsyncIterable<BrowserScreencastFrame>
+  getConsoleLogs?(request?: { since?: number; limit?: number }): Promise<TabConsoleLog[]>
+}
+
+export interface BrowserHost {
+  openPage(request: BrowserOpenRequest): Promise<BrowserPageHandle>
+  closePage(tabId: string): Promise<void>
+  getPage(tabId: string): BrowserPageHandle | null
+  getTabs?(): Promise<TabData[]>
+}
+
 export interface TabSendInputRequest {
   tabId: string
   type: string
@@ -77,8 +165,12 @@ export interface TabSendInputRequest {
   modifiers?: string[]
 }
 
-export interface TabHost {
-  getTabs: () => Promise<Array<Record<string, unknown>>>
+// Adapter for visible-tab operations (the user-facing tab bar). Desktop
+// supplies one via buildVisibleTabTools; daemon has none and routes visible
+// ops through a ClientInvoker instead.
+export interface VisibleTabHost {
+  getTabs: () => Promise<TabData[]>
+  getCurrentTab: () => Promise<TabData | null>
   openTab: (request: TabOpenRequest) => Promise<{ tabId: string }>
   closeTab: (request: { tabId: string }) => Promise<void>
   selectTab: (request: { tabId: string }) => Promise<void>
@@ -94,6 +186,11 @@ export interface TabHost {
   tabDebuggerUnsubscribe: (request: { subscriptionId: string }) => Promise<void>
   tabDebuggerDetach: (request: { tabId: string }) => Promise<void>
 }
+
+// Agent-facing unified tab surface. Same method set as VisibleTabHost but
+// each call is dispatched per-tab to the right backend (VisibleTabHost /
+// BrowserHost / ClientInvoker). Implemented by TabRouter.
+export interface TabApi extends VisibleTabHost {}
 
 // ── Palette host ─────────────────────────────────────────────────────────
 // Surfaces the command-palette operations the runtime exposes as functions.

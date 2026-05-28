@@ -1,33 +1,35 @@
-The app uses a tab-based UI with three tab types:
-- **view** (type="view"): DB-backed HTML stored in `views` table, keyed by `name`. Rendered as isolated webview runtimes.
-- **file** (type="file"): HTML loaded from a file in the working directory. Opened via `openTab({ filePath })`.
-- **url** (type="url"): External web page loaded by URL. Opened via `openTab({ url })`. Does NOT get the runtime injected.
+Tabs are rendered browser pages the agent can use for visual work: opening views, loading files or URLs, taking screenshots, running page JavaScript, inspecting layout, and sending real input. The same functions work for visible user tabs and headless tabs; each tab entry says which kind it is.
 
-- `getTabs()` → `[{ id, title, type, target, viewUpdatedAt, viewChanged, pinned, hidden, selected, params }]`
-  - `type`: "view", "file", or "url". `target`: view name, file path, or URL respectively.
-  - `viewChanged` means DB content was updated but tab has not been reloaded yet.
-  - `hidden`: true if the tab is a hidden background tab (not shown in the tab bar).
-  - `params`: the query parameters passed when the tab was opened, or null.
-- `openTab({ viewName, title?, hidden?, params? })` or `openTab({ filePath, title?, hidden?, params? })` or `openTab({ url, title?, hidden? })` → `{ id, tabId }` — exactly one source required. `viewName` resolves a view by its name (primary key) and auto-populates the title.
-  - `params`: optional `Record<string, string>` of custom query parameters appended to the view URL. Views read them via `new URLSearchParams(window.location.search)`. Not supported for URL tabs.
-  - `hidden: true` opens the tab in the background without disrupting the user's current view. Hidden tabs are not shown in the tab bar but still load their content, so you can use `captureTab`, `execTabJs`, and `getTabConsoleLogs` on them. The user can expand hidden tabs in the tab bar to inspect them. Use hidden tabs when you need to do background work (e.g. rendering a view, running JS in a page context) without interrupting the user.
-- `closeTab(id)`, `selectTab(id)`, `reloadTab(id)` — accept a plain string or `{ id }`. `tabId` is also accepted as an alias for `id`.
-- `captureTab(id)` → screenshot is auto-attached as an image to the tool result. The raw image data is NOT available to code; returns `{ attached: true, mimeType }`. Accepts a plain string or `{ id }`.
-- `getTabConsoleLogs({ id, since?, limit? })` → `[{ level, message, timestamp }]`
-- `execTabJs({ id, code, timeoutMs? })` → execute JS in a tab's page context (has DOM access). `code` can be a bare expression or a function body with statements — both return their value. Returns `null` when the result is `undefined`.
-- `inspectElement({ id, selector })` → `{ found, tagName, textContent, attributes, classes, box: { x, y, width, height, top, right, bottom, left }, styles: { display, visibility, opacity, position, overflow, zIndex, boxSizing, color, backgroundColor, fontSize, fontWeight, lineHeight, textAlign, border, borderCollapse, padding, margin, width, height, minWidth, maxWidth, minHeight, maxHeight, cursor, pointerEvents, userSelect, whiteSpace, textOverflow, flexGrow, flexShrink, gridTemplateColumns }, isVisible, isInViewport, childCount, parentTag }` — returns computed styles and box model for the first element matching the CSS selector. Use to verify CSS changes actually took effect.
-- `sendInput({ id, type, ... })` — send real input events through the browser's input pipeline (hit-testing, hover states, cursor changes). Unlike `execTabJs` with `dispatchEvent()`, these go through Chromium's compositor and hit-test against rendered layout.
-  - Mouse: `sendInput({ id, type: 'mouseDown'|'mouseUp'|'mouseMove', x, y, button?, clickCount?, modifiers? })`
-  - Click (convenience): `sendInput({ id, type: 'click', x, y, button?, clickCount?, modifiers? })` — sends mouseDown + mouseUp
-  - Scroll: `sendInput({ id, type: 'mouseWheel', x, y, deltaX?, deltaY?, modifiers? })`
-  - Keyboard: `sendInput({ id, type: 'keyDown'|'keyUp'|'char', keyCode, modifiers? })`
-  - `modifiers`: array of `'shift'`, `'control'`, `'alt'`, `'meta'`
-  - `button`: `'left'` (default), `'middle'`, `'right'`
-  - `keyCode`: Electron accelerator key code (e.g. `'a'`, `'Enter'`, `'Tab'`, `'Backspace'`, `'ArrowDown'`)
-  - Use `sendInput` over synthetic DOM events when testing real user interactions (clicking, dragging, resizing, typing). Synthetic `dispatchEvent()` skips hit-testing — it fires on whichever element you target in JS regardless of whether it's actually clickable at those coordinates.
+- `getTabs()` -> `[{ id, tabId, title, type, target, headless, viewport, viewUpdatedAt, viewChanged, pinned, selected, params }]`
+  - `type`: `"view"`, `"file"`, or `"url"`.
+  - `target`: view name, file path, or URL.
+  - `headless`: true for an agent-owned page not shown in the tab bar.
+  - `viewport`: `{ width, height }` for headless tabs, otherwise `null`.
+- `getCurrentTab()` -> the user's currently selected visible tab, or `null`.
+- `openTab({ viewName?, filePath?, url?, headless?, viewport?, title?, params? })` -> `{ id, tabId }`. Exactly one source is required. `viewName` resolves a view by name and auto-populates the title.
+  - Agent `execJs` default: `headless: true`.
+  - View runtime `window.agentwfy.openTab` default: `headless: false`.
+  - `headless: false` opens a visible tab in the user's tab bar. Use it when presenting a finished result or following an in-app navigation from a view.
+  - `headless: true` opens an off-screen rendered page. Use it for screenshots, layout checks, scraping, and interaction tests without disrupting the user.
+  - `viewport` applies only to headless tabs: `"mobile"` -> 375x667, `"tablet"` -> 768x1024, `"desktop"` -> 1280x720, or pass `{ width, height }`. Omitted means desktop.
+  - `params` is an optional `Record<string, string>` appended to view/file URLs. Views read it via `new URLSearchParams(window.location.search)`.
+- `closeTab(id)`, `selectTab(id)`, `reloadTab(id)` accept a plain string, `{ id }`, or `{ tabId }`. `selectTab` only matters for visible tabs.
+- `captureTab(id)` -> screenshot is auto-attached as an image to the tool result. The raw image data is not available to code; returns `{ attached: true, mimeType }`.
+- `getTabConsoleLogs({ id, since?, limit? })` -> `[{ level, message, timestamp }]`.
+- `execTabJs({ id, code, timeoutMs? })` -> execute JavaScript in the page context. `code` can be a bare expression or a function body with statements. Returns `null` when the result is `undefined`.
+- `inspectElement({ id, selector })` -> computed styles and box model for the first element matching the CSS selector.
+- `sendInput({ id, type, ... })` sends real input through the browser's input pipeline:
+  - Mouse: `mouseDown`, `mouseUp`, `mouseMove`, `click`
+  - Scroll: `mouseWheel`
+  - Keyboard: `keyDown`, `keyUp`, `char`
+  - Common fields: `x`, `y`, `button`, `clickCount`, `deltaX`, `deltaY`, `keyCode`, `modifiers`
+
+Use headless tabs for development/testing and visible tabs only when the user should see the result. Do not manipulate visible tabs returned by `getTabs()` or `getCurrentTab()` unless the user asked you to work with that tab.
+
+Users may watch a headless tab through client UI while it runs. The API does not change when watched; still narrate what you are doing, for example: "I opened a headless mobile viewport to check the layout."
 
 For low-level CDP access (network intercept, screencast, PDF, perf), see `@docs/system.tab-debugger`.
 
-Always `reloadTab` after updating view content via SQL.
+Always `reloadTab` after updating view content or modules via SQL.
 
 Clickable links in chat messages: `[text](/view/<viewName>)` or `[text](/file/<filePath>)`. Optional `?title=...` query param sets the tab title.

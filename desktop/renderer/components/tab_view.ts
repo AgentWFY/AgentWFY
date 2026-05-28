@@ -7,7 +7,6 @@ export class TlTabView extends HTMLElement {
   private _tabId = ''
   private _source = ''  // viewName for view, filePath for file, url for url
   private _viewChanged = false
-  private _hiddenTab = false
   private loading = false
   private error: string | null = null
   private wrapperEl: HTMLDivElement | null = null
@@ -21,13 +20,11 @@ export class TlTabView extends HTMLElement {
   private unsubscribeTabViewEvents: (() => void) | null = null
 
   private onWindowOrVisibilityChanged = () => {
-    if (!this._hiddenTab) {
-      this.scheduleBoundsSync()
-    }
+    this.scheduleBoundsSync()
   }
 
   static get observedAttributes() {
-    return ['tab-id', 'tab-type', 'view-name', 'view-path', 'view-url', 'view-updated-at', 'hidden-tab', 'view-params']
+    return ['tab-id', 'tab-type', 'view-name', 'view-path', 'view-url', 'view-updated-at', 'view-params']
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, value: string | null) {
@@ -36,7 +33,6 @@ export class TlTabView extends HTMLElement {
     if (name === 'view-name') this._source = nextValue
     if (name === 'view-path' && !this.hasAttribute('view-name')) this._source = nextValue
     if (name === 'view-url' && !this.hasAttribute('view-name') && !this.hasAttribute('view-path')) this._source = nextValue
-    if (name === 'hidden-tab') this._hiddenTab = value !== null
 
     if (!this.isConnected || oldValue === nextValue) return
 
@@ -57,7 +53,6 @@ export class TlTabView extends HTMLElement {
   connectedCallback() {
     this._tabId = this.getAttribute('tab-id') || ''
     this._source = this.getAttribute('view-name') || this.getAttribute('view-path') || this.getAttribute('view-url') || ''
-    this._hiddenTab = this.hasAttribute('hidden-tab')
 
     this.style.display = 'block'
     this.style.width = '100%'
@@ -143,9 +138,7 @@ export class TlTabView extends HTMLElement {
     this.containerEl.appendChild(this.errorEl)
 
     this.wrapperResizeObserver = new ResizeObserver(() => {
-      if (!this._hiddenTab) {
-        this.scheduleBoundsSync()
-      }
+      this.scheduleBoundsSync()
     })
     this.wrapperResizeObserver.observe(this.wrapperEl)
   }
@@ -162,9 +155,7 @@ export class TlTabView extends HTMLElement {
     }
 
     this.parentVisibilityObserver = new MutationObserver(() => {
-      if (!this._hiddenTab) {
-        this.scheduleBoundsSync()
-      }
+      this.scheduleBoundsSync()
     })
 
     this.parentVisibilityObserver.observe(parent, {
@@ -244,8 +235,6 @@ export class TlTabView extends HTMLElement {
   }
 
   private isViewVisible(bounds?: TabViewBounds): boolean {
-    if (this._hiddenTab) return false
-
     const nextBounds = bounds || this.getWrapperBounds()
     const MIN_VISIBLE_SIZE = 40
     return (

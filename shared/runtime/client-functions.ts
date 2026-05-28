@@ -5,21 +5,6 @@ export interface ClientFunctionInvoker {
 }
 
 export const CLIENT_RUNTIME_FUNCTIONS = [
-  'getTabs',
-  'openTab',
-  'closeTab',
-  'selectTab',
-  'reloadTab',
-  'captureTab',
-  'getTabConsoleLogs',
-  'execTabJs',
-  'sendInput',
-  'inspectElement',
-  'tabDebuggerSend',
-  'tabDebuggerSubscribe',
-  'tabDebuggerPoll',
-  'tabDebuggerUnsubscribe',
-  'tabDebuggerDetach',
   'requestInstallPlugin',
   'requestTogglePlugin',
   'requestUninstallPlugin',
@@ -29,17 +14,8 @@ export const CLIENT_RUNTIME_FUNCTIONS = [
 
 const CLIENT_RUNTIME_FUNCTION_SET = new Set<string>(CLIENT_RUNTIME_FUNCTIONS)
 
-const HIDDEN_CLIENT_RUNTIME_FUNCTIONS = new Set<string>([
-  'tabDebuggerPoll',
-  'tabDebuggerUnsubscribe',
-])
-
 export function isClientRuntimeFunction(name: string): boolean {
   return CLIENT_RUNTIME_FUNCTION_SET.has(name)
-}
-
-export function isHiddenClientRuntimeFunction(name: string): boolean {
-  return HIDDEN_CLIENT_RUNTIME_FUNCTIONS.has(name)
 }
 
 export function registerClientFunctionProxies(
@@ -52,7 +28,6 @@ export function registerClientFunctionProxies(
       name,
       (params) => invoker.invokeClientFunction(name, params),
       'connected-client',
-      { hidden: isHiddenClientRuntimeFunction(name) },
     )
   }
 }

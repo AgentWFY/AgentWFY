@@ -13,7 +13,6 @@ export const Channels = {
     getState: 'tabs:getState',
     reorderTabs: 'tabs:reorderTabs',
     togglePin: 'tabs:togglePin',
-    revealTab: 'tabs:revealTab',
     toggleDevTools: 'tabs:toggleDevTools',
     describe: 'tabs:describe',
   },

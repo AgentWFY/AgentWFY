@@ -21,7 +21,7 @@ import type {
   NotificationHost,
   PaletteHost,
   RendererPush,
-  TabHost,
+  TabApi,
 } from '../runtime/hosts.js'
 import { ProviderRegistry } from '../providers/registry.js'
 import { createOpenAICompatibleFactory } from '../providers/openai_compatible.js'
@@ -39,7 +39,7 @@ const AGENT_DIR_NAME = '.agentwfy'
 
 export interface LocalRuntimeHosts {
   notificationHost?: NotificationHost
-  tabTools?: TabHost
+  tabTools?: TabApi
   getCommandPalette?: () => PaletteHost
   rendererPush?: RendererPush
   externalLauncher?: ExternalLauncher

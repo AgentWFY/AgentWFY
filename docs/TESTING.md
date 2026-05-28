@@ -74,8 +74,8 @@ Partial failures in `openTab` (e.g. a non-existent view mid-sequence) still crea
 # Open a view as a tab
 ./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.source-explorer' })"
 
-# Open as a hidden background tab
-./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.docs', hidden: true })"
+# Open as a headless background tab
+./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.docs', headless: true })"
 
 # Select a tab by id (ids come from getTabState)
 ./scripts/preview --eval <name> "window.ipc.tabs.selectTab({ tabId: 'abc123' })"
@@ -359,8 +359,6 @@ Disabled: `.trig-card.disabled`, `.trig-toggle.off`.
 | Active tab | `.tab-item.active` |
 | Pinned tab | `.tab-item.pinned` |
 | Close button | `.tab-close` |
-| Hidden tabs toggle | `.hidden-tabs-btn` |
-| Hidden tab item | `.hidden-tab-item` |
 
 Middle-click closes tab (if not pinned). Right-click opens context menu. Draggable for reorder.
 
@@ -414,9 +412,9 @@ Insert directly into the agent's `agent.db` (bypasses the app's TEMP write-guard
 
 There's no explicit close button. Middle-click (`button === 1`) or right-click a `.awfy-st-tab` to close it, or call `window.ipc.agent.closeSession()` via CDP for the active session.
 
-### Hidden-tab repro needs full-viewport body
+### Headless-tab repro needs full-viewport body
 
-When inserting test views that use `openTab({ hidden: true })` to exercise tab stacking, make both the selected and hidden view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded hidden tab — the repro becomes unfalsifiable.
+When inserting test views that use `openTab({ headless: true })` to exercise tab stacking, make both the selected and headless view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded headless tab — the repro becomes unfalsifiable.
 
 ### Test provider setup
 

@@ -27,11 +27,6 @@ export function registerTabViewHandlers(getTabViewManager: (e: IpcMainInvokeEven
     getTabViewManager(event).togglePin(tabId);
   });
 
-  ipcMain.handle(Channels.tabs.revealTab, async (event, payload: unknown) => {
-    const tabId = toNonEmptyString(payload);
-    getTabViewManager(event).revealTab(tabId);
-  });
-
   ipcMain.handle(Channels.tabs.toggleDevTools, async (event, payload: unknown) => {
     const tabId = toNonEmptyString(payload);
     getTabViewManager(event).toggleDevTools(tabId);

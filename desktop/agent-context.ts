@@ -8,7 +8,7 @@ import type { AgentSessionManager } from '#shared/agent/session_manager.js';
 import type { TaskRunner } from '#shared/task-runner/task_runner.js';
 import type { ShortcutManager } from './shortcuts/manager.js';
 import type { JsRuntime } from '#shared/runtime/js_runtime.js';
-import type { TabHost } from '#shared/runtime/hosts.js';
+import type { TabApi } from '#shared/runtime/hosts.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { AgentChatPump } from './ipc/agent-sessions.js';
 import type { RemoteAgentConfig } from './agent-meta.js';
@@ -24,7 +24,7 @@ interface AgentContextBase {
   /** Renderer-side pub/sub. Real instance for both variants. */
   eventBus: EventBus;
   tabViewManager: TabViewManager;
-  tabTools: TabHost;
+  tabTools: TabApi;
   shortcutManager: ShortcutManager;
   /** The agent backend used by IPC and the renderer event pump. */
   backend: AgentBackend;

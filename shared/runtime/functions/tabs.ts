@@ -1,5 +1,6 @@
 import crypto from 'crypto'
-import type { TabHost } from '../hosts.js'
+import type { TabApi } from '../hosts.js'
+import { resolveViewport } from '../hosts.js'
 import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type {
@@ -26,12 +27,16 @@ function resolveTabId(params: unknown): string {
 
 export function registerTabs(
   registry: FunctionRegistry,
-  deps: { tabTools: TabHost; runtimeRoot: string },
+  deps: { tabTools: TabApi; runtimeRoot: string },
 ): void {
   const { tabTools, runtimeRoot } = deps
 
   registry.register('getTabs', async () => {
     return tabTools.getTabs()
+  })
+
+  registry.register('getCurrentTab', async () => {
+    return tabTools.getCurrentTab()
   })
 
   registry.register('openTab', async (params) => {
@@ -41,6 +46,9 @@ export function registerTabs(
     }
 
     const request = { ...original }
+    if (typeof request.headless !== 'boolean') {
+      throw new Error(`openTab requires headless to be set by the runtime binding. ${DOCS_HINT}`)
+    }
     if (typeof request.viewName !== 'string' && typeof request.view === 'string') {
       request.viewName = request.view
     }
@@ -75,7 +83,8 @@ export function registerTabs(
       filePath: hasFilePath ? request.filePath : undefined,
       url: hasUrl ? request.url : undefined,
       title: resolvedTitle,
-      hidden: request.hidden,
+      headless: request.headless,
+      viewport: request.headless ? resolveViewport(request.viewport) : undefined,
       params: request.params,
     })
 

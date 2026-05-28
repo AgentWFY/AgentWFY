@@ -16,7 +16,8 @@ import {
   getOrCreateDesktopRuntime,
   getOrCreateDesktopTraceWriter,
 } from './runtime/desktop-runtime-registry.js';
-import type { TabHost } from '#shared/runtime/hosts.js';
+import type { TabApi, VisibleTabHost } from '#shared/runtime/hosts.js';
+import { TabRouter } from '#shared/runtime/tab-router.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
@@ -31,6 +32,7 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
 import { LocalChatController } from './chat/local_chat_controller.js';
 import { getAgentMeta, getRemoteAgentCacheRoot } from './agent-meta.js';
 import { createRemoteAgentContext, destroyRemoteAgentContext } from './agent-context-remote.js';
+import { ElectronBrowserHost } from './browser/electron-browser-host.js';
 
 export interface AgentContextFactoryDeps {
   getMainWindow: () => BaseWindow | null;
@@ -133,7 +135,7 @@ export class AgentContextFactory {
       unregisterSender,
       getOverlayViews: this.deps.getOverlayViews,
     });
-    const tabTools: TabHost = buildTabTools(tabViewManager);
+    const tabTools: TabApi = buildTabTools(tabViewManager);
 
     const runtime = await createLocalAgentRuntime({
       runtimeRoot: agentId,
@@ -297,7 +299,7 @@ export class AgentContextFactory {
   private createTabRuntime(
     ownerAgentId: string,
     shortcutManager: ShortcutManager,
-  ): { tabViewManager: TabViewManager; tabTools: TabHost } {
+  ): { tabViewManager: TabViewManager; tabTools: TabApi } {
     const agentSession = this.ensureAgentSession(ownerAgentId);
     const registerSender = (webContentsId: number) => this.deps.registerTabSender(webContentsId, ownerAgentId);
     const unregisterSender = (webContentsId: number) => this.deps.unregisterTabSender(webContentsId);
@@ -317,15 +319,23 @@ export class AgentContextFactory {
       getOverlayViews: this.deps.getOverlayViews,
     });
 
-    const tabTools: TabHost = buildTabTools(tabViewManager);
+    const tabTools: TabApi = buildTabTools(tabViewManager);
 
     return { tabViewManager, tabTools };
   }
 }
 
-function buildTabTools(tabViewManager: TabViewManager): TabHost {
+function buildTabTools(tabViewManager: TabViewManager): TabApi {
+  return new TabRouter({
+    visibleTabHost: buildVisibleTabTools(tabViewManager),
+    browserHost: new ElectronBrowserHost(tabViewManager),
+  });
+}
+
+function buildVisibleTabTools(tabViewManager: TabViewManager): VisibleTabHost {
   return {
     getTabs: () => tabViewManager.getTabsHandler(),
+    getCurrentTab: () => tabViewManager.getCurrentTabHandler(),
     openTab: (req) => tabViewManager.openTabHandler(req),
     closeTab: (req) => tabViewManager.closeTabHandler(req),
     selectTab: (req) => tabViewManager.selectTabHandler(req),

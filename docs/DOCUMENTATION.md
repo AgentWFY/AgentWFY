@@ -43,7 +43,7 @@ For an overview and quick start, see the [README](../README.md). For testing (pr
   - [CSS Design Tokens](#css-design-tokens)
   - [View Parameters](#view-parameters)
   - [Modules](#modules)
-  - [Hidden Tabs for Automation](#hidden-tabs-for-automation)
+  - [Headless Tabs for Automation](#headless-tabs-for-automation)
   - [Tab Features](#tab-features)
 - [Tasks & Automation](#tasks--automation)
   - [Creating a Task](#creating-a-task)
@@ -306,7 +306,7 @@ const rows = await runSql({
 
 Get all open tabs with their state.
 
-#### `openTab({ viewName?, filePath?, url?, title?, hidden?, params? })`
+#### `openTab({ viewName?, filePath?, url?, title?, headless?, viewport?, params? })`
 
 Open a new tab. Exactly **one** of `viewName`, `filePath`, or `url` is required.
 
@@ -315,8 +315,8 @@ await openTab({ viewName: 'system.docs' })
 await openTab({ filePath: 'output/dashboard.html', title: 'Dashboard' })
 await openTab({ viewName: 'my-report', params: { month: '2025-03' } })
 
-// Hidden tab for automation
-const { tabId } = await openTab({ url: 'https://example.com', hidden: true })
+// Headless tab for automation
+const { tabId } = await openTab({ url: 'https://example.com', headless: true })
 const screenshot = await captureTab({ tabId })
 await closeTab({ tabId })
 ```
@@ -671,10 +671,10 @@ The extension (`.js` or `.css`) in the module name determines the Content-Type s
 
 Reload the tab after updating any module.
 
-### Hidden Tabs for Automation
+### Headless Tabs for Automation
 
 ```js
-const { tabId } = await openTab({ url: 'https://example.com/data', hidden: true })
+const { tabId } = await openTab({ url: 'https://example.com/data', headless: true })
 const data = await execTabJs({ tabId, code: 'document.querySelector(".results").innerText' })
 const screenshot = await captureTab({ tabId })
 await closeTab({ tabId })
@@ -687,7 +687,7 @@ await closeTab({ tabId })
 - **Middle-click to close**
 - **Right-click context menu**: Pin, reload, open DevTools
 - **Change indicator**: Dot appears when a view's content has been updated
-- **Hidden tabs**: Collapsed into a toggle button with count badge
+- **Headless tabs**: Not shown in the tab bar. Inspect with `getTabs()` (filter by `headless`), or use `captureTab` / `execTabJs` for debugging.
 
 ---
 

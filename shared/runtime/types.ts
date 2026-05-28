@@ -1,5 +1,6 @@
 import type { DisplayMessage } from '../agent/provider_types.js'
 import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
+import type { Viewport, ViewportInput } from './hosts.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -107,13 +108,15 @@ interface WorkerGetTabsRequest {}
 
 export type WorkerGetTabsResult = Array<{
   id: string
+  tabId: string
   title: string
   type: string
   target: string | null
+  headless: boolean
+  viewport: Viewport | null
   viewUpdatedAt: number | null
   viewChanged: boolean
   pinned: boolean
-  hidden: boolean
   selected: boolean
   params: Record<string, string> | null
 }>
@@ -124,7 +127,8 @@ export interface WorkerOpenTabRequest {
   filePath?: string
   url?: string
   title?: string
-  hidden?: boolean
+  headless?: boolean
+  viewport?: ViewportInput
   params?: Record<string, string>
 }
 
@@ -300,6 +304,10 @@ export interface WorkerHostMethodMap {
   reloadTab: {
     params: WorkerReloadTabRequest
     result: void
+  }
+  getCurrentTab: {
+    params: Record<string, never>
+    result: WorkerGetTabsResult[number] | null
   }
   captureTab: {
     params: WorkerCaptureTabRequest

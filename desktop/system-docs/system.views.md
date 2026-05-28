@@ -98,15 +98,15 @@ These are Electron platform constraints, not bugs. Design views with inline inte
 
 ## Debugging Views
 
-**Always use hidden tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS — NEVER open visible tabs. Use `hidden: true`:
+**Always use headless tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS, use `headless: true`:
 
 ```js
-await openTab({ viewName: name, hidden: true })
-await openTab({ filePath: path, hidden: true })
+await openTab({ viewName: name, headless: true })
+await openTab({ filePath: path, headless: true })
 ```
 
-Visible tabs steal the user's focus and clutter their tab bar. Hidden tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user.
+Visible tabs steal the user's focus and clutter their tab bar. Headless tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user.
 
-Always close hidden tabs and remove `.tmp/` files when done.
+Always close headless tabs and remove `.tmp/` files when done.
 
 **Tools:** `captureTab({ tabId })` for screenshots, `getTabConsoleLogs({ tabId })` for console output, `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access), `inspectElement({ id, selector })` to see computed styles and box model.

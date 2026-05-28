@@ -666,18 +666,21 @@ export class CommandPaletteManager {
         title: string;
         target: string | null;
         selected: boolean;
+        headless: boolean;
       }>;
-      return tabs.map((tab) => ({
-        id: `tab:${tab.id}`,
-        title: tab.title,
-        subtitle: tab.target || undefined,
-        group: 'Tabs' as const,
-        settingValue: tab.selected ? 'current' : undefined,
-        action: {
-          type: 'open-tab' as const,
-          tabId: tab.id,
-        },
-      }));
+      return tabs
+        .filter((tab) => !tab.headless)
+        .map((tab) => ({
+          id: `tab:${tab.id}`,
+          title: tab.title,
+          subtitle: tab.target || undefined,
+          group: 'Tabs' as const,
+          settingValue: tab.selected ? 'current' : undefined,
+          action: {
+            type: 'open-tab' as const,
+            tabId: tab.id,
+          },
+        }));
     } catch (err) {
       console.error('[command-palette] getTabsHandler failed:', err);
       return [];

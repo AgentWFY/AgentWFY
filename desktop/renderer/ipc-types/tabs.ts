@@ -33,7 +33,6 @@ export interface TabsApi {
   getTabState(): Promise<TabState>
   reorderTabs(fromIndex: number, toIndex: number): Promise<void>
   togglePin(tabId: string): Promise<void>
-  revealTab(tabId: string): Promise<void>
   toggleDevTools(tabId: string): Promise<void>
   describe(): Promise<unknown>
 }

@@ -6,22 +6,15 @@ import { agentHostname } from '../protocol/agent-hostname.js';
 import { Channels } from '../ipc/channels.cjs';
 import type { SendToRenderer } from '../ipc/schema.js';
 import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
+import {
+  resolveViewport,
+  type TabData,
+  type TabDataType,
+  type ViewportInput,
+} from '#shared/runtime/hosts.js';
+export type { TabData, TabDataType } from '#shared/runtime/hosts.js';
 
 // --- Types & Constants ---
-
-export type TabDataType = 'view' | 'file' | 'url'
-
-export interface TabData {
-  id: string
-  type: TabDataType
-  title: string
-  target: string
-  viewUpdatedAt?: number | null
-  viewChanged: boolean
-  pinned: boolean
-  hidden: boolean
-  params?: Record<string, string>
-}
 
 export interface TabState {
   tabs: TabData[]
@@ -307,6 +300,10 @@ export class TabViewManager {
     return { tabs: this.tabs, selectedTabId: this.selectedTabId };
   }
 
+  getTabData(tabId: string): TabData | null {
+    return this.tabs.find(tab => tab.id === tabId) ?? null;
+  }
+
   // Diagnostic snapshot of main-process tab state — per-tab bounds and
   // z-index directly from the BaseWindow's child list, which isn't
   // reachable from the renderer. Used by `preview --inspect tabs`.
@@ -555,6 +552,13 @@ export class TabViewManager {
   private applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
     this.attachTabViewToWindow(state);
 
+    const tab = this.tabById(state.tabId);
+    if (tab?.headless) {
+      state.view.setBounds(this.headlessBounds(tab));
+      state.view.setVisible(true);
+      return;
+    }
+
     // Inactive agents keep every view at 0x0 regardless of what the renderer
     // or openTab requested, while staying setVisible(true) from creation so
     // captureTab's capturePage retains a live compositor surface for
@@ -626,6 +630,20 @@ export class TabViewManager {
       ? mainWindow.getContentSize()
       : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
     return { x: 0, y: 0, width: w, height: h };
+  }
+
+  private headlessBounds(tab: TabData): Rectangle {
+    const viewport = tab.viewport ?? { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
+    return {
+      x: CAPTURE_OFFSCREEN_OFFSET,
+      y: CAPTURE_OFFSCREEN_OFFSET,
+      width: viewport.width,
+      height: viewport.height,
+    };
+  }
+
+  private tabById(tabId: string): TabData | undefined {
+    return this.tabs.find(t => t.id === tabId);
   }
 
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
@@ -927,8 +945,9 @@ export class TabViewManager {
   }
 
   private zeroAllViewBounds(): void {
-    for (const state of this.tabViewsByTabId.values()) {
-      state.view.setBounds(ZERO_BOUNDS);
+    for (const [tabId, state] of this.tabViewsByTabId) {
+      const tab = this.tabById(tabId);
+      state.view.setBounds(tab?.headless ? this.headlessBounds(tab) : ZERO_BOUNDS);
     }
   }
 
@@ -944,13 +963,10 @@ export class TabViewManager {
     } else if (this.isActive && this.selectedBounds) {
       // Only the active agent's views should re-expand on zen exit; inactive
       // agents must stay at 0x0 or they'd unmask underneath the active agent.
-      // Hidden tabs must also stay at 0x0 — the renderer's bounds-sync path
-      // skips them by design, so they'd otherwise remain full-size and show
-      // through once the visible selection goes away.
-      const hiddenTabIds = new Set(this.tabs.filter(t => t.hidden).map(t => t.id));
       for (const [tabId, state] of this.tabViewsByTabId) {
-        if (hiddenTabIds.has(tabId)) {
-          state.view.setBounds(ZERO_BOUNDS);
+        const tab = this.tabById(tabId);
+        if (tab?.headless) {
+          state.view.setBounds(this.headlessBounds(tab));
         } else {
           state.view.setBounds(this.selectedBounds);
         }
@@ -1020,24 +1036,44 @@ export class TabViewManager {
     return state;
   }
 
+  async waitForTabReady(tabId: string): Promise<void> {
+    await this.resolveReadyTabViewState(tabId);
+  }
+
   // --- Tab handlers ---
 
-  async getTabsHandler(): Promise<Array<Record<string, unknown>>> {
+  async getTabsHandler(): Promise<TabData[]> {
     return this.tabs.map((tab) => ({
       id: tab.id,
+      tabId: tab.id,
       title: tab.title || '',
       type: tab.type || 'view',
       target: tab.target ?? null,
+      headless: Boolean(tab.headless),
+      viewport: tab.headless ? tab.viewport : null,
       viewUpdatedAt: tab.viewUpdatedAt ?? null,
       viewChanged: Boolean(tab.viewChanged),
       pinned: Boolean(tab.pinned),
-      hidden: Boolean(tab.hidden),
       selected: tab.id === this.selectedTabId,
       params: tab.params || null,
     }));
   }
 
-  async openTabHandler(request: { viewName?: string; filePath?: string; url?: string; title?: string; hidden?: boolean; params?: Record<string, string> }): Promise<{ tabId: string }> {
+  async getCurrentTabHandler(): Promise<TabData | null> {
+    if (!this.selectedTabId) return null;
+    const tabs = await this.getTabsHandler();
+    return tabs.find(tab => tab.id === this.selectedTabId && !tab.headless) ?? null;
+  }
+
+  async openTabHandler(request: {
+    viewName?: string;
+    filePath?: string;
+    url?: string;
+    title?: string;
+    headless?: boolean;
+    viewport?: ViewportInput;
+    params?: Record<string, string>;
+  }): Promise<{ tabId: string }> {
     const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
     let target: string;
     if (type === 'url') {
@@ -1072,20 +1108,24 @@ export class TabViewManager {
     }
 
     const tabId = this.generateTabId();
-    const isHidden = Boolean(request.hidden);
+    const isHeadless = Boolean(request.headless);
+    const viewport = isHeadless ? resolveViewport(request.viewport) : null;
     const tab: TabData = {
       id: tabId,
+      tabId,
       type,
       title: request.title || (type === 'url' ? 'Web Page' : type === 'file' ? 'File View' : 'Agent View'),
       target,
       viewUpdatedAt: null,
       viewChanged: false,
       pinned: false,
-      hidden: isHidden,
-      params: request.params,
+      headless: isHeadless,
+      viewport,
+      selected: false,
+      params: request.params ?? null,
     };
     this.tabs = [...this.tabs, tab];
-    if (!isHidden) {
+    if (!isHeadless) {
       this.selectedTabId = tabId;
     }
 
@@ -1097,7 +1137,7 @@ export class TabViewManager {
     // here would fully occlude the renderer's WebContentsView, and Windows
     // Chromium pauses RAF for occluded contents — the renderer would then
     // never run scheduleBoundsSync to report the correct rect.
-    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), !isHidden);
+    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), !isHeadless);
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {
@@ -1119,7 +1159,7 @@ export class TabViewManager {
     this.destroyTabView(request.tabId);
 
     if (wasSelected) {
-      const visible = this.tabs.filter(t => !t.hidden);
+      const visible = this.tabs.filter(t => !t.headless);
       const last = visible[visible.length - 1];
       this.selectedTabId = last?.id || null;
       // Promote the new selection to the top of z-order with full bounds.
@@ -1136,13 +1176,6 @@ export class TabViewManager {
   async selectTabHandler(request: { tabId: string }): Promise<void> {
     const tab = this.tabs.find(t => t.id === request.tabId);
     if (!tab) return;
-    // Selecting a hidden tab must also reveal it — the renderer keeps hidden
-    // tabs at display:none regardless of selectedTabId, so without this the
-    // main-process selection silently desyncs from what the user sees.
-    if (tab.hidden) {
-      this.revealTab(request.tabId);
-      return;
-    }
     if (this.selectedTabId === request.tabId) return;
     this.selectedTabId = request.tabId;
     // Promote the new selection to the top of the z-order immediately. The
@@ -1191,7 +1224,7 @@ export class TabViewManager {
     const originalBounds = state.view.getBounds();
     // An on-screen tab (the active agent's selected tab) is already being
     // composited at its normal bounds; capturePage won't add any flash.
-    // Only a zero-sized view (hidden tab or inactive agent) gets force-painted
+    // Only a zero-sized view (inactive agent) gets force-painted
     // at origin by the capture — move that one off-screen first.
     const needsRebounds = originalBounds.width === 0 || originalBounds.height === 0;
     const captureSize = this.selectedBounds && this.selectedBounds.width > 0 && this.selectedBounds.height > 0
@@ -1588,7 +1621,7 @@ export class TabViewManager {
     if (fromIndex < 0 || fromIndex >= this.tabs.length) return;
     if (toIndex < 0 || toIndex >= this.tabs.length) return;
 
-    const pinnedEnd = this.tabs.filter(t => t.pinned && !t.hidden).length;
+    const pinnedEnd = this.tabs.filter(t => t.pinned && !t.headless).length;
     const fromPinned = fromIndex < pinnedEnd;
     const toPinned = toIndex < pinnedEnd;
     if (fromPinned !== toPinned) return;
@@ -1597,15 +1630,6 @@ export class TabViewManager {
     const [tab] = newTabs.splice(fromIndex, 1);
     newTabs.splice(toIndex, 0, tab);
     this.tabs = newTabs;
-    this.pushStateToRenderer();
-  }
-
-  revealTab(tabId: string): void {
-    const tab = this.tabs.find(t => t.id === tabId);
-    if (!tab || !tab.hidden) return;
-    tab.hidden = false;
-    this.selectedTabId = tabId;
-    this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
@@ -1621,7 +1645,7 @@ export class TabViewManager {
 
   /** Switch to the Nth visible tab (0-based index). */
   switchToTabByIndex(index: number): void {
-    const visible = this.tabs.filter(t => !t.hidden);
+    const visible = this.tabs.filter(t => !t.headless);
     if (index < 0 || index >= visible.length) return;
     const tab = visible[index];
     if (tab.id === this.selectedTabId) return;
@@ -1632,7 +1656,7 @@ export class TabViewManager {
 
   /** Switch to the next visible tab, wrapping around. */
   nextTab(): void {
-    const visible = this.tabs.filter(t => !t.hidden);
+    const visible = this.tabs.filter(t => !t.headless);
     if (visible.length <= 1) return;
     const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
     const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % visible.length;
@@ -1643,7 +1667,7 @@ export class TabViewManager {
 
   /** Switch to the previous visible tab, wrapping around. */
   previousTab(): void {
-    const visible = this.tabs.filter(t => !t.hidden);
+    const visible = this.tabs.filter(t => !t.headless);
     if (visible.length <= 1) return;
     const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
     const prevIdx = currentIdx <= 0 ? visible.length - 1 : currentIdx - 1;

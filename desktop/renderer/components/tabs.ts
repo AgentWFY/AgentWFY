@@ -4,21 +4,24 @@ import { dispatch, listen } from '../events.js'
 
 const PIN_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>`
 
-const HIDDEN_TABS_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
-
 function formatTarget(tab: TabData): string {
+  const target = tab.target || ''
   if (tab.type === 'url') {
     try {
-      const u = new URL(tab.target)
+      const u = new URL(target)
       const host = u.host.replace(/^www\./, '')
       const path = u.pathname === '/' ? '' : u.pathname
       const search = u.search || ''
       return host + path + search
     } catch {
-      return tab.target
+      return target
     }
   }
-  return tab.target
+  return target
+}
+
+function isHeadless(tab: TabData): boolean {
+  return tab.headless === true
 }
 
 export class TlTabs extends HTMLElement {
@@ -35,8 +38,6 @@ export class TlTabs extends HTMLElement {
   private panelMap: Map<string, HTMLDivElement> = new Map()
 
   private styleEl!: HTMLStyleElement
-  private hiddenTabsBtnEl!: HTMLDivElement
-  private hiddenTabsExpanded = false
   private unsubscribeStateChanged: (() => void) | null = null
   private unsubscribeSettingChanged: (() => void) | null = null
   private eventUnsubs: Array<() => void> = []
@@ -59,16 +60,6 @@ export class TlTabs extends HTMLElement {
 
     this.tabBarEl = document.createElement('div')
     this.tabBarEl.className = 'tab-bar'
-
-    this.hiddenTabsBtnEl = document.createElement('div')
-    this.hiddenTabsBtnEl.className = 'hidden-tabs-btn'
-    this.hiddenTabsBtnEl.style.display = 'none'
-    this.hiddenTabsBtnEl.addEventListener('click', () => {
-      this.hiddenTabsExpanded = !this.hiddenTabsExpanded
-      this.render()
-    })
-
-    this.tabBarEl.appendChild(this.hiddenTabsBtnEl)
 
     this.panelContainerEl = document.createElement('div')
     this.panelContainerEl.className = 'tab-panel-container'
@@ -167,12 +158,8 @@ export class TlTabs extends HTMLElement {
     dispatch('tab-selected', { tab })
   }
 
-  private hiddenTabs(): TabData[] {
-    return this.tabs.filter(t => t.hidden)
-  }
-
   private visibleTabs(): TabData[] {
-    return this.tabs.filter(t => !t.hidden)
+    return this.tabs.filter(t => !isHeadless(t))
   }
 
   /** Build the inner DOM of a tab item. Pinned tabs render only the pin icon. */
@@ -226,21 +213,10 @@ export class TlTabs extends HTMLElement {
     this.panelContainerEl.style.display = hasVisibleTabs ? 'flex' : 'none'
     this.emptyStateEl.style.display = hasVisibleTabs ? 'none' : 'flex'
 
-    const oldTabItems = this.tabBarEl.querySelectorAll('.tab-item, .pinned-separator, .hidden-separator, .hidden-tab-item')
+    const oldTabItems = this.tabBarEl.querySelectorAll('.tab-item, .pinned-separator')
     oldTabItems.forEach(el => el.remove())
 
-    // Update hidden tabs toggle button
-    const hidden = this.hiddenTabs()
-    if (hidden.length > 0) {
-      this.hiddenTabsBtnEl.innerHTML = `${HIDDEN_TABS_ICON}<span class="hidden-tabs-count">${hidden.length}</span>`
-      this.hiddenTabsBtnEl.style.display = ''
-      this.hiddenTabsBtnEl.classList.toggle('active', this.hiddenTabsExpanded)
-    } else {
-      this.hiddenTabsBtnEl.style.display = 'none'
-      this.hiddenTabsExpanded = false
-    }
-
-    if (hasVisibleTabs || this.hiddenTabsExpanded) {
+    if (hasVisibleTabs) {
       const tabBar = this.tabBarEl
 
       visible.forEach((tab) => {
@@ -325,31 +301,11 @@ export class TlTabs extends HTMLElement {
 
         this.buildTabItemBody(tabItem, tab)
 
-        tabBar.insertBefore(tabItem, this.hiddenTabsBtnEl)
+        tabBar.appendChild(tabItem)
       })
-
-      // Render expanded hidden tabs inline after the toggle button
-      if (this.hiddenTabsExpanded && hidden.length > 0) {
-        const sep = document.createElement('div')
-        sep.className = 'hidden-separator'
-        tabBar.appendChild(sep)
-
-        for (const tab of hidden) {
-          const tabItem = document.createElement('div')
-          tabItem.className = 'hidden-tab-item'
-          if (tab.viewChanged) tabItem.classList.add('changed')
-
-          this.buildTabItemBody(tabItem, tab)
-
-          tabItem.addEventListener('click', () => {
-            window.ipc?.tabs.revealTab(tab.id)
-          })
-          tabBar.appendChild(tabItem)
-        }
-      }
     }
 
-    const activeIds = new Set(this.tabs.map((tab) => tab.id))
+    const activeIds = new Set(visible.map((tab) => tab.id))
 
     // Clean up panels/views for removed tabs BEFORE reordering, so stale
     // DOM children don't cause unnecessary insertBefore moves that trigger
@@ -367,15 +323,14 @@ export class TlTabs extends HTMLElement {
       }
     }
 
-    this.tabs.forEach((tab, index) => {
+    visible.forEach((tab, index) => {
       let panel = this.panelMap.get(tab.id)
       if (!panel) {
         panel = document.createElement('div')
         panel.className = 'tab-panel'
         this.panelMap.set(tab.id, panel)
       }
-      // Hidden tabs are always display:none; visible tabs show only when selected
-      panel.style.display = tab.hidden ? 'none' : (tab.id === this.selectedTabId ? '' : 'none')
+      panel.style.display = tab.id === this.selectedTabId ? '' : 'none'
 
       // All tab types use <awfy-tab-view> with different attributes
       let viewEl = this.viewMap.get(tab.id)
@@ -383,9 +338,6 @@ export class TlTabs extends HTMLElement {
         viewEl = document.createElement('awfy-tab-view')
         viewEl.setAttribute('tab-id', tab.id)
         viewEl.setAttribute('tab-type', tab.type)
-        if (tab.hidden) {
-          viewEl.setAttribute('hidden-tab', '')
-        }
         if (tab.type === 'view') {
           viewEl.setAttribute('view-name', String(tab.target))
           viewEl.setAttribute('view-updated-at', tab.viewUpdatedAt == null ? '' : String(tab.viewUpdatedAt))
@@ -400,13 +352,6 @@ export class TlTabs extends HTMLElement {
         const tabViewEl1 = viewEl as HTMLElement & { viewChanged?: boolean }
         tabViewEl1.viewChanged = tab.viewChanged
         this.viewMap.set(tab.id, viewEl)
-      }
-
-      // Sync hidden-tab attribute
-      if (tab.hidden && !viewEl.hasAttribute('hidden-tab')) {
-        viewEl.setAttribute('hidden-tab', '')
-      } else if (!tab.hidden && viewEl.hasAttribute('hidden-tab')) {
-        viewEl.removeAttribute('hidden-tab')
       }
 
       // Sync attributes for view tabs
@@ -617,8 +562,7 @@ export class TlTabs extends HTMLElement {
          keeps tabs at content size when there's room (so a single tab
          doesn't stretch the bar) while still letting them shrink when
          crowded. */
-      :root.tabs-show-source .tab-item:not(.pinned),
-      :root.tabs-show-source .hidden-tab-item {
+      :root.tabs-show-source .tab-item:not(.pinned) {
         flex-direction: column;
         justify-content: center;
         align-items: stretch;
@@ -666,86 +610,6 @@ export class TlTabs extends HTMLElement {
         font-size: 14px;
         -webkit-app-region: drag;
       }
-      .hidden-tabs-btn {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        padding: 0 10px;
-        align-self: stretch;
-        cursor: pointer;
-        color: var(--color-text2);
-        font-size: 11px;
-        white-space: nowrap;
-        flex-shrink: 0;
-        border-left: 1px solid var(--color-divider);
-        transition: color var(--transition-fast), background var(--transition-fast);
-        -webkit-app-region: no-drag;
-        margin-left: auto;
-      }
-      .hidden-tabs-btn:hover {
-        color: var(--color-text3);
-        background: var(--color-item-hover);
-      }
-      .hidden-tabs-btn.active {
-        color: var(--color-text4);
-        background: var(--color-item-hover);
-      }
-      .hidden-tabs-count {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 14px;
-        height: 14px;
-        padding: 0 4px;
-        border-radius: 7px;
-        background: var(--color-bg3);
-        color: var(--color-text3);
-        font-size: 10px;
-        font-weight: 600;
-        line-height: 1;
-        font-variant-numeric: tabular-nums;
-      }
-      .hidden-tabs-btn.active .hidden-tabs-count {
-        background: var(--color-text4);
-        color: var(--color-bg1);
-      }
-      .hidden-separator {
-        width: 1px;
-        background: var(--color-divider);
-        margin: 0 2px;
-        flex-shrink: 0;
-        height: 14px;
-        align-self: center;
-      }
-      .hidden-tab-item {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        align-self: stretch;
-        padding: 0 12px;
-        cursor: pointer;
-        color: var(--color-text2);
-        font-size: 12px;
-        white-space: nowrap;
-        max-width: 220px;
-        flex-shrink: 0;
-        border-right: 1px solid var(--color-divider);
-        position: relative;
-        transition: color var(--transition-fast), background var(--transition-fast);
-        -webkit-app-region: no-drag;
-        background: transparent;
-        opacity: 0.6;
-      }
-      .hidden-tab-item:hover {
-        opacity: 1;
-        color: var(--color-text3);
-        background: var(--color-item-hover);
-      }
-      /* Hidden tabs reuse the same status-slot rules */
-      .hidden-tab-item.changed:not(:hover) .tab-status-dot { opacity: 1; }
-      .hidden-tab-item:hover .tab-close { opacity: 0.8; }
-      .hidden-tab-item:hover .tab-status-dot { opacity: 0; }
     `
   }
 }

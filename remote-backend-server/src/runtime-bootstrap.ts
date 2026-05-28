@@ -2,6 +2,7 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js'
 import { LocalBackend } from '#shared/backend/local.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
+import { TabRouter } from '#shared/runtime/tab-router.js'
 import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import {
@@ -19,6 +20,7 @@ import { runCleanup } from '#shared/cleanup.js'
 import { SystemConfigKeys } from '#shared/system-config/keys.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
+import { createHeadlessChromeBrowserHostFromEnv } from './browser/headless-chrome.js'
 
 export interface RuntimeBundle {
   backend: LocalBackend
@@ -45,9 +47,19 @@ export async function createAgentRuntime(
   const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
   const dbResetSubscribers = new Set<() => void>()
   let triggerReloadTimer: ReturnType<typeof setTimeout> | null = null
+  const browserHost = await createHeadlessChromeBrowserHostFromEnv({ runtimeRoot }).catch((err) => {
+    console.warn('[runtime] headless browser host unavailable:', err)
+    return null
+  })
 
   const runtime = await createLocalAgentRuntime({
     runtimeRoot,
+    hosts: {
+      tabTools: new TabRouter({
+        browserHost: browserHost ?? undefined,
+        clientInvoker: clientFunctionInvoker,
+      }),
+    },
     onDbChange: (change) => {
       if (change.table === 'triggers') {
         if (triggerReloadTimer) clearTimeout(triggerReloadTimer)
@@ -105,6 +117,7 @@ export async function createAgentRuntime(
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
     await runtime.traceWriter.flush()
+    await browserHost?.dispose().catch((err) => console.warn('[runtime] browser host dispose failed:', err))
     dbChangeSubscribers.clear()
     dbResetSubscribers.clear()
   }

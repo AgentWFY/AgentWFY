@@ -442,6 +442,19 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
           pendingAttachments.push(p)
           return p
         })
+      } else if (method === 'openTab') {
+        methodArgValues.push((params: unknown) => {
+          const request = params && typeof params === 'object'
+            ? { ...params as Record<string, unknown> }
+            : params
+          if (request && typeof request === 'object') {
+            const tabRequest = request as Record<string, unknown>
+            if (typeof tabRequest.headless !== 'boolean') {
+              tabRequest.headless = true
+            }
+          }
+          return call(method, request)
+        })
       } else {
         methodArgValues.push((params: unknown) => call(method, params))
       }

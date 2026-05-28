@@ -4,7 +4,7 @@ import type { PaletteHost } from '../hosts.js'
 import type { EventBus } from '../../event-bus.js'
 import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
-import type { ExternalLauncher, RendererPush, TabHost } from '../hosts.js'
+import type { ExternalLauncher, RendererPush, TabApi } from '../hosts.js'
 import { runAgentDbSql } from '../../db/sqlite.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -21,7 +21,7 @@ interface BuiltInFunctionDeps {
   eventBus: EventBus
   providerRegistry: ProviderRegistry
   /** Tab support — when absent, tab functions are not registered. */
-  tabTools?: TabHost
+  tabTools?: TabApi
   /** Command palette host — when absent, palette functions are not registered. */
   getCommandPalette?: () => PaletteHost
   /** Renderer signal channel — when absent, UI nudges from runtime functions are skipped. */
