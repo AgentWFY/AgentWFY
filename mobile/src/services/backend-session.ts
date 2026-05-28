@@ -43,6 +43,7 @@ class BackendSession {
   install(): void {
     listen('switch-agent', ({ agentId }) => { void this.connect(agentId) })
     listen('remove-agent', ({ agentId }) => { void this.handleRemove(agentId) })
+    listen('disconnect-agent', ({ agentId }) => { void this.handleDisconnect(agentId) })
     listen('abort-session', ({ sessionId }) => { void this.abortSession(sessionId) })
     listen('remove-session', ({ sessionId }) => { void this.removeSession(sessionId) })
   }
@@ -175,6 +176,13 @@ class BackendSession {
       await bridge.activeAgent.clearEndpoint().catch(() => {})
       await oldSession.stop().catch(() => {})
     }
+  }
+
+  // ── Disconnect driven by intent event ───────────────────────────────────
+
+  private async handleDisconnect(agentId: string): Promise<void> {
+    if (this.activeAgentId !== agentId) return
+    await this.disconnect()
   }
 
   // ── Removal driven by intent event ──────────────────────────────────────

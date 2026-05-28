@@ -119,6 +119,30 @@ body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
+  /* This is an app shell, not a web page — long-press shouldn't select
+   * UI chrome or trigger the iOS callout. Opted back in below for actual
+   * content (chat messages, tool output) and for form inputs. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+.message-body,
+.message-text,
+.tool-card pre,
+.tool-result pre,
+.message-error {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
 }
 
 button {
@@ -200,24 +224,16 @@ awfy-live-status {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  border-right: 1px solid var(--hairline);
 }
 
 .rail::-webkit-scrollbar { width: 0; }
 
-.rail-brand {
-  width: 40px;
-  height: 40px;
+.rail-agents {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: var(--accent);
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
+  gap: 6px;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -263,31 +279,31 @@ awfy-live-status {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--rail-icon-bg);
+  background: transparent;
   color: var(--rail-icon-fg);
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.4px;
-  border: none;
+  border: 1.5px dashed var(--rail-icon-fg);
   padding: 0;
   position: relative;
+  opacity: 0.55;
   transition: background var(--transition-fast), color var(--transition-fast),
-    border-radius var(--transition-normal), transform var(--transition-fast);
+    opacity var(--transition-fast), border-color var(--transition-fast),
+    transform var(--transition-fast);
   cursor: pointer;
 }
 
 .rail-icon:active { transform: scale(0.94); }
 
-.rail-slot:hover .rail-icon {
-  background: var(--accent);
-  color: #ffffff;
-  border-radius: 14px;
-}
+.rail-slot:hover .rail-icon { opacity: 1; }
 
 .rail-slot.is-active .rail-icon {
   background: var(--accent);
+  border-color: var(--accent);
+  border-style: solid;
   color: #ffffff;
-  border-radius: 14px;
+  opacity: 1;
 }
 
 /* Status dot for remote/connection state */
@@ -329,19 +345,55 @@ awfy-live-status {
   border: none;
   padding: 0;
   transition: background var(--transition-fast), color var(--transition-fast),
-    border-radius var(--transition-normal), transform var(--transition-fast);
+    transform var(--transition-fast);
   cursor: pointer;
 }
 
 .rail-add:hover {
   background: #1f8a4a;
   color: #ffffff;
-  border-radius: 14px;
 }
 
 .rail-add:active { transform: scale(0.94); }
 
 .rail-add svg { width: 18px; height: 18px; }
+
+/* Context menu shown on long-press / right-click of an agent icon.
+ * Position is set inline by the sidebar component (anchored to the slot,
+ * clamped to the viewport). */
+.rail-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+}
+
+.rail-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13.5px;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.rail-menu-item:hover { background: var(--surface-2); }
+.rail-menu-item:active { background: var(--surface-3); }
+.rail-menu-item.danger { color: var(--danger); }
+.rail-menu-item.danger:hover { background: var(--danger-soft); }
+.rail-menu-item svg { width: 14px; height: 14px; color: var(--text-muted); flex-shrink: 0; }
+.rail-menu-item.danger svg { color: var(--danger); }
 
 /* ── Main pane ─────────────────────────────────────────────────── */
 

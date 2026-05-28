@@ -3,7 +3,7 @@
 // makes intent vs fact clear.
 //
 //   Intent events  (UI emits; services handle):
-//     set-screen, switch-agent, add-agent, remove-agent,
+//     set-screen, switch-agent, add-agent, remove-agent, disconnect-agent,
 //     open-session, close-session, remove-session,
 //     start-draft, cancel-draft, send-message, abort-session,
 //     open-view, close-view, reload-view, request-error-dismiss
@@ -32,6 +32,7 @@ export interface MobileEventMap {
   'set-screen': { screen: Screen }
   'switch-agent': { agentId: string }
   'remove-agent': { agentId: string }
+  'disconnect-agent': { agentId: string }
   'open-session': { sessionId: string }
   'close-session': void
   'remove-session': { sessionId: string }

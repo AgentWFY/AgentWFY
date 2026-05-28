@@ -1,26 +1,26 @@
 // Discord-style agent rail. Owns no shared state — listens to the two
 // things it actually needs: the installed-agents list and the active
 // agent / connection status. Tapping a slot dispatches switch-agent;
-// long-press dispatches remove-agent; tapping + asks for the add-agent
-// screen.
+// long-press / right-click opens a context menu mirroring desktop's:
+// Disconnect (active+connected only) and Remove agent. Tapping + asks
+// for the add-agent screen.
 
 import { agentRegistry } from '../services/agent-registry.js'
 import { backendSession } from '../services/backend-session.js'
 import type { BackendStatusSnapshot } from '#shared/backend/interface.js'
 import { dispatch, listen } from '../events.js'
 import type { InstalledAgent } from '../agent-meta.js'
-import { ICON_PLUS } from './icons.js'
+import { ICON_PLUG, ICON_PLUS, ICON_TRASH } from './icons.js'
 import { displayHost, escapeHtml } from './util.js'
 
 export class TlAgentSidebar extends HTMLElement {
   private slotsEl!: HTMLDivElement
   private unsubs: Array<() => void> = []
+  private menuEl: HTMLDivElement | null = null
 
   connectedCallback() {
     this.innerHTML = `
       <aside class="rail">
-        <div class="rail-brand" aria-hidden="true">A</div>
-        <div class="rail-sep"></div>
         <div class="rail-agents" data-role="slots"></div>
         <div class="rail-sep"></div>
         <button type="button" class="rail-add" data-role="add" aria-label="Add agent" title="Add agent">${ICON_PLUS}</button>
@@ -28,6 +28,7 @@ export class TlAgentSidebar extends HTMLElement {
     `
     this.slotsEl = this.querySelector<HTMLDivElement>('[data-role="slots"]')!
     this.querySelector<HTMLButtonElement>('[data-role="add"]')!.addEventListener('click', () => {
+      this.hideMenu()
       dispatch('set-screen', { screen: 'add-agent' })
     })
 
@@ -37,14 +38,28 @@ export class TlAgentSidebar extends HTMLElement {
       listen('status-changed', () => this.renderSlots(agentRegistry.getAgents())),
     )
     this.renderSlots(agentRegistry.getAgents())
+
+    document.addEventListener('pointerdown', this.onDocPointerDown, true)
+    window.addEventListener('scroll', this.hideMenu, true)
   }
 
   disconnectedCallback() {
     for (const off of this.unsubs) off()
     this.unsubs.length = 0
+    document.removeEventListener('pointerdown', this.onDocPointerDown, true)
+    window.removeEventListener('scroll', this.hideMenu, true)
+    this.hideMenu()
+  }
+
+  private onDocPointerDown = (evt: Event) => {
+    if (!this.menuEl) return
+    const target = evt.target as Node
+    if (this.menuEl.contains(target)) return
+    this.hideMenu()
   }
 
   private renderSlots(agents: InstalledAgent[]) {
+    this.hideMenu()
     if (agents.length === 0) {
       this.slotsEl.innerHTML = ''
       return
@@ -61,9 +76,111 @@ export class TlAgentSidebar extends HTMLElement {
           dispatch('set-screen', { screen: 'chat' })
         }
       })
-      bindLongPressRemove(btn, agentId)
+      bindContextMenu(btn, agentId, this)
     })
   }
+
+  showMenu(agentId: string, anchor: HTMLElement): void {
+    this.hideMenu()
+    // BackendSession only clears activeAgentId when disconnect() runs or the
+    // initial connect throws — while a retry timer is in flight after a
+    // dropped socket, activeAgentId is still set. Gating on isActive alone
+    // (not the current status.state) lets the user stop that retry loop
+    // without removing the agent profile.
+    const activeAgentId = backendSession.getActiveAgentId()
+    const isActive = activeAgentId === agentId
+    const canDisconnect = isActive
+
+    const menu = document.createElement('div')
+    menu.className = 'rail-menu'
+    let html = ''
+    if (canDisconnect) {
+      html += `<button type="button" class="rail-menu-item" data-action="disconnect">${ICON_PLUG}<span>Disconnect</span></button>`
+    }
+    html += `<button type="button" class="rail-menu-item danger" data-action="remove">${ICON_TRASH}<span>Remove agent</span></button>`
+    menu.innerHTML = html
+
+    document.body.appendChild(menu)
+
+    const rect = anchor.getBoundingClientRect()
+    const railRect = this.getBoundingClientRect()
+    const menuWidth = menu.offsetWidth
+    const menuHeight = menu.offsetHeight
+    let left = railRect.right + 6
+    let top = rect.top + rect.height / 2 - menuHeight / 2
+    if (left + menuWidth > window.innerWidth - 8) {
+      left = window.innerWidth - menuWidth - 8
+    }
+    if (top < 8) top = 8
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = window.innerHeight - menuHeight - 8
+    }
+    menu.style.left = `${left}px`
+    menu.style.top = `${top}px`
+
+    menu.querySelector<HTMLButtonElement>('[data-action="disconnect"]')?.addEventListener('click', () => {
+      this.hideMenu()
+      dispatch('disconnect-agent', { agentId })
+    })
+    menu.querySelector<HTMLButtonElement>('[data-action="remove"]')?.addEventListener('click', () => {
+      this.hideMenu()
+      if (!confirm(`Remove agent "${agentId}"?`)) return
+      dispatch('remove-agent', { agentId })
+    })
+
+    this.menuEl = menu
+  }
+
+  hideMenu = (): void => {
+    if (this.menuEl) {
+      this.menuEl.remove()
+      this.menuEl = null
+    }
+  }
+}
+
+function bindContextMenu(btn: HTMLButtonElement, agentId: string, sidebar: TlAgentSidebar): void {
+  let pressTimer: ReturnType<typeof setTimeout> | null = null
+  let triggered = false
+  let startX = 0
+  let startY = 0
+  const start = (evt: PointerEvent) => {
+    triggered = false
+    startX = evt.clientX
+    startY = evt.clientY
+    if (pressTimer) clearTimeout(pressTimer)
+    pressTimer = setTimeout(() => {
+      triggered = true
+      sidebar.showMenu(agentId, btn)
+    }, 500)
+  }
+  const cancel = () => {
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null }
+  }
+  btn.addEventListener('pointerdown', start)
+  btn.addEventListener('pointerup', cancel)
+  btn.addEventListener('pointerleave', cancel)
+  btn.addEventListener('pointercancel', cancel)
+  btn.addEventListener('pointermove', (evt: PointerEvent) => {
+    // Cancel the long-press if the pointer drifts — keeps scrolling smooth
+    // and stops accidental menus during a flick.
+    if (Math.abs(evt.clientX - startX) > 6 || Math.abs(evt.clientY - startY) > 6) cancel()
+  })
+  // Suppress the tap that follows a long-press so we don't switch agents.
+  btn.addEventListener('click', (evt) => {
+    if (!triggered) return
+    evt.stopImmediatePropagation()
+    evt.preventDefault()
+    triggered = false
+  }, true)
+  // Mouse / trackpad right-click on the agent icon — match desktop's
+  // context-menu gesture. Suppress the browser default either way so iOS
+  // Safari doesn't double-trigger alongside the long-press timer.
+  btn.addEventListener('contextmenu', (evt) => {
+    evt.preventDefault()
+    cancel()
+    sidebar.showMenu(agentId, btn)
+  })
 }
 
 function renderSlot(
@@ -85,27 +202,6 @@ function renderSlot(
       </button>
     </div>
   `
-}
-
-function bindLongPressRemove(btn: HTMLButtonElement, agentId: string): void {
-  let pressTimer: ReturnType<typeof setTimeout> | null = null
-  const start = () => {
-    if (pressTimer) clearTimeout(pressTimer)
-    pressTimer = setTimeout(() => {
-      if (!confirm(`Remove agent "${agentId}"?`)) return
-      dispatch('remove-agent', { agentId })
-    }, 650)
-  }
-  const cancel = () => {
-    if (pressTimer) {
-      clearTimeout(pressTimer)
-      pressTimer = null
-    }
-  }
-  btn.addEventListener('pointerdown', start)
-  btn.addEventListener('pointerup', cancel)
-  btn.addEventListener('pointerleave', cancel)
-  btn.addEventListener('pointercancel', cancel)
 }
 
 function getInitials(name: string): string {
