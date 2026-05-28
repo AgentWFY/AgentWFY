@@ -51,6 +51,14 @@ export async function createAgentRuntime(
     console.warn('[runtime] headless browser host unavailable:', err)
     return null
   })
+  if (browserHost) {
+    console.log('[runtime] headless browser host: ready')
+  } else {
+    console.log(
+      '[runtime] headless browser host: disabled — set AGENTWFY_BROWSER_EXECUTABLE ' +
+      'or AGENTWFY_BROWSER_CDP_URL to enable headless tabs (openTab defaults to headless:true)',
+    )
+  }
 
   const runtime = await createLocalAgentRuntime({
     runtimeRoot,

@@ -62,6 +62,11 @@ async function launchHeadlessChrome(
     `--user-data-dir=${userDataDir}`,
     '--no-first-run',
     '--no-default-browser-check',
+    // Chrome refuses to start as root (Docker/CI) without --no-sandbox. This is
+    // a locally-spawned headless helper the daemon fully controls, so the
+    // sandbox buys nothing here.
+    '--no-sandbox',
+    '--disable-gpu',
     'about:blank',
   ], {
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -149,10 +154,12 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
     const resolved = await this.resolveOpenTarget(request)
 
     const tabId = createTabId()
+    // Don't pass width/height: under --headless=new, Target.createTarget rejects
+    // them ("Target position can only be set for new windows") unless
+    // newWindow:true is also set, and a separate window makes Page.* commands
+    // flaky. The viewport is applied below via Emulation.setDeviceMetricsOverride.
     const createResult = await this.client.send('Target.createTarget', {
       url: 'about:blank',
-      width: request.viewport.width,
-      height: request.viewport.height,
     }) as { targetId?: unknown }
     const targetId = typeof createResult.targetId === 'string' ? createResult.targetId : ''
     if (!targetId) throw new Error('Target.createTarget did not return targetId')
@@ -186,9 +193,44 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
       deviceScaleFactor: 1,
       mobile: false,
     }, sessionId)
+    // Surface params via location.search before any view script runs. Must be
+    // registered before Page.navigate so it applies to the document we load
+    // (and re-applies on reload).
+    const paramsQuery = buildParamsQuery(request.params)
+    if (paramsQuery) {
+      await this.client.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: paramsBootstrapScript(paramsQuery),
+      }, sessionId)
+    }
+    // Subscribe before navigating so we can't miss the load event, then wait
+    // for the page to finish loading. Without this, capture/reload issued right
+    // after openTab race the navigation and fail with "Not attached to an
+    // active page".
+    const loaded = this.waitForPageLoad(sessionId)
     await this.client.send('Page.navigate', { url: resolved.url }, sessionId)
+    await loaded
 
     return this.getPage(tabId)!
+  }
+
+  private waitForPageLoad(sessionId: string, timeoutMs = 10_000): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        unsubscribe()
+        resolve()
+      }
+      const timer = setTimeout(finish, timeoutMs)
+      const unsubscribe = this.client.onEvent((event) => {
+        if (event.sessionId !== sessionId) return
+        if (event.method === 'Page.loadEventFired' || event.method === 'Page.frameStoppedLoading') {
+          finish()
+        }
+      })
+    })
   }
 
   private async resolveOpenTarget(request: BrowserOpenRequest): Promise<{
@@ -418,4 +460,23 @@ function createTabId(): string {
 
 function htmlDataUrl(html: string): string {
   return `data:text/html;charset=utf-8;base64,${Buffer.from(html, 'utf-8').toString('base64')}`
+}
+
+// Build a query string from params, e.g. { foo: 'bar' } -> "foo=bar".
+function buildParamsQuery(params?: Record<string, string>): string {
+  if (!params) return ''
+  return Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&')
+}
+
+// A data: URL can't carry a readable query string (the `?` becomes part of the
+// base64 data and breaks decoding), so we can't mirror buildTabSrc by appending
+// to the URL. Instead inject a document-start script that rewrites the query
+// via history.replaceState before any view script runs, so a view's
+// `new URLSearchParams(location.search)` sees the params — matching the local
+// path. replaceState works on the data: document's opaque origin as long as the
+// path is unchanged.
+function paramsBootstrapScript(query: string): string {
+  return `try{history.replaceState(null,'',location.href.split('?')[0]+${JSON.stringify('?' + query)});}catch(e){}`
 }

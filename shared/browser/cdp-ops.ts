@@ -82,17 +82,34 @@ function readRemoteObjectValue(result: unknown): unknown {
   return remote.description ?? null
 }
 
+const CAPTURE_RETRY_BUDGET_MS = 3000
+
 export async function capture(handle: BrowserPageHandle): Promise<TabCaptureResult> {
-  const result = await handle.sendCdp('Page.captureScreenshot', {
-    format: 'png',
-    captureBeyondViewport: false,
-  }) as { data?: unknown }
+  // The page can still be settling right after openTab — Chrome answers
+  // Page.captureScreenshot with "Not attached to an active page". Retry on a
+  // short budget so an immediate capture doesn't race the navigation.
+  const deadline = Date.now() + CAPTURE_RETRY_BUDGET_MS
+  while (true) {
+    try {
+      const result = await handle.sendCdp('Page.captureScreenshot', {
+        format: 'png',
+        captureBeyondViewport: false,
+      }) as { data?: unknown }
 
-  if (typeof result.data !== 'string') {
-    throw new Error('Page.captureScreenshot did not return image data')
+      if (typeof result.data !== 'string') {
+        throw new Error('Page.captureScreenshot did not return image data')
+      }
+
+      return { base64: result.data, mimeType: 'image/png' }
+    } catch (err) {
+      if (!isNotAttachedError(err) || Date.now() >= deadline) throw err
+      await new Promise<void>((resolve) => setTimeout(resolve, 50))
+    }
   }
+}
 
-  return { base64: result.data, mimeType: 'image/png' }
+export function isNotAttachedError(err: unknown): boolean {
+  return String(err instanceof Error ? err.message : err).includes('Not attached to an active page')
 }
 
 export async function execJs(

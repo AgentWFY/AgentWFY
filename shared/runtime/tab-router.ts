@@ -19,7 +19,10 @@ import {
   execJs as execJsWithCdp,
   getConsoleLogs as getConsoleLogsWithCdp,
   inspect as inspectWithCdp,
+  isNotAttachedError,
 } from '../browser/cdp-ops.js'
+
+const RELOAD_RETRY_BUDGET_MS = 3000
 
 type RoutedBackend = 'browser' | 'visible' | 'client'
 
@@ -95,7 +98,13 @@ export class TabRouter implements TabApi {
 
     if (request.headless) {
       if (!this.browserHost) {
-        throw new Error('Headless tab host is not available in this runtime')
+        throw new Error(
+          'Headless tab host is not available in this runtime. A remote daemon ' +
+          'needs a Chrome to drive headless tabs: set AGENTWFY_BROWSER_EXECUTABLE ' +
+          '(path to a Chrome/Chromium binary) or AGENTWFY_BROWSER_CDP_URL (an ' +
+          'existing CDP endpoint). To open a visible tab on a connected client ' +
+          'instead, pass headless:false.',
+        )
       }
       const handle = await this.browserHost.openPage(request as BrowserOpenRequest)
       this.tabBackends.set(handle.tabId, 'browser')
@@ -127,8 +136,18 @@ export class TabRouter implements TabApi {
   async reloadTab(request: { tabId: string }): Promise<void> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
-      await handle.sendCdp('Page.reload')
-      return
+      // Mirror captureWithCdp's retry: a reload issued right after openTab can
+      // race the navigation and fail with "Not attached to an active page".
+      const deadline = Date.now() + RELOAD_RETRY_BUDGET_MS
+      while (true) {
+        try {
+          await handle.sendCdp('Page.reload')
+          return
+        } catch (err) {
+          if (!isNotAttachedError(err) || Date.now() >= deadline) throw err
+          await new Promise<void>((resolve) => setTimeout(resolve, 50))
+        }
+      }
     }
     await this.callVisible<void>('reloadTab', request)
   }

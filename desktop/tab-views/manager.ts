@@ -10,6 +10,7 @@ import {
   resolveViewport,
   type TabData,
   type TabDataType,
+  type Viewport,
   type ViewportInput,
 } from '#shared/runtime/hosts.js';
 export type { TabData, TabDataType } from '#shared/runtime/hosts.js';
@@ -762,6 +763,32 @@ export class TabViewManager {
     this.debuggerAttachments.set(tabId, { messageHandler, detachHandler });
   }
 
+  // Headless WebContentsViews are parked fully off-screen, where Chromium
+  // clips them to zero visible area — the renderer then allocates a 0x0 widget
+  // and the page reports innerWidth/innerHeight of 0. Forcing a device-metrics
+  // override (the same mechanism the remote headless-Chrome host uses) decouples
+  // the emulated viewport from the on-screen widget size so layout reflects the
+  // requested viewport. Persists across navigations while the debugger stays
+  // attached.
+  private applyHeadlessViewport(state: TabViewState, viewport: Viewport): void {
+    try {
+      this.ensureDebuggerAttached(state);
+    } catch (err) {
+      console.warn(`[tabs] could not attach debugger to set headless viewport on "${state.tabId}":`, err);
+      return;
+    }
+    state.view.webContents.debugger
+      .sendCommand('Emulation.setDeviceMetricsOverride', {
+        width: viewport.width,
+        height: viewport.height,
+        deviceScaleFactor: 1,
+        mobile: false,
+      })
+      .catch((err: unknown) => {
+        console.warn(`[tabs] setDeviceMetricsOverride failed for headless tab "${state.tabId}":`, err);
+      });
+  }
+
   private pushDebuggerEvent(sub: DebuggerSubscription, evt: BufferedDebuggerEvent): void {
     if (sub.buffer.length >= DEBUGGER_BUFFER_MAX) {
       sub.buffer.shift();
@@ -1145,6 +1172,10 @@ export class TabViewManager {
         console.error('[tabs] openTab loadURL failed:', error);
       }
     });
+
+    if (isHeadless && viewport) {
+      this.applyHeadlessViewport(state, viewport);
+    }
 
     this.pushStateToRenderer();
     return { tabId };
