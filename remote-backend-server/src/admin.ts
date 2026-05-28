@@ -36,9 +36,13 @@ Usage:
 
 Environment:
   AGENTWFY_AGENT_ROOT    Absolute path to the agent directory (required by start).
-  AGENTWFY_REMOTE_PORT   TCP port to listen on (default 9878).
-  AGENTWFY_REMOTE_HOST   Host/IP to bind (default 127.0.0.1).
-  AGENTWFY_REMOTE_TOKEN  Override the per-agent config's token at runtime.
+  AGENTWFY_REMOTE_PORT       TCP port to listen on (default 9878).
+  AGENTWFY_REMOTE_HOST       Host/IP to bind (default 127.0.0.1).
+  AGENTWFY_REMOTE_TOKEN      Override the per-agent config's token at runtime.
+  AGENTWFY_REMOTE_TLS_CERT   Path to TLS cert PEM. If set with TLS_KEY, serves
+                             HTTPS/WSS instead of HTTP/WS. Use e.g. the output
+                             of: tailscale cert <hostname>
+  AGENTWFY_REMOTE_TLS_KEY    Path to TLS private key PEM (pairs with TLS_CERT).
 `.trim()
 
 export function printUsage(): void {

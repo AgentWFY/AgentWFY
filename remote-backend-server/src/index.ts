@@ -4,9 +4,10 @@
 // socket for backend RPC, live backend events, and client-function RPCs sent
 // from daemon-side agents back to the connected desktop.
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
 import type { Socket } from 'node:net'
-import { createReadStream } from 'node:fs'
+import { createReadStream, readFileSync } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -625,7 +626,17 @@ async function runServer(): Promise<void> {
   const bundle = await createAgentRuntime(runtimeRoot, clientBridge)
   console.log(`  runtime: ready (id=${bundle.backend.id})`)
 
-  const server = createServer(makeHttpHandler(bundle, runtimeRoot, token))
+  const handler = makeHttpHandler(bundle, runtimeRoot, token)
+  const certPath = process.env['AGENTWFY_REMOTE_TLS_CERT']
+  const keyPath = process.env['AGENTWFY_REMOTE_TLS_KEY']
+  if ((certPath && !keyPath) || (!certPath && keyPath)) {
+    console.error('agentwfy-remote-server: AGENTWFY_REMOTE_TLS_CERT and AGENTWFY_REMOTE_TLS_KEY must both be set')
+    process.exit(1)
+  }
+  const tlsEnabled = Boolean(certPath && keyPath)
+  const server = tlsEnabled
+    ? createHttpsServer({ cert: readFileSync(certPath!), key: readFileSync(keyPath!) }, handler)
+    : createHttpServer(handler)
   server.on('upgrade', (req, socket, head) => {
     if (!isWebSocketUpgrade(req)) {
       socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
@@ -649,8 +660,9 @@ async function runServer(): Promise<void> {
   process.on('SIGTERM', () => { void shutdown('SIGTERM') })
 
   const host = process.env['AGENTWFY_REMOTE_HOST'] || '127.0.0.1'
+  const scheme = tlsEnabled ? 'wss' : 'ws'
   server.listen(port, host, () => {
-    console.log(`agentwfy-remote-server: listening on ws://${host}:${port}${WS_PATH}`)
+    console.log(`agentwfy-remote-server: listening on ${scheme}://${host}:${port}${WS_PATH}`)
   })
 }
 
