@@ -1,7 +1,6 @@
 import {
   decodeWsMessage,
   encodeWsMessage,
-  errorFromUnknown,
   type ClientFunctionsInvokeResponse,
   type WireError,
   type WsMessage,
@@ -92,19 +91,6 @@ export class ConnectedClientBridge implements ClientFunctionInvoker {
 
     const response = result as ClientFunctionsInvokeResponse
     return response?.value
-  }
-
-  sendResult(id: string, value: unknown): void {
-    this.connection?.send(encodeWsMessage({ type: 'rpc:result', id, ok: true, value }))
-  }
-
-  sendError(id: string, error: unknown): void {
-    this.connection?.send(encodeWsMessage({
-      type: 'rpc:result',
-      id,
-      ok: false,
-      error: errorFromUnknown(error),
-    }))
   }
 }
 
