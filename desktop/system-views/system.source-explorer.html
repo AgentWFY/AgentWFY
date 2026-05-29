@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Source Explorer</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -306,9 +307,87 @@ svg.ic {
   .hl-prop{color:#be3631}.hl-val{color:#986801}.hl-sel{color:#c18401}
   .hl-punct{color:#383a42}.hl-ent{color:#0184bc}.hl-doctype{color:#a0a1a7}
 }
+
+/* Mobile drawer (off-canvas sidebar) — hidden on desktop */
+.backdrop { display: none; }
+.nav-fab { display: none; }
+
+@media (max-width: 760px) {
+  html, body { width: 100%; height: 100%; overscroll-behavior: contain; }
+
+  /* Sidebar becomes a slide-in drawer */
+  .backdrop {
+    display: block; position: fixed; inset: 0; z-index: 40;
+    background: rgba(0, 0, 0, 0.32);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--transition-normal);
+  }
+  body.sidebar-open .backdrop { opacity: 1; pointer-events: auto; }
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; z-index: 50;
+    width: min(86vw, 340px); min-width: 0; max-width: none;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.28);
+    transform: translateX(-100%);
+    transition: transform var(--transition-normal);
+  }
+  body.sidebar-open .sidebar { transform: translateX(0); }
+  .content { width: 100%; flex: 1 1 100%; min-width: 0; }
+
+  /* Floating menu button to reopen the drawer */
+  .nav-fab {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: fixed; z-index: 30;
+    top: calc(env(safe-area-inset-top) + 8px); left: 8px;
+    width: 40px; height: 40px; padding: 0;
+    border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px);
+    background: var(--color-bg2); color: var(--color-text2); cursor: pointer;
+  }
+  .nav-fab:active { background: var(--color-item-hover); color: var(--color-text3); }
+  .nav-fab svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Reserve room for the floating button in the content header */
+  .hd { padding-top: calc(8px + env(safe-area-inset-top)); padding-left: 56px; gap: 8px; }
+
+  /* Larger touch targets in the drawer */
+  .sidebar-top { padding: calc(10px + env(safe-area-inset-top)) 12px 0; }
+  .tab { padding: 7px 11px; font-size: 12px; }
+  .toolbar { gap: 6px; padding-bottom: 12px; }
+  .toolbar input { padding: 9px 12px; font-size: 16px; }
+  .tool-btn { padding: 8px 11px; }
+  .list { padding: 4px 0 max(8px, env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+  .item { padding: 11px 14px; }
+  .item-name { font-size: 13px; }
+  .item-meta { font-size: 11px; margin-top: 3px; }
+
+  /* Content header + actions */
+  .hd-title { font-size: 13px; }
+  .hd-actions { gap: 6px; }
+  .btn { padding: 7px 9px; font-size: 11px; }
+
+  /* Code & editor */
+  .code-body { padding: 12px; -webkit-overflow-scrolling: touch; }
+  .editor-body textarea { font-size: 14px; padding: 12px; }
+
+  /* Detail rows stack; tables stay compact */
+  .detail { padding: 14px 16px; max-width: none; }
+  .detail-row { flex-direction: column; gap: 4px; }
+  .detail-label { min-width: 0; }
+  .cfg-table th, .cfg-table td { padding: 8px 10px; font-size: 12px; }
+
+  /* Modal fits narrow screens */
+  .modal { width: min(92vw, 400px); }
+
+  /* Run output doesn't dominate the viewport */
+  .run-out { max-height: 40vh; }
+}
 </style>
 </head>
 <body>
+
+<button class="nav-fab" id="navFab" type="button" aria-label="Open list" aria-expanded="false">
+  <svg viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+</button>
+<div class="backdrop" id="backdrop"></div>
 
 <div class="sidebar">
   <div class="sidebar-top">
@@ -542,6 +621,19 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 
 let mode = 'docs', selected = null, editing = false, dirty = false, lastRun = null;
 
+// ── Mobile drawer ──
+const mobileQuery = window.matchMedia('(max-width: 760px)');
+let sidebarOpen = false;
+function isMobileLayout() { return mobileQuery.matches; }
+function setSidebarOpen(open) {
+  sidebarOpen = open && isMobileLayout();
+  document.body.classList.toggle('sidebar-open', sidebarOpen);
+  const fab = $('navFab');
+  if (fab) fab.setAttribute('aria-expanded', sidebarOpen ? 'true' : 'false');
+}
+function closeSidebarOnMobile() { if (isMobileLayout()) setSidebarOpen(false); }
+function openSidebarOnMobile() { if (isMobileLayout()) setSidebarOpen(true); }
+
 const IC = {
   edit: '<svg class="ic" viewBox="0 0 24 24"><path d="M17 3l4 4L7 21H3v-4Z"/></svg>',
   save: '<svg class="ic" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>',
@@ -757,7 +849,7 @@ async function deleteItem() {
   try {
     await agy.runSql({ target: "agent", sql: "DELETE FROM " + cfg.table + " WHERE name = ?", params: [selected.name], confirmed: true });
     toast('Deleted'); selected = null; editing = false; dirty = false;
-    clearContent(); await loadAll();
+    clearContent(); await loadAll(); openSidebarOnMobile();
   } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
 }
 
@@ -911,7 +1003,7 @@ async function selectItem(type, id) {
     if (c != null) selected.content = c;
   }
   editing = false; dirty = false; lastRun = null;
-  showContent(); renderList();
+  showContent(); renderList(); closeSidebarOnMobile();
 }
 
 function showContent() {
@@ -1064,7 +1156,7 @@ function selectConfigItem(key) {
   if (!item) return;
   selected = { type: 'config', key: item.key, value: item.value, description: item.description };
   editing = false; dirty = false;
-  showConfigContent(); renderList();
+  showConfigContent(); renderList(); closeSidebarOnMobile();
 }
 
 function showConfigContent() {
@@ -1185,7 +1277,7 @@ async function doCreate() {
     if (created) {
       selected = { ...created, type: mode };
       if (cfg.hasSubType) selected.subType = created.type;
-      editing = true; dirty = false; showContent(); renderList();
+      editing = true; dirty = false; showContent(); renderList(); closeSidebarOnMobile();
     }
   } catch (err) { toast('Create failed: ' + err.message, 'error'); }
 }
@@ -1216,7 +1308,7 @@ async function doCreateTrigger() {
       params: [name, task, type, cfg, desc], confirmed: true });
     closeModal(); toast('Created'); await loadAll();
     const created = DATA.triggers.find(t => t.name === name);
-    if (created) { selected = { ...created, type: 'triggers', subType: created.type }; showContent(); renderList(); }
+    if (created) { selected = { ...created, type: 'triggers', subType: created.type }; showContent(); renderList(); closeSidebarOnMobile(); }
   } catch (err) { toast('Create failed: ' + err.message, 'error'); }
 }
 
@@ -1251,7 +1343,7 @@ async function doCreateConfig() {
     closeModal(); toast('Added'); await loadAll();
     selected = { type: 'config', key, value: val };
     editing = false; dirty = false;
-    showConfigContent(); renderList();
+    showConfigContent(); renderList(); closeSidebarOnMobile();
   } catch (err) { toast('Create failed: ' + err.message, 'error'); }
 }
 
@@ -1265,6 +1357,21 @@ $('list').addEventListener('click', e => {
   const el = e.target.closest('.item');
   if (el) selectItem(mode, el.dataset.id);
 });
+
+// Mobile drawer wiring
+$('navFab').addEventListener('click', () => setSidebarOpen(!sidebarOpen));
+$('backdrop').addEventListener('click', () => setSidebarOpen(false));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sidebarOpen) setSidebarOpen(false);
+});
+const onMobileQueryChange = () => {
+  if (!isMobileLayout()) setSidebarOpen(false);
+  else if (!selected) setSidebarOpen(true);
+};
+if (mobileQuery.addEventListener) mobileQuery.addEventListener('change', onMobileQueryChange);
+else mobileQuery.addListener(onMobileQueryChange);
+if (isMobileLayout()) setSidebarOpen(true);
+
 loadAll();
 </script>
 </body>
