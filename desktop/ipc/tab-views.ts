@@ -1,5 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { TabViewManager, toNonEmptyString } from '../tab-views/manager.js';
+import { TabViewManager, toNonEmptyString } from '../tab-view-manager.js';
 import { Channels } from './channels.cjs';
 
 export function registerTabViewHandlers(getTabViewManager: (e: IpcMainInvokeEvent) => TabViewManager): void {

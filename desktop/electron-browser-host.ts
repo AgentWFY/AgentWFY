@@ -7,7 +7,7 @@ import type {
   TabDebuggerPollResult,
   Viewport,
 } from '#shared/runtime/hosts.js'
-import type { TabViewManager } from '../tab-views/manager.js'
+import type { TabViewManager } from './tab-view-manager.js'
 
 export class ElectronBrowserHost implements BrowserHost {
   constructor(private readonly tabViewManager: TabViewManager) {}

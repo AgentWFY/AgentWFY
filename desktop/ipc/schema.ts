@@ -5,7 +5,7 @@
 // All type imports are `import type`, so this ESM file can be
 // referenced from the CJS preload via `import type`.
 
-import type { TabState, TabViewEvent } from '../tab-views/manager.js'
+import type { TabState, TabViewEvent } from '../tab-view-manager.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { AgentSnapshot, SessionLivePatch } from '#shared/agent/types.js'
 import type { BackendConnectionState, ProviderState } from '#shared/backend/interface.js'

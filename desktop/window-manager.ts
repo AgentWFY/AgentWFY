@@ -2,7 +2,7 @@ import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainIn
 import path from 'path';
 import { RendererBridge } from './renderer-bridge.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
-import { PreviewCursorManager } from './preview-cursor/manager.js';
+import { PreviewCursorManager } from './preview-cursor-manager.js';
 import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '#shared/settings/config.js';
 import { ConfirmationManager } from './confirmation/manager.js';
 import { storeGet } from './ipc/store.js';

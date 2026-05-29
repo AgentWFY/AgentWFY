@@ -7,7 +7,7 @@ import {
   getElectronExternalLauncher,
   getElectronNotificationHost,
 } from './runtime/hosts-electron.js';
-import { TabViewManager } from './tab-views/manager.js';
+import { TabViewManager } from './tab-view-manager.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
 import { syncTaskActions } from './shortcuts/task-actions.js';
@@ -32,7 +32,7 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
 import { LocalChatController } from './chat/local_chat_controller.js';
 import { getAgentMeta, getRemoteAgentCacheRoot } from './agent-meta.js';
 import { createRemoteAgentContext, destroyRemoteAgentContext } from './agent-context-remote.js';
-import { ElectronBrowserHost } from './browser/electron-browser-host.js';
+import { ElectronBrowserHost } from './electron-browser-host.js';
 
 export interface AgentContextFactoryDeps {
   getMainWindow: () => BaseWindow | null;

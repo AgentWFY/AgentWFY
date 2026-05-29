@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import type { PreviewCursorManager } from '../preview-cursor/manager.js';
+import type { PreviewCursorManager } from '../preview-cursor-manager.js';
 import { Channels } from './channels.cjs';
 
 interface PreviewCursorHandlerDeps {

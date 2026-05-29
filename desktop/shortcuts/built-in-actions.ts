@@ -2,7 +2,7 @@ import type { WebContentsView } from 'electron';
 import type { AgentContext } from '../agent-context.js';
 import type { CommandPaletteManager } from '../command-palette/manager.js';
 import type { RendererBridge } from '../renderer-bridge.js';
-import type { TabViewManager } from '../tab-views/manager.js';
+import type { TabViewManager } from '../tab-view-manager.js';
 import type { ActionRegistry } from './registry.js';
 
 export interface BuiltInActionDeps {

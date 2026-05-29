@@ -255,7 +255,7 @@ export async function installCursorHelpers(name) {
         await sleep(16);
       }
     };
-    // Ripple lives in the cursor overlay's own view (src/preview-cursor/manager.ts)
+    // Ripple lives in the cursor overlay's own view (desktop/preview-cursor-manager.ts)
     // so it renders above tab WebContentsViews — a renderer-DOM ripple
     // would be occluded.
     state.ripple = () => { void cursor.flash(); };

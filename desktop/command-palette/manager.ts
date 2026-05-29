@@ -20,7 +20,7 @@ import {
 } from '../agent-manager.js';
 import { setAgentMeta } from '../agent-meta.js';
 import type { RendererBridge } from '../renderer-bridge.js';
-import type { TabViewManager } from '../tab-views/manager.js';
+import type { TabViewManager } from '../tab-view-manager.js';
 import type { PluginRegistry } from '#shared/plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
 import type { AgentChatController } from '#shared/agent/chat_controller.js';

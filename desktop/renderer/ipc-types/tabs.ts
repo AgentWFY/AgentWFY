@@ -1,5 +1,5 @@
-export type { TabDataType, TabData, TabState, TabViewEvent } from '../../tab-views/manager.js'
-import type { TabState, TabViewEvent } from '../../tab-views/manager.js'
+export type { TabDataType, TabData, TabState, TabViewEvent } from '../../tab-view-manager.js'
+import type { TabState, TabViewEvent } from '../../tab-view-manager.js'
 
 export interface TabViewBounds {
   x: number

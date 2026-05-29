@@ -59,7 +59,7 @@ function buildSqlApi() {
 // --- Protocol detection ---
 
 // The view tab webContents pass the agent's exact hostname via
-// webPreferences.additionalArguments (see desktop/tab-views/manager.ts). We
+// webPreferences.additionalArguments (see desktop/tab-view-manager.ts). We
 // match on that string only — not on any *.views.agentwfy.local suffix —
 // so that if a spoofed hostname under the suffix resolves through real DNS
 // (mDNS / /etc/hosts) the agent runtime APIs do NOT get exposed to it.

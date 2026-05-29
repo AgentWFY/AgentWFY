@@ -2,9 +2,9 @@ import { BaseWindow, BrowserWindow, Menu, nativeTheme, View, WebContents, WebCon
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/protocol/view-document.js';
-import { agentHostname } from '../protocol/agent-hostname.js';
-import { Channels } from '../ipc/channels.cjs';
-import type { SendToRenderer } from '../ipc/schema.js';
+import { agentHostname } from './protocol/agent-hostname.js';
+import { Channels } from './ipc/channels.cjs';
+import type { SendToRenderer } from './ipc/schema.js';
 import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
 import {
   resolveViewport,

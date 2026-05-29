@@ -1,5 +1,5 @@
 import type { EventBus } from '#shared/event-bus.js';
-import type { TabViewManager } from './tab-views/manager.js';
+import type { TabViewManager } from './tab-view-manager.js';
 import type { TriggerEngine } from '#shared/triggers/engine.js';
 import type { PluginRegistry } from '#shared/plugins/registry.js';
 import type { ProviderRegistry } from '#shared/providers/registry.js';
