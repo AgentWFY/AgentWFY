@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Plugins & Agents</title>
   <!--
     SECTIONS:
@@ -108,6 +109,37 @@
     color: var(--color-text1);
     margin-left: 4px;
   }
+
+  @media (max-width: 760px) {
+    html, body { overscroll-behavior: contain; }
+    /* The mobile app header already shows the view title + reload, so the
+       in-view heading is redundant — reclaim the vertical space. */
+    .header { padding: 16px max(14px, env(safe-area-inset-left)) 0 max(14px, env(safe-area-inset-right)); }
+    .header h1, .header .subtitle { display: none; }
+    .header-row { gap: 8px; margin-bottom: 12px; }
+    .search-input {
+      min-height: 40px;
+      padding: 9px 12px 9px 36px;
+      font-size: 15px;
+      border-radius: 8px;
+    }
+    .search-wrap svg { left: 13px; }
+    .btn-refresh { width: 40px; height: 40px; padding: 0; }
+    .content {
+      padding: 0 max(14px, env(safe-area-inset-left)) max(40px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-right));
+      -webkit-overflow-scrolling: touch;
+    }
+    /* Tab labels overflow a phone width — scroll them horizontally instead
+       of wrapping. Applies to the detail view's tab bar too. */
+    .tab-bar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn { flex-shrink: 0; padding: 11px 14px; min-height: 44px; }
+  }
 </style>
 
 <style id="style-components">
@@ -152,6 +184,38 @@
   .tag-filter-chip { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text2); cursor: pointer; transition: all var(--transition-fast); }
   .tag-filter-chip:hover { color: var(--color-text3); }
   .tag-filter-chip.active { background: color-mix(in srgb, var(--color-accent) 15%, transparent); border-color: var(--color-accent); color: var(--color-accent); }
+
+  @media (max-width: 760px) {
+    .plugin-row { gap: 10px; }
+    /* Sticky :hover on touch would leave the desktop shift applied after a tap. */
+    .plugin-row.clickable:hover { margin: 0; padding: 14px 0; background: none; border-radius: 0; }
+    /* Let names/versions/badges wrap so long combos can't widen the page. */
+    .plugin-name-row { flex-wrap: wrap; row-gap: 4px; }
+    .plugin-name { font-size: 15px; }
+    .plugin-desc {
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .plugin-meta { flex-wrap: wrap; gap: 4px 10px; }
+    /* Repository URLs are long — keep them from forcing horizontal scroll. */
+    .plugin-meta a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .plugin-actions { gap: 10px; }
+    .toggle { width: 46px; height: 28px; }
+    .toggle-track { border-radius: 14px; }
+    .toggle-knob { top: 3px; left: 3px; width: 22px; height: 22px; }
+    .toggle input:checked ~ .toggle-knob { transform: translateX(18px); }
+    .btn:not(.btn-refresh) {
+      min-height: 38px;
+      padding: 0 14px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+    }
+    .tag-filter-chip { padding: 6px 12px; }
+  }
 </style>
 
 <style id="style-detail">
@@ -178,6 +242,17 @@
   .doc-content { margin-top: 12px; padding: 16px; background: var(--color-bg2, var(--color-surface)); border: 1px solid var(--color-divider); border-radius: var(--radius-md); font-size: 13px; color: var(--color-text3); line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
   .code-block { background: var(--color-bg2, var(--color-surface)); border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--color-text3); white-space: pre; tab-size: 2; }
   .no-items { padding: 24px; text-align: center; color: var(--color-text1); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .detail-header { gap: 8px; }
+    .back-btn { width: 38px; height: 38px; }
+    .detail-title { font-size: 17px; }
+    .detail-meta-grid { gap: 6px 14px; }
+    .detail-meta-value, .detail-meta-value a { overflow-wrap: anywhere; }
+    .detail-item-row { padding: 10px 0; }
+    .doc-content { padding: 14px; }
+    .code-block { padding: 12px; -webkit-overflow-scrolling: touch; }
+  }
 </style>
 
 </head>
@@ -651,7 +726,8 @@
     else if (activeTab === 'browse-agents') initLoads.push(loadAgentRegistry());
     await Promise.all(initLoads);
     render();
-    document.getElementById('searchInput').focus();
+    // Avoid summoning the keyboard on view load on mobile.
+    if (!window.matchMedia('(max-width: 760px)').matches) document.getElementById('searchInput').focus();
   })();
 </script>
 </body>
