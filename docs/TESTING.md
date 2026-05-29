@@ -143,7 +143,7 @@ remote chat/tool prompts:
 
 For manual testing, run the same setup steps from
 `demos/remote-agent/driver.js`: initialize an agent root with
-`node /app/server/dist/server/src/index.js init`,
+`node /app/dist/server/index.js init`,
 install `plugins/test-provider/dist/test-provider.plugins.awfy`, start the
 daemon on `127.0.0.1:9878`, then add `http://127.0.0.1:9878` from the
 command palette: Add Agent → Add Remote Agent.

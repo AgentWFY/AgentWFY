@@ -20,8 +20,8 @@ const REMOTE_ROOT = '/tmp/agentwfy-remote-demo'
 const REMOTE_LOG = '/tmp/agentwfy-remote-demo.log'
 const REMOTE_PORT = 9878
 const REMOTE_URL = `http://127.0.0.1:${REMOTE_PORT}`
-const SERVER = '/app/server/dist/server/src/index.js'
-const INSTALLER = '/app/server/dist/shared/plugins/installer.js'
+const SERVER = '/app/dist/server/index.js'
+const INSTALLER = '/app/dist/shared/plugins/installer.js'
 const TEST_PROVIDER_PACKAGE = '/app/plugins/test-provider/dist/test-provider.plugins.awfy'
 
 function preview(args, opts = {}) {
@@ -44,7 +44,7 @@ function previewExec(args, opts) {
 async function setupRemoteDaemon() {
   mark('prepare remote daemon')
   previewExec(['bash', '-lc', [
-    `pkill -f '[s]erver/dist/server/src/index.js' || true`,
+    `pkill -f '[d]ist/server/index.js' || true`,
     `rm -rf '${REMOTE_ROOT}' '${REMOTE_LOG}'`,
   ].join('\n')])
 

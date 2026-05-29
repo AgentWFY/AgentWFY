@@ -1,5 +1,5 @@
 // Admin subcommands for agentwfy-server. Run as
-//   node dist/.../index.js <subcommand> [args]
+//   node dist/server/index.js <subcommand> [args]
 // Subcommands manage the per-agent config file (token, etc.); the daemon
 // itself is started by the default subcommand (`start`, also the fallback).
 

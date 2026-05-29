@@ -124,10 +124,10 @@ mutate daemon-side → confirm `db:changed` propagation.
 
 # Pick any directory as the agent root and bootstrap it. The init command
 # prints a bearer token — save it for step 3.
-node server/dist/server/src/index.js init /tmp/agentwfy-smoke-agent
+node dist/server/index.js init /tmp/agentwfy-smoke-agent
 
 AGENTWFY_AGENT_ROOT=/tmp/agentwfy-smoke-agent \
-  node server/dist/server/src/index.js start
+  node dist/server/index.js start
 # Listens on ws://127.0.0.1:9878/api/v1/ws by default.
 # Override port with AGENTWFY_REMOTE_PORT, bind host with AGENTWFY_REMOTE_HOST.
 ```

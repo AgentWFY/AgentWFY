@@ -25,8 +25,9 @@ const tsgo = join(
   process.platform === 'win32' ? 'tsgo.exe' : 'tsgo',
 )
 
-const dist = join(serverRoot, 'dist')
-rmSync(dist, { recursive: true, force: true })
+const dist = join(projectRoot, 'dist')
+const distServer = join(dist, 'server')
+rmSync(distServer, { recursive: true, force: true })
 
 ensureVendor(projectRoot)
 generateSystemConfigKeys(shared)

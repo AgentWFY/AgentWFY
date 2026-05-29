@@ -20,7 +20,7 @@ import { runCleanup } from '#shared/cleanup.js'
 import { SystemConfigKeys } from '#shared/system-config/keys.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
-import { createHeadlessChromeBrowserHostFromEnv } from './browser/headless-chrome.js'
+import { createHeadlessChromeBrowserHostFromEnv } from './headless-chrome.js'
 
 export interface RuntimeBundle {
   backend: LocalBackend
