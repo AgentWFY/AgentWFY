@@ -357,7 +357,7 @@ export class TabViewManager {
     const expectedAgentHost = agentHostname(this.deps.agentId);
     const view = new WebContentsView({
       webPreferences: {
-        preload: path.join(import.meta.dirname, '..', 'preload.cjs'),
+        preload: path.join(import.meta.dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         webSecurity: isUrlTab,
