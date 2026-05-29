@@ -1,6 +1,12 @@
 import crypto from 'crypto'
 import type { TabApi } from '../hosts.js'
-import { resolveViewport } from '../hosts.js'
+import {
+  DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS,
+  resolveHeadlessCloseAfterIdleMs,
+  resolveViewport,
+  type HeadlessCloseAfterIdleMs,
+  type Viewport,
+} from '../hosts.js'
 import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type {
@@ -11,6 +17,50 @@ import type {
 
 const DOCS_HINT = 'Read `@docs/system.tabs` for the full function reference.'
 const DEBUGGER_DOCS_HINT = 'Read `@docs/system.tab-debugger` for the full function reference.'
+
+function formatDuration(ms: number): string {
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`
+  if (ms % 1000 === 0) return `${ms / 1000}s`
+  return `${ms}ms`
+}
+
+function formatSource(input: { viewName?: string; filePath?: string; url?: string }): string {
+  if (input.viewName) return `view "${input.viewName}"`
+  if (input.filePath) return `file "${input.filePath}"`
+  if (input.url) return `url "${input.url}"`
+  return 'unknown source'
+}
+
+function formatViewport(viewport: Viewport): string {
+  return `${viewport.width}x${viewport.height}`
+}
+
+function buildOpenTabInfo(opts: {
+  tabId: string
+  source: string
+  headless: boolean
+  viewport?: Viewport
+  closeAfterIdleMs?: HeadlessCloseAfterIdleMs
+  usedDefaultCloseAfterIdle: boolean
+}): string {
+  if (!opts.headless) {
+    return `Opened visible tab ${opts.tabId} for ${opts.source}. Visible tabs stay open until closed.`
+  }
+
+  const viewport = opts.viewport ? formatViewport(opts.viewport) : '1280x720'
+  if (opts.closeAfterIdleMs === 'never') {
+    return `Opened headless tab ${opts.tabId} for ${opts.source} (${viewport}). It stays open until closeTab is called.`
+  }
+
+  const timeoutMs = typeof opts.closeAfterIdleMs === 'number'
+    ? opts.closeAfterIdleMs
+    : DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS
+  const suffix = opts.usedDefaultCloseAfterIdle
+    ? '; pass closeAfterIdleMs:"never" to keep it open'
+    : ''
+  return `Opened headless tab ${opts.tabId} for ${opts.source} (${viewport}). It closes after ${formatDuration(timeoutMs)} idle${suffix}.`
+}
 
 function resolveTabId(params: unknown): string {
   if (typeof params === 'string') {
@@ -78,17 +128,39 @@ export function registerTabs(
       throw new Error(`openTab requires exactly one of viewName, filePath, or url. ${DOCS_HINT}`)
     }
 
+    const viewport = request.headless ? resolveViewport(request.viewport) : undefined
+    const closeAfterIdleMs = request.headless
+      ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs)
+      : undefined
+    const source = formatSource({
+      viewName: hasResolvedViewName ? resolvedViewName : undefined,
+      filePath: hasFilePath ? request.filePath : undefined,
+      url: hasUrl ? request.url : undefined,
+    })
+
     const result = await tabTools.openTab({
       viewName: hasResolvedViewName ? resolvedViewName : undefined,
       filePath: hasFilePath ? request.filePath : undefined,
       url: hasUrl ? request.url : undefined,
       title: resolvedTitle,
       headless: request.headless,
-      viewport: request.headless ? resolveViewport(request.viewport) : undefined,
+      viewport,
+      closeAfterIdleMs,
       params: request.params,
     })
 
-    return { id: result.tabId, tabId: result.tabId }
+    return {
+      id: result.tabId,
+      tabId: result.tabId,
+      info: buildOpenTabInfo({
+        tabId: result.tabId,
+        source,
+        headless: request.headless,
+        viewport,
+        closeAfterIdleMs,
+        usedDefaultCloseAfterIdle: request.headless && request.closeAfterIdleMs == null,
+      }),
+    }
   })
 
   registry.register('closeTab', async (params) => {

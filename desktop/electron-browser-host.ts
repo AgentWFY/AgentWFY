@@ -33,6 +33,10 @@ export class ElectronBrowserHost implements BrowserHost {
     await this.tabViewManager.closeTabHandler({ tabId })
   }
 
+  touchPage(tabId: string): void {
+    this.tabViewManager.touchTab(tabId)
+  }
+
   getPage(tabId: string): BrowserPageHandle | null {
     const tab = this.tabViewManager.getTabData(tabId)
     if (!tab?.headless || !tab.viewport) return null

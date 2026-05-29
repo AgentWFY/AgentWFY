@@ -144,7 +144,10 @@ registerTabsHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).tabTools,
   (e) => windowManager.getCacheRootForEvent(e),
 );
-registerTabViewHandlers((e) => windowManager.getContextForSender(e.sender.id).tabViewManager);
+registerTabViewHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).tabViewManager,
+  () => windowManager.getHeadlessTabCount(),
+);
 registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
   (e) => windowManager.getCacheRootForEvent(e),

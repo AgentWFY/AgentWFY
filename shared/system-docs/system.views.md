@@ -105,7 +105,7 @@ await openTab({ viewName: name, headless: true })
 await openTab({ filePath: path, headless: true })
 ```
 
-Visible tabs steal the user's focus and clutter their tab bar. Headless tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user.
+Visible tabs steal the user's focus and clutter their tab bar. Headless tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user. Headless tabs close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the tab must stay open until `closeTab`.
 
 Always close headless tabs and remove `.tmp/` files when done.
 

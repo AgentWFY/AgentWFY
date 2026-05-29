@@ -16,6 +16,10 @@ import type {
   TabDebuggerPollResult,
   Viewport,
 } from '#shared/runtime/hosts.js'
+import {
+  resolveHeadlessCloseAfterIdleMs,
+  type HeadlessCloseAfterIdleMs,
+} from '#shared/runtime/hosts.js'
 import { CdpClient, type CdpEvent } from '#shared/browser/cdp-client.js'
 
 const SUBSCRIPTION_BUFFER_MAX = 1000
@@ -35,6 +39,11 @@ interface PageRecord {
   title: string
   params?: Record<string, string>
   logs: TabConsoleLog[]
+  openedAt: number
+  lastUsedAt: number
+  closeAfterIdleMs: HeadlessCloseAfterIdleMs
+  expiresAt: number | null
+  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
 export async function createHeadlessChromeBrowserHostFromEnv(
@@ -171,6 +180,8 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
     const sessionId = typeof attachResult.sessionId === 'string' ? attachResult.sessionId : ''
     if (!sessionId) throw new Error('Target.attachToTarget did not return sessionId')
 
+    const now = Date.now()
+    const closeAfterIdleMs = resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs)
     const record: PageRecord = {
       tabId,
       targetId,
@@ -181,8 +192,14 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
       title: request.title || resolved.title,
       params: request.params,
       logs: [],
+      openedAt: now,
+      lastUsedAt: now,
+      closeAfterIdleMs,
+      expiresAt: typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null,
+      idleTimer: null,
     }
     this.pages.set(tabId, record)
+    this.scheduleIdleClose(record)
 
     await this.client.send('Page.enable', {}, sessionId)
     await this.client.send('Runtime.enable', {}, sessionId)
@@ -279,7 +296,18 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
     const record = this.pages.get(tabId)
     if (!record) return
     this.pages.delete(tabId)
+    if (record.idleTimer) clearTimeout(record.idleTimer)
     await this.client.send('Target.closeTarget', { targetId: record.targetId }).catch(() => undefined)
+  }
+
+  touchPage(tabId: string): void {
+    const record = this.pages.get(tabId)
+    if (!record) return
+    record.lastUsedAt = Date.now()
+    if (typeof record.closeAfterIdleMs === 'number') {
+      record.expiresAt = record.lastUsedAt + record.closeAfterIdleMs
+      this.scheduleIdleClose(record)
+    }
   }
 
   getPage(tabId: string): BrowserPageHandle | null {
@@ -302,10 +330,18 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
       pinned: false,
       selected: false,
       params: record.params ?? null,
+      openedAt: record.openedAt,
+      lastUsedAt: record.lastUsedAt,
+      closeAfterIdleMs: record.closeAfterIdleMs,
+      expiresAt: record.expiresAt,
     }))
   }
 
   async dispose(): Promise<void> {
+    for (const record of this.pages.values()) {
+      if (record.idleTimer) clearTimeout(record.idleTimer)
+    }
+    this.pages.clear()
     this.client.close()
     this.child?.kill()
     if (this.userDataDir) {
@@ -337,6 +373,28 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
       })
       trimLogs(record.logs)
     }
+  }
+
+  private scheduleIdleClose(record: PageRecord): void {
+    if (record.idleTimer) {
+      clearTimeout(record.idleTimer)
+      record.idleTimer = null
+    }
+    if (typeof record.closeAfterIdleMs !== 'number') return
+
+    const expiresAt = record.lastUsedAt + record.closeAfterIdleMs
+    record.expiresAt = expiresAt
+    record.idleTimer = setTimeout(() => {
+      const current = this.pages.get(record.tabId)
+      if (!current || typeof current.closeAfterIdleMs !== 'number') return
+      const currentExpiresAt = current.lastUsedAt + current.closeAfterIdleMs
+      if (Date.now() < currentExpiresAt) {
+        current.expiresAt = currentExpiresAt
+        this.scheduleIdleClose(current)
+        return
+      }
+      void this.closePage(record.tabId)
+    }, Math.max(1, expiresAt - Date.now()))
   }
 }
 

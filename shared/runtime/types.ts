@@ -1,6 +1,6 @@
 import type { DisplayMessage } from '../agent/provider_types.js'
 import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
-import type { Viewport, ViewportInput } from './hosts.js'
+import type { HeadlessCloseAfterIdleMs, Viewport, ViewportInput } from './hosts.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -119,6 +119,10 @@ export type WorkerGetTabsResult = Array<{
   pinned: boolean
   selected: boolean
   params: Record<string, string> | null
+  openedAt?: number
+  lastUsedAt?: number
+  closeAfterIdleMs?: HeadlessCloseAfterIdleMs | null
+  expiresAt?: number | null
 }>
 
 export interface WorkerOpenTabRequest {
@@ -129,6 +133,7 @@ export interface WorkerOpenTabRequest {
   title?: string
   headless?: boolean
   viewport?: ViewportInput
+  closeAfterIdleMs?: HeadlessCloseAfterIdleMs
   params?: Record<string, string>
 }
 
@@ -291,7 +296,7 @@ export interface WorkerHostMethodMap {
   }
   openTab: {
     params: WorkerOpenTabRequest
-    result: { id: string; tabId: string }
+    result: { id: string; tabId: string; info: string }
   }
   closeTab: {
     params: WorkerCloseTabRequest

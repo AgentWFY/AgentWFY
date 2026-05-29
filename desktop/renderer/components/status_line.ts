@@ -72,6 +72,24 @@ const STYLES = `
   .task-label {
     white-space: nowrap;
   }
+  .headless-tabs-indicator {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text2);
+    white-space: nowrap;
+  }
+  .headless-tabs-indicator.visible {
+    display: flex;
+  }
+  .headless-tabs-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-text2);
+    opacity: 0.75;
+    flex-shrink: 0;
+  }
   .notification {
     display: none;
     align-items: center;
@@ -174,10 +192,12 @@ import { agentSession } from '../services/agent-session.js'
 export class TlStatusLine extends HTMLElement {
   private shadow: ShadowRoot
   private _agentCount = 0
+  private _headlessTabCount = 0
   private eventUnsubs: Array<() => void> = []
   private _runningTasks: Array<{ runId: string; title: string }> = []
   private _taskStartedUnsub: (() => void) | null = null
   private _taskFinishedUnsub: (() => void) | null = null
+  private _tabsStateUnsub: (() => void) | null = null
 
   constructor() {
     super()
@@ -213,6 +233,7 @@ export class TlStatusLine extends HTMLElement {
     this.loadDataDir()
     this.loadBackupInfo()
     this.loadRunningTasks()
+    this.loadHeadlessTabs()
   }
 
   connectedCallback() {
@@ -224,10 +245,12 @@ export class TlStatusLine extends HTMLElement {
     })
     this.subscribeToSnapshots()
     this.subscribeToTaskRuns()
+    this.subscribeToTabs()
     this.loadPortInfo()
     this.loadDataDir()
     this.loadBackupInfo()
     this.loadRunningTasks()
+    this.loadHeadlessTabs()
     this._clicksBound = true
     this.eventUnsubs.push(
       listen('backup-changed', this.onBackupChanged),
@@ -243,6 +266,8 @@ export class TlStatusLine extends HTMLElement {
     this._taskStartedUnsub = null
     this._taskFinishedUnsub?.()
     this._taskFinishedUnsub = null
+    this._tabsStateUnsub?.()
+    this._tabsStateUnsub = null
     if (this.notificationTimeout) clearTimeout(this.notificationTimeout)
   }
 
@@ -257,6 +282,10 @@ export class TlStatusLine extends HTMLElement {
         <div class="task-indicator" id="task-indicator">
           <div class="task-dot"></div>
           <span class="task-label" id="task-label"></span>
+        </div>
+        <div class="headless-tabs-indicator" id="headless-tabs-indicator">
+          <div class="headless-tabs-dot"></div>
+          <span class="headless-tabs-label" id="headless-tabs-label"></span>
         </div>
       </div>
       <div class="right">
@@ -336,6 +365,37 @@ export class TlStatusLine extends HTMLElement {
     } else {
       label.textContent = `${count} tasks running`
     }
+    indicator.classList.add('visible')
+  }
+
+  private subscribeToTabs() {
+    this._tabsStateUnsub = window.ipc?.tabs.onStateChanged(() => {
+      void this.loadHeadlessTabs()
+    }) ?? null
+  }
+
+  private async loadHeadlessTabs() {
+    try {
+      this._headlessTabCount = await window.ipc?.tabs.getHeadlessCount() ?? 0
+      this.updateHeadlessTabsIndicator()
+    } catch {
+      this._headlessTabCount = 0
+      this.updateHeadlessTabsIndicator()
+    }
+  }
+
+  private updateHeadlessTabsIndicator() {
+    const indicator = this.shadow.querySelector('#headless-tabs-indicator')
+    const label = this.shadow.querySelector('#headless-tabs-label')
+    if (!indicator || !label) return
+
+    if (this._headlessTabCount === 0) {
+      indicator.classList.remove('visible')
+      return
+    }
+
+    const suffix = this._headlessTabCount === 1 ? 'headless tab' : 'headless tabs'
+    label.textContent = `${this._headlessTabCount} ${suffix}`
     indicator.classList.add('visible')
   }
 

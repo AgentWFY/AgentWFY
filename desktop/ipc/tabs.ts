@@ -63,6 +63,7 @@ export function registerTabsHandlers(
       title: typeof resolvedTitle === 'string' ? resolvedTitle : undefined,
       headless: typeof input.headless === 'boolean' ? input.headless : false,
       viewport: input.viewport,
+      closeAfterIdleMs: input.closeAfterIdleMs,
       params: params && Object.keys(params).length > 0 ? params : undefined,
     });
   });

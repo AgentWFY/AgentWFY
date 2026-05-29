@@ -7,7 +7,9 @@ import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
 import {
+  resolveHeadlessCloseAfterIdleMs,
   resolveViewport,
+  type HeadlessCloseAfterIdleMs,
   type TabData,
   type TabDataType,
   type Viewport,
@@ -263,6 +265,7 @@ export class TabViewManager {
   private readonly debuggerAttachments = new Map<string, DebuggerAttachment>();
   private readonly debuggerSubscriptions = new Map<string, DebuggerSubscription>();
   private readonly debuggerSubscriptionsByTab = new Map<string, Set<string>>();
+  private readonly headlessIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
@@ -452,6 +455,7 @@ export class TabViewManager {
     });
 
     viewWebContents.once('destroyed', () => {
+      this.clearHeadlessIdleTimer(tabId);
       this.removeTrackedViewWebContents(viewWebContents.id);
       this.deps.unregisterSender?.(viewWebContents.id);
       const existing = this.tabViewsByTabId.get(tabId);
@@ -647,6 +651,51 @@ export class TabViewManager {
     return this.tabs.find(t => t.id === tabId);
   }
 
+  private clearHeadlessIdleTimer(tabId: string): void {
+    const timer = this.headlessIdleTimers.get(tabId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.headlessIdleTimers.delete(tabId);
+  }
+
+  private scheduleHeadlessIdleClose(tabId: string): void {
+    this.clearHeadlessIdleTimer(tabId);
+    const tab = this.tabById(tabId);
+    if (!tab?.headless || typeof tab.closeAfterIdleMs !== 'number') return;
+
+    const lastUsedAt = typeof tab.lastUsedAt === 'number' ? tab.lastUsedAt : Date.now();
+    const expiresAt = lastUsedAt + tab.closeAfterIdleMs;
+    tab.expiresAt = expiresAt;
+
+    const delay = Math.max(1, expiresAt - Date.now());
+    const timer = setTimeout(() => {
+      const current = this.tabById(tabId);
+      if (!current?.headless || typeof current.closeAfterIdleMs !== 'number') return;
+      const currentLastUsedAt = typeof current.lastUsedAt === 'number' ? current.lastUsedAt : lastUsedAt;
+      const currentExpiresAt = currentLastUsedAt + current.closeAfterIdleMs;
+      if (Date.now() < currentExpiresAt) {
+        current.expiresAt = currentExpiresAt;
+        this.scheduleHeadlessIdleClose(tabId);
+        return;
+      }
+      this.headlessIdleTimers.delete(tabId);
+      void this.closeTabHandler({ tabId }).catch((err: unknown) => {
+        console.warn(`[tabs] failed to auto-close idle headless tab "${tabId}":`, err);
+      });
+    }, delay);
+    this.headlessIdleTimers.set(tabId, timer);
+  }
+
+  touchTab(tabId: string): void {
+    const tab = this.tabById(tabId);
+    if (!tab?.headless) return;
+    tab.lastUsedAt = Date.now();
+    if (typeof tab.closeAfterIdleMs === 'number') {
+      tab.expiresAt = tab.lastUsedAt + tab.closeAfterIdleMs;
+      this.scheduleHeadlessIdleClose(tabId);
+    }
+  }
+
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
     if (type === 'url') return target;
 
@@ -686,6 +735,7 @@ export class TabViewManager {
       return;
     }
 
+    this.clearHeadlessIdleTimer(tabId);
     this.cleanupDebuggerForTab(tabId);
 
     this.tabViewsByTabId.delete(tabId);
@@ -1083,6 +1133,10 @@ export class TabViewManager {
       pinned: Boolean(tab.pinned),
       selected: tab.id === this.selectedTabId,
       params: tab.params || null,
+      openedAt: tab.openedAt,
+      lastUsedAt: tab.lastUsedAt,
+      closeAfterIdleMs: tab.closeAfterIdleMs ?? null,
+      expiresAt: tab.expiresAt ?? null,
     }));
   }
 
@@ -1099,6 +1153,7 @@ export class TabViewManager {
     title?: string;
     headless?: boolean;
     viewport?: ViewportInput;
+    closeAfterIdleMs?: HeadlessCloseAfterIdleMs;
     params?: Record<string, string>;
   }): Promise<{ tabId: string }> {
     const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
@@ -1137,6 +1192,9 @@ export class TabViewManager {
     const tabId = this.generateTabId();
     const isHeadless = Boolean(request.headless);
     const viewport = isHeadless ? resolveViewport(request.viewport) : null;
+    const now = Date.now();
+    const closeAfterIdleMs = isHeadless ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs) : null;
+    const expiresAt = typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null;
     const tab: TabData = {
       id: tabId,
       tabId,
@@ -1150,6 +1208,10 @@ export class TabViewManager {
       viewport,
       selected: false,
       params: request.params ?? null,
+      openedAt: now,
+      lastUsedAt: isHeadless ? now : undefined,
+      closeAfterIdleMs,
+      expiresAt,
     };
     this.tabs = [...this.tabs, tab];
     if (!isHeadless) {
@@ -1175,6 +1237,7 @@ export class TabViewManager {
 
     if (isHeadless && viewport) {
       this.applyHeadlessViewport(state, viewport);
+      this.scheduleHeadlessIdleClose(tabId);
     }
 
     this.pushStateToRenderer();
@@ -1186,6 +1249,7 @@ export class TabViewManager {
     if (!tab || tab.pinned) return;
 
     const wasSelected = this.selectedTabId === request.tabId;
+    this.clearHeadlessIdleTimer(request.tabId);
     this.tabs = this.tabs.filter(t => t.id !== request.tabId);
     this.destroyTabView(request.tabId);
 

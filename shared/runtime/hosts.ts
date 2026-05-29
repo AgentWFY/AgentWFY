@@ -46,6 +46,10 @@ export interface Viewport {
 export type ViewportInput = ViewportAlias | ViewportSpec
 
 export type TabDataType = 'view' | 'file' | 'url'
+export type HeadlessCloseAfterIdleMs = number | 'never'
+
+export const DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS = 30 * 60 * 1000
+export const MAX_HEADLESS_CLOSE_AFTER_IDLE_MS = 2_147_483_647
 
 export interface TabData {
   id: string
@@ -60,6 +64,10 @@ export interface TabData {
   pinned: boolean
   selected: boolean
   params: Record<string, string> | null
+  openedAt?: number
+  lastUsedAt?: number
+  closeAfterIdleMs?: HeadlessCloseAfterIdleMs | null
+  expiresAt?: number | null
 }
 
 const VIEWPORT_ALIASES: Record<ViewportAlias, Viewport> = {
@@ -86,6 +94,29 @@ function normalizeViewportDimension(value: unknown, fallback: number): number {
   return Math.max(1, Math.floor(parsed))
 }
 
+export function resolveHeadlessCloseAfterIdleMs(input?: unknown): HeadlessCloseAfterIdleMs {
+  if (input === undefined || input === null) {
+    return DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS
+  }
+
+  if (input === 'never') {
+    return 'never'
+  }
+
+  if (typeof input !== 'number' || !Number.isFinite(input)) {
+    throw new Error('closeAfterIdleMs must be a positive number of milliseconds or "never"')
+  }
+
+  const value = Math.floor(input)
+  if (value <= 0) {
+    throw new Error('closeAfterIdleMs must be greater than 0, or "never"')
+  }
+  if (value > MAX_HEADLESS_CLOSE_AFTER_IDLE_MS) {
+    throw new Error(`closeAfterIdleMs must be <= ${MAX_HEADLESS_CLOSE_AFTER_IDLE_MS}, or "never"`)
+  }
+  return value
+}
+
 export interface TabOpenRequest {
   viewName?: string
   view?: string
@@ -94,6 +125,7 @@ export interface TabOpenRequest {
   title?: string
   headless?: boolean
   viewport?: ViewportInput
+  closeAfterIdleMs?: HeadlessCloseAfterIdleMs
   params?: Record<string, string>
 }
 
@@ -150,6 +182,7 @@ export interface BrowserHost {
   closePage(tabId: string): Promise<void>
   getPage(tabId: string): BrowserPageHandle | null
   getTabs?(): Promise<TabData[]>
+  touchPage?(tabId: string): void
 }
 
 export interface TabSendInputRequest {

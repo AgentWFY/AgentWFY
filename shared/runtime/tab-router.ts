@@ -136,6 +136,7 @@ export class TabRouter implements TabApi {
   async reloadTab(request: { tabId: string }): Promise<void> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       // Mirror captureWithCdp's retry: a reload issued right after openTab can
       // race the navigation and fail with "Not attached to an active page".
       const deadline = Date.now() + RELOAD_RETRY_BUDGET_MS
@@ -155,6 +156,7 @@ export class TabRouter implements TabApi {
   async captureTab(request: { tabId: string }): Promise<TabCaptureResult> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       return captureWithCdp(handle)
     }
     return this.callVisible<TabCaptureResult>('captureTab', request)
@@ -163,6 +165,7 @@ export class TabRouter implements TabApi {
   async getTabConsoleLogs(request: { tabId: string; since?: number; limit?: number }): Promise<TabConsoleLog[]> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       return getConsoleLogsWithCdp(handle, request)
     }
     return this.callVisible<TabConsoleLog[]>('getTabConsoleLogs', request)
@@ -171,6 +174,7 @@ export class TabRouter implements TabApi {
   async execTabJs(request: { tabId: string; code: string; timeoutMs?: number }): Promise<unknown> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       return execJsWithCdp(handle, request.code, request.timeoutMs)
     }
     return this.callVisible<unknown>('execTabJs', request)
@@ -179,6 +183,7 @@ export class TabRouter implements TabApi {
   async sendInput(request: TabSendInputRequest): Promise<void> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       await dispatchInput(handle, request)
       return
     }
@@ -188,6 +193,7 @@ export class TabRouter implements TabApi {
   async inspectElement(request: { tabId: string; selector: string }): Promise<unknown> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       return inspectWithCdp(handle, request.selector)
     }
     return this.callVisible<unknown>('inspectElement', request)
@@ -196,6 +202,7 @@ export class TabRouter implements TabApi {
   async tabDebuggerSend(request: { tabId: string; method: string; params?: unknown; sessionId?: string }): Promise<unknown> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       return handle.sendCdp(request.method, request.params, request.sessionId)
     }
     return this.callVisible<unknown>('tabDebuggerSend', request)
@@ -204,6 +211,7 @@ export class TabRouter implements TabApi {
   async tabDebuggerSubscribe(request: { tabId: string; subscriptionId: string; events: string[] }): Promise<void> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       const sub = handle.subscribeCdp(request.events)
       this.browserSubscriptions.set(request.subscriptionId, sub)
       this.browserSubscriptionTabs.set(request.subscriptionId, request.tabId)
@@ -217,6 +225,8 @@ export class TabRouter implements TabApi {
   ): Promise<TabDebuggerPollResult> {
     const sub = this.browserSubscriptions.get(request.subscriptionId)
     if (sub) {
+      const tabId = this.browserSubscriptionTabs.get(request.subscriptionId)
+      if (tabId) this.touchBrowserPage(tabId)
       const result = await sub.poll(request)
       if (result.closed) {
         this.browserSubscriptions.delete(request.subscriptionId)
@@ -241,6 +251,7 @@ export class TabRouter implements TabApi {
   async tabDebuggerDetach(request: { tabId: string }): Promise<void> {
     const handle = this.getBrowserPage(request.tabId)
     if (handle) {
+      this.touchBrowserPage(request.tabId)
       await handle.sendCdp('Runtime.disable').catch(() => {})
       this.closeBrowserSubscriptionsForTab(request.tabId)
       return
@@ -277,6 +288,10 @@ export class TabRouter implements TabApi {
     const page = this.browserHost?.getPage(tabId) ?? null
     if (page) this.tabBackends.set(tabId, 'browser')
     return page
+  }
+
+  private touchBrowserPage(tabId: string): void {
+    this.browserHost?.touchPage?.(tabId)
   }
 
   private async callVisible<T>(name: string, params: unknown): Promise<T> {
@@ -323,6 +338,12 @@ function normalizeTabOrNull(value: unknown): TabData | null {
     pinned: raw.pinned === true,
     selected: raw.selected === true,
     params: raw.params && typeof raw.params === 'object' ? raw.params as Record<string, string> : null,
+    openedAt: typeof raw.openedAt === 'number' ? raw.openedAt : undefined,
+    lastUsedAt: typeof raw.lastUsedAt === 'number' ? raw.lastUsedAt : undefined,
+    closeAfterIdleMs: raw.closeAfterIdleMs === 'never' || typeof raw.closeAfterIdleMs === 'number'
+      ? raw.closeAfterIdleMs
+      : null,
+    expiresAt: typeof raw.expiresAt === 'number' ? raw.expiresAt : null,
   }
 }
 

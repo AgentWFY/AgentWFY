@@ -499,6 +499,16 @@ class WindowManager {
   getAllContexts() { return this.orchestrator.getAllContexts(); }
   getActiveBackend() { return this.orchestrator.getActiveAgentContext()?.backend ?? null; }
 
+  async getHeadlessTabCount(): Promise<number> {
+    const results = await Promise.allSettled(
+      this.orchestrator.getAllContexts().map(ctx => ctx.tabTools.getTabs()),
+    );
+    return results.reduce((total, result) => {
+      if (result.status !== 'fulfilled') return total;
+      return total + result.value.filter(tab => tab.headless === true).length;
+    }, 0);
+  }
+
   getContextForSender(senderId: number) { return this.orchestrator.getContextForSender(senderId); }
   tryGetContextForSender(senderId: number) { return this.orchestrator.tryGetContextForSender(senderId); }
   /** Returns the LocalAgentContext for this sender; throws if the sender's agent is remote.
