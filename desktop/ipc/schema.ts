@@ -72,5 +72,4 @@ export interface PushMap {
 // ── Helper types ──
 
 export type PushChannel = keyof PushMap
-export type PushPayload<C extends PushChannel> = PushMap[C]
 export type SendToRenderer = <C extends PushChannel>(channel: C, data: PushMap[C]) => void

@@ -52,11 +52,6 @@ export function storeRemove(key: string): void {
   }
 }
 
-export function getStorePath(): string {
-  ensureInit();
-  return storePath;
-}
-
 type AnyChangeListener = (key: string, newValue: unknown) => void;
 const anyChangeListeners: AnyChangeListener[] = [];
 

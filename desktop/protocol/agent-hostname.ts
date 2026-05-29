@@ -7,7 +7,3 @@ export function agentHostname(agentId: string): string {
   const hash = crypto.createHash('sha256').update(agentId).digest('hex').slice(0, 16);
   return `${hash}${AGENT_VIEW_HOST_SUFFIX}`;
 }
-
-export function agentViewBaseUrl(agentId: string): string {
-  return `https://${agentHostname(agentId)}`;
-}

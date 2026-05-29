@@ -6,7 +6,6 @@ import { TlChatInput } from './components/chat_input.js'
 import { TlProviderGrid } from './components/provider_grid.js'
 import { TlSessionTabs } from './components/session_tabs.js'
 import { TlStatusLine } from './components/status_line.js'
-import { TlSelect } from './components/select.js'
 import { TlTaskPanel } from './components/task_panel.js'
 import { TlAgentSidebar } from './components/agent_sidebar.js'
 import { TlTracePanel } from './components/trace_panel.js'
@@ -28,7 +27,6 @@ async function init() {
   defineElement('awfy-session-tabs', TlSessionTabs)
   defineElement('awfy-agent-chat', TlAgentChat)
   defineElement('awfy-status-line', TlStatusLine)
-  defineElement('awfy-select', TlSelect)
   defineElement('awfy-task-panel', TlTaskPanel)
   defineElement('awfy-agent-sidebar', TlAgentSidebar)
   defineElement('awfy-trace-panel', TlTracePanel)
