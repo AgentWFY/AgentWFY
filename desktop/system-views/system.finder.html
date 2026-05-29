@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Finder</title>
 <style>
 :root {
@@ -195,6 +196,28 @@ body {
   background: var(--color-bg2);
   flex-shrink: 0;
 }
+.preview-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.preview-back {
+  display: none; /* shown only in the mobile overlay layout */
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-left: -2px;
+  padding: 0;
+  background: var(--color-surface);
+  color: var(--color-text3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.preview-back:active { background: var(--color-item-hover); color: var(--color-text4); }
 .preview-header .filename {
   font-size: 13px;
   font-weight: 500;
@@ -202,6 +225,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -284,6 +309,93 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text1); background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ─── Mobile layout ───────────────────────────────────────────────────────
+   Narrow screens collapse the 3-pane grid into a full-width tree; the preview
+   becomes a slide-in overlay with its own back button. Mirrors the responsive
+   pattern used by system.docs. */
+@media (max-width: 760px) {
+  html, body { height: 100%; overscroll-behavior: contain; }
+  body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "toolbar"
+      "tree";
+    font-size: 14px;
+    --row-h: 42px;
+  }
+
+  /* Toolbar: nav buttons + breadcrumb on the first line, search on its own */
+  .toolbar {
+    flex-wrap: wrap;
+    min-height: 52px;
+    padding: 8px 10px;
+    gap: 8px;
+    row-gap: 8px;
+  }
+  .nav-btn {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .nav-btn:active:not(:disabled) { background: var(--color-item-hover); color: var(--color-text4); }
+  .breadcrumb {
+    margin: 0 2px;
+    font-size: 13px;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .breadcrumb::-webkit-scrollbar { display: none; }
+  .crumb { padding: 4px 6px; }
+  .search-wrap { flex: 1 0 100%; }
+  .search {
+    width: 100%;
+    min-height: 40px;
+    font-size: 15px;
+    padding: 9px 10px 9px 30px;
+    border-radius: var(--radius-md);
+  }
+  .search-wrap .ic { left: 10px; }
+
+  /* Tree: touch-friendly rows; drop the date column to free up width */
+  .tree-pane {
+    padding: 4px 0 max(20px, env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+  .tree-row { gap: 8px; padding-right: 14px; }
+  .tree-row .name { font-size: 14px; }
+  .ic { width: 17px; height: 17px; }
+  .tree-row .disclosure { width: 30px; height: 30px; }
+  .tree-row .disclosure svg { width: 11px; height: 11px; }
+  .tree-row .col-modified { display: none; }
+  .tree-row .col-size { width: 56px; font-size: 11px; }
+
+  /* The drag splitter has no touch affordance */
+  .splitter { display: none; }
+
+  /* Preview: full-screen overlay that slides in from the right */
+  .preview {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    width: 100%;
+    border-left: 0;
+    transform: translateX(100%);
+    transition: transform var(--transition-normal);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.22);
+  }
+  body.preview-open .preview { transform: translateX(0); }
+  .preview-header { padding: 10px 12px; }
+  .preview-back { display: inline-flex; }
+  .preview-header .filename { font-size: 15px; }
+  .preview-body { -webkit-overflow-scrolling: touch; }
+  .preview-body pre { padding: 14px 14px max(16px, env(safe-area-inset-bottom)); font-size: 12.5px; }
+}
 </style>
 </head>
 <body>
@@ -325,6 +437,15 @@ body {
 <script>
 (function(){
   const aw = window.agentwfy;
+
+  // On narrow screens the preview is a slide-in overlay instead of a side pane.
+  const mobileQuery = window.matchMedia('(max-width: 760px)');
+  const isMobile = () => mobileQuery.matches;
+  const openPreviewOverlay = () => document.body.classList.add('preview-open');
+  const closePreviewOverlay = () => document.body.classList.remove('preview-open');
+  const onMobileChange = () => { if (!isMobile()) closePreviewOverlay(); };
+  if (mobileQuery.addEventListener) mobileQuery.addEventListener('change', onMobileChange);
+  else mobileQuery.addListener(onMobileChange);
 
   const TEXT_EXTS = new Set(['js','mjs','cjs','ts','tsx','jsx','json','jsonc','yaml','yml','toml','html','htm','css','scss','sass','less','sh','bash','zsh','fish','py','rb','go','rs','java','kt','swift','c','cpp','h','hpp','php','pl','lua','sql','md','txt','rst','markdown','log','xml','env','ini','conf','cfg','gitignore','gitattributes','editorconfig','dockerfile','makefile','tool-versions','lock']);
   const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','webp','ico','bmp','svg']);
@@ -439,7 +560,7 @@ body {
   }
 
   async function loadChildren(node) {
-    if (!node.isDir || node.children !== null) return;
+    if (!node.isDir || node.children !== null || node.loading) return;
     node.loading = true;
     renderTree();
     try {
@@ -586,7 +707,18 @@ body {
     md.textContent = node.mtime != null ? fmtModified(node.mtime) : '';
     row.appendChild(md);
 
-    row.addEventListener('click', () => selectNode(node));
+    row.addEventListener('click', () => {
+      // On mobile, tapping a folder drills in (expand/collapse); files open the
+      // preview overlay. On desktop a tap just selects, as before.
+      if (isMobile() && node.isDir) {
+        state.selected = node;
+        renderBreadcrumb();
+        updateNavBtns();
+        toggle(node);
+      } else {
+        selectNode(node);
+      }
+    });
     row.addEventListener('dblclick', () => {
       if (node.isDir) toggle(node);
       else openNodeExternal(node);
@@ -599,6 +731,8 @@ body {
     renderTree();
     renderBreadcrumb();
     loadPreview(node);
+    // Slide the preview overlay in for files on mobile (folders stay inline).
+    if (isMobile() && node && !node.isDir) openPreviewOverlay();
   }
 
   async function openNodeExternal(node) {
@@ -689,7 +823,10 @@ body {
     const headerIcon = node.isDir ? svg('i-folder', 'ic ic-folder') : svg(classifyByName(node.name).icon);
     const header =
       '<div class="preview-header">' +
-        '<div class="filename">' + headerIcon + '<span>' + escapeHtml(node.name) + '</span></div>' +
+        '<div class="preview-header-top">' +
+          '<button class="preview-back" type="button" aria-label="Back to files">' + svg('i-back', 'ic') + '</button>' +
+          '<div class="filename">' + headerIcon + '<span>' + escapeHtml(node.name) + '</span></div>' +
+        '</div>' +
         '<div class="path">' + escapeHtml(node.fullPath) + '</div>' +
         previewMetaRow(p) +
       '</div>';
@@ -793,10 +930,19 @@ body {
     renderTree();
   });
 
+  // Preview overlay back button (mobile). Delegated since the header is re-rendered.
+  $('preview').addEventListener('click', (e) => {
+    if (e.target.closest('.preview-back')) closePreviewOverlay();
+  });
+
   // ─── Keyboard ───────────────────────────────────────────────────────────
   document.addEventListener('keydown', (e) => {
     const inSearch = document.activeElement && document.activeElement.id === 'search';
     if ((e.metaKey || e.ctrlKey) && e.key === 'f') { e.preventDefault(); $('search').focus(); return; }
+    if (e.key === 'Escape' && document.body.classList.contains('preview-open')) {
+      closePreviewOverlay();
+      return;
+    }
     if (inSearch) return;
     const sel = state.selected;
     if (!sel) return;
