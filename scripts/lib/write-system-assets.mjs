@@ -2,12 +2,11 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 
 export function writeSystemAssets(projectRoot, outDir) {
-  const desktop = join(projectRoot, 'desktop')
   const shared = join(projectRoot, 'shared')
 
   mkdirSync(outDir, { recursive: true })
 
-  const docsDir = join(desktop, 'system-docs')
+  const docsDir = join(shared, 'system-docs')
   const docFiles = readdirSync(docsDir).filter(f => f.endsWith('.md')).sort()
   const docs = docFiles.map(f => ({
     name: f.replace(/\.md$/, ''),
@@ -15,7 +14,7 @@ export function writeSystemAssets(projectRoot, outDir) {
   }))
   writeFileSync(join(outDir, 'system-docs.json'), JSON.stringify(docs))
 
-  const viewsDir = join(desktop, 'system-views')
+  const viewsDir = join(shared, 'system-views')
   const viewFiles = readdirSync(viewsDir).filter(f => f.endsWith('.html')).sort()
   const views = viewFiles.map(f => {
     const content = readFileSync(join(viewsDir, f), 'utf-8')
