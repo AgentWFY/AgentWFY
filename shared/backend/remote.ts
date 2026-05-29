@@ -1,5 +1,5 @@
 // RemoteBackend — environment-neutral AgentBackend implementation that talks
-// to remote-backend-server. Transport (WebSocket, reconnect, RPC envelope) is
+// to the server. Transport (WebSocket, reconnect, RPC envelope) is
 // delegated to WsClient in ./ws_client.ts. This file is purely the
 // AgentBackend translation layer: shape the protocol methods into the
 // AgentBackend API surface, fan out events/db-changes, and route incoming

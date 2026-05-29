@@ -28,7 +28,7 @@ const ITEMS: CommandPaletteItem[] = [
   {
     id: 'add-agent:remote',
     title: 'Add Remote Agent',
-    subtitle: 'Connect to an agentwfy-remote-server instance over the network',
+    subtitle: 'Connect to an agentwfy-server instance over the network',
     expandable: true,
     group: 'Actions',
     action: { type: 'enter-add-remote-agent' },

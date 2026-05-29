@@ -7,7 +7,7 @@
 // the token can mint URLs, so the URL leaks nothing they couldn't already do.
 //
 // Used by:
-//   - remote-backend-server/src/index.ts (verify side)
+//   - server/src/index.ts (verify side)
 //   - desktop/protocol/file-source.ts (sign side)
 //   - mobile/src-tauri/src/view_protocol.rs reimplements this in Rust; keep
 //     the wire format in sync if the signing string changes.

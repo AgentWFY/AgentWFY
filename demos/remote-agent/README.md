@@ -6,7 +6,7 @@ Demo of using a daemon-backed remote agent from the desktop preview.
 
 1. Builds and installs `plugins/test-provider` into a fresh remote agent inside
    the preview container.
-2. Starts `agentwfy-remote-server` for that agent.
+2. Starts `agentwfy-server` for that agent.
 3. Adds the daemon through the Add Remote Agent command-palette screen.
 4. Switches to the remote agent and selects the remote `Test Provider`.
 5. Sends `normal`, `slow`, and `tools` prompts through the remote WebSocket

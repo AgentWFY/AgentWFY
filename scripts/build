@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Build everything — desktop + mobile + remote-backend-server.
+// Build everything — desktop + mobile + server.
 //
 // Use this when you're not sure which hosts a change touches, or when you've
 // edited shared/. For host-specific work, prefer the narrower scripts —
 // they're faster and document intent:
 //   ./scripts/build-desktop      ← edited only desktop/
 //   ./scripts/build-mobile       ← edited only mobile/
-//   ./scripts/build-server       ← edited only remote-backend-server/
+//   ./scripts/build-server       ← edited only server/
 
 import { execSync } from 'node:child_process'
 import { rmSync } from 'node:fs'

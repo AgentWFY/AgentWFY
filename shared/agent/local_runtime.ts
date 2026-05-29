@@ -1,6 +1,6 @@
 // Shared bootstrap for a local-in-process agent runtime. Used by both the
 // Electron desktop (via AgentContextFactory.createLocal) and the
-// remote-backend-server daemon (via createAgentRuntime). The shared body
+// server daemon (via createAgentRuntime). The shared body
 // wires up DB, plugins, providers, functions, sessions, tasks, triggers,
 // and the LocalBackend. Callers provide host bundles for environment-bound
 // surfaces (tabs, palette, notifications, renderer push, external launcher)

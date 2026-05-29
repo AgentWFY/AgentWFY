@@ -1,9 +1,9 @@
 {
-  "name": "agentwfy-remote-server",
+  "name": "agentwfy-server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "dist/remote-backend-server/src/index.js",
+  "main": "dist/server/src/index.js",
   "imports": {
     "#shared/*.js": {
       "types": "../shared/*.ts",

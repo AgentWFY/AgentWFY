@@ -131,7 +131,7 @@ The container ships `sqlite3`, `grim`, `jq`, `curl`, `wf-recorder`, `wtype`, `wl
 
 ### Remote agent smoke test
 
-Preview builds `remote-backend-server` alongside the app, so a daemon can run
+Preview builds `server` alongside the app, so a daemon can run
 inside the same container. The repeatable demo provisions a remote agent,
 installs `plugins/test-provider`, adds the agent through the UI, and sends
 remote chat/tool prompts:
@@ -143,7 +143,7 @@ remote chat/tool prompts:
 
 For manual testing, run the same setup steps from
 `demos/remote-agent/driver.js`: initialize an agent root with
-`node /app/remote-backend-server/dist/remote-backend-server/src/index.js init`,
+`node /app/server/dist/server/src/index.js init`,
 install `plugins/test-provider/dist/test-provider.plugins.awfy`, start the
 daemon on `127.0.0.1:9878`, then add `http://127.0.0.1:9878` from the
 command palette: Add Agent → Add Remote Agent.

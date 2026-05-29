@@ -74,7 +74,7 @@ export class AddRemoteAgentScreen implements PaletteScreen {
     container.appendChild(this.renderField({
       key: 'token',
       label: 'Bearer token',
-      hint: 'From agentwfy-remote-server init (or token / rotate).',
+      hint: 'From agentwfy-server init (or token / rotate).',
       placeholder: '(paste token)',
       type: 'password',
       mono: true,

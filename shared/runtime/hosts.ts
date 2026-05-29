@@ -1,6 +1,6 @@
 // Small host interfaces used by per-agent runtime code to avoid direct
 // Electron coupling. The Electron app supplies real implementations; the
-// remote-backend-server supplies no-op / undefined where features are absent.
+// server supplies no-op / undefined where features are absent.
 //
 // This file is part of the portable runtime surface — must remain free of
 // Electron and DOM imports.

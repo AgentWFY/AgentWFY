@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build the remote-backend-server using tsgo from vendor/. The daemon stays
+// Build the server using tsgo from vendor/. The daemon stays
 // free of external npm deps; we reuse the binary scripts/setup already
 // downloads.
 
@@ -14,7 +14,7 @@ import { writeSystemAssets } from './lib/write-system-assets.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(__dirname, '..')
-const serverRoot = join(projectRoot, 'remote-backend-server')
+const serverRoot = join(projectRoot, 'server')
 const shared = join(projectRoot, 'shared')
 
 const tsgo = join(
@@ -43,4 +43,4 @@ execSync(`"${tsgo}" --project "${join(serverRoot, 'tsconfig.json')}"`, {
 // per-host build produces a runnable daemon from a clean checkout.
 writeSystemAssets(projectRoot, join(dist, 'shared'))
 
-console.log('agentwfy-remote-server: build OK')
+console.log('agentwfy-server: build OK')

@@ -1,4 +1,4 @@
-// agentwfy-remote-server entry point.
+// agentwfy-server entry point.
 //
 // The daemon exposes one authenticated WebSocket. Desktop clients use that
 // socket for backend RPC, live backend events, and client-function RPCs sent
@@ -320,10 +320,10 @@ function handleWebSocket(
       unsubscribeDbChanges = null
       unsubscribeDbResets = null
       clientBridge.detach(undefined, connection)
-      console.log('agentwfy-remote-server: client disconnected')
+      console.log('agentwfy-server: client disconnected')
     },
     onError: (err) => {
-      console.warn('agentwfy-remote-server: websocket error:', err)
+      console.warn('agentwfy-server: websocket error:', err)
     },
   })
 
@@ -338,7 +338,7 @@ function handleWebSocket(
     capabilities: { tabs: true, clientFunctionProxy: true },
     dbVersion: bundle.getDbVersion(),
   }))
-  console.log('agentwfy-remote-server: client connected')
+  console.log('agentwfy-server: client connected')
 }
 
 function makeHttpHandler(bundle: RuntimeBundle, runtimeRoot: string, token: string | null) {
@@ -503,7 +503,7 @@ async function serveAgentFile(
 
   const stream = createReadStream(absolutePath, { start, end })
   stream.on('error', (err) => {
-    console.warn('agentwfy-remote-server: file stream failed:', err)
+    console.warn('agentwfy-server: file stream failed:', err)
     if (!res.headersSent) {
       sendPlain(res, 500, 'Failed to stream file\n')
     } else {
@@ -578,7 +578,7 @@ async function sendDbSnapshot(
     })
     const stream = createReadStream(snapshotPath)
     stream.on('error', (err) => {
-      console.warn('agentwfy-remote-server: snapshot stream failed:', err)
+      console.warn('agentwfy-server: snapshot stream failed:', err)
       if (!res.headersSent) {
         sendPlain(res, 500, 'Failed to stream database snapshot\n')
       } else {
@@ -591,7 +591,7 @@ async function sendDbSnapshot(
     stream.pipe(res)
   } catch (err) {
     cleanup()
-    console.warn('agentwfy-remote-server: snapshot failed:', err)
+    console.warn('agentwfy-server: snapshot failed:', err)
     if (!res.headersSent) {
       sendPlain(res, 500, 'Failed to create database snapshot\n')
     } else {
@@ -616,7 +616,7 @@ async function runServer(): Promise<void> {
   const token = resolveTokenInner(runtimeRoot)
   const clientBridge = new ConnectedClientBridge()
 
-  console.log(`agentwfy-remote-server: starting (protocol ${PROTOCOL_VERSION})`)
+  console.log(`agentwfy-server: starting (protocol ${PROTOCOL_VERSION})`)
   console.log(`  agent root: ${runtimeRoot}`)
   console.log(`  auth: ${token ? 'token required' : 'DISABLED (no token configured)'}`)
   if (!token) {
@@ -630,7 +630,7 @@ async function runServer(): Promise<void> {
   const certPath = process.env['AGENTWFY_REMOTE_TLS_CERT']
   const keyPath = process.env['AGENTWFY_REMOTE_TLS_KEY']
   if ((certPath && !keyPath) || (!certPath && keyPath)) {
-    console.error('agentwfy-remote-server: AGENTWFY_REMOTE_TLS_CERT and AGENTWFY_REMOTE_TLS_KEY must both be set')
+    console.error('agentwfy-server: AGENTWFY_REMOTE_TLS_CERT and AGENTWFY_REMOTE_TLS_KEY must both be set')
     process.exit(1)
   }
   const tlsEnabled = Boolean(certPath && keyPath)
@@ -645,12 +645,12 @@ async function runServer(): Promise<void> {
     handleWebSocket(req, socket as Socket, head, bundle, token, clientBridge)
   })
   server.on('error', (err) => {
-    console.error('agentwfy-remote-server: server error:', err)
+    console.error('agentwfy-server: server error:', err)
     process.exitCode = 1
   })
 
   const shutdown = async (signal: string) => {
-    console.log(`agentwfy-remote-server: received ${signal}, shutting down`)
+    console.log(`agentwfy-server: received ${signal}, shutting down`)
     server.close()
     clientBridge.detach(new Error('Server shutting down'))
     await bundle.dispose().catch((err) => console.warn('dispose failed:', err))
@@ -662,7 +662,7 @@ async function runServer(): Promise<void> {
   const host = process.env['AGENTWFY_REMOTE_HOST'] || '127.0.0.1'
   const scheme = tlsEnabled ? 'wss' : 'ws'
   server.listen(port, host, () => {
-    console.log(`agentwfy-remote-server: listening on ${scheme}://${host}:${port}${WS_PATH}`)
+    console.log(`agentwfy-server: listening on ${scheme}://${host}:${port}${WS_PATH}`)
   })
 }
 
@@ -705,6 +705,6 @@ async function dispatchCli(): Promise<void> {
 }
 
 void dispatchCli().catch((err) => {
-  console.error('agentwfy-remote-server: fatal:', err)
+  console.error('agentwfy-server: fatal:', err)
   process.exit(1)
 })

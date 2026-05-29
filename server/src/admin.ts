@@ -1,4 +1,4 @@
-// Admin subcommands for agentwfy-remote-server. Run as
+// Admin subcommands for agentwfy-server. Run as
 //   node dist/.../index.js <subcommand> [args]
 // Subcommands manage the per-agent config file (token, etc.); the daemon
 // itself is started by the default subcommand (`start`, also the fallback).
@@ -19,19 +19,19 @@ import {
 
 const USAGE = `
 Usage:
-  agentwfy-remote-server start                 Start the server (default).
+  agentwfy-server start                 Start the server (default).
                                                Reads AGENTWFY_AGENT_ROOT and the
                                                per-agent config for the token.
 
-  agentwfy-remote-server init   <agent-root>   Create the agent directory,
+  agentwfy-server init   <agent-root>   Create the agent directory,
                                                initialize schema, generate a
                                                first bearer token, and store
                                                it in <agent-root>/.agentwfy/.
 
-  agentwfy-remote-server token  <agent-root>   Print the current bearer token
+  agentwfy-server token  <agent-root>   Print the current bearer token
                                                for the given agent.
 
-  agentwfy-remote-server rotate <agent-root>   Generate a new bearer token and
+  agentwfy-server rotate <agent-root>   Generate a new bearer token and
                                                replace the existing one.
 
 Environment:
@@ -72,7 +72,7 @@ export async function runInit(runtimeRootArg: string | undefined): Promise<void>
     const existing = readConfig(runtimeRoot)
     if (existing) {
       console.error(`error: ${runtimeRoot} already has a remote-server config.`)
-      console.error('Run `agentwfy-remote-server rotate <agent-root>` to issue a new token.')
+      console.error('Run `agentwfy-server rotate <agent-root>` to issue a new token.')
       process.exit(1)
     }
   }
@@ -85,7 +85,7 @@ export async function runInit(runtimeRootArg: string | undefined): Promise<void>
   console.log('')
   console.log('Save this token — it will not be displayed again.')
   console.log('Start the server with:')
-  console.log(`  AGENTWFY_AGENT_ROOT=${shellEscape(runtimeRoot)} agentwfy-remote-server start`)
+  console.log(`  AGENTWFY_AGENT_ROOT=${shellEscape(runtimeRoot)} agentwfy-server start`)
 }
 
 export function runShowToken(runtimeRootArg: string | undefined): void {
@@ -93,7 +93,7 @@ export function runShowToken(runtimeRootArg: string | undefined): void {
   const config = readConfig(runtimeRoot)
   if (!config) {
     console.error(`error: no remote-server config at ${runtimeRoot}.`)
-    console.error('Run `agentwfy-remote-server init <agent-root>` first.')
+    console.error('Run `agentwfy-server init <agent-root>` first.')
     process.exit(1)
   }
   console.log(config.token)
@@ -104,7 +104,7 @@ export function runRotateToken(runtimeRootArg: string | undefined): void {
   const existing = readConfig(runtimeRoot)
   if (!existing) {
     console.error(`error: no remote-server config at ${runtimeRoot}.`)
-    console.error('Run `agentwfy-remote-server init <agent-root>` first.')
+    console.error('Run `agentwfy-server init <agent-root>` first.')
     process.exit(1)
   }
   const token = generateToken()

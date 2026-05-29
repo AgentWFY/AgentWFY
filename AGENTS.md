@@ -28,11 +28,11 @@ belongs to:
 |---------------------------------|---------------------------|
 | only `desktop/...`              | `./scripts/build-desktop` |
 | only `mobile/...`               | `./scripts/build-mobile`  |
-| only `remote-backend-server/...`| `./scripts/build-server`  |
+| only `server/...`               | `./scripts/build-server`  |
 | `shared/...` (or unsure)        | `./scripts/build`         |
 
 Each host has its own `tsconfig.json` (`desktop/tsconfig.json`,
-`mobile/tsconfig.json`, `remote-backend-server/tsconfig.json`) that scopes
+`mobile/tsconfig.json`, `server/tsconfig.json`) that scopes
 tsgo to that host + `shared/`. The root `tsconfig.json` covers `shared/` and
 `types/` for editor support.
 

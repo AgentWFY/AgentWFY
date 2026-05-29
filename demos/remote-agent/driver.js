@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Remote-agent demo.
 //
-// The driver provisions an agentwfy-remote-server inside the running preview
+// The driver provisions an agentwfy-server inside the running preview
 // container, installs plugins/test-provider into that remote agent, adds it
 // through the Add Remote Agent palette screen, then sends real chat messages
 // through the remote daemon.
@@ -20,8 +20,8 @@ const REMOTE_ROOT = '/tmp/agentwfy-remote-demo'
 const REMOTE_LOG = '/tmp/agentwfy-remote-demo.log'
 const REMOTE_PORT = 9878
 const REMOTE_URL = `http://127.0.0.1:${REMOTE_PORT}`
-const SERVER = '/app/remote-backend-server/dist/remote-backend-server/src/index.js'
-const INSTALLER = '/app/remote-backend-server/dist/shared/plugins/installer.js'
+const SERVER = '/app/server/dist/server/src/index.js'
+const INSTALLER = '/app/server/dist/shared/plugins/installer.js'
 const TEST_PROVIDER_PACKAGE = '/app/plugins/test-provider/dist/test-provider.plugins.awfy'
 
 function preview(args, opts = {}) {
@@ -44,7 +44,7 @@ function previewExec(args, opts) {
 async function setupRemoteDaemon() {
   mark('prepare remote daemon')
   previewExec(['bash', '-lc', [
-    `pkill -f '[r]emote-backend-server/dist/remote-backend-server/src/index.js' || true`,
+    `pkill -f '[s]erver/dist/server/src/index.js' || true`,
     `rm -rf '${REMOTE_ROOT}' '${REMOTE_LOG}'`,
   ].join('\n')])
 

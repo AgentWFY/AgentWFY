@@ -1,4 +1,4 @@
-// WebSocket protocol for RemoteBackend <-> remote-backend-server.
+// WebSocket protocol for RemoteBackend <-> server.
 //
 // Transport:
 //   - One authenticated WebSocket connection at /api/v1/ws.
@@ -18,7 +18,7 @@
 //     to a short-lived HMAC-signed daemon URL; the browser pulls bytes
 //     direct with native HTTP semantics (Range, ETag, cacheability). See
 //     ./signed-urls.ts for the sign/verify helpers and the daemon route
-//     at /agent/<id>/files/<path> in remote-backend-server/src/index.ts.
+//     at /agent/<id>/files/<path> in server/src/index.ts.
 //
 // This file must remain free of:
 //   - Electron imports
