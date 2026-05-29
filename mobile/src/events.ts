@@ -3,10 +3,9 @@
 // makes intent vs fact clear.
 //
 //   Intent events  (UI emits; services handle):
-//     set-screen, switch-agent, add-agent, remove-agent, disconnect-agent,
-//     open-session, close-session, remove-session,
-//     start-draft, cancel-draft, send-message, abort-session,
-//     open-view, close-view, reload-view, request-error-dismiss
+//     set-screen, switch-agent, remove-agent, disconnect-agent,
+//     open-session, close-session, remove-session, start-draft,
+//     cancel-draft, abort-session, open-view, close-view, reload-view
 //
 //   Fact events    (services emit; UI listens):
 //     agents-changed, agent-switched, status-changed, db-change,
@@ -42,7 +41,6 @@ export interface MobileEventMap {
   'open-view': { name: string }
   'close-view': void
   'reload-view': void
-  'dismiss-error': void
 
   // ─── Facts ──────────────────────────────────────────────────────────────
   'agents-changed': { agents: InstalledAgent[] }

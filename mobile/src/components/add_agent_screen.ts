@@ -100,9 +100,8 @@ export class TlAddAgentScreen extends HTMLElement {
         baseUrl: String(data.get('baseUrl') ?? ''),
         agentToken: String(data.get('agentToken') ?? ''),
       })
-      // backend-session listens for add-agent normally, but here we already
-      // persisted (via agentRegistry.add). Dispatch switch-agent directly to
-      // connect without double-saving.
+      // The registry already persisted this agent. Switch directly so the
+      // backend session connects with the saved metadata.
       dispatch('switch-agent', { agentId })
     } catch (err) {
       this.submitBtn.disabled = false

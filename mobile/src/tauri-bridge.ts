@@ -88,9 +88,9 @@ export const bridge = {
     },
   },
 
-  /** Generic JSON key/value store backed by `<appData>/config.json`. The same
-   *  shape as Electron's internal store on desktop (desktop/ipc/store.ts), so
-   *  helpers like `agent-meta.ts` can be ported one-for-one. */
+  /** Generic JSON key/value store backed by `<appData>/config.json`. Mobile
+   *  exposes the get/set subset currently used by helpers like
+   *  `agent-meta.ts`. */
   store: {
     get(key: string): Promise<unknown> {
       return invoke<unknown>('store_get', { key })
@@ -98,14 +98,5 @@ export const bridge = {
     set(key: string, value: unknown): Promise<void> {
       return invoke<void>('store_set', { key, value })
     },
-    remove(key: string): Promise<void> {
-      return invoke<void>('store_remove', { key })
-    },
   },
-
-  /** Escape hatch for not-yet-typed Rust commands. Prefer adding a typed
-   *  namespace once the command stabilizes. */
-  raw: invoke,
 }
-
-export type Bridge = typeof bridge

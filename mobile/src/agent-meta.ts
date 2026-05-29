@@ -38,11 +38,6 @@ async function writeMap(map: Record<string, AgentMeta>): Promise<void> {
   await storeSet(STORE_KEY, map)
 }
 
-export async function getAgentMeta(agentId: string): Promise<AgentMeta | null> {
-  const map = await readMap()
-  return map[agentId] ?? null
-}
-
 export async function getAllAgentMeta(): Promise<Record<string, AgentMeta>> {
   return readMap()
 }
