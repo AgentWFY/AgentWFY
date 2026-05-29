@@ -1,7 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { Channels } from './channels.cjs';
 import { getViewByName } from '#shared/db/views.js';
-import type { TabApi, TabOpenRequest } from '#shared/runtime/hosts.js';
+import { normalizeViewportInput, type TabApi, type TabOpenRequest } from '#shared/runtime/hosts.js';
 
 function parseTabId(value: unknown): string {
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -62,7 +62,7 @@ export function registerTabsHandlers(
       url: hasUrl ? input.url : undefined,
       title: typeof resolvedTitle === 'string' ? resolvedTitle : undefined,
       headless: typeof input.headless === 'boolean' ? input.headless : false,
-      viewport: input.viewport,
+      viewport: normalizeViewportInput(input),
       closeAfterIdleMs: input.closeAfterIdleMs,
       params: params && Object.keys(params).length > 0 ? params : undefined,
     });

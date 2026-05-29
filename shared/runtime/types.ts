@@ -133,6 +133,8 @@ export interface WorkerOpenTabRequest {
   title?: string
   headless?: boolean
   viewport?: ViewportInput
+  width?: number
+  height?: number
   closeAfterIdleMs?: HeadlessCloseAfterIdleMs
   params?: Record<string, string>
 }

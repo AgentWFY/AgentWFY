@@ -7,6 +7,7 @@ import type {
   TabDebuggerPollResult,
   Viewport,
 } from '#shared/runtime/hosts.js'
+import { normalizeViewportInput } from '#shared/runtime/hosts.js'
 import type { TabViewManager } from './tab-view-manager.js'
 
 export class ElectronBrowserHost implements BrowserHost {
@@ -19,7 +20,7 @@ export class ElectronBrowserHost implements BrowserHost {
       url: request.url,
       title: request.title,
       headless: true,
-      viewport: request.viewport,
+      viewport: normalizeViewportInput(request),
       params: request.params,
     })
     const page = this.getPage(result.tabId)

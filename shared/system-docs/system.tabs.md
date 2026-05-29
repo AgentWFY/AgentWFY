@@ -6,12 +6,12 @@ Tabs are rendered browser pages the agent can use for visual work: opening views
   - `headless`: true for an agent-owned page not shown in the tab bar.
   - `viewport`: `{ width, height }` for headless tabs, otherwise `null`.
 - `getCurrentTab()` -> the user's currently selected visible tab, or `null`.
-- `openTab({ viewName?, filePath?, url?, headless?, viewport?, closeAfterIdleMs?, title?, params? })` -> `{ id, tabId, info }`. Exactly one source is required. `viewName` resolves a view by name and auto-populates the title. `info` briefly describes what opened and, for headless tabs, how cleanup works.
+- `openTab({ viewName?, filePath?, url?, headless?, viewport?, width?, height?, closeAfterIdleMs?, title?, params? })` -> `{ id, tabId, info }`. Exactly one source is required. `viewName` resolves a view by name and auto-populates the title. `info` briefly describes what opened and, for headless tabs, how cleanup works.
   - Agent `execJs` default: `headless: true`.
   - View runtime `window.agentwfy.openTab` default: `headless: false`.
   - `headless: false` opens a visible tab in the user's tab bar. Use it when presenting a finished result or following an in-app navigation from a view.
   - `headless: true` opens an off-screen rendered page. Use it for screenshots, layout checks, scraping, and interaction tests without disrupting the user.
-  - `viewport` applies only to headless tabs: `"mobile"` -> 375x667, `"tablet"` -> 768x1024, `"desktop"` -> 1280x720, or pass `{ width, height }`. Omitted means desktop.
+  - `viewport` applies only to headless tabs: `"mobile"` -> 375x667, `"tablet"` -> 768x1024, `"desktop"` -> 1280x720, or pass `{ width, height }`. Top-level `width` and `height` are accepted as shorthand. Omitted means desktop.
   - Headless tabs close after 30 minutes idle by default. Activity is using the tab API for that tab: `captureTab`, `execTabJs`, `sendInput`, `reloadTab`, `getTabConsoleLogs`, `inspectElement`, or tab debugger calls.
   - `closeAfterIdleMs` applies only to headless tabs. Pass a positive millisecond value to override the idle timeout, or `"never"` to keep the tab open until `closeTab`.
   - `params` is an optional `Record<string, string>` appended to view/file URLs. Views read it via `new URLSearchParams(window.location.search)`.

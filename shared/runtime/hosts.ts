@@ -94,6 +94,25 @@ function normalizeViewportDimension(value: unknown, fallback: number): number {
   return Math.max(1, Math.floor(parsed))
 }
 
+export function normalizeViewportInput(request: {
+  viewport?: ViewportInput
+  width?: unknown
+  height?: unknown
+}): ViewportInput | undefined {
+  if (typeof request.viewport === 'string') return request.viewport
+
+  const hasWidth = request.width !== undefined && request.width !== null
+  const hasHeight = request.height !== undefined && request.height !== null
+  if (request.viewport || hasWidth || hasHeight) {
+    return {
+      width: request.viewport?.width ?? (request.width as number | undefined),
+      height: request.viewport?.height ?? (request.height as number | undefined),
+    }
+  }
+
+  return undefined
+}
+
 export function resolveHeadlessCloseAfterIdleMs(input?: unknown): HeadlessCloseAfterIdleMs {
   if (input === undefined || input === null) {
     return DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS
@@ -125,6 +144,8 @@ export interface TabOpenRequest {
   title?: string
   headless?: boolean
   viewport?: ViewportInput
+  width?: number
+  height?: number
   closeAfterIdleMs?: HeadlessCloseAfterIdleMs
   params?: Record<string, string>
 }

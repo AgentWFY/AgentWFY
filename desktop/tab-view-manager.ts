@@ -7,6 +7,7 @@ import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
 import {
+  normalizeViewportInput,
   resolveHeadlessCloseAfterIdleMs,
   resolveViewport,
   type HeadlessCloseAfterIdleMs,
@@ -1153,6 +1154,8 @@ export class TabViewManager {
     title?: string;
     headless?: boolean;
     viewport?: ViewportInput;
+    width?: number;
+    height?: number;
     closeAfterIdleMs?: HeadlessCloseAfterIdleMs;
     params?: Record<string, string>;
   }): Promise<{ tabId: string }> {
@@ -1191,7 +1194,7 @@ export class TabViewManager {
 
     const tabId = this.generateTabId();
     const isHeadless = Boolean(request.headless);
-    const viewport = isHeadless ? resolveViewport(request.viewport) : null;
+    const viewport = isHeadless ? resolveViewport(normalizeViewportInput(request)) : null;
     const now = Date.now();
     const closeAfterIdleMs = isHeadless ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs) : null;
     const expiresAt = typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null;

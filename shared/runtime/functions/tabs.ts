@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import type { TabApi } from '../hosts.js'
 import {
   DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS,
+  normalizeViewportInput,
   resolveHeadlessCloseAfterIdleMs,
   resolveViewport,
   type HeadlessCloseAfterIdleMs,
@@ -128,7 +129,7 @@ export function registerTabs(
       throw new Error(`openTab requires exactly one of viewName, filePath, or url. ${DOCS_HINT}`)
     }
 
-    const viewport = request.headless ? resolveViewport(request.viewport) : undefined
+    const viewport = request.headless ? resolveViewport(normalizeViewportInput(request)) : undefined
     const closeAfterIdleMs = request.headless
       ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs)
       : undefined
