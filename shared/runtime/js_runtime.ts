@@ -43,6 +43,7 @@ type ChildEntry = {
   pendingExecutions: Map<string, PendingExecution>
   onMessage: (message: WorkerToHostMessage) => void
   onExit: (code: number | null, signal: NodeJS.Signals | null) => void
+  onError: (error: Error) => void
   lastCrashError?: string
   stderrChunks: string[]
 }
@@ -129,6 +130,7 @@ export class JsRuntime {
       pendingExecutions: new Map(),
       onMessage: () => {},
       onExit: () => {},
+      onError: () => {},
       stderrChunks: [],
     }
 
@@ -166,8 +168,13 @@ export class JsRuntime {
       this.disposeEntry(entry, new Error(errorMessage))
     }
 
+    entry.onError = (error) => {
+      this.disposeEntry(entry, new Error(`Session worker IPC error for ${normalizedSessionId}: ${error.message}`))
+    }
+
     child.on('message', entry.onMessage)
     child.on('exit', entry.onExit)
+    child.on('error', entry.onError)
 
     this.workers.set(normalizedSessionId, entry)
   }
@@ -235,7 +242,7 @@ export class JsRuntime {
 
       if (signal) {
         const onAbort = () => {
-          entry.child.send({
+          this.sendToWorker(entry, {
             type: 'exec:cancel',
             requestId,
           } satisfies HostToWorkerMessage)
@@ -249,7 +256,7 @@ export class JsRuntime {
 
       entry.pendingExecutions.set(requestId, pending)
 
-      entry.child.send({
+      const sent = this.sendToWorker(entry, {
         type: 'exec:run',
         requestId,
         code,
@@ -259,8 +266,12 @@ export class JsRuntime {
         methods: this.deps.functionRegistry.getMethodNames(),
       } satisfies HostToWorkerMessage)
 
+      if (!sent) {
+        return
+      }
+
       if (onLog) {
-        entry.child.send({
+        this.sendToWorker(entry, {
           type: 'exec:watch',
           requestId,
         } satisfies HostToWorkerMessage)
@@ -288,7 +299,7 @@ export class JsRuntime {
 
         entry.pendingExecutions.delete(message.requestId)
         if (pending.onLog) {
-          entry.child.send({
+          this.sendToWorker(entry, {
             type: 'exec:unwatch',
             requestId: message.requestId,
           } satisfies HostToWorkerMessage)
@@ -336,7 +347,7 @@ export class JsRuntime {
     try {
       const value = await this.deps.functionRegistry.call(message.method, message.params)
       this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
-      entry.child.send({
+      this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
         callId: message.callId,
@@ -345,7 +356,7 @@ export class JsRuntime {
       } satisfies HostToWorkerMessage)
     } catch (error) {
       this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
-      entry.child.send({
+      this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
         callId: message.callId,
@@ -353,6 +364,58 @@ export class JsRuntime {
         error: serializeError(error),
       } satisfies HostToWorkerMessage)
     }
+  }
+
+  private sendToWorker(entry: ChildEntry, message: HostToWorkerMessage): boolean {
+    if (this.workers.get(entry.sessionId) !== entry) {
+      return false
+    }
+
+    if (
+      !entry.child.connected ||
+      entry.child.killed ||
+      entry.child.exitCode !== null ||
+      entry.child.signalCode !== null
+    ) {
+      this.disposeEntry(entry, this.createWorkerUnavailableError(entry, message))
+      return false
+    }
+
+    try {
+      entry.child.send(message, (error: Error | null) => {
+        if (!error || this.workers.get(entry.sessionId) !== entry) {
+          return
+        }
+        this.disposeEntry(entry, this.createWorkerSendError(entry, message, error))
+      })
+      return true
+    } catch (error) {
+      if (this.workers.get(entry.sessionId) === entry) {
+        this.disposeEntry(entry, this.createWorkerSendError(entry, message, error))
+      }
+      return false
+    }
+  }
+
+  private createWorkerUnavailableError(entry: ChildEntry, message: HostToWorkerMessage): Error {
+    let reason = 'IPC channel is closed'
+    if (entry.child.exitCode !== null) {
+      reason = `process exited with code ${entry.child.exitCode}`
+    } else if (entry.child.signalCode !== null) {
+      reason = `process exited with signal ${entry.child.signalCode}`
+    } else if (entry.child.killed) {
+      reason = 'process was killed'
+    }
+
+    return new Error(`Failed to send ${message.type} to session worker for ${entry.sessionId}: ${reason}`)
+  }
+
+  private createWorkerSendError(entry: ChildEntry, message: HostToWorkerMessage, error: unknown): Error {
+    const err = error instanceof Error ? error : new Error(String(error))
+    const code = typeof (err as Error & { code?: unknown }).code === 'string'
+      ? ` ${(err as Error & { code: string }).code}`
+      : ''
+    return new Error(`Failed to send ${message.type} to session worker for ${entry.sessionId}:${code} ${err.message}`)
   }
 
   private safeEmitCallTrace(
@@ -453,6 +516,7 @@ export class JsRuntime {
 
     entry.child.removeListener('message', entry.onMessage)
     entry.child.removeListener('exit', entry.onExit)
+    entry.child.removeListener('error', entry.onError)
 
     for (const [, pending] of entry.pendingExecutions) {
       pending.cleanup?.()
