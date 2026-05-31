@@ -21,6 +21,7 @@ import { SystemConfigKeys } from '#shared/system-config/keys.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
 import { createHeadlessChromeBrowserHostFromEnv } from './headless-chrome.js'
+import { HeadlessViewRuntime } from './headless-view-runtime.js'
 
 export interface RuntimeBundle {
   backend: LocalBackend
@@ -47,7 +48,14 @@ export async function createAgentRuntime(
   const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
   const dbResetSubscribers = new Set<() => void>()
   let triggerReloadTimer: ReturnType<typeof setTimeout> | null = null
-  const browserHost = await createHeadlessChromeBrowserHostFromEnv({ runtimeRoot }).catch((err) => {
+  const headlessViewRuntime = new HeadlessViewRuntime({
+    runtimeRoot,
+    agentId: runtimeRoot,
+  })
+  const browserHost = await createHeadlessChromeBrowserHostFromEnv({
+    runtimeRoot,
+    viewRuntime: headlessViewRuntime,
+  }).catch((err) => {
     console.warn('[runtime] headless browser host unavailable:', err)
     return null
   })
@@ -90,6 +98,7 @@ export async function createAgentRuntime(
       }
     },
   })
+  headlessViewRuntime.setFunctionRegistry(runtime.functionRegistry)
 
   if (runtime.pluginRegistry) {
     registerRemotePluginManagement({
@@ -126,6 +135,7 @@ export async function createAgentRuntime(
     runtime.jsRuntime.disposeAll()
     await runtime.traceWriter.flush()
     await browserHost?.dispose().catch((err) => console.warn('[runtime] browser host dispose failed:', err))
+    await headlessViewRuntime.close().catch((err) => console.warn('[runtime] headless view runtime close failed:', err))
     dbChangeSubscribers.clear()
     dbResetSubscribers.clear()
   }
