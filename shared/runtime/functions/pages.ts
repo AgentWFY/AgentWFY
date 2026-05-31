@@ -5,6 +5,7 @@ import type {
   PageDisplayFilter,
   PageSource,
 } from '../../page/types.js'
+import { formatPageSource, normalizePageSource } from '../../page/page-source.js'
 import {
   DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS,
   normalizeViewportInput,
@@ -30,17 +31,6 @@ function formatDuration(ms: number): string {
   return `${ms}ms`
 }
 
-function formatSource(source: PageSource): string {
-  switch (source.type) {
-    case 'view':
-      return `view "${source.name}"`
-    case 'file':
-      return `file "${source.path}"`
-    case 'url':
-      return `url "${source.url}"`
-  }
-}
-
 function formatViewport(viewport: Viewport): string {
   return `${viewport.width}x${viewport.height}`
 }
@@ -54,12 +44,12 @@ function buildOpenPageInfo(opts: {
   usedDefaultCloseAfterIdle: boolean
 }): string {
   if (opts.display !== 'headless') {
-    return `Opened ${opts.display} page ${opts.pageId} for ${formatSource(opts.source)}.`
+    return `Opened ${opts.display} page ${opts.pageId} for ${formatPageSource(opts.source)}.`
   }
 
   const viewport = opts.viewport ? formatViewport(opts.viewport) : '1280x720'
   if (opts.closeAfterIdleMs === 'never') {
-    return `Opened headless page ${opts.pageId} for ${formatSource(opts.source)} (${viewport}). It stays open until closePage is called.`
+    return `Opened headless page ${opts.pageId} for ${formatPageSource(opts.source)} (${viewport}). It stays open until closePage is called.`
   }
 
   const timeoutMs = typeof opts.closeAfterIdleMs === 'number'
@@ -68,7 +58,7 @@ function buildOpenPageInfo(opts: {
   const suffix = opts.usedDefaultCloseAfterIdle
     ? '; pass closeAfterIdleMs:"never" to keep it open'
     : ''
-  return `Opened headless page ${opts.pageId} for ${formatSource(opts.source)} (${viewport}). It closes after ${formatDuration(timeoutMs)} idle${suffix}.`
+  return `Opened headless page ${opts.pageId} for ${formatPageSource(opts.source)} (${viewport}). It closes after ${formatDuration(timeoutMs)} idle${suffix}.`
 }
 
 function resolvePageId(params: unknown): string {
@@ -105,72 +95,6 @@ function normalizeDisplayFilter(value: unknown): PageDisplayFilter | undefined {
   throw new Error(`getPages display must be "foreground", "background", "headless", "user-facing", or "all". ${DOCS_HINT}`)
 }
 
-function normalizeParams(value: unknown): Record<string, string> | undefined {
-  if (value === undefined || value === null) return undefined
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`Page source params must be an object of string values. ${DOCS_HINT}`)
-  }
-  const out: Record<string, string> = {}
-  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof rawValue !== 'string') {
-      throw new Error(`Page source param "${key}" must be a string. ${DOCS_HINT}`)
-    }
-    out[key] = rawValue
-  }
-  return out
-}
-
-function normalizeSource(value: unknown): PageSource {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`openPage requires source to be an object. ${DOCS_HINT}`)
-  }
-
-  const source = value as Record<string, unknown>
-  if (source.type === 'view') {
-    if (typeof source.name !== 'string' || source.name.length === 0) {
-      throw new Error(`openPage source view requires name. ${DOCS_HINT}`)
-    }
-    return {
-      type: 'view',
-      name: source.name,
-      ...(source.params !== undefined ? { params: normalizeParams(source.params) } : {}),
-    }
-  }
-
-  if (source.type === 'file') {
-    if (typeof source.path !== 'string' || source.path.length === 0) {
-      throw new Error(`openPage source file requires path. ${DOCS_HINT}`)
-    }
-    return {
-      type: 'file',
-      path: source.path,
-      ...(source.params !== undefined ? { params: normalizeParams(source.params) } : {}),
-    }
-  }
-
-  if (source.type === 'url') {
-    if (typeof source.url !== 'string' || source.url.length === 0) {
-      throw new Error(`openPage source url requires url. ${DOCS_HINT}`)
-    }
-    validateUrlSource(source.url)
-    return { type: 'url', url: source.url }
-  }
-
-  throw new Error(`openPage source.type must be "view", "file", or "url". ${DOCS_HINT}`)
-}
-
-function validateUrlSource(url: string): void {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    throw new Error(`openPage source url must be absolute with a scheme (got ${JSON.stringify(url)}). ${DOCS_HINT}`)
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'file:') {
-    throw new Error(`openPage source url scheme "${parsed.protocol}" is not supported. Use http(s): or file:. ${DOCS_HINT}`)
-  }
-}
-
 export function registerPages(
   registry: FunctionRegistry,
   deps: { pageTools: PageApi; runtimeRoot: string },
@@ -198,7 +122,7 @@ export function registerPages(
       throw new Error(`openPage requires a request object. ${DOCS_HINT}`)
     }
 
-    const source = normalizeSource(original.source)
+    const source = normalizePageSource(original.source, { docsHint: DOCS_HINT })
     const display = normalizeDisplay(original.display)
     let resolvedSource = source
     let resolvedTitle = original.title

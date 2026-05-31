@@ -11,7 +11,6 @@ import type {
   BrowserPageHandle,
   TabConsoleLog,
   TabData,
-  TabDebuggerBufferedEvent,
   TabDebuggerPollResult,
   Viewport,
 } from '#shared/runtime/hosts.js'
@@ -20,17 +19,16 @@ import {
   type HeadlessCloseAfterIdleMs,
 } from '#shared/runtime/hosts.js'
 import { CdpClient, type CdpEvent } from '#shared/browser/cdp-client.js'
+import { PageCdpEventBuffer, PAGE_CDP_SUBSCRIPTION_BUFFER_MAX } from '#shared/page/cdp-subscription-manager.js'
+import { IdleCloseScheduler, type IdleCloseEntry } from '#shared/page/idle-close.js'
 import type { HeadlessViewRuntime } from './headless-view-runtime.js'
-
-const SUBSCRIPTION_BUFFER_MAX = 1000
-const POLL_MAX_WAIT_MS = 60_000
 
 interface HeadlessChromeBrowserHostOptions {
   runtimeRoot: string
   viewRuntime?: HeadlessViewRuntime
 }
 
-interface PageRecord {
+interface PageRecord extends IdleCloseEntry {
   tabId: string
   targetId: string
   sessionId: string
@@ -44,7 +42,6 @@ interface PageRecord {
   lastUsedAt: number
   closeAfterIdleMs: HeadlessCloseAfterIdleMs
   expiresAt: number | null
-  idleTimer: ReturnType<typeof setTimeout> | null
 }
 
 export async function createHeadlessChromeBrowserHostFromEnv(
@@ -137,6 +134,7 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
   private readonly viewRuntime: HeadlessViewRuntime | null
   private readonly child: ChildProcess | null
   private readonly userDataDir: string | null
+  private readonly idleClose: IdleCloseScheduler<PageRecord>
 
   private constructor(
     client: CdpClient,
@@ -149,6 +147,10 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
     this.viewRuntime = options.viewRuntime ?? null
     this.child = child ?? null
     this.userDataDir = userDataDir ?? null
+    this.idleClose = new IdleCloseScheduler<PageRecord>({
+      getEntry: tabId => this.pages.get(tabId),
+      closeEntry: tabId => this.closePage(tabId),
+    })
     this.client.onEvent((event) => this.handleEvent(event))
   }
 
@@ -209,10 +211,9 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
         lastUsedAt: now,
         closeAfterIdleMs,
         expiresAt: typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null,
-        idleTimer: null,
       }
       this.pages.set(tabId, record)
-      this.scheduleIdleClose(record)
+      this.idleClose.schedule(tabId)
 
       await this.client.send('Page.enable', {}, sessionId)
       await this.client.send('Runtime.enable', {}, sessionId)
@@ -319,18 +320,12 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
     if (!record) return
     this.pages.delete(tabId)
     this.viewRuntime?.unregisterPage(tabId)
-    if (record.idleTimer) clearTimeout(record.idleTimer)
+    this.idleClose.clear(tabId)
     await this.client.send('Target.closeTarget', { targetId: record.targetId }).catch(() => undefined)
   }
 
   touchPage(tabId: string): void {
-    const record = this.pages.get(tabId)
-    if (!record) return
-    record.lastUsedAt = Date.now()
-    if (typeof record.closeAfterIdleMs === 'number') {
-      record.expiresAt = record.lastUsedAt + record.closeAfterIdleMs
-      this.scheduleIdleClose(record)
-    }
+    this.idleClose.touch(tabId)
   }
 
   getPage(tabId: string): BrowserPageHandle | null {
@@ -361,8 +356,8 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
   }
 
   async dispose(): Promise<void> {
+    this.idleClose.clearAll()
     for (const record of this.pages.values()) {
-      if (record.idleTimer) clearTimeout(record.idleTimer)
       this.viewRuntime?.unregisterPage(record.tabId)
     }
     this.pages.clear()
@@ -397,28 +392,6 @@ export class HeadlessChromeBrowserHost implements BrowserHost {
       })
       trimLogs(record.logs)
     }
-  }
-
-  private scheduleIdleClose(record: PageRecord): void {
-    if (record.idleTimer) {
-      clearTimeout(record.idleTimer)
-      record.idleTimer = null
-    }
-    if (typeof record.closeAfterIdleMs !== 'number') return
-
-    const expiresAt = record.lastUsedAt + record.closeAfterIdleMs
-    record.expiresAt = expiresAt
-    record.idleTimer = setTimeout(() => {
-      const current = this.pages.get(record.tabId)
-      if (!current || typeof current.closeAfterIdleMs !== 'number') return
-      const currentExpiresAt = current.lastUsedAt + current.closeAfterIdleMs
-      if (Date.now() < currentExpiresAt) {
-        current.expiresAt = currentExpiresAt
-        this.scheduleIdleClose(current)
-        return
-      }
-      void this.closePage(record.tabId)
-    }, Math.max(1, expiresAt - Date.now()))
   }
 }
 
@@ -457,68 +430,38 @@ class HeadlessChromePageHandle implements BrowserPageHandle {
 }
 
 class HeadlessChromeSubscription implements BrowserCdpSubscription {
-  private readonly buffer: TabDebuggerBufferedEvent[] = []
-  private dropped = 0
-  private closed = false
-  private waiter: (() => void) | null = null
+  private readonly buffer: PageCdpEventBuffer
   private readonly unsubscribe: () => void
 
   constructor(
     client: CdpClient,
     private readonly sessionId: string,
-    private readonly events: Set<string>,
+    events: Set<string>,
   ) {
+    this.buffer = new PageCdpEventBuffer({
+      subscriptionId: `chrome-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      pageId: sessionId,
+      events: [...events],
+    })
     this.unsubscribe = client.onEvent((event) => {
       if (event.sessionId !== this.sessionId) return
-      if (!this.events.has('*') && !this.events.has(event.method)) return
-      this.push({ method: event.method, params: event.params, sessionId: event.sessionId })
+      this.buffer.push({ method: event.method, params: event.params, sessionId: event.sessionId })
     })
   }
 
   async poll(request?: { maxBatch?: number; maxWaitMs?: number }): Promise<TabDebuggerPollResult> {
-    const maxBatch = Math.max(1, Math.min(1000, request?.maxBatch ?? 100))
-    const maxWaitMs = Math.max(0, Math.min(POLL_MAX_WAIT_MS, request?.maxWaitMs ?? 30_000))
-    if (this.buffer.length === 0 && !this.closed && maxWaitMs > 0) {
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          if (this.waiter === done) this.waiter = null
-          resolve()
-        }, maxWaitMs)
-        const done = () => {
-          clearTimeout(timer)
-          resolve()
-        }
-        this.waiter = done
-      })
-    }
-    const events = this.buffer.splice(0, maxBatch)
-    const dropped = this.dropped
-    this.dropped = 0
-    return { events, dropped, closed: this.closed && this.buffer.length === 0 }
+    return this.buffer.poll(request)
   }
 
   async close(): Promise<void> {
-    if (this.closed) return
-    this.closed = true
     this.unsubscribe()
-    this.waiter?.()
-    this.waiter = null
-  }
-
-  private push(event: TabDebuggerBufferedEvent): void {
-    if (this.buffer.length >= SUBSCRIPTION_BUFFER_MAX) {
-      this.buffer.shift()
-      this.dropped++
-    }
-    this.buffer.push(event)
-    this.waiter?.()
-    this.waiter = null
+    await this.buffer.close()
   }
 }
 
 function trimLogs(logs: TabConsoleLog[]): void {
-  if (logs.length > SUBSCRIPTION_BUFFER_MAX) {
-    logs.splice(0, logs.length - SUBSCRIPTION_BUFFER_MAX)
+  if (logs.length > PAGE_CDP_SUBSCRIPTION_BUFFER_MAX) {
+    logs.splice(0, logs.length - PAGE_CDP_SUBSCRIPTION_BUFFER_MAX)
   }
 }
 

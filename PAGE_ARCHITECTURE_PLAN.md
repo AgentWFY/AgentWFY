@@ -1558,6 +1558,39 @@ on `TabApi`.
 
 ### Phase 3: Extract Shared Infrastructure
 
+Status as of 2026-05-31: **implemented and build-verified**.
+
+Implemented in:
+
+- `shared/page/cdp-subscription-manager.ts`
+- `shared/page/idle-close.ts`
+- `shared/page/page-js.ts`
+- `shared/page/page-input.ts`
+- `shared/page/page-source.ts`
+- `shared/page/capabilities.ts`
+
+Notes:
+
+- Desktop and daemon Chrome now share CDP subscription buffering/polling
+  behavior, including buffer caps, dropped counts, max wait, concurrent-poll
+  rejection, and close wakeups.
+- Desktop headless tabs and daemon Chrome headless pages now use a shared
+  idle-close scheduler for `lastUsedAt`, `expiresAt`, rescheduling, and
+  auto-close error handling.
+- Desktop `executeJavaScript` and daemon/CDP `Runtime.evaluate` paths now use
+  one page JS wrapper and timeout helper, with `runPageJs` error wording.
+- Electron and CDP input dispatch now share page input normalization for event
+  aliases, coordinates, modifiers, buttons, click counts, and keyboard
+  validation.
+- Page source formatting/normalization helpers are shared by runtime page
+  functions, `PageManager`, and the transitional legacy tab adapter.
+- The transitional legacy tab adapter derives capability metadata from its
+  `PageHandle` method surface.
+
+Verification performed:
+
+- `./scripts/build`
+
 - Extract CDP subscription buffering/polling.
 - Extract idle close.
 - Extract page JS wrapping and timeout messages.

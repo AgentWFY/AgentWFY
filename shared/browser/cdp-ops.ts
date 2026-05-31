@@ -4,83 +4,13 @@ import type {
   TabConsoleLog,
   TabSendInputRequest,
 } from '../runtime/hosts.js'
-import { formatTimeoutError, resolveTimeout } from '../runtime/timeout_utils.js'
-
-const EXEC_DEFAULT_TIMEOUT_MS = 5000
-const EXEC_MAX_TIMEOUT_MS = 120000
-
-type AsyncFunctionConstructor = new (...args: string[]) => (...callArgs: unknown[]) => Promise<unknown>
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as AsyncFunctionConstructor
-
-function buildEvaluationExpression(code: string): string {
-  let mode: 'expression' | 'body' = 'expression'
-
-  try {
-    new AsyncFunction(`return (\n${code}\n);`)
-  } catch (err) {
-    if (!(err instanceof SyntaxError)) throw err
-    mode = 'body'
-    new AsyncFunction(code)
-  }
-
-  const completion = '.then((__agentwfy_value) => __agentwfy_value === undefined ? null : __agentwfy_value)'
-  if (mode === 'expression') {
-    return `(async function() {\nreturn (\n${code}\n);\n})()${completion}`
-  }
-
-  return `(async function() {\n${code}\n})()${completion}`
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, wasDefault: boolean): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(formatTimeoutError('execTabJs', timeoutMs, wasDefault, EXEC_MAX_TIMEOUT_MS)))
-    }, timeoutMs)
-
-    promise
-      .then((value) => {
-        clearTimeout(timer)
-        resolve(value)
-      })
-      .catch((error) => {
-        clearTimeout(timer)
-        reject(error)
-      })
-  })
-}
-
-function readRemoteObjectValue(result: unknown): unknown {
-  const obj = result as {
-    result?: { value?: unknown; unserializableValue?: string; type?: string; description?: string }
-    exceptionDetails?: { text?: string; exception?: { description?: string } }
-  }
-
-  if (obj.exceptionDetails) {
-    const message = obj.exceptionDetails.exception?.description || obj.exceptionDetails.text || 'Runtime.evaluate failed'
-    throw new Error(message)
-  }
-
-  const remote = obj.result
-  if (!remote) return null
-  if ('value' in remote) return remote.value
-  if (remote.unserializableValue) {
-    switch (remote.unserializableValue) {
-      case 'NaN':
-        return NaN
-      case 'Infinity':
-        return Infinity
-      case '-Infinity':
-        return -Infinity
-      case '-0':
-        return -0
-      default:
-        return remote.unserializableValue
-    }
-  }
-  if (remote.type === 'undefined') return null
-  return remote.description ?? null
-}
+import {
+  buildPageExecutionCode,
+  readCdpRemoteObjectValue,
+  resolvePageJsTimeout,
+  withPageJsTimeout,
+} from '../page/page-js.js'
+import { PAGE_MOUSE_EVENT_TYPES, normalizePageInput, type PageInputModifier } from '../page/page-input.js'
 
 const CAPTURE_RETRY_BUDGET_MS = 3000
 
@@ -118,14 +48,13 @@ export async function execJs(
   timeoutMs?: number,
 ): Promise<unknown> {
   if (typeof code !== 'string') {
-    throw new Error('execTabJs requires code as a string')
+    throw new Error('runPageJs requires code as a string')
   }
 
-  const { timeoutMs: requestedTimeout, wasDefault } = resolveTimeout(timeoutMs, EXEC_DEFAULT_TIMEOUT_MS)
-  const effectiveTimeout = Math.max(1, Math.min(requestedTimeout, EXEC_MAX_TIMEOUT_MS))
-  const expression = buildEvaluationExpression(code)
+  const { timeoutMs: effectiveTimeout, wasDefault } = resolvePageJsTimeout(timeoutMs)
+  const expression = buildPageExecutionCode(code)
 
-  const result = await withTimeout(
+  const result = await withPageJsTimeout(
     handle.sendCdp('Runtime.evaluate', {
       expression,
       awaitPromise: true,
@@ -136,78 +65,70 @@ export async function execJs(
     wasDefault,
   )
 
-  return readRemoteObjectValue(result)
+  return readCdpRemoteObjectValue(result)
 }
 
 export async function dispatchInput(handle: BrowserPageHandle, request: TabSendInputRequest): Promise<void> {
-  const type = request.type
-  const x = Math.round(request.x ?? 0)
-  const y = Math.round(request.y ?? 0)
-  const modifiers = cdpModifierMask(request.modifiers)
+  const input = normalizePageInput(request)
+  const modifiers = cdpModifierMask(input.modifiers)
 
-  if (type === 'click') {
-    const button = cdpMouseButton(request.button)
-    const clickCount = Math.max(1, Math.floor(request.clickCount ?? 1))
+  if (input.type === 'click') {
+    const button = cdpMouseButton(input.button)
     await handle.sendCdp('Input.dispatchMouseEvent', {
       type: 'mousePressed',
-      x,
-      y,
+      x: input.x,
+      y: input.y,
       button,
-      clickCount,
+      clickCount: input.clickCount,
       modifiers,
     })
     await handle.sendCdp('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
-      x,
-      y,
+      x: input.x,
+      y: input.y,
       button,
-      clickCount,
+      clickCount: input.clickCount,
       modifiers,
     })
     return
   }
 
-  if (type === 'mouseWheel' || type === 'mousewheel') {
+  if (input.type === 'mouseWheel') {
     await handle.sendCdp('Input.dispatchMouseEvent', {
       type: 'mouseWheel',
-      x,
-      y,
-      deltaX: request.deltaX ?? 0,
-      deltaY: request.deltaY ?? 0,
+      x: input.x,
+      y: input.y,
+      deltaX: input.deltaX,
+      deltaY: input.deltaY,
       modifiers,
     })
     return
   }
 
-  if (type === 'mouseDown' || type === 'mousedown' || type === 'mouseUp' || type === 'mouseup' || type === 'mouseMove' || type === 'mousemove') {
+  if (PAGE_MOUSE_EVENT_TYPES.has(input.type)) {
     await handle.sendCdp('Input.dispatchMouseEvent', {
-      type: cdpMouseEventType(type),
-      x,
-      y,
-      button: cdpMouseButton(request.button),
-      clickCount: type === 'mouseDown' || type === 'mousedown'
-        ? Math.max(1, Math.floor(request.clickCount ?? 1))
+      type: cdpMouseEventType(input.type),
+      x: input.x,
+      y: input.y,
+      button: cdpMouseButton(input.button),
+      clickCount: input.type === 'mouseDown'
+        ? input.clickCount
         : undefined,
       modifiers,
     })
     return
   }
 
-  if (type === 'keyDown' || type === 'keydown' || type === 'keyUp' || type === 'keyup' || type === 'char') {
-    if (typeof request.keyCode !== 'string' || !request.keyCode) {
-      throw new Error('keyCode is required for keyboard input events')
-    }
+  if (input.type === 'keyDown' || input.type === 'keyUp' || input.type === 'char') {
     await handle.sendCdp('Input.dispatchKeyEvent', {
-      type: cdpKeyEventType(type),
-      key: request.keyCode,
-      code: request.keyCode,
-      text: type === 'char' ? request.keyCode : undefined,
+      type: cdpKeyEventType(input.type),
+      key: input.keyCode,
+      code: input.keyCode,
+      text: input.type === 'char' ? input.keyCode : undefined,
       modifiers,
     })
     return
   }
-
-  throw new Error(`Unknown input event type: ${type}`)
 }
 
 function cdpMouseButton(button: string | undefined): 'left' | 'middle' | 'right' | 'none' {
@@ -218,10 +139,8 @@ function cdpMouseButton(button: string | undefined): 'left' | 'middle' | 'right'
 function cdpMouseEventType(type: string): 'mousePressed' | 'mouseReleased' | 'mouseMoved' {
   switch (type) {
     case 'mouseDown':
-    case 'mousedown':
       return 'mousePressed'
     case 'mouseUp':
-    case 'mouseup':
       return 'mouseReleased'
     default:
       return 'mouseMoved'
@@ -229,12 +148,12 @@ function cdpMouseEventType(type: string): 'mousePressed' | 'mouseReleased' | 'mo
 }
 
 function cdpKeyEventType(type: string): 'keyDown' | 'keyUp' | 'char' {
-  if (type === 'keyUp' || type === 'keyup') return 'keyUp'
+  if (type === 'keyUp') return 'keyUp'
   if (type === 'char') return 'char'
   return 'keyDown'
 }
 
-function cdpModifierMask(modifiers: string[] | undefined): number {
+function cdpModifierMask(modifiers: readonly PageInputModifier[]): number {
   let mask = 0
   for (const modifier of modifiers ?? []) {
     if (modifier === 'alt') mask |= 1

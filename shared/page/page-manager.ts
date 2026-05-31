@@ -16,6 +16,7 @@ import type {
   PageQueryRequest,
   PageScreenshot,
 } from './types.js'
+import { formatPageSource } from './page-source.js'
 
 const DEFAULT_WAIT_FOR_PAGE_TIMEOUT_MS = 10_000
 
@@ -302,7 +303,7 @@ function normalizeTimeoutMs(value: unknown): number {
 }
 
 function formatOpenPageInfo(page: PageInfo): string {
-  const source = formatSource(page)
+  const source = formatPageSource(page.source)
   if (page.display === 'headless') {
     const viewport = page.viewport ? ` (${page.viewport.width}x${page.viewport.height})` : ''
     if (page.closeAfterIdleMs === 'never') {
@@ -311,17 +312,6 @@ function formatOpenPageInfo(page: PageInfo): string {
     return `Opened headless page ${page.pageId} for ${source}${viewport}.`
   }
   return `Opened ${page.display} page ${page.pageId} for ${source}.`
-}
-
-function formatSource(page: PageInfo): string {
-  switch (page.source.type) {
-    case 'view':
-      return `view "${page.source.name}"`
-    case 'file':
-      return `file "${page.source.path}"`
-    case 'url':
-      return `url "${page.source.url}"`
-  }
 }
 
 function delay(ms: number): Promise<void> {

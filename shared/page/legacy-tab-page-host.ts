@@ -9,7 +9,6 @@ import type { PageHandle } from './page-handle.js'
 import type { PageHost, PageHostOpenRequest, PageOpenContext } from './page-host.js'
 import type {
   OpenPageRequest,
-  PageCapabilities,
   PageCdpSubscription,
   PageCloseAfterIdleMs,
   PageConsoleLog,
@@ -21,16 +20,8 @@ import type {
   PageSource,
   PageViewportInput,
 } from './types.js'
-
-const LEGACY_PAGE_CAPABILITIES: PageCapabilities = {
-  screenshot: true,
-  js: true,
-  input: true,
-  consoleLogs: true,
-  inspect: true,
-  cdp: true,
-  screencast: false,
-}
+import { pageCapabilitiesFromHandleMethods } from './capabilities.js'
+import { pageSourceParams, pageSourceToLegacyTabOpenSource } from './page-source.js'
 
 interface LegacyTabPageHostOptions {
   agentId: string
@@ -62,14 +53,14 @@ export class LegacyTabPageHost implements PageHost {
     }
 
     const result = await this.tabTools.openTab({
-      ...tabOpenSource(request.source),
+      ...pageSourceToLegacyTabOpenSource(request.source),
       title: request.title,
       headless: request.display === 'headless',
       viewport: toLegacyViewport(request.viewport),
       width: request.width,
       height: request.height,
       closeAfterIdleMs: toLegacyCloseAfterIdleMs(request.closeAfterIdleMs),
-      params: sourceParams(request.source),
+      params: pageSourceParams(request.source),
     })
     const tab = await this.getTab(result.tabId)
     if (!tab) throw new Error(`Failed to create page "${result.tabId}"`)
@@ -106,7 +97,7 @@ export class LegacyTabPageHost implements PageHost {
       ...(tab.type === 'url' && tab.target ? { currentUrl: tab.target } : {}),
       display,
       lifecycle: 'ready',
-      capabilities: LEGACY_PAGE_CAPABILITIES,
+      capabilities: pageCapabilitiesFromHandleMethods(LegacyTabPageHandle.prototype),
       ...(tab.viewport ? { viewport: tab.viewport } : {}),
       owner: {
         agentId: this.agentId,
@@ -274,22 +265,6 @@ function sourceFromTab(tab: TabData): PageSource {
     name: target,
     ...(tab.params ? { params: tab.params } : {}),
   }
-}
-
-function tabOpenSource(source: PageSource): { viewName?: string; filePath?: string; url?: string } {
-  switch (source.type) {
-    case 'view':
-      return { viewName: source.name }
-    case 'file':
-      return { filePath: source.path }
-    case 'url':
-      return { url: source.url }
-  }
-}
-
-function sourceParams(source: PageSource): Record<string, string> | undefined {
-  if (source.type === 'url') return undefined
-  return source.params
 }
 
 function toLegacyViewport(input: PageViewportInput | undefined): ViewportInput | undefined {

@@ -5,7 +5,6 @@ import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/
 import { agentHostname } from './protocol/agent-hostname.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
-import { resolveTimeout, formatTimeoutError } from '#shared/runtime/timeout_utils.js';
 import {
   normalizeViewportInput,
   resolveHeadlessCloseAfterIdleMs,
@@ -16,6 +15,19 @@ import {
   type Viewport,
   type ViewportInput,
 } from '#shared/runtime/hosts.js';
+import { PageCdpSubscriptionManager } from '#shared/page/cdp-subscription-manager.js';
+import { IdleCloseScheduler } from '#shared/page/idle-close.js';
+import {
+  PAGE_JS_MAX_TIMEOUT_MS,
+  buildPageExecutionCode,
+  resolvePageJsTimeout,
+  withPageJsTimeout,
+} from '#shared/page/page-js.js';
+import {
+  PAGE_KEY_EVENT_TYPES,
+  PAGE_MOUSE_EVENT_TYPES,
+  normalizePageInput,
+} from '#shared/page/page-input.js';
 export type { TabData, TabDataType } from '#shared/runtime/hosts.js';
 
 // --- Types & Constants ---
@@ -81,8 +93,6 @@ interface TabContextMenuPayload {
 type TabContextMenuAction = 'toggle-pin' | 'reload' | 'toggle-devtools' | null;
 
 const VIEW_LOG_BUFFER_MAX = 1000;
-const VIEW_EXEC_DEFAULT_TIMEOUT_MS = 5000;
-const VIEW_EXEC_MAX_TIMEOUT_MS = 120000;
 const FALLBACK_VIEW_WIDTH = 1280;
 const FALLBACK_VIEW_HEIGHT = 720;
 const ZERO_BOUNDS: Rectangle = { x: 0, y: 0, width: 0, height: 0 };
@@ -97,44 +107,8 @@ const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   error: 'error',
 };
 
-const VALID_MODIFIERS = new Set<string>(['shift', 'control', 'alt', 'meta']);
-const MOUSE_EVENT_TYPES = new Set<string>(['mouseDown', 'mouseUp', 'mouseMove']);
-const KEY_EVENT_TYPES = new Set<string>(['keyDown', 'keyUp', 'char']);
-const VALID_BUTTONS = new Set<string>(['left', 'middle', 'right']);
-const INPUT_TYPE_ALIASES: Record<string, string> = {
-  mousedown: 'mouseDown',
-  mouseup: 'mouseUp',
-  mousemove: 'mouseMove',
-  mousewheel: 'mouseWheel',
-  keydown: 'keyDown',
-  keyup: 'keyUp',
-};
-
-type AsyncFunctionConstructor = new (...args: string[]) => (...callArgs: unknown[]) => Promise<unknown>;
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as AsyncFunctionConstructor;
-
 function isAbortedLoadError(error: unknown): boolean {
   return (error as { code?: string })?.code === 'ERR_ABORTED' || (error as { errno?: number })?.errno === -3;
-}
-
-function buildTabExecutionCode(code: string): string {
-  let mode: 'expression' | 'body' = 'expression';
-
-  try {
-    new AsyncFunction(`return (\n${code}\n);`);
-  } catch (err) {
-    if (!(err instanceof SyntaxError)) throw err;
-    mode = 'body';
-    new AsyncFunction(code);
-  }
-
-  const completion = '.then((__agentwfy_value) => __agentwfy_value === undefined ? null : __agentwfy_value)';
-  if (mode === 'expression') {
-    return `(async function() {\nreturn (\n${code}\n);\n})()${completion}`;
-  }
-
-  return `(async function() {\n${code}\n})()${completion}`;
 }
 
 // --- Input validation helpers ---
@@ -187,24 +161,6 @@ export function toNonEmptyString(value: unknown): string {
   return normalized;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, wasDefault: boolean): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(formatTimeoutError('execTabJs', timeoutMs, wasDefault, VIEW_EXEC_MAX_TIMEOUT_MS)));
-    }, timeoutMs);
-
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
-}
-
 function resolveOwnerWindowId(webContents: WebContents): number | null {
   const hostWebContents = (webContents as WebContents & { hostWebContents?: WebContents }).hostWebContents;
   const owner = hostWebContents
@@ -231,42 +187,17 @@ interface TabViewManagerDeps {
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
 }
 
-interface BufferedDebuggerEvent {
-  method: string;
-  params: unknown;
-  sessionId?: string;
-}
-
-interface DebuggerPollWaiter {
-  resolve: () => void;
-  timer?: ReturnType<typeof setTimeout>;
-}
-
-interface DebuggerSubscription {
-  subscriptionId: string;
-  tabId: string;
-  events: Set<string>;
-  buffer: BufferedDebuggerEvent[];
-  dropped: number;
-  closed: boolean;
-  waiter: DebuggerPollWaiter | null;
-}
-
 interface DebuggerAttachment {
   messageHandler: (event: Electron.Event, method: string, params: unknown, sessionId: string) => void;
   detachHandler: (event: Electron.Event, reason: string) => void;
 }
 
-const DEBUGGER_BUFFER_MAX = 1000;
-const DEBUGGER_POLL_MAX_WAIT_MS = 60_000;
-
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
   private readonly debuggerAttachments = new Map<string, DebuggerAttachment>();
-  private readonly debuggerSubscriptions = new Map<string, DebuggerSubscription>();
-  private readonly debuggerSubscriptionsByTab = new Map<string, Set<string>>();
-  private readonly headlessIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly debuggerSubscriptions = new PageCdpSubscriptionManager();
+  private readonly headlessIdleClose: IdleCloseScheduler<TabData>;
   private readonly deps: TabViewManagerDeps;
   private tabs: TabData[] = [];
   private selectedTabId: string | null = null;
@@ -288,6 +219,16 @@ export class TabViewManager {
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
+    this.headlessIdleClose = new IdleCloseScheduler<TabData>({
+      getEntry: (tabId) => {
+        const tab = this.tabById(tabId);
+        return tab?.headless ? tab : null;
+      },
+      closeEntry: (tabId) => this.closeTabHandler({ tabId }),
+      onAutoCloseError: (tabId, err) => {
+        console.warn(`[tabs] failed to auto-close idle headless tab "${tabId}":`, err);
+      },
+    });
   }
 
   private generateTabId(): string {
@@ -653,48 +594,15 @@ export class TabViewManager {
   }
 
   private clearHeadlessIdleTimer(tabId: string): void {
-    const timer = this.headlessIdleTimers.get(tabId);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.headlessIdleTimers.delete(tabId);
+    this.headlessIdleClose.clear(tabId);
   }
 
   private scheduleHeadlessIdleClose(tabId: string): void {
-    this.clearHeadlessIdleTimer(tabId);
-    const tab = this.tabById(tabId);
-    if (!tab?.headless || typeof tab.closeAfterIdleMs !== 'number') return;
-
-    const lastUsedAt = typeof tab.lastUsedAt === 'number' ? tab.lastUsedAt : Date.now();
-    const expiresAt = lastUsedAt + tab.closeAfterIdleMs;
-    tab.expiresAt = expiresAt;
-
-    const delay = Math.max(1, expiresAt - Date.now());
-    const timer = setTimeout(() => {
-      const current = this.tabById(tabId);
-      if (!current?.headless || typeof current.closeAfterIdleMs !== 'number') return;
-      const currentLastUsedAt = typeof current.lastUsedAt === 'number' ? current.lastUsedAt : lastUsedAt;
-      const currentExpiresAt = currentLastUsedAt + current.closeAfterIdleMs;
-      if (Date.now() < currentExpiresAt) {
-        current.expiresAt = currentExpiresAt;
-        this.scheduleHeadlessIdleClose(tabId);
-        return;
-      }
-      this.headlessIdleTimers.delete(tabId);
-      void this.closeTabHandler({ tabId }).catch((err: unknown) => {
-        console.warn(`[tabs] failed to auto-close idle headless tab "${tabId}":`, err);
-      });
-    }, delay);
-    this.headlessIdleTimers.set(tabId, timer);
+    this.headlessIdleClose.schedule(tabId);
   }
 
   touchTab(tabId: string): void {
-    const tab = this.tabById(tabId);
-    if (!tab?.headless) return;
-    tab.lastUsedAt = Date.now();
-    if (typeof tab.closeAfterIdleMs === 'number') {
-      tab.expiresAt = tab.lastUsedAt + tab.closeAfterIdleMs;
-      this.scheduleHeadlessIdleClose(tabId);
-    }
+    this.headlessIdleClose.touch(tabId);
   }
 
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
@@ -791,14 +699,7 @@ export class TabViewManager {
       params: unknown,
       sessionId: string,
     ) => {
-      const subIds = this.debuggerSubscriptionsByTab.get(tabId);
-      if (!subIds || subIds.size === 0) return;
-      for (const subId of subIds) {
-        const sub = this.debuggerSubscriptions.get(subId);
-        if (!sub || sub.closed) continue;
-        if (!sub.events.has('*') && !sub.events.has(method)) continue;
-        this.pushDebuggerEvent(sub, { method, params, sessionId: sessionId || undefined });
-      }
+      this.debuggerSubscriptions.pushEvent(tabId, { method, params, sessionId: sessionId || undefined });
     };
 
     const detachHandler = (_event: Electron.Event, reason: string) => {
@@ -840,40 +741,8 @@ export class TabViewManager {
       });
   }
 
-  private pushDebuggerEvent(sub: DebuggerSubscription, evt: BufferedDebuggerEvent): void {
-    if (sub.buffer.length >= DEBUGGER_BUFFER_MAX) {
-      sub.buffer.shift();
-      sub.dropped++;
-    }
-    sub.buffer.push(evt);
-    this.wakeDebuggerPoller(sub);
-  }
-
-  private wakeDebuggerPoller(sub: DebuggerSubscription): void {
-    const w = sub.waiter;
-    if (!w) return;
-    sub.waiter = null;
-    if (w.timer) clearTimeout(w.timer);
-    w.resolve();
-  }
-
-  private closeDebuggerSubscription(sub: DebuggerSubscription): void {
-    if (sub.closed) return;
-    sub.closed = true;
-    this.wakeDebuggerPoller(sub);
-  }
-
   private cleanupDebuggerForTab(tabId: string): void {
-    const subIds = this.debuggerSubscriptionsByTab.get(tabId);
-    if (subIds) {
-      for (const subId of subIds) {
-        const sub = this.debuggerSubscriptions.get(subId);
-        if (sub) this.closeDebuggerSubscription(sub);
-      }
-      // Subscriptions stay in the map so pending pollers can drain remaining
-      // buffered events; freed by the final poll once they see closed=true.
-      this.debuggerSubscriptionsByTab.delete(tabId);
-    }
+    this.debuggerSubscriptions.closePage(tabId);
 
     const attachment = this.debuggerAttachments.get(tabId);
     if (!attachment) return;
@@ -922,81 +791,26 @@ export class TabViewManager {
     const state = this.resolveTabViewState(request.tabId);
     this.ensureDebuggerAttached(state);
 
-    const sub: DebuggerSubscription = {
+    this.debuggerSubscriptions.subscribe({
       subscriptionId: request.subscriptionId,
-      tabId: request.tabId,
-      events: new Set(request.events),
-      buffer: [],
-      dropped: 0,
-      closed: false,
-      waiter: null,
-    };
-    this.debuggerSubscriptions.set(request.subscriptionId, sub);
-
-    let subIds = this.debuggerSubscriptionsByTab.get(request.tabId);
-    if (!subIds) {
-      subIds = new Set();
-      this.debuggerSubscriptionsByTab.set(request.tabId, subIds);
-    }
-    subIds.add(request.subscriptionId);
+      pageId: request.tabId,
+      events: request.events,
+    });
   }
 
   async tabDebuggerPollById(request: {
     subscriptionId: string;
     maxBatch?: number;
     maxWaitMs?: number;
-  }): Promise<{ events: BufferedDebuggerEvent[]; dropped: number; closed: boolean }> {
-    const sub = this.debuggerSubscriptions.get(request.subscriptionId);
-    if (!sub) {
-      throw new Error(`Unknown debugger subscription "${request.subscriptionId}"`);
-    }
-    const maxBatch = Math.max(1, Math.min(1000, request.maxBatch ?? 100));
-    const maxWaitMs = Math.max(0, Math.min(DEBUGGER_POLL_MAX_WAIT_MS, request.maxWaitMs ?? 30_000));
-
-    if (sub.buffer.length === 0 && !sub.closed && maxWaitMs > 0) {
-      if (sub.waiter) {
-        throw new Error(`Concurrent poll on debugger subscription "${request.subscriptionId}" is not supported`);
-      }
-      await new Promise<void>((resolve) => {
-        const waiter: DebuggerPollWaiter = { resolve, timer: undefined };
-        sub.waiter = waiter;
-        waiter.timer = setTimeout(() => {
-          if (sub.waiter === waiter) {
-            sub.waiter = null;
-            resolve();
-          }
-        }, maxWaitMs);
-      });
-    }
-
-    const events = sub.buffer.splice(0, maxBatch);
-    const dropped = sub.dropped;
-    sub.dropped = 0;
-    const closed = sub.closed && sub.buffer.length === 0;
-
-    // Free fully-drained closed subscriptions so the id can't be polled again.
-    if (closed) {
-      this.debuggerSubscriptions.delete(request.subscriptionId);
-    }
-
-    return { events, dropped, closed };
+  }): Promise<{ events: Array<{ method: string; params: unknown; sessionId?: string }>; dropped: number; closed: boolean }> {
+    return this.debuggerSubscriptions.poll(request.subscriptionId, {
+      maxBatch: request.maxBatch,
+      maxWaitMs: request.maxWaitMs,
+    });
   }
 
   tabDebuggerUnsubscribeById(subscriptionId: string): void {
-    const sub = this.debuggerSubscriptions.get(subscriptionId);
-    if (!sub) return;
-    this.closeDebuggerSubscription(sub);
-    // Drop from the per-tab index so a later attach doesn't revive it.
-    const subIds = this.debuggerSubscriptionsByTab.get(sub.tabId);
-    if (subIds) {
-      subIds.delete(subscriptionId);
-      if (subIds.size === 0) {
-        this.debuggerSubscriptionsByTab.delete(sub.tabId);
-      }
-    }
-    if (!sub.waiter) {
-      this.debuggerSubscriptions.delete(subscriptionId);
-    }
+    this.debuggerSubscriptions.closeSubscription(subscriptionId);
   }
 
   tabDebuggerDetachById(tabId: string): void {
@@ -1101,7 +915,7 @@ export class TabViewManager {
           wc.removeListener('destroyed', done);
           resolve();
         };
-        const timer = setTimeout(done, VIEW_EXEC_MAX_TIMEOUT_MS);
+        const timer = setTimeout(done, PAGE_JS_MAX_TIMEOUT_MS);
         wc.once('did-stop-loading', done);
         wc.once('destroyed', done);
       });
@@ -1396,17 +1210,15 @@ export class TabViewManager {
   }): Promise<unknown> {
     const state = await this.resolveReadyTabViewState(request.tabId);
     if (typeof request.code !== 'string') {
-      throw new Error('execTabJs requires code as a string');
+      throw new Error('runPageJs requires code as a string');
     }
-
-    const { timeoutMs: requestedTimeout, wasDefault } = resolveTimeout(request.timeoutMs, VIEW_EXEC_DEFAULT_TIMEOUT_MS);
-    const timeoutMs = Math.max(1, Math.min(requestedTimeout, VIEW_EXEC_MAX_TIMEOUT_MS));
 
     // Syntax-probe in the main process, then send a fully expanded async
     // function to the tab. Creating Function/AsyncFunction inside the page is
     // blocked by strict CSPs such as TradingView's script-src without unsafe-eval.
-    const wrappedCode = buildTabExecutionCode(request.code);
-    return withTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs, wasDefault);
+    const { timeoutMs, wasDefault } = resolvePageJsTimeout(request.timeoutMs);
+    const wrappedCode = buildPageExecutionCode(request.code);
+    return withPageJsTimeout(state.view.webContents.executeJavaScript(wrappedCode, true), timeoutMs, wasDefault);
   }
 
   async sendInputById(request: {
@@ -1423,59 +1235,60 @@ export class TabViewManager {
   }): Promise<void> {
     const state = await this.resolveReadyTabViewState(request.tabId);
     const wc = state.view.webContents;
+    const input = normalizePageInput(request);
 
-    const type = INPUT_TYPE_ALIASES[request.type] ?? request.type;
-    const modifiers = (request.modifiers || []).filter(m => VALID_MODIFIERS.has(m)) as
-      Array<'shift' | 'control' | 'alt' | 'meta'>;
-    const x = Math.round(request.x ?? 0);
-    const y = Math.round(request.y ?? 0);
-    const button = VALID_BUTTONS.has(request.button ?? '') ? request.button as 'left' | 'middle' | 'right' : undefined;
-
-    if (type === 'click') {
-      const clickCount = Math.max(1, Math.floor(request.clickCount ?? 1));
-      wc.sendInputEvent({ type: 'mouseDown', x, y, button: button ?? 'left', clickCount, modifiers });
-      wc.sendInputEvent({ type: 'mouseUp', x, y, button: button ?? 'left', clickCount, modifiers });
+    if (input.type === 'click') {
+      wc.sendInputEvent({
+        type: 'mouseDown',
+        x: input.x,
+        y: input.y,
+        button: input.button ?? 'left',
+        clickCount: input.clickCount,
+        modifiers: input.modifiers,
+      });
+      wc.sendInputEvent({
+        type: 'mouseUp',
+        x: input.x,
+        y: input.y,
+        button: input.button ?? 'left',
+        clickCount: input.clickCount,
+        modifiers: input.modifiers,
+      });
       return;
     }
 
-    if (type === 'mouseWheel') {
+    if (input.type === 'mouseWheel') {
       wc.sendInputEvent({
         type: 'mouseWheel',
-        x,
-        y,
-        deltaX: request.deltaX ?? 0,
-        deltaY: request.deltaY ?? 0,
-        modifiers,
+        x: input.x,
+        y: input.y,
+        deltaX: input.deltaX,
+        deltaY: input.deltaY,
+        modifiers: input.modifiers,
       });
       return;
     }
 
-    if (MOUSE_EVENT_TYPES.has(type)) {
+    if (PAGE_MOUSE_EVENT_TYPES.has(input.type)) {
       wc.sendInputEvent({
-        type: type as 'mouseDown' | 'mouseUp' | 'mouseMove',
-        x,
-        y,
-        button,
-        clickCount: type === 'mouseDown' ? Math.max(1, Math.floor(request.clickCount ?? 1)) : undefined,
-        modifiers,
+        type: input.type as 'mouseDown' | 'mouseUp' | 'mouseMove',
+        x: input.x,
+        y: input.y,
+        button: input.button,
+        clickCount: input.type === 'mouseDown' ? input.clickCount : undefined,
+        modifiers: input.modifiers,
       });
       return;
     }
 
-    if (KEY_EVENT_TYPES.has(type)) {
-      if (typeof request.keyCode !== 'string' || !request.keyCode) {
-        throw new Error('keyCode is required for keyboard input events');
-      }
+    if (PAGE_KEY_EVENT_TYPES.has(input.type)) {
       wc.sendInputEvent({
-        type: type as 'keyDown' | 'keyUp' | 'char',
-        keyCode: request.keyCode,
-        modifiers,
+        type: input.type as 'keyDown' | 'keyUp' | 'char',
+        keyCode: input.keyCode!,
+        modifiers: input.modifiers,
       });
       return;
     }
-
-    const supported = ['click', ...MOUSE_EVENT_TYPES, 'mouseWheel', ...KEY_EVENT_TYPES];
-    throw new Error(`Unknown input event type: ${type}. Supported types: ${supported.join(', ')}`);
   }
 
   async inspectElementById(request: {
