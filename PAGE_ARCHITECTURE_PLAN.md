@@ -1602,6 +1602,40 @@ Goal: reduce duplication before replacing concrete backends.
 
 ### Phase 4: Split Desktop TabViewManager
 
+Status as of 2026-05-31: **implemented and build-verified**.
+
+Implemented in:
+
+- `desktop/page/desktop-page-types.ts`
+- `desktop/page/desktop-page-layout.ts`
+- `desktop/page/desktop-page-debugger.ts`
+- `desktop/page/desktop-tab-presenter.ts`
+- `desktop/page/desktop-page-host.ts`
+- `desktop/page/electron-headless-page-host.ts`
+- `desktop/tab-view-manager.ts`
+
+Notes:
+
+- `TabViewManager` remains the compatibility facade for existing desktop IPC,
+  shortcuts, command palette calls, and transitional `TabApi` wiring.
+- Layout responsibilities are isolated in `DesktopPageLayout`, including
+  bounds sync, z-ordering, overlay preservation, active-agent collapse,
+  zen-mode/window-hidden collapse, selected bounds tracking, and off-screen
+  headless/capture placement constants.
+- CDP attach/send/subscribe/poll/detach behavior is isolated in
+  `DesktopPageDebugger`, backed by the shared `PageCdpSubscriptionManager`.
+- Tab presenter state is isolated in `DesktopTabPresenter`, including selected
+  tab state, pin/reorder state, changed indicators, keyboard tab switching, and
+  renderer state pushes.
+- `DesktopPageHost` and `ElectronHeadlessPageHost` define the desktop page host
+  boundary for Phase 5 while preserving the existing tab-backed behavior.
+- `openTabHandler` now accepts an optional internal `tabId` so page hosts can
+  honor a `PageManager`-generated page ID in the next wiring phase.
+
+Verification performed:
+
+- `./scripts/build-desktop`
+
 Split `desktop/tab-view-manager.ts` into:
 
 - `DesktopPageHost`

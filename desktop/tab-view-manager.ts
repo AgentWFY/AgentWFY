@@ -1,4 +1,4 @@
-import { BaseWindow, BrowserWindow, Menu, nativeTheme, View, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
+import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/protocol/view-document.js';
@@ -15,7 +15,6 @@ import {
   type Viewport,
   type ViewportInput,
 } from '#shared/runtime/hosts.js';
-import { PageCdpSubscriptionManager } from '#shared/page/cdp-subscription-manager.js';
 import { IdleCloseScheduler } from '#shared/page/idle-close.js';
 import {
   PAGE_JS_MAX_TIMEOUT_MS,
@@ -28,78 +27,35 @@ import {
   PAGE_MOUSE_EVENT_TYPES,
   normalizePageInput,
 } from '#shared/page/page-input.js';
-export type { TabData, TabDataType } from '#shared/runtime/hosts.js';
+import {
+  CAPTURE_OFFSCREEN_OFFSET,
+  FALLBACK_VIEW_HEIGHT,
+  FALLBACK_VIEW_WIDTH,
+  DesktopPageLayout,
+} from './page/desktop-page-layout.js';
+import { DesktopPageDebugger } from './page/desktop-page-debugger.js';
+import { DesktopTabPresenter } from './page/desktop-tab-presenter.js';
+import type {
+  TabContextMenuAction,
+  TabContextMenuPayload,
+  TabState,
+  TabType,
+  TabViewBoundsPayload,
+  TabViewSetBoundsPayload,
+  TabViewState,
+  ViewRuntimeEntry,
+} from './page/desktop-page-types.js';
+export type {
+  TabContextMenuAction,
+  TabData,
+  TabDataType,
+  TabState,
+  TabViewEvent,
+} from './page/desktop-page-types.js';
 
 // --- Types & Constants ---
 
-export interface TabState {
-  tabs: TabData[]
-  selectedTabId: string | null
-}
-
-export interface TabViewEvent {
-  tabId: string
-  type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load'
-  errorCode?: number
-  errorDescription?: string
-}
-
-interface ViewConsoleLogEntry {
-  level: string
-  message: string
-  timestamp: number
-}
-
-interface ViewRuntimeEntry {
-  webContentsId: number
-  webContents: WebContents
-  viewName: string
-  tabId: string | null
-  ownerWindowId: number | null
-  lastNavigationAt: number
-  lastFocusedAt: number
-  logs: ViewConsoleLogEntry[]
-}
-
-interface TabViewState {
-  tabId: string
-  viewName: string
-  view: WebContentsView
-  logs: ViewConsoleLogEntry[]
-}
-
-type TabType = TabDataType
-
-interface TabViewBoundsPayload {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-interface TabViewSetBoundsPayload {
-  tabId: string
-  bounds: TabViewBoundsPayload
-  visible: boolean
-}
-
-
-interface TabContextMenuPayload {
-  x: number
-  y: number
-  tabId?: string
-}
-
-type TabContextMenuAction = 'toggle-pin' | 'reload' | 'toggle-devtools' | null;
-
 const VIEW_LOG_BUFFER_MAX = 1000;
-const FALLBACK_VIEW_WIDTH = 1280;
-const FALLBACK_VIEW_HEIGHT = 720;
-const ZERO_BOUNDS: Rectangle = { x: 0, y: 0, width: 0, height: 0 };
-// Far-negative origin for capturePage's forced paint. Any realistic desktop
-// window fits inside a 30k pixel half-plane around the origin, so painting
-// at this coordinate is guaranteed off-screen.
-const CAPTURE_OFFSCREEN_OFFSET = -30000;
 const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
   info: 'info',
@@ -187,38 +143,34 @@ interface TabViewManagerDeps {
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
 }
 
-interface DebuggerAttachment {
-  messageHandler: (event: Electron.Event, method: string, params: unknown, sessionId: string) => void;
-  detachHandler: (event: Electron.Event, reason: string) => void;
-}
-
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
   private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
-  private readonly debuggerAttachments = new Map<string, DebuggerAttachment>();
-  private readonly debuggerSubscriptions = new PageCdpSubscriptionManager();
+  private readonly presenter: DesktopTabPresenter;
+  private readonly layout: DesktopPageLayout;
+  private readonly pageDebugger: DesktopPageDebugger;
   private readonly headlessIdleClose: IdleCloseScheduler<TabData>;
   private readonly deps: TabViewManagerDeps;
-  private tabs: TabData[] = [];
-  private selectedTabId: string | null = null;
-  private selectedBounds: Rectangle | null = null;
-  // True while setAllTabsCollapsed has forced every view to 0x0 (zen mode,
-  // app hidden). Placement paths (bringToFront, applyTabViewPlacement)
-  // must be no-ops while this is set, or a keyboard shortcut or agent
-  // switch would re-expand the selected tab on top of the zen-mode UI
-  // with no way for the renderer to undo it (the ancestor display:none
-  // suppresses ResizeObserver).
-  private collapsed = false;
-  // True only for the agent currently shown in the window. All WebContentsViews
-  // — active and inactive — share mainWindow.contentView.children, so an
-  // inactive manager must keep its views at 0x0 bounds (setVisible stays true
-  // for captureTab). Otherwise a just-closed active tab unmasks an inactive
-  // agent's view underneath, or a background openTab pops on top of the
-  // active agent.
-  private isActive = false;
 
   constructor(deps: TabViewManagerDeps) {
     this.deps = deps;
+    this.presenter = new DesktopTabPresenter({
+      onStateChanged: (state) => {
+        this.deps.sendToRenderer(Channels.tabs.stateChanged, state);
+      },
+    });
+    this.layout = new DesktopPageLayout({
+      getMainWindow: this.deps.getMainWindow,
+      getOverlayViews: this.deps.getOverlayViews,
+      getSelectedTabId: () => this.presenter.getSelectedTabId(),
+      getTabById: (tabId) => this.tabById(tabId),
+      getTabViewState: (tabId) => this.tabViewsByTabId.get(tabId),
+      listTabViewStates: () => this.tabViewsByTabId.values(),
+    });
+    this.pageDebugger = new DesktopPageDebugger({
+      resolveTabViewState: (tabId) => this.resolveTabViewState(tabId),
+      resolveReadyTabViewState: (tabId) => this.resolveReadyTabViewState(tabId),
+    });
     this.headlessIdleClose = new IdleCloseScheduler<TabData>({
       getEntry: (tabId) => {
         const tab = this.tabById(tabId);
@@ -236,18 +188,15 @@ export class TabViewManager {
   }
 
   private pushStateToRenderer(): void {
-    this.deps.sendToRenderer(Channels.tabs.stateChanged, {
-      tabs: this.tabs,
-      selectedTabId: this.selectedTabId,
-    });
+    this.presenter.pushState();
   }
 
   getState(): TabState {
-    return { tabs: this.tabs, selectedTabId: this.selectedTabId };
+    return this.presenter.getState();
   }
 
   getTabData(tabId: string): TabData | null {
-    return this.tabs.find(tab => tab.id === tabId) ?? null;
+    return this.presenter.getTabData(tabId);
   }
 
   // Diagnostic snapshot of main-process tab state — per-tab bounds and
@@ -266,22 +215,7 @@ export class TabViewManager {
       isSelected: boolean;
     }>;
   } {
-    const mainWindow = this.deps.getMainWindow();
-    const children = mainWindow && !mainWindow.isDestroyed() ? mainWindow.contentView.children : [];
-    const tabs = Array.from(this.tabViewsByTabId.values()).map((state) => ({
-      tabId: state.tabId,
-      viewName: state.viewName,
-      bounds: state.view.getBounds(),
-      zIndex: children.indexOf(state.view),
-      visible: state.view.getVisible(),
-      isSelected: state.tabId === this.selectedTabId,
-    }));
-    return {
-      selectedTabId: this.selectedTabId,
-      selectedBounds: this.selectedBounds,
-      totalChildren: children.length,
-      tabs,
-    };
+    return this.layout.describeState();
   }
 
   // --- Tab lifecycle ---
@@ -422,175 +356,16 @@ export class TabViewManager {
     return this.createTabViewState(tabId, viewName, options);
   }
 
-  private attachTabViewToWindow(state: TabViewState): void {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-
-    if (mainWindow.contentView.children.includes(state.view)) {
-      return;
-    }
-
-    try {
-      mainWindow.contentView.addChildView(state.view);
-    } catch {
-      // defensive: Electron may still consider it a child
-    }
-  }
-
-  private bringToFront(state: TabViewState): void {
-    const mainWindow = this.deps.getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-
-    // While collapsed, only setAllTabsCollapsed(false) may restore bounds —
-    // agent switches and tab-nav shortcuts must not un-collapse zen mode.
-    // Inactive agents likewise stay at 0x0 until activateViews runs.
-    if (this.collapsed || !this.isActive) {
-      return;
-    }
-
-    // Always restore full bounds + visibility — the promoted tab may have
-    // been a background tab collapsed to 0x0, and we must reverse that
-    // before the compositor paints the next frame.
-    state.view.setBounds(this.selectedBounds ?? this.defaultContentBounds());
-    state.view.setVisible(true);
-
-    const children = mainWindow.contentView.children;
-    const currentIndex = children.indexOf(state.view);
-    if (currentIndex < 0) return;
-
-    const overlayViews = this.deps.getOverlayViews?.() ?? [];
-    const overlaySet = new Set<View>(overlayViews);
-
-    // Skip the reorder when the tab already sits at the top of the
-    // non-overlays — addChildView on an attached child tears down and
-    // rebuilds its RenderWidgetHostView, briefly blanking the renderer
-    // surface. This early-return keeps ResizeObserver-driven bounds
-    // updates (header height transitions, sidebar toggles, …) from
-    // ping-ponging the tab every animation frame.
-    const aboveTab = children.slice(currentIndex + 1);
-    if (aboveTab.every(c => overlaySet.has(c))) return;
-
-    // addChildView on an attached child appends a duplicate. Explicit
-    // remove + re-add is the only API that actually moves a child to
-    // the top. Re-add the tab first, then each overlay in its current
-    // relative order so overlays end up above the tab.
-    const overlaysOrdered = children.filter(c => overlaySet.has(c));
-    try {
-      mainWindow.contentView.removeChildView(state.view);
-      mainWindow.contentView.addChildView(state.view);
-      for (const overlay of overlaysOrdered) {
-        mainWindow.contentView.removeChildView(overlay);
-        mainWindow.contentView.addChildView(overlay);
-      }
-    } catch {
-      // defensive: a view may have been detached concurrently
-    }
-  }
-
-  // All tab views stay setVisible(true) — across tabs and across agents.
-  // captureTab needs a live compositor surface (capturePage fails with
-  // "Current display surface not available" on setVisible(false) views).
-  // Stacking is pure z-order: the selected tab sits on top and its opaque
-  // WebContentsView background occludes the tabs behind it.
   private applyTabViewPlacement(state: TabViewState, bounds: Rectangle, visible: boolean): void {
-    this.attachTabViewToWindow(state);
-
-    const tab = this.tabById(state.tabId);
-    if (tab?.headless) {
-      state.view.setBounds(this.headlessBounds(tab));
-      state.view.setVisible(true);
-      return;
-    }
-
-    // Inactive agents keep every view at 0x0 regardless of what the renderer
-    // or openTab requested, while staying setVisible(true) from creation so
-    // captureTab's capturePage retains a live compositor surface for
-    // background sessions.
-    if (!this.isActive) {
-      state.view.setBounds(ZERO_BOUNDS);
-      return;
-    }
-
-    if (visible) {
-      // While collapsed, only setAllTabsCollapsed(false) may restore bounds.
-      // bringToFront already bails for the same reason; the early-return
-      // here additionally prevents the propagation loop below from
-      // re-expanding background tabs.
-      if (this.collapsed) {
-        return;
-      }
-      const changed =
-        !this.selectedBounds ||
-        this.selectedBounds.x !== bounds.x ||
-        this.selectedBounds.y !== bounds.y ||
-        this.selectedBounds.width !== bounds.width ||
-        this.selectedBounds.height !== bounds.height;
-      if (changed) {
-        this.selectedBounds = bounds;
-        // Propagate to every background tab so the selected tab on top
-        // occludes them exactly — otherwise sidebar/header would leak.
-        for (const other of this.tabViewsByTabId.values()) {
-          if (other !== state) other.view.setBounds(bounds);
-        }
-      }
-      this.bringToFront(state);
-    } else {
-      // Honor the renderer's bounds for not-visible tabs. Display:none
-      // panels report 0x0 — the view shrinks to nothing while staying
-      // setVisible(true) so captureTab's capturePage still has a live
-      // compositor surface.
-      state.view.setBounds(bounds);
-      state.view.setVisible(true);
-
-      if (state.tabId === this.selectedTabId) {
-        // The *selected* tab reporting not-visible means the whole tab
-        // area is collapsed (zen mode, app hidden). The renderer only
-        // fires bounds events for panels whose style changed; the other
-        // panels were already display:none and stay that way, so we
-        // won't get a per-tab event for them. Collapse every other tab
-        // to 0x0 proactively so nothing leaks through.
-        for (const other of this.tabViewsByTabId.values()) {
-          if (other !== state) {
-            other.view.setBounds(ZERO_BOUNDS);
-          }
-        }
-      } else {
-        // A freshly-attached background tab lands at the end of
-        // children — topmost in z-order — and would occlude the
-        // selected tab until the renderer reports 0x0 bounds for it.
-        // Re-assert the selected tab's top-of-stack position.
-        const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
-        if (selected) {
-          this.bringToFront(selected);
-        }
-      }
-    }
+    this.layout.applyTabViewPlacement(state, bounds, visible);
   }
 
   private defaultContentBounds(): Rectangle {
-    const mainWindow = this.deps.getMainWindow();
-    const [w, h] = mainWindow && !mainWindow.isDestroyed()
-      ? mainWindow.getContentSize()
-      : [FALLBACK_VIEW_WIDTH, FALLBACK_VIEW_HEIGHT];
-    return { x: 0, y: 0, width: w, height: h };
-  }
-
-  private headlessBounds(tab: TabData): Rectangle {
-    const viewport = tab.viewport ?? { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
-    return {
-      x: CAPTURE_OFFSCREEN_OFFSET,
-      y: CAPTURE_OFFSCREEN_OFFSET,
-      width: viewport.width,
-      height: viewport.height,
-    };
+    return this.layout.defaultContentBounds();
   }
 
   private tabById(tabId: string): TabData | undefined {
-    return this.tabs.find(t => t.id === tabId);
+    return this.presenter.tabById(tabId);
   }
 
   private clearHeadlessIdleTimer(tabId: string): void {
@@ -674,95 +449,17 @@ export class TabViewManager {
     for (const tabId of tabIds) {
       this.destroyTabView(tabId);
     }
-    this.tabs = [];
-    this.selectedTabId = null;
+    this.presenter.clear();
   }
 
   // --- Debugger (Chrome DevTools Protocol) ---
 
-  private ensureDebuggerAttached(state: TabViewState): void {
-    const tabId = state.tabId;
-    if (this.debuggerAttachments.has(tabId)) {
-      return;
-    }
-
-    const dbg = state.view.webContents.debugger;
-    if (!dbg.isAttached()) {
-      // Throws if another client (DevTools, another caller) is attached.
-      // Surface the original error so the agent sees the real reason.
-      dbg.attach('1.3');
-    }
-
-    const messageHandler = (
-      _event: Electron.Event,
-      method: string,
-      params: unknown,
-      sessionId: string,
-    ) => {
-      this.debuggerSubscriptions.pushEvent(tabId, { method, params, sessionId: sessionId || undefined });
-    };
-
-    const detachHandler = (_event: Electron.Event, reason: string) => {
-      // External detach (DevTools opened, target crashed) — clean up so the
-      // next send/subscribe re-attaches and so pollers wake and exit.
-      console.warn(`[TabViewManager] debugger detached from tab "${tabId}": ${reason}`);
-      this.cleanupDebuggerForTab(tabId);
-    };
-
-    dbg.on('message', messageHandler);
-    dbg.on('detach', detachHandler);
-
-    this.debuggerAttachments.set(tabId, { messageHandler, detachHandler });
-  }
-
-  // Headless WebContentsViews are parked fully off-screen, where Chromium
-  // clips them to zero visible area — the renderer then allocates a 0x0 widget
-  // and the page reports innerWidth/innerHeight of 0. Forcing a device-metrics
-  // override (the same mechanism the remote headless-Chrome host uses) decouples
-  // the emulated viewport from the on-screen widget size so layout reflects the
-  // requested viewport. Persists across navigations while the debugger stays
-  // attached.
   private applyHeadlessViewport(state: TabViewState, viewport: Viewport): void {
-    try {
-      this.ensureDebuggerAttached(state);
-    } catch (err) {
-      console.warn(`[tabs] could not attach debugger to set headless viewport on "${state.tabId}":`, err);
-      return;
-    }
-    state.view.webContents.debugger
-      .sendCommand('Emulation.setDeviceMetricsOverride', {
-        width: viewport.width,
-        height: viewport.height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      })
-      .catch((err: unknown) => {
-        console.warn(`[tabs] setDeviceMetricsOverride failed for headless tab "${state.tabId}":`, err);
-      });
+    this.pageDebugger.applyHeadlessViewport(state, viewport);
   }
 
   private cleanupDebuggerForTab(tabId: string): void {
-    this.debuggerSubscriptions.closePage(tabId);
-
-    const attachment = this.debuggerAttachments.get(tabId);
-    if (!attachment) return;
-    this.debuggerAttachments.delete(tabId);
-
-    const state = this.tabViewsByTabId.get(tabId);
-    if (!state) return;
-    const wc = state.view.webContents;
-    if (wc.isDestroyed()) return;
-
-    const dbg = wc.debugger;
-    dbg.removeListener('message', attachment.messageHandler);
-    dbg.removeListener('detach', attachment.detachHandler);
-    if (dbg.isAttached()) {
-      try {
-        dbg.detach();
-      } catch (err) {
-        console.warn(`[TabViewManager] debugger.detach failed for tab "${tabId}"`, err);
-      }
-    }
+    this.pageDebugger.cleanupForTab(tabId);
   }
 
   async tabDebuggerSendById(request: {
@@ -771,16 +468,7 @@ export class TabViewManager {
     params?: unknown;
     sessionId?: string;
   }): Promise<unknown> {
-    const state = await this.resolveReadyTabViewState(request.tabId);
-    this.ensureDebuggerAttached(state);
-    const dbg = state.view.webContents.debugger;
-    // Electron typings declare params as object; CDP commands without params
-    // accept undefined at runtime.
-    const params = (request.params ?? {}) as Record<string, unknown>;
-    if (request.sessionId) {
-      return dbg.sendCommand(request.method, params, request.sessionId);
-    }
-    return dbg.sendCommand(request.method, params);
+    return this.pageDebugger.send(request);
   }
 
   tabDebuggerSubscribeById(request: {
@@ -788,14 +476,7 @@ export class TabViewManager {
     subscriptionId: string;
     events: string[];
   }): void {
-    const state = this.resolveTabViewState(request.tabId);
-    this.ensureDebuggerAttached(state);
-
-    this.debuggerSubscriptions.subscribe({
-      subscriptionId: request.subscriptionId,
-      pageId: request.tabId,
-      events: request.events,
-    });
+    this.pageDebugger.subscribe(request);
   }
 
   async tabDebuggerPollById(request: {
@@ -803,27 +484,20 @@ export class TabViewManager {
     maxBatch?: number;
     maxWaitMs?: number;
   }): Promise<{ events: Array<{ method: string; params: unknown; sessionId?: string }>; dropped: number; closed: boolean }> {
-    return this.debuggerSubscriptions.poll(request.subscriptionId, {
-      maxBatch: request.maxBatch,
-      maxWaitMs: request.maxWaitMs,
-    });
+    return this.pageDebugger.poll(request);
   }
 
   tabDebuggerUnsubscribeById(subscriptionId: string): void {
-    this.debuggerSubscriptions.closeSubscription(subscriptionId);
+    this.pageDebugger.unsubscribe(subscriptionId);
   }
 
   tabDebuggerDetachById(tabId: string): void {
-    this.cleanupDebuggerForTab(tabId);
+    this.pageDebugger.detach(tabId);
   }
 
   // Brings this agent's selected tab above other agents' views on a switch.
   activateViews(): void {
-    this.isActive = true;
-    const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
-    if (selected) {
-      this.bringToFront(selected);
-    }
+    this.layout.activateViews();
     this.pushStateToRenderer();
   }
 
@@ -832,15 +506,7 @@ export class TabViewManager {
   // tab on top (e.g. user just closed the last tab). Views stay attached
   // and setVisible(true) so captureTab keeps working for background sessions.
   deactivateViews(): void {
-    this.isActive = false;
-    this.zeroAllViewBounds();
-  }
-
-  private zeroAllViewBounds(): void {
-    for (const [tabId, state] of this.tabViewsByTabId) {
-      const tab = this.tabById(tabId);
-      state.view.setBounds(tab?.headless ? this.headlessBounds(tab) : ZERO_BOUNDS);
-    }
+    this.layout.deactivateViews();
   }
 
   // Directly shrink/restore every tab view in response to main-process
@@ -849,23 +515,7 @@ export class TabViewManager {
   // removes the tab area from the box tree by an ancestor display:none,
   // which per spec doesn't fire ResizeObserver.
   setAllTabsCollapsed(collapsed: boolean): void {
-    this.collapsed = collapsed;
-    if (collapsed) {
-      this.zeroAllViewBounds();
-    } else if (this.isActive && this.selectedBounds) {
-      // Only the active agent's views should re-expand on zen exit; inactive
-      // agents must stay at 0x0 or they'd unmask underneath the active agent.
-      for (const [tabId, state] of this.tabViewsByTabId) {
-        const tab = this.tabById(tabId);
-        if (tab?.headless) {
-          state.view.setBounds(this.headlessBounds(tab));
-        } else {
-          state.view.setBounds(this.selectedBounds);
-        }
-      }
-      const selected = this.selectedTabId ? this.tabViewsByTabId.get(this.selectedTabId) : undefined;
-      if (selected) this.bringToFront(selected);
-    }
+    this.layout.setAllTabsCollapsed(collapsed);
   }
 
   reloadTabView(tabId: string): void {
@@ -935,33 +585,15 @@ export class TabViewManager {
   // --- Tab handlers ---
 
   async getTabsHandler(): Promise<TabData[]> {
-    return this.tabs.map((tab) => ({
-      id: tab.id,
-      tabId: tab.id,
-      title: tab.title || '',
-      type: tab.type || 'view',
-      target: tab.target ?? null,
-      headless: Boolean(tab.headless),
-      viewport: tab.headless ? tab.viewport : null,
-      viewUpdatedAt: tab.viewUpdatedAt ?? null,
-      viewChanged: Boolean(tab.viewChanged),
-      pinned: Boolean(tab.pinned),
-      selected: tab.id === this.selectedTabId,
-      params: tab.params || null,
-      openedAt: tab.openedAt,
-      lastUsedAt: tab.lastUsedAt,
-      closeAfterIdleMs: tab.closeAfterIdleMs ?? null,
-      expiresAt: tab.expiresAt ?? null,
-    }));
+    return this.presenter.listTabsForRuntime();
   }
 
   async getCurrentTabHandler(): Promise<TabData | null> {
-    if (!this.selectedTabId) return null;
-    const tabs = await this.getTabsHandler();
-    return tabs.find(tab => tab.id === this.selectedTabId && !tab.headless) ?? null;
+    return this.presenter.currentTabForRuntime();
   }
 
   async openTabHandler(request: {
+    tabId?: string;
     viewName?: string;
     filePath?: string;
     url?: string;
@@ -1006,7 +638,7 @@ export class TabViewManager {
       target = request.viewName!;
     }
 
-    const tabId = this.generateTabId();
+    const tabId = request.tabId ?? this.generateTabId();
     const isHeadless = Boolean(request.headless);
     const viewport = isHeadless ? resolveViewport(normalizeViewportInput(request)) : null;
     const now = Date.now();
@@ -1030,10 +662,7 @@ export class TabViewManager {
       closeAfterIdleMs,
       expiresAt,
     };
-    this.tabs = [...this.tabs, tab];
-    if (!isHeadless) {
-      this.selectedTabId = tabId;
-    }
+    this.presenter.addTab(tab, { select: !isHeadless });
 
     // Create the WebContentsView and start loading immediately instead of
     // waiting for a renderer round-trip (which is gated by requestAnimationFrame
@@ -1043,7 +672,7 @@ export class TabViewManager {
     // here would fully occlude the renderer's WebContentsView, and Windows
     // Chromium pauses RAF for occluded contents — the renderer would then
     // never run scheduleBoundsSync to report the correct rect.
-    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), !isHeadless);
+    this.applyTabViewPlacement(state, this.layout.getSelectedBounds() ?? this.defaultContentBounds(), !isHeadless);
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {
@@ -1062,18 +691,13 @@ export class TabViewManager {
   }
 
   async closeTabHandler(request: { tabId: string }): Promise<void> {
-    const tab = this.tabs.find(t => t.id === request.tabId);
-    if (!tab || tab.pinned) return;
+    const result = this.presenter.closeTab(request.tabId);
+    if (!result.closed) return;
 
-    const wasSelected = this.selectedTabId === request.tabId;
     this.clearHeadlessIdleTimer(request.tabId);
-    this.tabs = this.tabs.filter(t => t.id !== request.tabId);
     this.destroyTabView(request.tabId);
 
-    if (wasSelected) {
-      const visible = this.tabs.filter(t => !t.headless);
-      const last = visible[visible.length - 1];
-      this.selectedTabId = last?.id || null;
+    if (result.wasSelected) {
       // Promote the new selection to the top of z-order with full bounds.
       // Background tabs sit at 0x0 bounds after the renderer reports them
       // not-visible, so without this the tab that was 2nd-from-top (also
@@ -1086,10 +710,7 @@ export class TabViewManager {
   }
 
   async selectTabHandler(request: { tabId: string }): Promise<void> {
-    const tab = this.tabs.find(t => t.id === request.tabId);
-    if (!tab) return;
-    if (this.selectedTabId === request.tabId) return;
-    this.selectedTabId = request.tabId;
+    if (!this.presenter.selectTab(request.tabId)) return;
     // Promote the new selection to the top of the z-order immediately. The
     // renderer's MutationObserver-driven bounds sync fires reliably when
     // the user clicks a tab but can miss programmatic (CDP) selection —
@@ -1104,16 +725,11 @@ export class TabViewManager {
   // (e.g. keyboard shortcut) leaves the previously-selected tab still
   // painting on top until the renderer's ResizeObserver catches up.
   private promoteSelectedToFront(): void {
-    if (!this.selectedTabId) return;
-    const state = this.tabViewsByTabId.get(this.selectedTabId);
-    if (!state) return;
-    this.applyTabViewPlacement(state, this.selectedBounds ?? this.defaultContentBounds(), true);
+    this.layout.promoteSelectedToFront();
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {
-    const tab = this.tabs.find(t => t.id === request.tabId);
-    if (!tab) return;
-    tab.viewChanged = false;
+    if (!this.presenter.markTabFresh(request.tabId)) return;
     this.reloadTabView(request.tabId);
     this.pushStateToRenderer();
     // Wait for the page to finish loading so callers know when the reload is complete.
@@ -1139,8 +755,9 @@ export class TabViewManager {
     // Only a zero-sized view (inactive agent) gets force-painted
     // at origin by the capture — move that one off-screen first.
     const needsRebounds = originalBounds.width === 0 || originalBounds.height === 0;
-    const captureSize = this.selectedBounds && this.selectedBounds.width > 0 && this.selectedBounds.height > 0
-      ? { width: this.selectedBounds.width, height: this.selectedBounds.height }
+    const selectedBounds = this.layout.getSelectedBounds();
+    const captureSize = selectedBounds && selectedBounds.width > 0 && selectedBounds.height > 0
+      ? { width: selectedBounds.width, height: selectedBounds.height }
       : { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
     if (needsRebounds) {
       state.view.setBounds({
@@ -1505,84 +1122,48 @@ export class TabViewManager {
   // --- Tab state mutations ---
 
   markViewChanged(viewName: string): void {
-    let changed = false;
-    for (const tab of this.tabs) {
-      if (tab.type !== 'view' || tab.target !== viewName) continue;
-      tab.viewChanged = true;
-      changed = true;
-    }
-    if (changed) {
+    if (this.presenter.markViewChanged(viewName)) {
       this.pushStateToRenderer();
     }
   }
 
   togglePin(tabId: string): void {
-    const tab = this.tabs.find(t => t.id === tabId);
-    if (!tab) return;
-    tab.pinned = !tab.pinned;
-    // Reorder: pinned tabs first, preserve relative order within each group
-    const pinned = this.tabs.filter(t => t.pinned);
-    const unpinned = this.tabs.filter(t => !t.pinned);
-    this.tabs = [...pinned, ...unpinned];
-    this.pushStateToRenderer();
+    this.presenter.togglePin(tabId);
   }
 
   reorderTabs(fromIndex: number, toIndex: number): void {
-    if (fromIndex === toIndex) return;
-    if (fromIndex < 0 || fromIndex >= this.tabs.length) return;
-    if (toIndex < 0 || toIndex >= this.tabs.length) return;
-
-    const pinnedEnd = this.tabs.filter(t => t.pinned && !t.headless).length;
-    const fromPinned = fromIndex < pinnedEnd;
-    const toPinned = toIndex < pinnedEnd;
-    if (fromPinned !== toPinned) return;
-
-    const newTabs = [...this.tabs];
-    const [tab] = newTabs.splice(fromIndex, 1);
-    newTabs.splice(toIndex, 0, tab);
-    this.tabs = newTabs;
-    this.pushStateToRenderer();
+    this.presenter.reorderTabs(fromIndex, toIndex);
   }
 
   closeCurrentTab(): void {
-    if (!this.selectedTabId) return;
-    this.closeTabHandler({ tabId: this.selectedTabId });
+    const selectedTabId = this.presenter.getSelectedTabId();
+    if (!selectedTabId) return;
+    this.closeTabHandler({ tabId: selectedTabId });
   }
 
   reloadCurrentTab(): void {
-    if (!this.selectedTabId) return;
-    this.reloadTabHandler({ tabId: this.selectedTabId });
+    const selectedTabId = this.presenter.getSelectedTabId();
+    if (!selectedTabId) return;
+    this.reloadTabHandler({ tabId: selectedTabId });
   }
 
   /** Switch to the Nth visible tab (0-based index). */
   switchToTabByIndex(index: number): void {
-    const visible = this.tabs.filter(t => !t.headless);
-    if (index < 0 || index >= visible.length) return;
-    const tab = visible[index];
-    if (tab.id === this.selectedTabId) return;
-    this.selectedTabId = tab.id;
+    if (!this.presenter.selectVisibleTabByIndex(index)) return;
     this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
   /** Switch to the next visible tab, wrapping around. */
   nextTab(): void {
-    const visible = this.tabs.filter(t => !t.headless);
-    if (visible.length <= 1) return;
-    const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
-    const nextIdx = currentIdx < 0 ? 0 : (currentIdx + 1) % visible.length;
-    this.selectedTabId = visible[nextIdx].id;
+    if (!this.presenter.selectNextVisibleTab()) return;
     this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
 
   /** Switch to the previous visible tab, wrapping around. */
   previousTab(): void {
-    const visible = this.tabs.filter(t => !t.headless);
-    if (visible.length <= 1) return;
-    const currentIdx = visible.findIndex(t => t.id === this.selectedTabId);
-    const prevIdx = currentIdx <= 0 ? visible.length - 1 : currentIdx - 1;
-    this.selectedTabId = visible[prevIdx].id;
+    if (!this.presenter.selectPreviousVisibleTab()) return;
     this.promoteSelectedToFront();
     this.pushStateToRenderer();
   }
@@ -1599,7 +1180,7 @@ export class TabViewManager {
     }
 
     const { x, y, tabId } = normalizeTabContextMenuPayload(payload);
-    const tab = tabId ? this.tabs.find(t => t.id === tabId) : undefined;
+    const tab = tabId ? this.tabById(tabId) : undefined;
     const pinned = tab?.pinned ?? false;
     const viewChanged = tab?.viewChanged ?? false;
     let selectedAction: TabContextMenuAction = null;
