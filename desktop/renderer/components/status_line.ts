@@ -376,7 +376,7 @@ export class TlStatusLine extends HTMLElement {
 
   private async loadHeadlessTabs() {
     try {
-      this._headlessTabCount = await window.ipc?.tabs.getHeadlessCount() ?? 0
+      this._headlessTabCount = await window.ipc?.pages.getHeadlessCount() ?? 0
       this.updateHeadlessTabsIndicator()
     } catch {
       this._headlessTabCount = 0

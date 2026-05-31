@@ -8,6 +8,7 @@ import type { TabViewManager } from './tab-view-manager.js'
 import type { ShortcutManager } from './shortcuts/manager.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import type { PaletteHost, TabApi } from '#shared/runtime/hosts.js'
+import type { PageApi } from '#shared/page/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { registerTabs } from '#shared/runtime/functions/tabs.js'
 import { registerPages } from '#shared/runtime/functions/pages.js'
@@ -24,11 +25,12 @@ export async function createRemoteAgentContext(opts: {
   shortcutManager: ShortcutManager
   tabViewManager: TabViewManager
   tabTools: TabApi
+  pageTools: PageApi
   getCommandPalette?: () => PaletteHost
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
-  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools } = opts
+  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools, pageTools } = opts
 
   const clientFunctionRegistry = createClientFunctionRegistry({
     cacheRoot,
@@ -62,7 +64,6 @@ export async function createRemoteAgentContext(opts: {
   }
 
   const eventBus = new EventBus()
-
   const ctx: RemoteAgentContext = {
     mode: 'remote',
     agentId,
@@ -80,6 +81,7 @@ export async function createRemoteAgentContext(opts: {
     tabViewManager,
     shortcutManager,
     tabTools,
+    pageTools,
     remoteConfig,
   }
 
@@ -99,10 +101,7 @@ function createClientFunctionRegistry(opts: {
   getCommandPalette?: () => PaletteHost
 }): FunctionRegistry {
   const registry = new FunctionRegistry()
-  const pageTools = new PageManager({
-    agentId: opts.cacheRoot,
-    hosts: [new LegacyTabPageHost(opts.tabTools, { agentId: opts.cacheRoot })],
-  })
+  const pageTools = createLegacyPageTools(opts.cacheRoot, opts.tabTools)
   registerPages(registry, { pageTools, runtimeRoot: opts.cacheRoot })
   registerTabs(registry, { tabTools: opts.tabTools, runtimeRoot: opts.cacheRoot }, { hidden: true })
   if (opts.getCommandPalette) {
@@ -142,4 +141,11 @@ function createClientFunctionRegistry(opts: {
   registerOpenExternal(registry, getElectronExternalLauncher())
 
   return registry
+}
+
+function createLegacyPageTools(agentId: string, tabTools: TabApi) {
+  return new PageManager({
+    agentId,
+    hosts: [new LegacyTabPageHost(tabTools, { agentId })],
+  })
 }

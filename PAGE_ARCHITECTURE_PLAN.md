@@ -1662,6 +1662,40 @@ Goal: isolate UI tab presentation from page lifecycle.
 
 ### Phase 5: Wire Local Desktop Agents Through PageManager
 
+Status as of 2026-05-31: **implemented and build-verified**.
+
+Implemented in:
+
+- `desktop/agent-context.ts`
+- `desktop/agent-context-factory.ts`
+- `desktop/page/desktop-page-host.ts`
+- `desktop/ipc/pages.ts`
+- `desktop/preload.cts`
+- `desktop/renderer/ipc-types/pages.ts`
+- `desktop/renderer/components/tabs.ts`
+- `desktop/renderer/components/agent_chat.ts`
+- `desktop/renderer/components/provider_grid.ts`
+- `desktop/renderer/components/status_line.ts`
+- `desktop/command-palette/manager.ts`
+- `desktop/agent-orchestrator.ts`
+
+Notes:
+
+- Local desktop contexts now construct a `PageManager` with `DesktopPageHost`
+  for foreground/background pages and `ElectronHeadlessPageHost` for headless
+  pages, and pass it directly into local runtime function registration.
+- `openPage({ display: 'background' })` now creates an unselected desktop tab
+  without briefly showing it.
+- Renderer lifecycle/navigation calls now use page-named IPC (`pages.openPage`,
+  `pages.showPage`, `pages.closePage`, and `pages.getHeadlessCount`) while tab
+  presenter state, bounds, reorder, pin, and context-menu IPC remain tab-named.
+- Default view opening and command-palette view/tab actions now route through
+  `PageApi`.
+
+Verification performed:
+
+- `./scripts/build-desktop`
+
 - Construct `PageManager` per local desktop agent context.
 - Register page functions in local runtime.
 - Route foreground/background pages to desktop page host and presenter.

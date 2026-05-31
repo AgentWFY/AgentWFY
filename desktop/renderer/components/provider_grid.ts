@@ -171,7 +171,10 @@ export class TlProviderGrid extends HTMLElement {
     const browseBtn = target.closest('[data-action="browse-providers"]') as HTMLElement | null
     if (browseBtn) {
       me.preventDefault()
-      window.ipc?.tabs.openTab({ viewName: 'system.plugins', params: { tag: 'providers', tab: 'browse-plugins' } })
+      window.ipc?.pages.openPage({
+        source: { type: 'view', name: 'system.plugins', params: { tag: 'providers', tab: 'browse-plugins' } },
+        display: 'foreground',
+      })
       return
     }
 
@@ -268,7 +271,10 @@ export class TlProviderGrid extends HTMLElement {
   }
 
   private openSettingsView(viewName: string) {
-    window.ipc?.tabs.openTab({ viewName }).catch(e => {
+    window.ipc?.pages.openPage({
+      source: { type: 'view', name: viewName },
+      display: 'foreground',
+    }).catch(e => {
       console.error('[provider-grid] failed to open settings view', e)
     })
   }

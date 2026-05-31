@@ -21,24 +21,28 @@ export class DesktopPageHost implements PageHost {
   readonly hostKind: PageOwnerHostKind;
   protected readonly manager: TabViewManager;
   protected readonly agentId: string;
-  protected readonly display: PageDisplay;
+  protected readonly displays: ReadonlySet<PageDisplay>;
   protected readonly headless: boolean;
+  private readonly createdByByPageId = new Map<string, PageInfo['createdBy']>();
 
   constructor(manager: TabViewManager, options: {
     agentId: string
     hostKind?: PageOwnerHostKind
-    display?: PageDisplay
+    display?: PageDisplay | PageDisplay[]
     headless?: boolean
   }) {
     this.manager = manager;
     this.agentId = options.agentId;
     this.hostKind = options.hostKind ?? 'desktop';
-    this.display = options.display ?? 'foreground';
     this.headless = options.headless ?? false;
+    const displays = options.display
+      ? Array.isArray(options.display) ? options.display : [options.display]
+      : this.headless ? ['headless' as const] : ['foreground' as const, 'background' as const];
+    this.displays = new Set(displays);
   }
 
   canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return request.display === this.display;
+    return this.displays.has(request.display);
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
@@ -52,7 +56,9 @@ export class DesktopPageHost implements PageHost {
       height: request.height,
       closeAfterIdleMs: request.closeAfterIdleMs as PageCloseAfterIdleMs | undefined,
       params: pageSourceParams(request.source),
+      select: request.display === 'foreground',
     });
+    this.createdByByPageId.set(result.tabId, request.createdBy ?? 'agent');
     const handle = await this.getPage(result.tabId);
     if (!handle) {
       throw new Error(`Failed to create desktop page "${result.tabId}"`);
@@ -77,6 +83,10 @@ export class DesktopPageHost implements PageHost {
     return tabs
       .filter(tab => Boolean(tab.headless) === this.headless)
       .map(tab => this.pageInfoFromTab(tab));
+  }
+
+  forgetPage(pageId: string): void {
+    this.createdByByPageId.delete(pageId);
   }
 
   pageInfoFromTab(tab: TabData): PageInfo {
@@ -104,7 +114,7 @@ export class DesktopPageHost implements PageHost {
             },
           }
         : {}),
-      createdBy: 'agent',
+      createdBy: this.createdByByPageId.get(pageId) ?? 'agent',
       content: {
         stale: tab.viewChanged,
         ...(typeof tab.viewUpdatedAt === 'number' ? { version: tab.viewUpdatedAt } : {}),
@@ -139,6 +149,7 @@ export class DesktopPageHandle implements PageHandle {
 
   async close(): Promise<void> {
     await this.manager.closeTabHandler({ tabId: this.pageId });
+    this.host.forgetPage(this.pageId);
   }
 
   async reload(): Promise<void> {

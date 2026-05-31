@@ -32,6 +32,7 @@ import {
   FALLBACK_VIEW_HEIGHT,
   FALLBACK_VIEW_WIDTH,
   DesktopPageLayout,
+  ZERO_BOUNDS,
 } from './page/desktop-page-layout.js';
 import { DesktopPageDebugger } from './page/desktop-page-debugger.js';
 import { DesktopTabPresenter } from './page/desktop-tab-presenter.js';
@@ -604,6 +605,7 @@ export class TabViewManager {
     height?: number;
     closeAfterIdleMs?: HeadlessCloseAfterIdleMs;
     params?: Record<string, string>;
+    select?: boolean;
   }): Promise<{ tabId: string }> {
     const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
     let target: string;
@@ -640,6 +642,7 @@ export class TabViewManager {
 
     const tabId = request.tabId ?? this.generateTabId();
     const isHeadless = Boolean(request.headless);
+    const shouldSelect = !isHeadless && request.select !== false;
     const viewport = isHeadless ? resolveViewport(normalizeViewportInput(request)) : null;
     const now = Date.now();
     const closeAfterIdleMs = isHeadless ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs) : null;
@@ -662,7 +665,7 @@ export class TabViewManager {
       closeAfterIdleMs,
       expiresAt,
     };
-    this.presenter.addTab(tab, { select: !isHeadless });
+    this.presenter.addTab(tab, { select: shouldSelect });
 
     // Create the WebContentsView and start loading immediately instead of
     // waiting for a renderer round-trip (which is gated by requestAnimationFrame
@@ -672,7 +675,11 @@ export class TabViewManager {
     // here would fully occlude the renderer's WebContentsView, and Windows
     // Chromium pauses RAF for occluded contents — the renderer would then
     // never run scheduleBoundsSync to report the correct rect.
-    this.applyTabViewPlacement(state, this.layout.getSelectedBounds() ?? this.defaultContentBounds(), !isHeadless);
+    this.applyTabViewPlacement(
+      state,
+      shouldSelect ? this.layout.getSelectedBounds() ?? this.defaultContentBounds() : ZERO_BOUNDS,
+      shouldSelect,
+    );
 
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {

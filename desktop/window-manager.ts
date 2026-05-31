@@ -172,6 +172,7 @@ class WindowManager {
       getCacheRoot: () => this.orchestrator.getActiveCacheRoot()!,
       rendererBridge: this.rendererBridge,
       getTabViewManager: () => this.orchestrator.getActiveAgentContext()!.tabViewManager,
+      getPageTools: () => this.orchestrator.getActiveAgentContext()!.pageTools,
       addAgent: (id) => this.orchestrator.addAgent(id),
       switchAgent: (id) => this.orchestrator.switchAgent(id),
       getInstalledAgentsList: () => this.orchestrator.getInstalledAgentsList(),
@@ -501,11 +502,11 @@ class WindowManager {
 
   async getHeadlessTabCount(): Promise<number> {
     const results = await Promise.allSettled(
-      this.orchestrator.getAllContexts().map(ctx => ctx.tabTools.getTabs()),
+      this.orchestrator.getAllContexts().map(ctx => ctx.pageTools.getPages({ display: 'headless' })),
     );
     return results.reduce((total, result) => {
       if (result.status !== 'fulfilled') return total;
-      return total + result.value.filter(tab => tab.headless === true).length;
+      return total + result.value.length;
     }, 0);
   }
 

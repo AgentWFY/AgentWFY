@@ -666,9 +666,11 @@ export class AgentOrchestrator {
       if (!view) return;
       const state = ctx.tabViewManager.getState();
       if (state.tabs.length > 0) return;
-      await ctx.tabViewManager.openTabHandler({
-        viewName: view.name,
+      await ctx.pageTools.openPage({
+        source: { type: 'view', name: view.name },
+        display: 'foreground',
         title: view.title || view.name,
+        createdBy: 'system',
       });
     } catch (err) {
       console.error('[default-view] Failed to open default view:', err);

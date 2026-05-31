@@ -192,7 +192,7 @@ export class TlTabs extends HTMLElement {
     close.textContent = '\u00d7'
     close.addEventListener('click', (e) => {
       e.stopPropagation()
-      window.ipc?.tabs.closeTab({ tabId: tab.id })
+      window.ipc?.pages.closePage({ pageId: tab.id })
     })
     status.appendChild(close)
 
@@ -285,11 +285,11 @@ export class TlTabs extends HTMLElement {
         })
 
         tabItem.addEventListener('click', () => {
-          window.ipc?.tabs.selectTab({ tabId: tab.id })
+          window.ipc?.pages.showPage({ pageId: tab.id })
         })
         tabItem.addEventListener('auxclick', (e) => {
           if (e.button === 1 && !tab.pinned) {
-            window.ipc?.tabs.closeTab({ tabId: tab.id })
+            window.ipc?.pages.closePage({ pageId: tab.id })
           }
         })
 

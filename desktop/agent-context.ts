@@ -9,6 +9,7 @@ import type { TaskRunner } from '#shared/task-runner/task_runner.js';
 import type { ShortcutManager } from './shortcuts/manager.js';
 import type { JsRuntime } from '#shared/runtime/js_runtime.js';
 import type { TabApi } from '#shared/runtime/hosts.js';
+import type { PageApi } from '#shared/page/types.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { AgentChatPump } from './ipc/agent-sessions.js';
 import type { RemoteAgentConfig } from './agent-meta.js';
@@ -25,6 +26,7 @@ interface AgentContextBase {
   eventBus: EventBus;
   tabViewManager: TabViewManager;
   tabTools: TabApi;
+  pageTools: PageApi;
   shortcutManager: ShortcutManager;
   /** The agent backend used by IPC and the renderer event pump. */
   backend: AgentBackend;

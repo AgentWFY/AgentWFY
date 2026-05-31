@@ -133,6 +133,29 @@ if (isApp) {
         return ipcRenderer.invoke(Channels.tabs.describe);
       },
     },
+    pages: {
+      getPages(request?: unknown) {
+        return ipcRenderer.invoke(Channels.pages.getPages, request);
+      },
+      getCurrentPage(request?: unknown) {
+        return ipcRenderer.invoke(Channels.pages.getCurrentPage, request);
+      },
+      openPage(request: unknown) {
+        return ipcRenderer.invoke(Channels.pages.openPage, request);
+      },
+      showPage(request: unknown) {
+        return ipcRenderer.invoke(Channels.pages.showPage, request);
+      },
+      closePage(request: unknown) {
+        return ipcRenderer.invoke(Channels.pages.closePage, request);
+      },
+      reloadPage(request: unknown) {
+        return ipcRenderer.invoke(Channels.pages.reloadPage, request);
+      },
+      getHeadlessCount() {
+        return ipcRenderer.invoke(Channels.pages.getHeadlessCount);
+      },
+    },
     store: {
       get<T = unknown>(key: string): Promise<T> {
         return ipcRenderer.invoke(Channels.store.get, key) as Promise<T>;

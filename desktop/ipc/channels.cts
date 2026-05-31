@@ -17,6 +17,15 @@ export const Channels = {
     toggleDevTools: 'tabs:toggleDevTools',
     describe: 'tabs:describe',
   },
+  pages: {
+    getPages: 'pages:getPages',
+    getCurrentPage: 'pages:getCurrentPage',
+    openPage: 'pages:openPage',
+    showPage: 'pages:showPage',
+    closePage: 'pages:closePage',
+    reloadPage: 'pages:reloadPage',
+    getHeadlessCount: 'pages:getHeadlessCount',
+  },
   store: {
     get: 'store:get',
     set: 'store:set',

@@ -1,5 +1,6 @@
 export type { SqlApi } from './sql.js'
 export type { TabsApi, TabViewBounds, UpdateTabViewBoundsRequest, TabContextMenuAction, TabContextMenuRequest, TabViewEvent, TabData, TabDataType, TabState } from './tabs.js'
+export type { PagesApi } from './pages.js'
 export type { StoreApi } from './store.js'
 export type { DialogApi } from './dialog.js'
 export type { DbApi, AgentDbChange } from './db.js'
@@ -8,6 +9,7 @@ export type { TracesApi, TraceEvent, TraceExecEvent, TraceCallEvent } from './tr
 
 import type { SqlApi } from './sql.js'
 import type { TabsApi } from './tabs.js'
+import type { PagesApi } from './pages.js'
 import type { StoreApi } from './store.js'
 import type { DialogApi } from './dialog.js'
 import type { DbApi } from './db.js'
@@ -97,6 +99,7 @@ export interface AppIpc {
   sql: SqlApi
   agentId: string | null
   tabs: TabsApi
+  pages: PagesApi
   store: StoreApi
   dialog: DialogApi
   db: DbApi

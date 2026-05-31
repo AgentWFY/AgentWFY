@@ -21,6 +21,7 @@ import {
 import { setAgentMeta } from '../agent-meta.js';
 import type { RendererBridge } from '../renderer-bridge.js';
 import type { TabViewManager } from '../tab-view-manager.js';
+import type { PageApi } from '#shared/page/types.js';
 import type { PluginRegistry } from '#shared/plugins/registry.js';
 import type { ConfirmationManager } from '../confirmation/manager.js';
 import type { AgentChatController } from '#shared/agent/chat_controller.js';
@@ -36,6 +37,7 @@ export interface CommandPaletteManagerDeps {
   getCacheRoot: () => string;
   rendererBridge: RendererBridge;
   getTabViewManager: () => TabViewManager;
+  getPageTools: () => PageApi;
   addAgent: (agentId: string) => Promise<void>;
   switchAgent: (agentId: string) => Promise<void>;
   getInstalledAgentsList: () => InstalledAgent[];
@@ -732,14 +734,15 @@ export class CommandPaletteManager {
     }
 
     // Open welcome views (convention: plugin.<name>.welcome)
-    const tabViewManager = this.deps.getTabViewManager();
     for (const name of installResult.installed) {
       const viewName = `plugin.${name}.welcome`;
       void getViewByName(cacheRoot, viewName).then((view) => {
         if (view) {
-          void tabViewManager.openTabHandler({
-            viewName: view.name,
+          void this.deps.getPageTools().openPage({
+            source: { type: 'view', name: view.name },
+            display: 'foreground',
             title: view.title || view.name,
+            createdBy: 'user',
           }).catch((err) => {
             console.error(`[command-palette] failed to open welcome view ${viewName}:`, err);
           });
@@ -970,16 +973,18 @@ export class CommandPaletteManager {
     switch (type) {
       case 'open-view': {
         const openViewAction = action as Extract<CommandPaletteAction, { type: 'open-view' }>;
-        await this.deps.getTabViewManager().openTabHandler({
-          viewName: openViewAction.viewName,
+        await this.deps.getPageTools().openPage({
+          source: { type: 'view', name: openViewAction.viewName },
+          display: 'foreground',
           title: openViewAction.title,
+          createdBy: 'user',
         });
         break;
       }
 
       case 'open-tab': {
         const openTabAction = action as Extract<CommandPaletteAction, { type: 'open-tab' }>;
-        await this.deps.getTabViewManager().selectTabHandler({ tabId: openTabAction.tabId });
+        await this.deps.getPageTools().showPage({ pageId: openTabAction.tabId });
         break;
       }
 

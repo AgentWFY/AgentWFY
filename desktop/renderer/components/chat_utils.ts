@@ -1,10 +1,9 @@
 import { parseAgentPath } from '#shared/protocol/view-document.js'
 
 interface TabLinkRequest {
-  viewName?: string
-  filePath?: string
+  source: { type: 'view'; name: string; params?: Record<string, string> }
+    | { type: 'file'; path: string; params?: Record<string, string> }
   title?: string
-  params?: Record<string, string>
 }
 
 // Parse a markdown link href into a tab-open request.
@@ -38,9 +37,15 @@ export function parseTabLink(href: string): TabLinkRequest | null {
   const hasParams = Object.keys(params).length > 0
 
   if (info.kind === 'view') {
-    return { viewName: info.target, title, params: hasParams ? params : undefined }
+    return {
+      source: { type: 'view', name: info.target, params: hasParams ? params : undefined },
+      title,
+    }
   }
-  return { filePath: info.target, title, params: hasParams ? params : undefined }
+  return {
+    source: { type: 'file', path: info.target, params: hasParams ? params : undefined },
+    title,
+  }
 }
 
 export function escapeHtml(str: string): string {
@@ -85,4 +90,3 @@ export async function copyToButton(
     }
   }, restoreMs)
 }
-

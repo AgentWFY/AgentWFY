@@ -8,6 +8,8 @@ import {
   getElectronNotificationHost,
 } from './runtime/hosts-electron.js';
 import { TabViewManager } from './tab-view-manager.js';
+import { DesktopPageHost } from './page/desktop-page-host.js';
+import { ElectronHeadlessPageHost } from './page/electron-headless-page-host.js';
 import { ShortcutManager } from './shortcuts/manager.js';
 import type { ActionRegistry } from './shortcuts/registry.js';
 import { syncTaskActions } from './shortcuts/task-actions.js';
@@ -17,6 +19,8 @@ import {
   getOrCreateDesktopTraceWriter,
 } from './runtime/desktop-runtime-registry.js';
 import type { TabApi, VisibleTabHost } from '#shared/runtime/hosts.js';
+import type { PageApi } from '#shared/page/types.js';
+import { PageManager } from '#shared/page/page-manager.js';
 import { TabRouter } from '#shared/runtime/tab-router.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
@@ -77,7 +81,7 @@ export class AgentContextFactory {
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
     const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry, { dataDir: cacheRoot });
-    const { tabViewManager, tabTools } = this.createTabRuntime(agentId, shortcutManager);
+    const { tabViewManager, tabTools, pageTools } = this.createTabRuntime(agentId, shortcutManager);
     // Refs let onSnapshotApplied resync after later (re)connect snapshots,
     // which replace the mirror wholesale without emitting per-row changes.
     let backendRef: AgentBackend | null = null;
@@ -93,6 +97,7 @@ export class AgentContextFactory {
       shortcutManager,
       tabViewManager,
       tabTools,
+      pageTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
       onSnapshotApplied: resyncFromMirror,
@@ -136,11 +141,13 @@ export class AgentContextFactory {
       getOverlayViews: this.deps.getOverlayViews,
     });
     const tabTools: TabApi = buildTabTools(tabViewManager);
+    const pageTools: PageApi = buildLocalDesktopPageTools(agentId, tabViewManager);
 
     const runtime = await createLocalAgentRuntime({
       runtimeRoot: agentId,
       hosts: {
         notificationHost: getElectronNotificationHost(),
+        pageTools,
         tabTools,
         getCommandPalette: () => this.deps.getCommandPalette(),
         rendererPush: createElectronRendererPush(this.deps.getRendererWebContents()!),
@@ -179,6 +186,7 @@ export class AgentContextFactory {
       taskActionsReloadDebounceTimer: null,
       providerStatePushTimer: null,
       tabTools,
+      pageTools,
     };
     agentCtxRef = agentCtx;
 
@@ -299,7 +307,7 @@ export class AgentContextFactory {
   private createTabRuntime(
     ownerAgentId: string,
     shortcutManager: ShortcutManager,
-  ): { tabViewManager: TabViewManager; tabTools: TabApi } {
+  ): { tabViewManager: TabViewManager; tabTools: TabApi; pageTools: PageApi } {
     const agentSession = this.ensureAgentSession(ownerAgentId);
     const registerSender = (webContentsId: number) => this.deps.registerTabSender(webContentsId, ownerAgentId);
     const unregisterSender = (webContentsId: number) => this.deps.unregisterTabSender(webContentsId);
@@ -320,9 +328,20 @@ export class AgentContextFactory {
     });
 
     const tabTools: TabApi = buildTabTools(tabViewManager);
+    const pageTools: PageApi = buildLocalDesktopPageTools(ownerAgentId, tabViewManager);
 
-    return { tabViewManager, tabTools };
+    return { tabViewManager, tabTools, pageTools };
   }
+}
+
+function buildLocalDesktopPageTools(agentId: string, tabViewManager: TabViewManager): PageApi {
+  return new PageManager({
+    agentId,
+    hosts: [
+      new DesktopPageHost(tabViewManager, { agentId }),
+      new ElectronHeadlessPageHost(tabViewManager, { agentId }),
+    ],
+  });
 }
 
 function buildTabTools(tabViewManager: TabViewManager): TabApi {
