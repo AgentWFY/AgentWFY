@@ -69,7 +69,7 @@ The handler runs in the main process with full Node.js access (child_process, fs
 
 ### Naming rules
 
-- Function names must not collide with built-in runtime functions (`runSql`, `read`, `write`, `openTab`, `fetch`, etc.) or functions from other plugins. Collisions are logged as warnings and the function is skipped.
+- Function names must not collide with built-in runtime functions (`runSql`, `read`, `write`, `openPage`, `fetch`, etc.) or functions from other plugins. Collisions are logged as warnings and the function is skipped.
 - Use a plugin-specific prefix to avoid collisions: `myPluginDo`, `myPluginQuery`, etc.
 - Provider IDs must be unique. A plugin cannot override the built-in `openai-compatible` provider or another plugin's provider.
 

@@ -23,6 +23,7 @@ import type {
   RendererPush,
   TabApi,
 } from '../runtime/hosts.js'
+import type { PageApi, PageOwnerHostKind } from '../page/types.js'
 import { ProviderRegistry } from '../providers/registry.js'
 import { createOpenAICompatibleFactory } from '../providers/openai_compatible.js'
 import { TaskRunner } from '../task-runner/task_runner.js'
@@ -39,7 +40,10 @@ const AGENT_DIR_NAME = '.agentwfy'
 
 export interface LocalRuntimeHosts {
   notificationHost?: NotificationHost
+  pageTools?: PageApi
   tabTools?: TabApi
+  legacyPageHostKind?: PageOwnerHostKind
+  legacyHeadlessPageHostKind?: PageOwnerHostKind
   getCommandPalette?: () => PaletteHost
   rendererPush?: RendererPush
   externalLauncher?: ExternalLauncher
@@ -146,7 +150,10 @@ export async function createLocalAgentRuntime(
     getTaskRunner: () => taskRunner,
     eventBus,
     providerRegistry,
+    ...(hosts?.pageTools ? { pageTools: hosts.pageTools } : {}),
     ...(hosts?.tabTools ? { tabTools: hosts.tabTools } : {}),
+    ...(hosts?.legacyPageHostKind ? { legacyPageHostKind: hosts.legacyPageHostKind } : {}),
+    ...(hosts?.legacyHeadlessPageHostKind ? { legacyHeadlessPageHostKind: hosts.legacyHeadlessPageHostKind } : {}),
     ...(hosts?.getCommandPalette ? { getCommandPalette: hosts.getCommandPalette } : {}),
     ...(hosts?.rendererPush ? { rendererPush: hosts.rendererPush } : {}),
     ...(hosts?.externalLauncher ? { externalLauncher: hosts.externalLauncher } : {}),

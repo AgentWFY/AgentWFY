@@ -55,7 +55,7 @@ async function handleAgentViewCall(
 
     const value = await backend.functions.invoke({
       name: message.name,
-      params: message.params,
+      params: normalizeAgentViewParams(message.name, message.params),
     })
     postAgentViewResult(frame, origin, message.id, { ok: true, value })
   } catch (err) {
@@ -64,6 +64,15 @@ async function handleAgentViewCall(
       error: normalizeAgentViewError(err),
     })
   }
+}
+
+function normalizeAgentViewParams(name: string, params: unknown): unknown {
+  if (name !== 'openPage' || !params || typeof params !== 'object' || Array.isArray(params)) {
+    return params
+  }
+  const request = { ...params as Record<string, unknown> }
+  if (typeof request.display !== 'string') request.display = 'foreground'
+  return request
 }
 
 function parseAgentViewCall(data: unknown): AgentViewCallMessage | null {

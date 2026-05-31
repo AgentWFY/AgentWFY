@@ -1,6 +1,16 @@
 import type { DisplayMessage } from '../agent/provider_types.js'
 import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
 import type { HeadlessCloseAfterIdleMs, Viewport, ViewportInput } from './hosts.js'
+import type {
+  PageCdpBufferedEvent,
+  PageCloseAfterIdleMs,
+  PageDisplay,
+  PageDisplayFilter,
+  PageInfo,
+  PageScreenshot,
+  PageSource,
+  PageViewportInput,
+} from '../page/types.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
 
@@ -104,7 +114,7 @@ interface WorkerGrepRequest {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface WorkerGetTabsRequest {}
+export interface WorkerGetTabsRequest {}
 
 export type WorkerGetTabsResult = Array<{
   id: string
@@ -246,9 +256,116 @@ export interface WorkerTabConsoleLogEntry {
   timestamp: number
 }
 
-interface WorkerCaptureTabResult {
+export interface WorkerCaptureTabResult {
   base64: string
   mimeType: string
+}
+
+export interface WorkerGetPagesRequest {
+  display?: PageDisplayFilter
+  clientId?: string
+}
+
+export type WorkerGetPagesResult = PageInfo[]
+
+export interface WorkerOpenPageRequest {
+  source: PageSource
+  display?: PageDisplay
+  title?: string
+  viewport?: PageViewportInput
+  width?: number
+  height?: number
+  closeAfterIdleMs?: PageCloseAfterIdleMs
+}
+
+export interface WorkerOpenPageResult {
+  id: string
+  pageId: string
+  page: PageInfo
+  info: string
+}
+
+export interface WorkerPageIdRequest {
+  id?: string
+  pageId?: string
+}
+
+export interface WorkerWaitForPageRequest extends WorkerPageIdRequest {
+  lifecycle?: 'ready'
+  timeoutMs?: number
+}
+
+export interface WorkerCapturePageRequest extends WorkerPageIdRequest {
+  allowFallback?: boolean
+}
+
+export interface WorkerGetPageConsoleLogsRequest extends WorkerPageIdRequest {
+  since?: number
+  limit?: number
+}
+
+export interface WorkerRunPageJsRequest extends WorkerPageIdRequest {
+  code: string
+  timeoutMs?: number
+}
+
+export interface WorkerSendPageInputRequest extends WorkerPageIdRequest {
+  type: 'mouseDown' | 'mouseUp' | 'mouseMove' | 'click' | 'mouseWheel' | 'keyDown' | 'keyUp' | 'char'
+  x?: number
+  y?: number
+  button?: 'left' | 'middle' | 'right'
+  clickCount?: number
+  deltaX?: number
+  deltaY?: number
+  keyCode?: string
+  modifiers?: string[]
+}
+
+export interface WorkerInspectPageElementRequest extends WorkerPageIdRequest {
+  selector: string
+}
+
+export interface WorkerSendPageCdpRequest extends WorkerPageIdRequest {
+  method: string
+  params?: unknown
+  sessionId?: string
+}
+
+export interface WorkerSubscribePageCdpRequest extends WorkerPageIdRequest {
+  events: string[]
+}
+
+export interface WorkerSubscribePageCdpResult {
+  subscriptionId: string
+}
+
+export interface WorkerPollPageCdpRequest {
+  subscriptionId: string
+  maxBatch?: number
+  maxWaitMs?: number
+}
+
+export interface WorkerPageCdpBufferedEvent extends PageCdpBufferedEvent {
+  /** Set on the first event of a poll batch when events were dropped before it. */
+  dropped?: number
+}
+
+export interface WorkerPageCdpPollResult {
+  events: WorkerPageCdpBufferedEvent[]
+  dropped: number
+  closed: boolean
+}
+
+export interface WorkerUnsubscribePageCdpRequest {
+  subscriptionId: string
+}
+
+export interface WorkerDetachPageCdpRequest extends WorkerPageIdRequest {}
+
+export interface WorkerPageConsoleLogEntry {
+  level: string
+  message: string
+  timestamp: number
 }
 
 export interface WorkerHostMethodMap {
@@ -292,68 +409,72 @@ export interface WorkerHostMethodMap {
     params: WorkerGrepRequest
     result: string
   }
-  getTabs: {
-    params: WorkerGetTabsRequest
-    result: WorkerGetTabsResult
+  getPages: {
+    params: WorkerGetPagesRequest
+    result: WorkerGetPagesResult
   }
-  openTab: {
-    params: WorkerOpenTabRequest
-    result: { id: string; tabId: string; info: string }
+  openPage: {
+    params: WorkerOpenPageRequest
+    result: WorkerOpenPageResult
   }
-  closeTab: {
-    params: WorkerCloseTabRequest
+  showPage: {
+    params: WorkerPageIdRequest
+    result: PageInfo
+  }
+  closePage: {
+    params: WorkerPageIdRequest
     result: void
   }
-  selectTab: {
-    params: WorkerSelectTabRequest
-    result: void
+  reloadPage: {
+    params: WorkerPageIdRequest
+    result: PageInfo
   }
-  reloadTab: {
-    params: WorkerReloadTabRequest
-    result: void
+  getCurrentPage: {
+    params: { clientId?: string }
+    result: PageInfo | null
   }
-  getCurrentTab: {
-    params: Record<string, never>
-    result: WorkerGetTabsResult[number] | null
+  waitForPage: {
+    params: WorkerWaitForPageRequest
+    result: PageInfo
   }
-  captureTab: {
-    params: WorkerCaptureTabRequest
-    result: WorkerCaptureTabResult
+  capturePage: {
+    params: WorkerCapturePageRequest
+    result: PageScreenshot
   }
-  getTabConsoleLogs: {
-    params: WorkerGetTabConsoleLogsRequest
-    result: WorkerTabConsoleLogEntry[]
+  getPageConsoleLogs: {
+    params: WorkerGetPageConsoleLogsRequest
+    result: WorkerPageConsoleLogEntry[]
   }
-  execTabJs: {
-    params: WorkerExecTabJsRequest
+  runPageJs: {
+    params: WorkerRunPageJsRequest
     result: unknown
   }
-  sendInput: {
-    params: WorkerSendInputRequest
+  sendPageInput: {
+    params: WorkerSendPageInputRequest
     result: void
   }
-  inspectElement: {
-    params: WorkerInspectElementRequest
+  inspectPageElement: {
+    params: WorkerInspectPageElementRequest
     result: unknown
   }
-  tabDebuggerSend: {
-    params: WorkerTabDebuggerSendRequest
+  sendPageCdp: {
+    params: WorkerSendPageCdpRequest
     result: unknown
   }
-  tabDebuggerSubscribe: {
-    params: WorkerTabDebuggerSubscribeRequest
-    result: WorkerTabDebuggerSubscribeResult
+  subscribePageCdp: {
+    params: WorkerSubscribePageCdpRequest
+    result: WorkerSubscribePageCdpResult
   }
-  tabDebuggerPoll: {
-    params: WorkerTabDebuggerPollRequest
-    result: WorkerTabDebuggerPollResult
+  pollPageCdp: {
+    params: WorkerPollPageCdpRequest
+    result: WorkerPageCdpPollResult
   }
-  tabDebuggerUnsubscribe: {
-    params: WorkerTabDebuggerUnsubscribeRequest
+  unsubscribePageCdp: {
+    params: WorkerUnsubscribePageCdpRequest
     result: void
   }
-  tabDebuggerDetach: {
-    params: WorkerTabDebuggerDetachRequest
+  detachPageCdp: {
+    params: WorkerDetachPageCdpRequest
     result: void
   }
   publish: {

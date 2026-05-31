@@ -2,14 +2,14 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openTab({ viewName })`.
-- **File views** — HTML files in the working directory. Opened via `openTab({ filePath })`.
+- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openPage({ source: { type: 'view', name } })`.
+- **File views** — HTML files in the working directory. Opened via `openPage({ source: { type: 'file', path } })`.
 
-Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL tabs (`openTab({ url })`) do NOT get the runtime.
+Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL pages (`openPage({ source: { type: 'url', url } })`) do NOT get the runtime.
 
-**Opening by name:** `openTab({ viewName: 'my-view' })` resolves the view by its `name` column (primary key) and auto-populates the tab title. Always use `viewName` to open views.
+**Opening by name:** `openPage({ display: 'foreground', source: { type: 'view', name: 'my-view' } })` resolves the view by its `name` column (primary key) and auto-populates the page title. Always use a `view` source to open views.
 
-**View params:** Pass custom parameters when opening a view via `openTab({ viewName, params: { key: 'value' } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
+**View params:** Pass custom parameters in the source via `openPage({ display: 'foreground', source: { type: 'view', name, params: { key: 'value' } } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 
@@ -78,11 +78,11 @@ modules (name PK [must end in .js or .css], content, created_at, updated_at)
 
 **Naming:** module names must end with `.js` or `.css` — the extension determines the served Content-Type (there is no separate `type` column). Name format: `[a-z0-9._-]+` (e.g. `note-render.js`, `ui.data-table.css`). `system.*` and `plugin.*` are read-only. Modules named `<view_name>.*` are auto-deleted when that view is deleted (e.g. `dashboard.filters.js` is deleted with view `dashboard`). Shared modules (e.g. `ui.data-table.js`) are not tied to any view.
 
-**Loading in views:** `<script src="/module/note-render.js">` for JS, `<link rel="stylesheet" href="/module/note-render.css">` for CSS. Use regular `<script>` (not `type="module"`) so variables stay accessible to execTabJs.
+**Loading in views:** `<script src="/module/note-render.js">` for JS, `<link rel="stylesheet" href="/module/note-render.css">` for CSS. Use regular `<script>` (not `type="module"`) so variables stay accessible to `runPageJs`.
 
 **Writing:** `write({ path: '@modules/foo.js', content })` creates/updates a JS module. Same for `.css`. Writing a name without a `.js`/`.css` suffix is rejected.
 
-`reloadTab` after updating any module or view content.
+`reloadPage` after updating any module or view content.
 
 **Recommended pattern — Web Components:** store each UI piece as a JS module defining a custom element. The view becomes a thin shell of `<script src>` tags and custom element tags. Each component is independently editable without touching the view or other components.
 
@@ -98,15 +98,15 @@ These are Electron platform constraints, not bugs. Design views with inline inte
 
 ## Debugging Views
 
-**Always use headless tabs for development/testing.** When opening tabs to test, debug, capture screenshots, or run JS, use `headless: true`:
+**Always use headless pages for development/testing.** When opening pages to test, debug, capture screenshots, or run JS, use `display: 'headless'`:
 
 ```js
-await openTab({ viewName: name, headless: true })
-await openTab({ filePath: path, headless: true })
+await openPage({ display: 'headless', source: { type: 'view', name } })
+await openPage({ display: 'headless', source: { type: 'file', path } })
 ```
 
-Visible tabs steal the user's focus and clutter their tab bar. Headless tabs load fully in the background and support `captureTab`, `execTabJs`, and `getTabConsoleLogs`. Only open a visible tab when presenting a finished result to the user. Headless tabs close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the tab must stay open until `closeTab`.
+Foreground pages steal the user's focus and clutter their page surface. Headless pages load fully in the background and support `capturePage`, `runPageJs`, and `getPageConsoleLogs`. Only open a foreground page when presenting a finished result to the user. Headless pages close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the page must stay open until `closePage`.
 
-Always close headless tabs and remove `.tmp/` files when done.
+Always close headless pages and remove `.tmp/` files when done.
 
-**Tools:** `captureTab({ tabId })` for screenshots, `getTabConsoleLogs({ tabId })` for console output, `execTabJs({ tabId, code })` to run JS in the view's page context (full DOM access), `inspectElement({ id, selector })` to see computed styles and box model.
+**Tools:** `capturePage({ pageId })` for screenshots, `getPageConsoleLogs({ pageId })` for console output, `runPageJs({ pageId, code })` to run JS in the view's page context (full DOM access), `inspectPageElement({ id, selector })` to see computed styles and box model.

@@ -10,9 +10,12 @@ import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import type { PaletteHost, TabApi } from '#shared/runtime/hosts.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { registerTabs } from '#shared/runtime/functions/tabs.js'
+import { registerPages } from '#shared/runtime/functions/pages.js'
 import { registerPalette } from '#shared/runtime/functions/palette.js'
 import { registerOpenExternal } from '#shared/runtime/functions/index.js'
 import { getElectronExternalLauncher } from './runtime/hosts-electron.js'
+import { PageManager } from '#shared/page/page-manager.js'
+import { LegacyTabPageHost } from '#shared/page/legacy-tab-page-host.js'
 
 export async function createRemoteAgentContext(opts: {
   agentId: string
@@ -96,7 +99,12 @@ function createClientFunctionRegistry(opts: {
   getCommandPalette?: () => PaletteHost
 }): FunctionRegistry {
   const registry = new FunctionRegistry()
-  registerTabs(registry, { tabTools: opts.tabTools, runtimeRoot: opts.cacheRoot })
+  const pageTools = new PageManager({
+    agentId: opts.cacheRoot,
+    hosts: [new LegacyTabPageHost(opts.tabTools, { agentId: opts.cacheRoot })],
+  })
+  registerPages(registry, { pageTools, runtimeRoot: opts.cacheRoot })
+  registerTabs(registry, { tabTools: opts.tabTools, runtimeRoot: opts.cacheRoot }, { hidden: true })
   if (opts.getCommandPalette) {
     registerPalette(registry, { getCommandPalette: opts.getCommandPalette })
     registry.register('_confirmPluginInstall', async (params) => {

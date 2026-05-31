@@ -367,6 +367,11 @@ export class HeadlessViewRuntime {
   }
 
   function normalizeParams(name, params) {
+    if (name === 'openPage' && params && typeof params === 'object' && !Array.isArray(params)) {
+      const request = { ...params };
+      if (typeof request.display !== 'string') request.display = 'foreground';
+      return request;
+    }
     if (name === 'openTab' && params && typeof params === 'object' && !Array.isArray(params)) {
       const request = { ...params };
       if (typeof request.headless !== 'boolean') request.headless = false;
@@ -450,6 +455,11 @@ export class HeadlessViewRuntime {
 }
 
 function normalizeViewRuntimeParams(name: string, params: unknown): unknown {
+  if (name === 'openPage' && params && typeof params === 'object' && !Array.isArray(params)) {
+    const request = { ...params as Record<string, unknown> }
+    if (typeof request.display !== 'string') request.display = 'foreground'
+    return request
+  }
   if (name === 'openTab' && params && typeof params === 'object' && !Array.isArray(params)) {
     const request = { ...params as Record<string, unknown> }
     if (typeof request.headless !== 'boolean') request.headless = false

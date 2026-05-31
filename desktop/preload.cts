@@ -373,7 +373,13 @@ if (isAgentView) {
   for (const name of runtimeFunctionNames) {
     runtimeFunctions[name] = (params: unknown) => {
       let nextParams = params;
-      if (name === 'openTab' && params && typeof params === 'object') {
+      if (name === 'openPage' && params && typeof params === 'object') {
+        const request = { ...params as Record<string, unknown> };
+        if (typeof request.display !== 'string') {
+          request.display = 'foreground';
+        }
+        nextParams = request;
+      } else if (name === 'openTab' && params && typeof params === 'object') {
         const request = { ...params as Record<string, unknown> };
         if (typeof request.headless !== 'boolean') {
           request.headless = false;

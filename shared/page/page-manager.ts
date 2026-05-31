@@ -1,0 +1,329 @@
+import crypto from 'node:crypto'
+import type { PageHandle } from './page-handle.js'
+import type { PageHost } from './page-host.js'
+import type {
+  CapturePageRequest,
+  CurrentPageRequest,
+  OpenPageRequest,
+  OpenPageResult,
+  PageApi,
+  PageCapabilities,
+  PageCdpPollResult,
+  PageCdpSubscription,
+  PageDisplay,
+  PageInfo,
+  PageInputRequest,
+  PageQueryRequest,
+  PageScreenshot,
+} from './types.js'
+
+const DEFAULT_WAIT_FOR_PAGE_TIMEOUT_MS = 10_000
+
+interface PageManagerOptions {
+  agentId: string
+  hosts: PageHost[]
+}
+
+interface TrackedSubscription {
+  pageId: string
+  subscription: PageCdpSubscription
+}
+
+export class PageManager implements PageApi {
+  private readonly agentId: string
+  private readonly hosts: PageHost[]
+  private readonly pageHosts = new Map<string, PageHost>()
+  private readonly subscriptions = new Map<string, TrackedSubscription>()
+
+  constructor(options: PageManagerOptions) {
+    this.agentId = options.agentId
+    this.hosts = options.hosts
+  }
+
+  async getPages(request: PageQueryRequest = {}): Promise<PageInfo[]> {
+    const pages: PageInfo[] = []
+    for (const host of this.hosts) {
+      const hostPages = await host.listPages?.() ?? []
+      for (const page of hostPages) {
+        pages.push(page)
+        this.pageHosts.set(page.pageId, host)
+      }
+    }
+
+    return pages.filter((page) => pageMatchesQuery(page, request))
+  }
+
+  async getCurrentPage(request: CurrentPageRequest = {}): Promise<PageInfo | null> {
+    for (const host of this.hosts) {
+      const page = await host.getCurrentPage?.(request) ?? null
+      if (page) {
+        this.pageHosts.set(page.pageId, host)
+        return page
+      }
+    }
+    return null
+  }
+
+  async openPage(request: OpenPageRequest): Promise<OpenPageResult> {
+    validateOpenPageRequest(request)
+    const context = { agentId: this.agentId }
+    const host = this.hosts.find(candidate => candidate.canOpen(request, context))
+    if (!host) {
+      throw new Error(`No page host is available for display "${request.display}" and source type "${request.source.type}"`)
+    }
+
+    const requestedPageId = `page-${crypto.randomUUID()}`
+    const handle = await host.openPage({
+      ...request,
+      pageId: requestedPageId,
+      owner: {
+        agentId: this.agentId,
+        hostKind: host.hostKind,
+      },
+      createdBy: request.createdBy ?? 'agent',
+    })
+    this.pageHosts.set(handle.pageId, host)
+    const page = handle.info()
+    return {
+      pageId: page.pageId,
+      page,
+      info: formatOpenPageInfo(page),
+    }
+  }
+
+  async showPage(request: { pageId: string }): Promise<PageInfo> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    if (page.display === 'headless') {
+      throw new Error(`showPage cannot show headless page "${request.pageId}"`)
+    }
+    if (!handle.show) {
+      throw new Error(`Page host does not support showPage for "${request.pageId}"`)
+    }
+    await handle.show()
+    return handle.info()
+  }
+
+  async closePage(request: { pageId: string }): Promise<void> {
+    const handle = await this.resolveHandle(request.pageId)
+    this.closeSubscriptionsForPage(request.pageId)
+    await handle.close()
+    this.pageHosts.delete(request.pageId)
+  }
+
+  async reloadPage(request: { pageId: string }): Promise<PageInfo> {
+    const handle = await this.resolveHandle(request.pageId)
+    await handle.reload()
+    return handle.info()
+  }
+
+  async waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo> {
+    const lifecycle = request.lifecycle ?? 'ready'
+    const timeoutMs = normalizeTimeoutMs(request.timeoutMs)
+    const deadline = Date.now() + timeoutMs
+
+    while (true) {
+      const handle = await this.resolveHandle(request.pageId)
+      const page = handle.info()
+      if (page.lifecycle === lifecycle) return page
+      if (Date.now() >= deadline) {
+        throw new Error(`waitForPage timed out waiting for page "${request.pageId}" to reach ${lifecycle}`)
+      }
+      await delay(50)
+    }
+  }
+
+  async capturePage(request: CapturePageRequest): Promise<PageScreenshot> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'screenshot', 'capturePage')
+    if (!handle.capture) {
+      throw new Error(`Page host does not implement capturePage for "${request.pageId}"`)
+    }
+    return handle.capture()
+  }
+
+  async runPageJs(request: { pageId: string; code: string; timeoutMs?: number }): Promise<unknown> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'js', 'runPageJs')
+    if (!handle.runJs) {
+      throw new Error(`Page host does not implement runPageJs for "${request.pageId}"`)
+    }
+    return handle.runJs(request.code, request.timeoutMs)
+  }
+
+  async sendPageInput(request: PageInputRequest): Promise<void> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'input', 'sendPageInput')
+    if (!handle.sendInput) {
+      throw new Error(`Page host does not implement sendPageInput for "${request.pageId}"`)
+    }
+    await handle.sendInput(request)
+  }
+
+  async inspectPageElement(request: { pageId: string; selector: string }): Promise<unknown> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'inspect', 'inspectPageElement')
+    if (!handle.inspectElement) {
+      throw new Error(`Page host does not implement inspectPageElement for "${request.pageId}"`)
+    }
+    return handle.inspectElement(request.selector)
+  }
+
+  async getPageConsoleLogs(request: { pageId: string; since?: number; limit?: number }) {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'consoleLogs', 'getPageConsoleLogs')
+    if (!handle.getConsoleLogs) {
+      throw new Error(`Page host does not implement getPageConsoleLogs for "${request.pageId}"`)
+    }
+    return handle.getConsoleLogs({
+      since: request.since,
+      limit: request.limit,
+    })
+  }
+
+  async sendPageCdp(request: { pageId: string; method: string; params?: unknown; sessionId?: string }): Promise<unknown> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'cdp', 'sendPageCdp')
+    if (!handle.sendCdp) {
+      throw new Error(`Page host does not implement sendPageCdp for "${request.pageId}"`)
+    }
+    return handle.sendCdp(request.method, request.params, request.sessionId)
+  }
+
+  async subscribePageCdp(request: { pageId: string; events: string[] }): Promise<{ subscriptionId: string }> {
+    const handle = await this.resolveHandle(request.pageId)
+    const page = handle.info()
+    assertCapability(page, 'cdp', 'subscribePageCdp')
+    if (!handle.subscribeCdp) {
+      throw new Error(`Page host does not implement subscribePageCdp for "${request.pageId}"`)
+    }
+    const subscriptionId = `pagecdp-${crypto.randomBytes(8).toString('hex')}`
+    this.subscriptions.set(subscriptionId, {
+      pageId: request.pageId,
+      subscription: await handle.subscribeCdp(request.events),
+    })
+    return { subscriptionId }
+  }
+
+  async pollPageCdp(request: { subscriptionId: string; maxBatch?: number; maxWaitMs?: number }): Promise<PageCdpPollResult> {
+    const tracked = this.subscriptions.get(request.subscriptionId)
+    if (!tracked) {
+      return { events: [], dropped: 0, closed: true }
+    }
+    const result = await tracked.subscription.poll({
+      maxBatch: request.maxBatch,
+      maxWaitMs: request.maxWaitMs,
+    })
+    if (result.closed) this.subscriptions.delete(request.subscriptionId)
+    return result
+  }
+
+  async unsubscribePageCdp(request: { subscriptionId: string }): Promise<void> {
+    const tracked = this.subscriptions.get(request.subscriptionId)
+    if (!tracked) return
+    this.subscriptions.delete(request.subscriptionId)
+    await tracked.subscription.close()
+  }
+
+  async detachPageCdp(request: { pageId: string }): Promise<void> {
+    const handle = await this.resolveHandle(request.pageId)
+    this.closeSubscriptionsForPage(request.pageId)
+    await handle.detachCdp?.()
+  }
+
+  private async resolveHandle(pageId: string): Promise<PageHandle> {
+    const knownHost = this.pageHosts.get(pageId)
+    if (knownHost) {
+      const handle = await knownHost.getPage(pageId)
+      if (handle) return handle
+      this.pageHosts.delete(pageId)
+    }
+
+    for (const host of this.hosts) {
+      const handle = await host.getPage(pageId)
+      if (handle) {
+        this.pageHosts.set(pageId, host)
+        return handle
+      }
+    }
+
+    throw new Error(`Page not found: ${pageId}`)
+  }
+
+  private closeSubscriptionsForPage(pageId: string): void {
+    for (const [subscriptionId, tracked] of this.subscriptions) {
+      if (tracked.pageId !== pageId) continue
+      void tracked.subscription.close().catch(() => {})
+      this.subscriptions.delete(subscriptionId)
+    }
+  }
+}
+
+function validateOpenPageRequest(request: OpenPageRequest): void {
+  if (!request || typeof request !== 'object') {
+    throw new Error('openPage requires a request object')
+  }
+  if (!isPageDisplay(request.display)) {
+    throw new Error('openPage requires explicit display: "foreground", "background", or "headless"')
+  }
+  if (!request.source || typeof request.source !== 'object') {
+    throw new Error('openPage requires a source object')
+  }
+}
+
+function isPageDisplay(value: unknown): value is PageDisplay {
+  return value === 'foreground' || value === 'background' || value === 'headless'
+}
+
+function pageMatchesQuery(page: PageInfo, request: PageQueryRequest): boolean {
+  if (request.clientId && page.owner.client?.id !== request.clientId) return false
+  const display = request.display ?? 'all'
+  if (display === 'all') return true
+  if (display === 'user-facing') return page.display !== 'headless'
+  return page.display === display
+}
+
+function assertCapability(page: PageInfo, capability: keyof PageCapabilities, operation: string): void {
+  if (page.capabilities[capability]) return
+  throw new Error(`${operation} is not supported for page "${page.pageId}"`)
+}
+
+function normalizeTimeoutMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_WAIT_FOR_PAGE_TIMEOUT_MS
+  }
+  return Math.max(1, Math.floor(value))
+}
+
+function formatOpenPageInfo(page: PageInfo): string {
+  const source = formatSource(page)
+  if (page.display === 'headless') {
+    const viewport = page.viewport ? ` (${page.viewport.width}x${page.viewport.height})` : ''
+    if (page.closeAfterIdleMs === 'never') {
+      return `Opened headless page ${page.pageId} for ${source}${viewport}. It stays open until closePage is called.`
+    }
+    return `Opened headless page ${page.pageId} for ${source}${viewport}.`
+  }
+  return `Opened ${page.display} page ${page.pageId} for ${source}.`
+}
+
+function formatSource(page: PageInfo): string {
+  switch (page.source.type) {
+    case 'view':
+      return `view "${page.source.name}"`
+    case 'file':
+      return `file "${page.source.path}"`
+    case 'url':
+      return `url "${page.source.url}"`
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}

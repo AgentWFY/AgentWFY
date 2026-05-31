@@ -738,9 +738,15 @@ body {
   async function openNodeExternal(node) {
     try {
       if (node.fullPath.startsWith('@views/')) {
-        await aw.openTab({ viewName: node.fullPath.slice('@views/'.length) });
+        await aw.openPage({
+          display: 'foreground',
+          source: { type: 'view', name: node.fullPath.slice('@views/'.length) },
+        });
       } else {
-        await aw.openTab({ filePath: node.fullPath });
+        await aw.openPage({
+          display: 'foreground',
+          source: { type: 'file', path: node.fullPath },
+        });
       }
     } catch (e) { console.error(e); }
   }

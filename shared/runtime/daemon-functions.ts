@@ -1,6 +1,6 @@
 /** Daemon-side built-in runtime function names — what registerAllBuiltInFunctions
  *  (in ./functions/index.ts) registers, minus the client-side gated registrations
- *  (tabs/palette/openExternal — those live in CLIENT_RUNTIME_FUNCTIONS).
+ *  (palette/openExternal — those live in CLIENT_RUNTIME_FUNCTIONS).
  *
  *  Surfaced to remote-agent views via the preload bridge so `window.agentwfy.X`
  *  works without an async list() round-trip. Calls fail with the underlying
@@ -20,20 +20,21 @@ export const DAEMON_BUILT_IN_FUNCTIONS = [
   'rename',
   'find',
   'grep',
-  'getTabs',
-  'openTab',
-  'closeTab',
-  'selectTab',
-  'reloadTab',
-  'getCurrentTab',
-  'captureTab',
-  'getTabConsoleLogs',
-  'execTabJs',
-  'sendInput',
-  'inspectElement',
-  'tabDebuggerSend',
-  'tabDebuggerSubscribe',
-  'tabDebuggerDetach',
+  'getPages',
+  'openPage',
+  'showPage',
+  'closePage',
+  'reloadPage',
+  'getCurrentPage',
+  'waitForPage',
+  'capturePage',
+  'getPageConsoleLogs',
+  'runPageJs',
+  'sendPageInput',
+  'inspectPageElement',
+  'sendPageCdp',
+  'subscribePageCdp',
+  'detachPageCdp',
   'publish',
   'waitFor',
   'spawnSession',

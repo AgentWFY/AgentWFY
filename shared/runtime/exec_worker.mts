@@ -8,8 +8,8 @@ import type {
   WorkerToHostMessage,
   WorkerExecuteRequestMessage,
   WorkerHostResultMessage,
-  WorkerTabDebuggerBufferedEvent,
-  WorkerTabDebuggerPollResult,
+  WorkerPageCdpBufferedEvent,
+  WorkerPageCdpPollResult,
 } from './types.js'
 
 // Inlined from timeout_utils.ts so the compiled worker has zero relative
@@ -300,40 +300,40 @@ function callHostMethod(
 
 type DebuggerHostCall = (method: string, params: unknown) => Promise<unknown>
 
-interface DebuggerSubscriptionHandle {
+interface CdpSubscriptionHandle {
   subscriptionId: string
-  [Symbol.asyncIterator](): AsyncIterator<WorkerTabDebuggerBufferedEvent>
+  [Symbol.asyncIterator](): AsyncIterator<WorkerPageCdpBufferedEvent>
   close: () => Promise<void>
 }
 
 const DEBUGGER_POLL_BATCH = 100
 const DEBUGGER_POLL_WAIT_MS = 30_000
 
-function makeDebuggerSubscriptionHandle(
+function makePageCdpSubscriptionHandle(
   call: DebuggerHostCall,
   subscriptionId: string,
-): DebuggerSubscriptionHandle {
+): CdpSubscriptionHandle {
   let unsubscribed = false
 
   const tryUnsubscribe = async (): Promise<void> => {
     if (unsubscribed) return
     unsubscribed = true
     try {
-      await call('tabDebuggerUnsubscribe', { subscriptionId })
+      await call('unsubscribePageCdp', { subscriptionId })
     } catch {
-      // Subscription may already be gone (tab closed, host crashed); ignore.
+      // Subscription may already be gone (page closed, host crashed); ignore.
     }
   }
 
-  async function* pump(): AsyncGenerator<WorkerTabDebuggerBufferedEvent, void, undefined> {
+  async function* pump(): AsyncGenerator<WorkerPageCdpBufferedEvent, void, undefined> {
     let pendingDropped = 0
     try {
       while (true) {
-        const result = (await call('tabDebuggerPoll', {
+        const result = (await call('pollPageCdp', {
           subscriptionId,
           maxBatch: DEBUGGER_POLL_BATCH,
           maxWaitMs: DEBUGGER_POLL_WAIT_MS,
-        })) as WorkerTabDebuggerPollResult
+        })) as WorkerPageCdpPollResult
 
         pendingDropped += result.dropped
         for (const evt of result.events) {
@@ -350,7 +350,7 @@ function makeDebuggerSubscriptionHandle(
     }
   }
 
-  let iterator: AsyncGenerator<WorkerTabDebuggerBufferedEvent, void, undefined> | null = null
+  let iterator: AsyncGenerator<WorkerPageCdpBufferedEvent, void, undefined> | null = null
 
   return {
     subscriptionId,
@@ -414,15 +414,15 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
     for (const method of methods) {
       methodParamNames.push(method)
 
-      if (method === 'captureTab') {
-        methodArgValues.push(makeAttachmentBinding<WorkerHostMethodMap['captureTab']['result']>(
-          'captureTab',
+      if (method === 'capturePage') {
+        methodArgValues.push(makeAttachmentBinding<WorkerHostMethodMap['capturePage']['result']>(
+          'capturePage',
           (r) => ({ attached: true, mimeType: r.mimeType }),
         ))
-      } else if (method === 'tabDebuggerSubscribe') {
+      } else if (method === 'subscribePageCdp') {
         methodArgValues.push((params: unknown) => (async () => {
-          const result = await call('tabDebuggerSubscribe', params) as { subscriptionId: string }
-          return makeDebuggerSubscriptionHandle(call, result.subscriptionId)
+          const result = await call('subscribePageCdp', params) as { subscriptionId: string }
+          return makePageCdpSubscriptionHandle(call, result.subscriptionId)
         })())
       } else if (method === 'read') {
         methodArgValues.push((params: unknown) => {
@@ -441,19 +441,6 @@ async function executeRequest(message: WorkerExecuteRequestMessage): Promise<voi
           })()
           pendingAttachments.push(p)
           return p
-        })
-      } else if (method === 'openTab') {
-        methodArgValues.push((params: unknown) => {
-          const request = params && typeof params === 'object'
-            ? { ...params as Record<string, unknown> }
-            : params
-          if (request && typeof request === 'object') {
-            const tabRequest = request as Record<string, unknown>
-            if (typeof tabRequest.headless !== 'boolean') {
-              tabRequest.headless = true
-            }
-          }
-          return call(method, request)
         })
       } else {
         methodArgValues.push((params: unknown) => call(method, params))

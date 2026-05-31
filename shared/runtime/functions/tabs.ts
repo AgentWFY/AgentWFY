@@ -11,8 +11,13 @@ import {
 import { getViewByName } from '../../db/views.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type {
-  WorkerHostMethodMap,
+  WorkerExecTabJsRequest,
+  WorkerGetTabConsoleLogsRequest,
+  WorkerOpenTabRequest,
   WorkerTabConsoleLogEntry,
+  WorkerTabDebuggerPollRequest,
+  WorkerTabDebuggerSendRequest,
+  WorkerTabDebuggerSubscribeRequest,
   WorkerSendInputRequest,
 } from '../types.js'
 
@@ -79,19 +84,29 @@ function resolveTabId(params: unknown): string {
 export function registerTabs(
   registry: FunctionRegistry,
   deps: { tabTools: TabApi; runtimeRoot: string },
+  options: { hidden?: boolean } = {},
 ): void {
   const { tabTools, runtimeRoot } = deps
+  const register = (
+    name: string,
+    handler: (params: unknown) => Promise<unknown>,
+    forceHidden = false,
+  ): void => {
+    registry.register(name, handler, undefined, {
+      hidden: options.hidden === true || forceHidden,
+    })
+  }
 
-  registry.register('getTabs', async () => {
+  register('getTabs', async () => {
     return tabTools.getTabs()
   })
 
-  registry.register('getCurrentTab', async () => {
+  register('getCurrentTab', async () => {
     return tabTools.getCurrentTab()
   })
 
-  registry.register('openTab', async (params) => {
-    const original = params as WorkerHostMethodMap['openTab']['params']
+  register('openTab', async (params) => {
+    const original = params as WorkerOpenTabRequest
     if (!original) {
       throw new Error(`openTab requires a request object. ${DOCS_HINT}`)
     }
@@ -164,35 +179,35 @@ export function registerTabs(
     }
   })
 
-  registry.register('closeTab', async (params) => {
+  register('closeTab', async (params) => {
     const tabId = resolveTabId(params)
 
     await tabTools.closeTab({ tabId })
     return undefined
   })
 
-  registry.register('selectTab', async (params) => {
+  register('selectTab', async (params) => {
     const tabId = resolveTabId(params)
 
     await tabTools.selectTab({ tabId })
     return undefined
   })
 
-  registry.register('reloadTab', async (params) => {
+  register('reloadTab', async (params) => {
     const tabId = resolveTabId(params)
 
     await tabTools.reloadTab({ tabId })
     return undefined
   })
 
-  registry.register('captureTab', async (params) => {
+  register('captureTab', async (params) => {
     const tabId = resolveTabId(params)
 
     return tabTools.captureTab({ tabId })
   })
 
-  registry.register('getTabConsoleLogs', async (params) => {
-    const request = params as WorkerHostMethodMap['getTabConsoleLogs']['params']
+  register('getTabConsoleLogs', async (params) => {
+    const request = params as WorkerGetTabConsoleLogsRequest
     const tabId = resolveTabId(request)
 
     const logs = await tabTools.getTabConsoleLogs({
@@ -203,8 +218,8 @@ export function registerTabs(
     return logs as WorkerTabConsoleLogEntry[]
   })
 
-  registry.register('execTabJs', async (params) => {
-    const request = params as WorkerHostMethodMap['execTabJs']['params']
+  register('execTabJs', async (params) => {
+    const request = params as WorkerExecTabJsRequest
     const tabId = resolveTabId(request)
     if (typeof request.code !== 'string') {
       throw new Error(`execTabJs requires JavaScript code as a string. ${DOCS_HINT}`)
@@ -217,7 +232,7 @@ export function registerTabs(
     })
   })
 
-  registry.register('sendInput', async (params) => {
+  register('sendInput', async (params) => {
     const request = params as WorkerSendInputRequest
     const tabId = resolveTabId(request)
     if (typeof request.type !== 'string' || !request.type) {
@@ -238,7 +253,7 @@ export function registerTabs(
     })
   })
 
-  registry.register('inspectElement', async (params) => {
+  register('inspectElement', async (params) => {
     const request = params as { id?: string; tabId?: string; selector: string }
     const tabId = resolveTabId(request)
     if (typeof request.selector !== 'string' || !request.selector.trim()) {
@@ -248,8 +263,8 @@ export function registerTabs(
     return tabTools.inspectElement({ tabId, selector: request.selector })
   })
 
-  registry.register('tabDebuggerSend', async (params) => {
-    const request = params as WorkerHostMethodMap['tabDebuggerSend']['params']
+  register('tabDebuggerSend', async (params) => {
+    const request = params as WorkerTabDebuggerSendRequest
     const tabId = resolveTabId(request)
     if (typeof request.method !== 'string' || !request.method.trim()) {
       throw new Error(`tabDebuggerSend requires a CDP method name. ${DEBUGGER_DOCS_HINT}`)
@@ -262,8 +277,8 @@ export function registerTabs(
     })
   })
 
-  registry.register('tabDebuggerSubscribe', async (params) => {
-    const request = params as WorkerHostMethodMap['tabDebuggerSubscribe']['params']
+  register('tabDebuggerSubscribe', async (params) => {
+    const request = params as WorkerTabDebuggerSubscribeRequest
     const tabId = resolveTabId(request)
     if (!Array.isArray(request.events) || request.events.length === 0) {
       throw new Error(`tabDebuggerSubscribe requires a non-empty events array. ${DEBUGGER_DOCS_HINT}`)
@@ -282,8 +297,8 @@ export function registerTabs(
     return { subscriptionId }
   })
 
-  registry.register('tabDebuggerPoll', async (params) => {
-    const request = params as WorkerHostMethodMap['tabDebuggerPoll']['params']
+  register('tabDebuggerPoll', async (params) => {
+    const request = params as WorkerTabDebuggerPollRequest
     if (!request || typeof request.subscriptionId !== 'string' || !request.subscriptionId.trim()) {
       throw new Error(`tabDebuggerPoll requires a subscriptionId. ${DEBUGGER_DOCS_HINT}`)
     }
@@ -292,9 +307,9 @@ export function registerTabs(
       maxBatch: request.maxBatch,
       maxWaitMs: request.maxWaitMs,
     })
-  }, undefined, { hidden: true })
+  }, true)
 
-  registry.register('tabDebuggerUnsubscribe', async (params) => {
+  register('tabDebuggerUnsubscribe', async (params) => {
     let subscriptionId: string | undefined
     if (typeof params === 'string') {
       subscriptionId = params
@@ -305,9 +320,9 @@ export function registerTabs(
       throw new Error(`tabDebuggerUnsubscribe requires a subscriptionId. ${DEBUGGER_DOCS_HINT}`)
     }
     await tabTools.tabDebuggerUnsubscribe({ subscriptionId })
-  }, undefined, { hidden: true })
+  }, true)
 
-  registry.register('tabDebuggerDetach', async (params) => {
+  register('tabDebuggerDetach', async (params) => {
     const tabId = resolveTabId(params)
     await tabTools.tabDebuggerDetach({ tabId })
   })

@@ -64,7 +64,7 @@ export async function createAgentRuntime(
   } else {
     console.log(
       '[runtime] headless browser host: disabled — set AGENTWFY_BROWSER_EXECUTABLE ' +
-      'or AGENTWFY_BROWSER_CDP_URL to enable headless tabs (openTab defaults to headless:true)',
+      'or AGENTWFY_BROWSER_CDP_URL to enable headless pages',
     )
   }
 
@@ -75,6 +75,8 @@ export async function createAgentRuntime(
         browserHost: browserHost ?? undefined,
         clientInvoker: clientFunctionInvoker,
       }),
+      legacyPageHostKind: 'remote-client',
+      legacyHeadlessPageHostKind: 'daemon-headless',
     },
     onDbChange: (change) => {
       if (change.table === 'triggers') {
