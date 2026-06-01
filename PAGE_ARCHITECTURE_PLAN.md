@@ -1756,6 +1756,37 @@ Goal: make remote page behavior explicit and observable.
 
 ### Phase 7: Refactor Daemon Headless Chrome Into PageHost
 
+Status as of 2026-06-01: **implemented and build-verified**.
+
+Implemented in:
+
+- `server/headless-chrome.ts`
+- `server/runtime-bootstrap.ts`
+- `shared/browser/cdp-ops.ts`
+- `shared/page/idle-close.ts`
+
+Notes:
+
+- The daemon runtime now installs Chrome headless support as a direct
+  `DaemonHeadlessPageHost` in `PageManager`; daemon headless pages no longer
+  route through `TabRouter` or `LegacyTabPageHost`.
+- `DaemonHeadlessPageHost` honors `PageManager`-assigned page IDs, owns Chrome
+  target/session lifecycle, and exposes `PageInfo` with `daemon-headless`
+  ownership, `headless` display, lifecycle state, idle metadata, and explicit
+  capabilities.
+- The Chrome page handle implements page-native capture, JS execution, input,
+  inspection, console logs, CDP send/subscribe/poll/detach, reload, and close.
+- CDP subscriptions and idle-close cleanup are closed from the host when pages
+  close or idle-close.
+- Daemon `view` and `file` headless pages continue to load through the Phase 0
+  `HeadlessViewRuntime` URLs, preserving `window.agentwfy` injection and token
+  cleanup.
+
+Verification performed:
+
+- `./scripts/build-server`
+- `./scripts/build`
+
 - Convert `HeadlessChromeBrowserHost` into `DaemonHeadlessPageHost`.
 - Implement Chrome `PageHandle`.
 - Use shared CDP subscriptions and idle close.

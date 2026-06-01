@@ -2,9 +2,7 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js'
 import { LocalBackend } from '#shared/backend/local.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
-import { TabRouter } from '#shared/runtime/tab-router.js'
 import { PageManager } from '#shared/page/page-manager.js'
-import { LegacyTabPageHost } from '#shared/page/legacy-tab-page-host.js'
 import { RemoteClientPageHost, type ClientPageRpcInvoker } from '#shared/page/remote-client-page-host.js'
 import type { PageHost } from '#shared/page/page-host.js'
 import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
@@ -24,7 +22,7 @@ import { runCleanup } from '#shared/cleanup.js'
 import { SystemConfigKeys } from '#shared/system-config/keys.js'
 import path from 'node:path'
 import type { loadPlugins } from '#shared/plugins/loader.js'
-import { createHeadlessChromeBrowserHostFromEnv } from './headless-chrome.js'
+import { createDaemonHeadlessPageHostFromEnv } from './headless-chrome.js'
 import { HeadlessViewRuntime } from './headless-view-runtime.js'
 
 export interface RuntimeBundle {
@@ -57,14 +55,15 @@ export async function createAgentRuntime(
     runtimeRoot,
     agentId: runtimeRoot,
   })
-  const browserHost = await createHeadlessChromeBrowserHostFromEnv({
+  const daemonHeadlessPageHost = await createDaemonHeadlessPageHostFromEnv({
     runtimeRoot,
+    agentId: runtimeRoot,
     viewRuntime: headlessViewRuntime,
   }).catch((err) => {
     console.warn('[runtime] headless browser host unavailable:', err)
     return null
   })
-  if (browserHost) {
+  if (daemonHeadlessPageHost) {
     console.log('[runtime] headless browser host: ready')
   } else {
     console.log(
@@ -73,21 +72,13 @@ export async function createAgentRuntime(
     )
   }
 
-  const tabTools = new TabRouter({
-    browserHost: browserHost ?? undefined,
-  })
   const pageHosts: PageHost[] = []
   if (clientFunctionInvoker && isClientPageRpcInvoker(clientFunctionInvoker)) {
     pageHosts.push(new RemoteClientPageHost(clientFunctionInvoker, {
       agentId: runtimeRoot,
     }))
   }
-  pageHosts.push(new LegacyTabPageHost(tabTools, {
-    agentId: runtimeRoot,
-    hostKind: 'remote-client',
-    headlessHostKind: 'daemon-headless',
-    displays: ['headless'],
-  }))
+  if (daemonHeadlessPageHost) pageHosts.push(daemonHeadlessPageHost)
   const pageTools = new PageManager({
     agentId: runtimeRoot,
     hosts: pageHosts,
@@ -97,7 +88,6 @@ export async function createAgentRuntime(
     runtimeRoot,
     hosts: {
       pageTools,
-      tabTools,
     },
     onDbChange: (change) => {
       if (change.table === 'triggers') {
@@ -157,7 +147,7 @@ export async function createAgentRuntime(
     await runtime.dispose()
     runtime.jsRuntime.disposeAll()
     await runtime.traceWriter.flush()
-    await browserHost?.dispose().catch((err) => console.warn('[runtime] browser host dispose failed:', err))
+    await daemonHeadlessPageHost?.dispose().catch((err) => console.warn('[runtime] browser host dispose failed:', err))
     await headlessViewRuntime.close().catch((err) => console.warn('[runtime] headless view runtime close failed:', err))
     dbChangeSubscribers.clear()
     dbResetSubscribers.clear()
@@ -191,7 +181,7 @@ export async function createAgentRuntime(
       },
     },
     getDbVersion: () => getAgentDbCurrentVersion(runtimeRoot),
-    hasHeadlessPages: () => browserHost !== null,
+    hasHeadlessPages: () => daemonHeadlessPageHost !== null,
     dispose,
   }
 }

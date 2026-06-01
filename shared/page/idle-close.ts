@@ -1,9 +1,35 @@
 import type { PageCloseAfterIdleMs } from './types.js'
 
+export const DEFAULT_PAGE_CLOSE_AFTER_IDLE_MS = 30 * 60 * 1000
+export const MAX_PAGE_CLOSE_AFTER_IDLE_MS = 2_147_483_647
+
 export interface IdleCloseEntry {
   closeAfterIdleMs?: PageCloseAfterIdleMs | null
   lastUsedAt?: number
   expiresAt?: number | null
+}
+
+export function resolvePageCloseAfterIdleMs(input?: unknown): PageCloseAfterIdleMs {
+  if (input === undefined || input === null) {
+    return DEFAULT_PAGE_CLOSE_AFTER_IDLE_MS
+  }
+
+  if (input === 'never') {
+    return 'never'
+  }
+
+  if (typeof input !== 'number' || !Number.isFinite(input)) {
+    throw new Error('closeAfterIdleMs must be a positive number of milliseconds or "never"')
+  }
+
+  const value = Math.floor(input)
+  if (value <= 0) {
+    throw new Error('closeAfterIdleMs must be greater than 0, or "never"')
+  }
+  if (value > MAX_PAGE_CLOSE_AFTER_IDLE_MS) {
+    throw new Error(`closeAfterIdleMs must be <= ${MAX_PAGE_CLOSE_AFTER_IDLE_MS}, or "never"`)
+  }
+  return value
 }
 
 interface IdleCloseSchedulerOptions<T extends IdleCloseEntry> {

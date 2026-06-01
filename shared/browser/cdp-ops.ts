@@ -1,21 +1,26 @@
-import type {
-  BrowserPageHandle,
-  TabCaptureResult,
-  TabConsoleLog,
-  TabSendInputRequest,
-} from '../runtime/hosts.js'
+import type { PageConsoleLog } from '../page/types.js'
 import {
   buildPageExecutionCode,
   readCdpRemoteObjectValue,
   resolvePageJsTimeout,
   withPageJsTimeout,
 } from '../page/page-js.js'
-import { PAGE_MOUSE_EVENT_TYPES, normalizePageInput, type PageInputModifier } from '../page/page-input.js'
+import { PAGE_MOUSE_EVENT_TYPES, normalizePageInput, type PageInputLike, type PageInputModifier } from '../page/page-input.js'
 
 const CAPTURE_RETRY_BUDGET_MS = 3000
 
-export async function capture(handle: BrowserPageHandle): Promise<TabCaptureResult> {
-  // The page can still be settling right after openTab — Chrome answers
+export interface CdpPageHandle {
+  sendCdp(method: string, params?: unknown, sessionId?: string): Promise<unknown>
+  getConsoleLogs?(request?: { since?: number; limit?: number }): Promise<PageConsoleLog[]>
+}
+
+export interface CdpCaptureResult {
+  base64: string
+  mimeType: 'image/png'
+}
+
+export async function capture(handle: CdpPageHandle): Promise<CdpCaptureResult> {
+  // The page can still be settling right after openPage/openTab — Chrome answers
   // Page.captureScreenshot with "Not attached to an active page". Retry on a
   // short budget so an immediate capture doesn't race the navigation.
   const deadline = Date.now() + CAPTURE_RETRY_BUDGET_MS
@@ -43,7 +48,7 @@ export function isNotAttachedError(err: unknown): boolean {
 }
 
 export async function execJs(
-  handle: BrowserPageHandle,
+  handle: CdpPageHandle,
   code: string,
   timeoutMs?: number,
 ): Promise<unknown> {
@@ -68,7 +73,7 @@ export async function execJs(
   return readCdpRemoteObjectValue(result)
 }
 
-export async function dispatchInput(handle: BrowserPageHandle, request: TabSendInputRequest): Promise<void> {
+export async function dispatchInput(handle: CdpPageHandle, request: PageInputLike): Promise<void> {
   const input = normalizePageInput(request)
   const modifiers = cdpModifierMask(input.modifiers)
 
@@ -164,7 +169,7 @@ function cdpModifierMask(modifiers: readonly PageInputModifier[]): number {
   return mask
 }
 
-export async function inspect(handle: BrowserPageHandle, selector: string): Promise<unknown> {
+export async function inspect(handle: CdpPageHandle, selector: string): Promise<unknown> {
   if (typeof selector !== 'string' || !selector.trim()) {
     throw new Error('inspectElement requires a non-empty CSS selector')
   }
@@ -243,9 +248,9 @@ export async function inspect(handle: BrowserPageHandle, selector: string): Prom
 }
 
 export async function getConsoleLogs(
-  handle: BrowserPageHandle,
+  handle: CdpPageHandle,
   request?: { since?: number; limit?: number },
-): Promise<TabConsoleLog[]> {
+): Promise<PageConsoleLog[]> {
   if (handle.getConsoleLogs) {
     return handle.getConsoleLogs(request)
   }
