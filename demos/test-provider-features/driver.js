@@ -44,7 +44,7 @@ evalMain(NAME, `(async () => {
 evalMain(NAME, `(async () => {
   const d = window.__demo;
 
-  d.send = async (cmd, perChar = 45) => {
+  d.typeCommand = async (cmd, perChar = 45) => {
     const ta = await d.waitFor('textarea#msg-input', 3000);
     await d.moveToEl(ta, 120, 22, 500);
     await d.clickEl(ta);
@@ -55,10 +55,24 @@ evalMain(NAME, `(async () => {
     ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
     await d.typeInto(ta, cmd, perChar);
     await d.sleep(250);
-    ta.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-      bubbles: true, cancelable: true,
-    }));
+    return true;
+  };
+
+  d.submitCommand = () => {
+    const ta = document.querySelector('textarea#msg-input');
+    if (!ta) return false;
+    setTimeout(() => {
+      ta.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+        bubbles: true, cancelable: true,
+      }));
+    }, 0);
+    return true;
+  };
+
+  d.send = async (cmd, perChar = 45) => {
+    await d.typeCommand(cmd, perChar);
+    d.submitCommand();
   };
 
   // True once streaming stops (composer-stop hidden).
@@ -93,121 +107,93 @@ evalMain(NAME, `(async () => {
   return 'ok';
 })()`);
 
+async function sendCommand(cmd, waitMs, perChar = 45) {
+  evalMain(NAME, `(async () => {
+    const d = window.__demo;
+    await d.typeCommand(${JSON.stringify(cmd)}, ${perChar});
+    d.submitCommand();
+    return 'sent';
+  })()`);
+  await sleep(waitMs);
+}
+
+function clickRetryAction(action) {
+  evalMain(NAME, `(async () => {
+    const d = window.__demo;
+    await d.clickRetryBannerBtn(${JSON.stringify(action)});
+    return 'clicked';
+  })()`);
+}
+
+function clickStop() {
+  evalMain(NAME, `(async () => {
+    const d = window.__demo;
+    await d.clickStopBtn();
+    return 'stopped';
+  })()`);
+}
+
 // --- 2. "normal" — thinking + text streaming --------------------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('normal');
-  await d.waitFor(d.notStreaming, 15000);
-  await d.sleep(600);
-  return 'ok';
-})()`);
+await sendCommand('normal', 2600);
 
 // --- 3. "tools" — tool call + trace popup -----------------------------
+await sendCommand('tools', 2500);
 evalMain(NAME, `(async () => {
   const d = window.__demo;
-  await d.send('tools');
-  await d.waitFor('.tool-header[data-tool-id]', 15000);
-  await d.waitFor(d.notStreaming, 15000);
-  await d.sleep(400);
-  const toolHeader = document.querySelector('.tool-header[data-tool-id]');
+  const toolHeader = document.querySelector('.tool-header');
   if (toolHeader) {
-    await d.moveToEl(toolHeader, 30, null, 700);
+    await d.moveToEl(toolHeader, 30, null, 500);
     await d.clickEl(toolHeader);
-    await d.waitFor('.tool-popup-overlay', 3000);
-    await d.sleep(1800);
-    await d.clickSelector('.tool-popup-close', null, null, 500);
-    await d.sleep(400);
   }
-  return 'ok';
+  return 'popup-opened';
 })()`);
+await sleep(1800);
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
+  await d.clickSelector('.tool-popup-close', null, null, 500);
+  return 'popup-closed';
+})()`);
+await sleep(400);
 
 // --- 4. "slow" — 1 token per second -----------------------------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('slow');
-  await d.waitFor(d.notStreaming, 20000);
-  await d.sleep(500);
-  return 'ok';
-})()`);
+await sendCommand('slow', 12000);
 
 // --- 5. "thinking" — server-side thinking with status keepalives ------
 // Lets the waiting indicator and the "Test Provider · thinking... Ns"
 // status line tick for a few seconds, then aborts so we don't pay the
 // full 15s (the mechanism is visible within ~4s).
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('thinking');
-  await d.sleep(4500);
-  await d.clickStopBtn();
-  await d.waitFor(d.notStreaming, 5000);
-  await d.sleep(500);
-  return 'ok';
-})()`);
+await sendCommand('thinking', 4500);
+clickStop();
+await sleep(1000);
 
 // --- 6. "ratelimit" — retryable with retryAfterMs, Stop ---------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('ratelimit');
-  await d.waitFor(d.retryVisible, 10000);
-  await d.sleep(2200); // let the countdown tick visibly
-  await d.clickRetryBannerBtn('stop-retry');
-  await d.waitFor(d.idle, 5000);
-  await d.sleep(500);
-  return 'ok';
-})()`);
+await sendCommand('ratelimit', 2600);
+clickRetryAction('stop-retry');
+await sleep(800);
 
 // --- 7. "network" — retryable mid-stream error, Stop ------------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('network');
-  await d.waitFor(d.retryVisible, 15000);
-  await d.sleep(1800);
-  await d.clickRetryBannerBtn('stop-retry');
-  await d.waitFor(d.idle, 5000);
-  await d.sleep(500);
-  return 'ok';
-})()`);
+await sendCommand('network', 2200);
+clickRetryAction('stop-retry');
+await sleep(800);
 
 // --- 8. "multi-fail" — fails 3×, 4th succeeds, compressed via Retry now
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('multi-fail');
-  // Three failures, click "Retry now" after each banner shows so the
-  // 5s/10s/20s backoffs don't stretch the demo past reason.
-  for (let i = 0; i < 3; i++) {
-    await d.waitFor(d.retryVisible, 20000);
-    await d.sleep(900);
-    await d.clickRetryBannerBtn('retry-now');
-    await d.sleep(400);
-  }
-  // 4th attempt streams the success message.
-  await d.waitFor(d.notStreaming, 20000);
-  await d.sleep(800);
-  return 'ok';
-})()`);
+await sendCommand('multi-fail', 1800);
+for (let i = 0; i < 3; i++) {
+  clickRetryAction('retry-now');
+  await sleep(1400);
+}
+await sleep(3000);
 
 // --- 9. "auth" — non-retryable error ----------------------------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('auth');
-  await d.waitFor(d.errorVisible, 10000);
-  await d.sleep(2400);
-  return 'ok';
-})()`);
+await sendCommand('auth', 2600);
 
 // --- 10. "overflow" — context_overflow error --------------------------
-evalMain(NAME, `(async () => {
-  const d = window.__demo;
-  await d.send('overflow');
-  await d.waitFor(d.errorVisible, 10000);
-  await d.sleep(2400);
-  return 'ok';
-})()`);
+await sendCommand('overflow', 2600);
 
 // Park the cursor and hide it before we stop recording.
 evalMain(NAME, `(async () => {
   const d = window.__demo;
   await d.moveTo(1180, 640, 700);
-  await window.ipc.previewCursor.setVisible(false);
+  window.ipc.previewCursor.setVisible(false);
   return 'ok';
 })()`);

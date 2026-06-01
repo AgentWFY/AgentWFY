@@ -83,9 +83,10 @@ async function setupRemoteDaemon() {
 async function removePriorRemoteAgent() {
   evalMain(NAME, `(async () => {
     const agents = await window.ipc.agentSidebar.getInstalled();
-    if (!agents.some(a => a.path === ${JSON.stringify(REMOTE_LABEL)})) return 'none';
+    const idOf = a => a.agentId || a.path;
+    if (!agents.some(a => idOf(a) === ${JSON.stringify(REMOTE_LABEL)})) return 'none';
     const local = agents.find(a => a.backend === 'local');
-    if (local) await window.ipc.agentSidebar.switch(local.path);
+    if (local) await window.ipc.agentSidebar.switch(idOf(local));
     await window.ipc.agentSidebar.remove(${JSON.stringify(REMOTE_LABEL)}).catch(() => {});
     return 'removed';
   })()`)
@@ -126,7 +127,7 @@ async function addRemoteAgent(token) {
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     for (let i = 0; i < 60; i++) {
       const agents = await window.ipc.agentSidebar.getInstalled();
-      const remote = agents.find(a => a.path === ${JSON.stringify(REMOTE_LABEL)});
+      const remote = agents.find(a => (a.agentId || a.path) === ${JSON.stringify(REMOTE_LABEL)});
       if (remote?.active && remote.remoteStatus === 'connected') return remote;
       await sleep(250);
     }

@@ -245,12 +245,16 @@ export async function installCursorHelpers(name) {
     const sleep = state.sleep;
 
     const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    state.setCursorPos = async (x, y) => {
+      cursor.setPos(x, y).catch(() => {});
+      await sleep(16);
+    };
     state.moveTo = async (x, y, dur = 700) => {
       const fx = state.x, fy = state.y, dx = x - fx, dy = y - fy, start = Date.now();
       while (true) {
         const t = Math.min(1, (Date.now() - start) / dur), p = ease(t);
         state.x = fx + dx * p; state.y = fy + dy * p;
-        await cursor.setPos(state.x, state.y);
+        await state.setCursorPos(state.x, state.y);
         if (t >= 1) break;
         await sleep(16);
       }

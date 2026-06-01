@@ -22,7 +22,7 @@ spawnSync('./scripts/preview', ['--sqlite', NAME, `
 INSERT OR REPLACE INTO tasks (name, title, description, content, timeout_ms)
 VALUES ('pick-view-demo', 'Pick a System View',
         'List system views and let the user pick one to open',
-        'const views = await runSql({ target: "agent", sql: "SELECT name, title FROM views WHERE name LIKE ''system.%'' ORDER BY name" }); const items = views.map(v => ({ title: v.title || v.name, subtitle: v.name, value: v.name })); const chosen = await pickFromPalette({ title: "Open System View", placeholder: "Search views…", items }); if (chosen) { await openTab({ viewName: chosen, title: chosen }); return "Opened " + chosen; } return "Cancelled";',
+        'const views = await runSql({ target: "agent", sql: "SELECT name, title FROM views WHERE name LIKE ''system.%'' ORDER BY name" }); const items = views.map(v => ({ title: v.title || v.name, subtitle: v.name, value: v.name })); const chosen = await pickFromPalette({ title: "Open System View", placeholder: "Search views…", items }); if (chosen) { await openPage({ display: "foreground", source: { type: "view", name: chosen }, title: chosen }); return "Opened " + chosen; } return "Cancelled";',
         30000);
 `], { stdio: 'inherit' });
 
@@ -72,7 +72,7 @@ evalMain(NAME, `(async () => {
 
 evalMain(NAME, `(async () => {
   const d = window.__demo;
-  await d.waitFor('.tool-header[data-tool-id]', 15000);
+  await d.waitFor('.tool-header', 15000);
   await d.moveTo(640, 320, 700);
   return 'ok';
 })()`);

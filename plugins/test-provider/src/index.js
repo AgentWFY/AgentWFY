@@ -231,7 +231,11 @@ await runSql({
   sql: 'INSERT INTO views (name, title, content) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content',
   params: ['remote-sync-demo', 'Remote Sync Demo', html],
 });
-await openTab({ viewName: 'remote-sync-demo' });
+await openPage({
+  display: 'foreground',
+  source: { type: 'view', name: 'remote-sync-demo' },
+  title: 'Remote Sync Demo',
+});
 return 'created and opened remote-sync-demo';`
 
     const toolCall = {

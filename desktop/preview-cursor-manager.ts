@@ -120,8 +120,9 @@ export class PreviewCursorManager {
     this.bringToFront();
     // Moving the overlay alone is purely visual; CSS :hover and JS
     // hover listeners only fire when a real mouseMove is dispatched
-    // into the view.
-    this.dispatchMouseMove(x, y);
+    // into the view. Defer it so a renderer awaiting previewCursor.setPos
+    // never receives synthetic input before its IPC round-trip has returned.
+    setTimeout(() => this.dispatchMouseMove(x, y), 0);
   }
 
   private dispatchMouseMove(x: number, y: number): void {

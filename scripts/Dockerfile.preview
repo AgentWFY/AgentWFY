@@ -119,7 +119,7 @@ PROXY
 # Runs the expression in the chosen target's page (default: app://index.html).
 # Prints the evaluated value as JSON on stdout; prints errors to stderr and
 # exits non-zero. Uses awaitPromise+returnByValue so async IPC calls like
-# window.ipc.tabs.openTab(...) work transparently.
+# window.ipc.pages.openPage(...) work transparently.
 RUN cat > /cdp-eval.mjs << 'EVAL'
 import http from 'node:http';
 

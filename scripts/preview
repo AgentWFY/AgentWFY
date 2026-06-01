@@ -199,7 +199,7 @@ if (args[0] === '--screenshot') {
   const outPath = rest[0] ? resolve(rest[0]) : join(process.cwd(), 'preview-screenshot.png');
   try {
     // Default settle lets tab switches / bounds changes land before grim samples —
-    // selectTab + updateViewBounds is async through the renderer → main round-trip.
+    // showPage + updateViewBounds is async through the renderer → main round-trip.
     // Use --no-settle to capture mid-transition state for race-condition repros
     // (see docs/TESTING.md "Catching transient state").
     const settle = noSettle ? '' : 'sleep 0.5 && ';

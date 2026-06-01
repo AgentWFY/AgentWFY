@@ -4,6 +4,11 @@ import fs from 'fs';
 import { isPotentiallyMutatingSql, normalizeSqlRows, normalizeParams } from './sqlite.js';
 import type { SqlExecutionRequest, AgentDbChange } from './sqlite.js';
 
+type AuthorizerCallback = Parameters<DatabaseSync['setAuthorizer']>[0];
+type MaybeAuthorizerDb = DatabaseSync & {
+  setAuthorizer?: (callback: AuthorizerCallback | null) => void
+};
+
 export interface AgentDbSnapshotResult {
   /** Version counter at the moment the snapshot read started — every change
    *  with `version <= snapshotVersion` is in the snapshot, every change with
@@ -302,6 +307,9 @@ class AgentDb {
   }
 
   private installAuthorizer(): void {
+    const setAuthorizer = (this.db as MaybeAuthorizerDb).setAuthorizer;
+    if (typeof setAuthorizer !== 'function') return;
+
     const {
       SQLITE_OK, SQLITE_DENY,
       SQLITE_CREATE_TABLE, SQLITE_DROP_TABLE, SQLITE_ALTER_TABLE,
@@ -317,7 +325,7 @@ class AgentDb {
       SQLITE_ATTACH, SQLITE_DETACH,
     } = constants;
 
-    this.db.setAuthorizer((actionCode, arg1) => {
+    setAuthorizer.call(this.db, (actionCode, arg1) => {
       switch (actionCode) {
         case SQLITE_CREATE_TABLE:
         case SQLITE_DROP_TABLE:
@@ -481,7 +489,7 @@ class AgentDb {
    * remote change to the UI so the mirror doesn't fabricate a duplicate.
    */
   private shieldedWrite(fn: () => void, opts: { drain: boolean }): void {
-    this.db.setAuthorizer(null);
+    (this.db as MaybeAuthorizerDb).setAuthorizer?.call(this.db, null);
     this.db.exec(DROP_GUARDS_SQL);
     try {
       this.db.exec('DELETE FROM _changes;');

@@ -38,21 +38,30 @@ evalMain(NAME, `(async () => {
     key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
     bubbles: true, cancelable: true,
   }));
-
-  await d.waitFor('.tool-header[data-tool-id]', 15000);
-  await d.waitFor(() => !document.querySelector('.composer-stop:not([style*="display: none"])'), 10000);
-  await d.sleep(400);
-  const toolHeader = document.querySelector('.tool-header[data-tool-id]');
-  if (toolHeader) {
-    await d.moveToEl(toolHeader, 30, null, 700);
-    await d.clickEl(toolHeader);
-    await d.waitFor('.tool-popup-overlay', 3000);
-    await d.sleep(1600);
-    await d.clickSelector('.tool-popup-close', null, null, 600);
-    await d.sleep(400);
-  }
-  return 'ok';
+  return 'sent';
 })()`);
+
+await sleep(3500);
+
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
+  const toolHeader = document.querySelector('.tool-header');
+  if (toolHeader) {
+    await d.moveToEl(toolHeader, 30, null, 600);
+    await d.clickEl(toolHeader);
+  }
+  return 'popup-open-clicked';
+})()`);
+
+await sleep(1800);
+
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
+  await d.clickSelector('.tool-popup-close', null, null, 500);
+  return 'popup-close-clicked';
+})()`);
+
+await sleep(500);
 
 // --- 2. Open Source Explorer via command palette ----------------------
 // Move the cursor toward where the palette will show, then open it.
@@ -150,14 +159,17 @@ evalPalette(NAME, `(async () => {
   };
   await type(document.getElementById('searchInput'), 'theme');
   await sleep(500);
-  const card = document.querySelector('.settings-card[data-setting-key="system.theme"]');
-  card.scrollIntoView({ block: 'center' });
+  const row = document.querySelector('.set-row[data-key="system.theme"]');
+  row.scrollIntoView({ block: 'center' });
   await sleep(250);
-  card.querySelector('.settings-target-btn[data-target="global"]').click();
+  row.querySelector('.set-row-head').click();
   await sleep(300);
-  await type(card.querySelector('input.settings-card-input'), 'dark', 130);
+  document.querySelector('.set-row[data-key="system.theme"] .set-row-scope[data-target="global"]').click();
+  await sleep(300);
+  const activeRow = document.querySelector('.set-row[data-key="system.theme"]');
+  await type(activeRow.querySelector('input.set-row-input'), 'dark', 130);
   await sleep(500);
-  [...document.querySelectorAll('button.btn')].find(b => b.textContent.trim() === 'Save').click();
+  document.querySelector('.set-footer button[data-action="save-all"]').click();
   await sleep(600);
   // Two Escapes pop the stacked settings screens and close the palette.
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));

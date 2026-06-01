@@ -5,7 +5,7 @@
 //
 // Invoked by scripts/record-demo with $PREVIEW_NAME set.
 
-import { evalMain, installCursorHelpers } from '../../scripts/lib/demo.mjs';
+import { evalMain, installCursorHelpers, sleep } from '../../scripts/lib/demo.mjs';
 
 const NAME = process.env.PREVIEW_NAME;
 if (!NAME) { console.error('PREVIEW_NAME not set'); process.exit(1); }
@@ -33,31 +33,49 @@ evalMain(NAME, `(async () => {
     key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
     bubbles: true, cancelable: true,
   }));
+  return 'sent';
+})()`);
 
-  // Wait for the stream to fully land before clicking tool-header —
-  // mid-stream clicks race the message re-render.
-  await d.waitFor('.tool-header[data-tool-id]', 15000);
-  await d.waitFor(() => !document.querySelector('.composer-stop:not([style*="display: none"])'), 10000);
-  await d.sleep(500);
+// Wait on the host side so a long renderer-side CDP eval cannot freeze while
+// the chat stream re-renders.
+await sleep(3500);
 
-  const toolHeader = document.querySelector('.tool-header[data-tool-id]');
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
+  const toolHeader = document.querySelector('.tool-header');
   if (toolHeader) {
-    await d.moveToEl(toolHeader, 30, null, 800);
+    await d.moveToEl(toolHeader, 30, null, 600);
     await d.clickEl(toolHeader);
-    await d.waitFor('.tool-popup-overlay', 3000);
-    await d.sleep(2200);
-    await d.clickSelector('.tool-popup-close', null, null, 700);
-    await d.sleep(600);
   }
+  return 'popup-open-clicked';
+})()`);
 
-  // Open Source Explorer as a tab + drift into its content to prove
-  // the cursor overlay stays above the tab's WebContentsView.
-  await d.moveTo(720, 20, 800);
-  await window.ipc.tabs.openTab({ viewName: 'system.source-explorer' });
-  await d.sleep(900);
+await sleep(2200);
+
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
+  await d.clickSelector('.tool-popup-close', null, null, 500);
+  return 'popup-close-clicked';
+})()`);
+
+await sleep(600);
+
+evalMain(NAME, `(async () => {
+  const open = window.ipc.pages.openPage({
+    display: 'foreground',
+    source: { type: 'view', name: 'system.source-explorer' },
+  });
+  await Promise.race([open, new Promise(resolve => setTimeout(resolve, 1200))]);
+  return 'tab-opening';
+})()`);
+
+await sleep(900);
+
+evalMain(NAME, `(async () => {
+  const d = window.__demo;
   await d.moveTo(860, 360, 900);
   await d.sleep(700);
 
-  await window.ipc.previewCursor.setVisible(false);
+  window.ipc.previewCursor.setVisible(false);
   return 'ok';
 })()`);

@@ -24,11 +24,11 @@ export class DesktopTabPresenter {
   }
 
   getState(): TabState {
-    return { tabs: this.tabs, selectedTabId: this.selectedTabId };
+    return { tabs: this.listTabsForRuntime(), selectedTabId: this.selectedTabId };
   }
 
   getTabData(tabId: string): TabData | null {
-    return this.tabs.find(tab => tab.id === tabId) ?? null;
+    return this.listTabsForRuntime().find(tab => tab.id === tabId) ?? null;
   }
 
   tabById(tabId: string): TabData | undefined {

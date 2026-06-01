@@ -61,17 +61,29 @@ evalMain(NAME, `(async () => {
   });
   await d.sleep(200);
 
-  const t1 = await ipc.tabs.openTab({ viewName: 'system.docs' });
+  const t1 = await ipc.pages.openPage({
+    display: 'foreground',
+    source: { type: 'view', name: 'system.docs' },
+  });
   await d.sleep(200);
-  await ipc.tabs.openTab({ viewName: 'system.openai-compatible-provider.settings-view' });
+  await ipc.pages.openPage({
+    display: 'foreground',
+    source: { type: 'view', name: 'system.openai-compatible-provider.settings-view' },
+  });
   await d.sleep(200);
-  await ipc.tabs.openTab({ viewName: 'demo-notes' });
+  await ipc.pages.openPage({
+    display: 'foreground',
+    source: { type: 'view', name: 'demo-notes' },
+  });
   await d.sleep(200);
-  await ipc.tabs.openTab({ url: 'https://www.anthropic.com/news' });
+  await ipc.pages.openPage({
+    display: 'foreground',
+    source: { type: 'url', url: 'https://www.anthropic.com/news' },
+  });
   await d.sleep(700);
 
   // Pin Docs so its 28×28 pin icon is visible.
-  await ipc.tabs.togglePin(t1.tabId);
+  await ipc.tabs.togglePin(t1.pageId);
   await d.sleep(800);
 
   const click = async (idx) => {
@@ -111,13 +123,16 @@ await sleep(900);
 evalPalette(NAME, `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await sleep(400);
-  const card = document.querySelector('.settings-card[data-setting-key="system.show-tab-source"]');
-  if (!card) return JSON.stringify({ error: 'no card' });
+  const row = document.querySelector('.set-row[data-key="system.show-tab-source"]');
+  if (!row) return JSON.stringify({ error: 'no row' });
 
-  const agentBtn = card.querySelector('.settings-target-btn[data-target="agent"]');
+  row.querySelector('.set-row-head')?.click();
+  await sleep(300);
+  const agentBtn = document.querySelector('.set-row[data-key="system.show-tab-source"] .set-row-scope[data-target="agent"]');
   if (agentBtn) { agentBtn.click(); await sleep(400); }
 
-  const input = card.querySelector('.settings-card-input');
+  const activeRow = document.querySelector('.set-row[data-key="system.show-tab-source"]');
+  const input = activeRow?.querySelector('.set-row-input');
   if (input) {
     input.focus();
     const proto = HTMLInputElement.prototype;
@@ -130,7 +145,7 @@ evalPalette(NAME, `(async () => {
       await sleep(140);
     }
     await sleep(500);
-    const saveBtn = document.querySelector('[data-action="save"]');
+    const saveBtn = document.querySelector('.set-footer button[data-action="save-all"]');
     if (saveBtn) { saveBtn.click(); await sleep(900); }
   }
   await window.commandPaletteBridge.close();
@@ -210,15 +225,17 @@ await sleep(900);
 evalPalette(NAME, `(async () => {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   await sleep(400);
-  const card = document.querySelector('.settings-card[data-setting-key="system.show-tab-source"]');
-  if (!card) return 'no card';
+  const row = document.querySelector('.set-row[data-key="system.show-tab-source"]');
+  if (!row) return 'no row';
 
   // Click the "default" target button to clear the override.
-  const defaultBtn = card.querySelector('.settings-target-btn[data-target="default"]');
+  row.querySelector('.set-row-head')?.click();
+  await sleep(300);
+  const defaultBtn = document.querySelector('.set-row[data-key="system.show-tab-source"] .set-row-scope[data-target="default"]');
   if (defaultBtn) { defaultBtn.click(); await sleep(500); }
 
   // Click the Save button in the footer to commit the change.
-  const saveBtn = document.querySelector('[data-action="save"]');
+  const saveBtn = document.querySelector('.set-footer button[data-action="save-all"]');
   if (saveBtn) { saveBtn.click(); await sleep(700); }
 
   await window.commandPaletteBridge.close();

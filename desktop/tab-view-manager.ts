@@ -27,7 +27,6 @@ import {
   normalizePageInput,
 } from '#shared/page/page-input.js';
 import {
-  CAPTURE_OFFSCREEN_OFFSET,
   FALLBACK_VIEW_HEIGHT,
   FALLBACK_VIEW_WIDTH,
   DesktopPageLayout,
@@ -58,6 +57,8 @@ export type {
 // --- Types & Constants ---
 
 const VIEW_LOG_BUFFER_MAX = 1000;
+const CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS = 1000;
+const CAPTURE_CDP_TIMEOUT_MS = 3000;
 const WEB_CONTENTS_LOG_LEVEL_MAP: Record<string, string> = {
   debug: 'verbose',
   info: 'info',
@@ -125,6 +126,22 @@ function resolveOwnerWindowId(webContents: WebContents): number | null {
     ? BrowserWindow.fromWebContents(hostWebContents)
     : BrowserWindow.fromWebContents(webContents);
   return owner?.id ?? null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 // --- TabViewManager ---
@@ -747,60 +764,105 @@ export class TabViewManager {
   async captureTabById(request: { tabId: string }): Promise<{ base64: string; mimeType: 'image/png' }> {
     const state = await this.resolveReadyTabViewState(request.tabId);
     const wc = state.view.webContents;
-    // capturePage forces Chromium to paint a frame. For a background view the
-    // compositor paints it for one frame at the view's origin using its
-    // internal viewport size — the tab flashes over whatever the user is
-    // looking at. Detaching the view from contentView breaks capturePage
-    // (RWHV gets torn down), and stayHidden:true alone doesn't suppress the
-    // flash for WebContentsView-attached contents.
-    //
-    // Workaround: move the view fully off-screen for the duration. The paint
-    // still happens, but at negative coordinates where nothing is composited
-    // on-screen. We preserve the view's size so the page doesn't relayout.
     const originalBounds = state.view.getBounds();
-    // An on-screen tab (the active agent's selected tab) is already being
-    // composited at its normal bounds; capturePage won't add any flash.
-    // Only a zero-sized view (inactive agent) gets force-painted
-    // at origin by the capture — move that one off-screen first.
-    const needsRebounds = originalBounds.width === 0 || originalBounds.height === 0;
+    // capturePage needs a real compositor surface. Background user-facing
+    // pages are normally parked at 0x0, and headless desktop pages live at a
+    // far-negative origin; both can produce empty images or no surface. Put
+    // them at the selected tab bounds for the duration, then keep/promote the
+    // selected tab above them so the user-facing pixels do not change.
+    const isSelected = request.tabId === this.presenter.getSelectedTabId();
+    const needsRebounds = !isSelected && (
+      originalBounds.width === 0
+      || originalBounds.height === 0
+      || originalBounds.x < 0
+      || originalBounds.y < 0
+    );
     const selectedBounds = this.layout.getSelectedBounds();
     const captureSize = selectedBounds && selectedBounds.width > 0 && selectedBounds.height > 0
       ? { width: selectedBounds.width, height: selectedBounds.height }
       : { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
     if (needsRebounds) {
       state.view.setBounds({
-        x: CAPTURE_OFFSCREEN_OFFSET,
-        y: CAPTURE_OFFSCREEN_OFFSET,
+        x: selectedBounds?.x ?? 0,
+        y: selectedBounds?.y ?? 0,
         width: captureSize.width,
         height: captureSize.height,
       });
+      state.view.setVisible(true);
+      this.layout.promoteSelectedToFront();
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     try {
       // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
       // frame sink not registered yet) and "Current display surface not
       // available" (RWHV null). Retry on a short budget.
       const deadline = Date.now() + 3000;
+      let lastCaptureError: unknown = null;
       while (true) {
         try {
-          const image = await wc.capturePage(undefined, { stayHidden: true });
+          const image = await withTimeout(
+            wc.capturePage(undefined, { stayHidden: true }),
+            CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
+            'capturePage',
+          );
+          const png = image.toPNG();
+          if (png.byteLength === 0) {
+            throw new Error('capturePage returned an empty image');
+          }
           return {
-            base64: image.toPNG().toString('base64'),
+            base64: png.toString('base64'),
             mimeType: 'image/png',
           };
         } catch (err) {
+          lastCaptureError = err;
           const msg = String(err);
-          const retriable = msg.includes('UnknownVizError') || msg.includes('display surface');
+          const retriable = msg.includes('UnknownVizError')
+            || msg.includes('display surface')
+            || msg.includes('empty image')
+            || msg.includes('timed out');
           if (!retriable || Date.now() >= deadline || wc.isDestroyed()) {
-            throw err;
+            break;
           }
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
         }
+      }
+
+      try {
+        return await this.captureTabByCdp(request.tabId);
+      } catch (fallbackError) {
+        throw new Error(
+          `capturePage failed (${errorMessage(lastCaptureError)}); CDP screenshot fallback failed (${errorMessage(fallbackError)})`,
+        );
       }
     } finally {
       if (needsRebounds && !wc.isDestroyed()) {
         state.view.setBounds(originalBounds);
       }
     }
+  }
+
+  private async captureTabByCdp(tabId: string): Promise<{ base64: string; mimeType: 'image/png' }> {
+    const result = await withTimeout(
+      this.pageDebugger.send({
+        tabId,
+        method: 'Page.captureScreenshot',
+        params: {
+          format: 'png',
+          captureBeyondViewport: false,
+        },
+      }) as Promise<{ data?: unknown }>,
+      CAPTURE_CDP_TIMEOUT_MS,
+      'Page.captureScreenshot',
+    );
+
+    if (typeof result.data !== 'string' || result.data.length === 0) {
+      throw new Error('Page.captureScreenshot did not return image data');
+    }
+
+    return {
+      base64: result.data,
+      mimeType: 'image/png',
+    };
   }
 
   async getTabConsoleLogsById(request: {
