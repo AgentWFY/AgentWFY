@@ -2,10 +2,10 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openPage({ source: { type: 'view', name } })`.
-- **File views** — HTML files in the working directory. Opened via `openPage({ source: { type: 'file', path } })`.
+- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openPage({ display: 'foreground', source: { type: 'view', name } })`.
+- **File views** — HTML files in the working directory. Opened via `openPage({ display: 'foreground', source: { type: 'file', path } })`.
 
-Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL pages (`openPage({ source: { type: 'url', url } })`) do NOT get the runtime.
+Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL pages (`openPage({ display: 'foreground', source: { type: 'url', url } })`) do NOT get the runtime.
 
 **Opening by name:** `openPage({ display: 'foreground', source: { type: 'view', name: 'my-view' } })` resolves the view by its `name` column (primary key) and auto-populates the page title. Always use a `view` source to open views.
 
@@ -109,4 +109,4 @@ Foreground pages steal the user's focus and clutter their page surface. Headless
 
 Always close headless pages and remove `.tmp/` files when done.
 
-**Tools:** `capturePage({ pageId })` for screenshots, `getPageConsoleLogs({ pageId })` for console output, `runPageJs({ pageId, code })` to run JS in the view's page context (full DOM access), `inspectPageElement({ id, selector })` to see computed styles and box model.
+**Tools:** `capturePage({ pageId })` for screenshots, `getPageConsoleLogs({ pageId })` for console output, `runPageJs({ pageId, code })` to run JS in the view's page context (full DOM access), `inspectPageElement({ pageId, selector })` to see computed styles and box model.

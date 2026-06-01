@@ -20,7 +20,7 @@ export interface CdpCaptureResult {
 }
 
 export async function capture(handle: CdpPageHandle): Promise<CdpCaptureResult> {
-  // The page can still be settling right after openPage/openTab — Chrome answers
+  // The page can still be settling right after openPage — Chrome answers
   // Page.captureScreenshot with "Not attached to an active page". Retry on a
   // short budget so an immediate capture doesn't race the navigation.
   const deadline = Date.now() + CAPTURE_RETRY_BUDGET_MS

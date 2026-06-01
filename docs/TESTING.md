@@ -48,7 +48,7 @@ Every fresh install ships with these views. Pick visually distinct ones for stac
 | `system.plugins` | Plugin manager page. |
 | `system.openai-compatible-provider.settings-view` | Provider settings. |
 
-`openTab({ viewName: 'does-not-exist' })` rejects with `View not found`. `./scripts/preview --sqlite <name> "SELECT name FROM views"` enumerates whatever's actually installed (plugins can register more).
+`openPage({ display: 'foreground', source: { type: 'view', name: 'does-not-exist' } })` rejects with `View not found`. `./scripts/preview --sqlite <name> "SELECT name FROM views"` enumerates whatever's actually installed (plugins can register more).
 
 A handy "reset to a clean tab state" snippet:
 
@@ -56,12 +56,12 @@ A handy "reset to a clean tab state" snippet:
 ./scripts/preview --eval <name> "
 (async () => {
   const s = await window.ipc.tabs.getTabState();
-  for (const t of s.tabs) { if (t.target !== 'home') await window.ipc.tabs.closeTab({ tabId: t.id }); }
+  for (const t of s.tabs) { if (t.target !== 'home') await window.ipc.pages.closePage({ pageId: t.id }); }
 })()
 "
 ```
 
-Partial failures in `openTab` (e.g. a non-existent view mid-sequence) still create the tabs that *did* succeed — always reset between runs.
+Partial failures in `openPage` (e.g. a non-existent view mid-sequence) still create the pages that *did* succeed — always reset between runs.
 
 ### The everyday helper: `--eval`
 
@@ -72,13 +72,13 @@ Partial failures in `openTab` (e.g. a non-existent view mid-sequence) still crea
 ./scripts/preview --eval <name> "await window.ipc.tabs.getTabState()"
 
 # Open a view as a tab
-./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.source-explorer' })"
+./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'foreground', source: { type: 'view', name: 'system.source-explorer' } })"
 
-# Open as a headless background tab
-./scripts/preview --eval <name> "window.ipc.tabs.openTab({ viewName: 'system.docs', headless: true })"
+# Open as a headless background page
+./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'headless', source: { type: 'view', name: 'system.docs' } })"
 
 # Select a tab by id (ids come from getTabState)
-./scripts/preview --eval <name> "window.ipc.tabs.selectTab({ tabId: 'abc123' })"
+./scripts/preview --eval <name> "window.ipc.pages.showPage({ pageId: 'abc123' })"
 
 # Inspect the DOM of a specific tab — --tab matches the tab's URL substring
 ./scripts/preview --eval <name> --tab system.source-explorer \
@@ -175,18 +175,18 @@ Some bugs live in the window between a handler returning and the renderer reacti
 
 - **Pipeline IPC calls in one `--eval`.** Fire the trigger and the inspector as parallel promises — they arrive on main in IPC order, so the inspector reads main-state the moment the handler returns, before the renderer's ResizeObserver / rAF cycle can paper over it:
   ```js
-  const trigger = window.ipc.tabs.closeTab({ tabId });
+  const trigger = window.ipc.pages.closePage({ pageId: tabId });
   const snap = window.ipc.tabs.describe();
   await trigger;
   return await snap;   // main-state immediately post-handler
   ```
-  Awaiting `closeTab` first and then calling `describe` gives the renderer a full round-trip to fix the state up; pipelining as above does not.
+  Awaiting `closePage` first and then calling `describe` gives the renderer a full round-trip to fix the state up; pipelining as above does not.
 - **`--screenshot --no-settle`** captures the compositor frame without the 500ms settle — useful when the race is long enough to be visible. Pair with a `sleep`-offset wrapper if you need a specific delay into the transition.
 - **Renderer-side races are different.** If the race lives in the renderer (not main), block the renderer's event loop after the trigger by looping `while (Date.now() - t0 < N) {}` in the same `--eval` expression, then inspect via a second `--eval` call.
 
 ### After changing tab state, wait a beat before screenshotting
 
-`selectTab` and `openTab` push state to the renderer, which then IPC's bounds back through the main process — the grim compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
+`showPage` and foreground `openPage` push state to the renderer, which then IPC's bounds back through the main process — the compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
 
 ### Preview vs real desktop
 
@@ -412,9 +412,9 @@ Insert directly into the agent's `agent.db` (bypasses the app's TEMP write-guard
 
 There's no explicit close button. Middle-click (`button === 1`) or right-click a `.awfy-st-tab` to close it, or call `window.ipc.agent.closeSession()` via CDP for the active session.
 
-### Headless-tab repro needs full-viewport body
+### Headless-page repro needs full-viewport body
 
-When inserting test views that use `openTab({ headless: true })` to exercise tab stacking, make both the selected and headless view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded headless tab — the repro becomes unfalsifiable.
+When inserting test views that use `openPage({ display: 'headless' })` to exercise stacking, make both the selected and headless view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded headless page — the repro becomes unfalsifiable.
 
 ### Test provider setup
 

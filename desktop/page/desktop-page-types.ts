@@ -1,7 +1,26 @@
 import type { WebContents, WebContentsView } from 'electron';
-import type { TabData, TabDataType } from '#shared/runtime/hosts.js';
+import type { PageCloseAfterIdleMs, PageViewport } from '#shared/page/types.js';
 
-export type { TabData, TabDataType } from '#shared/runtime/hosts.js';
+export type TabDataType = 'view' | 'file' | 'url'
+
+export interface TabData {
+  id: string
+  tabId: string
+  type: TabDataType
+  title: string
+  target: string | null
+  headless: boolean
+  viewport: PageViewport | null
+  viewUpdatedAt: number | null
+  viewChanged: boolean
+  pinned: boolean
+  selected: boolean
+  params: Record<string, string> | null
+  openedAt?: number
+  lastUsedAt?: number
+  closeAfterIdleMs?: PageCloseAfterIdleMs | null
+  expiresAt?: number | null
+}
 
 export interface TabState {
   tabs: TabData[]

@@ -6,16 +6,15 @@ import { agentHostname } from './protocol/agent-hostname.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
 import {
-  normalizeViewportInput,
-  resolveHeadlessCloseAfterIdleMs,
-  resolveViewport,
-  type HeadlessCloseAfterIdleMs,
-  type TabData,
-  type TabDataType,
-  type Viewport,
-  type ViewportInput,
-} from '#shared/runtime/hosts.js';
-import { IdleCloseScheduler } from '#shared/page/idle-close.js';
+  IdleCloseScheduler,
+  resolvePageCloseAfterIdleMs,
+} from '#shared/page/idle-close.js';
+import { normalizePageViewportInput, resolvePageViewport } from '#shared/page/page-viewport.js';
+import type {
+  PageCloseAfterIdleMs,
+  PageViewport,
+  PageViewportInput,
+} from '#shared/page/types.js';
 import {
   PAGE_JS_MAX_TIMEOUT_MS,
   buildPageExecutionCode,
@@ -39,6 +38,8 @@ import { DesktopTabPresenter } from './page/desktop-tab-presenter.js';
 import type {
   TabContextMenuAction,
   TabContextMenuPayload,
+  TabData,
+  TabDataType,
   TabState,
   TabType,
   TabViewBoundsPayload,
@@ -455,7 +456,7 @@ export class TabViewManager {
 
   // --- Debugger (Chrome DevTools Protocol) ---
 
-  private applyHeadlessViewport(state: TabViewState, viewport: Viewport): void {
+  private applyHeadlessViewport(state: TabViewState, viewport: PageViewport): void {
     this.pageDebugger.applyHeadlessViewport(state, viewport);
   }
 
@@ -600,10 +601,10 @@ export class TabViewManager {
     url?: string;
     title?: string;
     headless?: boolean;
-    viewport?: ViewportInput;
+    viewport?: PageViewportInput;
     width?: number;
     height?: number;
-    closeAfterIdleMs?: HeadlessCloseAfterIdleMs;
+    closeAfterIdleMs?: PageCloseAfterIdleMs;
     params?: Record<string, string>;
     select?: boolean;
   }): Promise<{ tabId: string }> {
@@ -643,9 +644,9 @@ export class TabViewManager {
     const tabId = request.tabId ?? this.generateTabId();
     const isHeadless = Boolean(request.headless);
     const shouldSelect = !isHeadless && request.select !== false;
-    const viewport = isHeadless ? resolveViewport(normalizeViewportInput(request)) : null;
+    const viewport = isHeadless ? resolvePageViewport(normalizePageViewportInput(request)) : null;
     const now = Date.now();
-    const closeAfterIdleMs = isHeadless ? resolveHeadlessCloseAfterIdleMs(request.closeAfterIdleMs) : null;
+    const closeAfterIdleMs = isHeadless ? resolvePageCloseAfterIdleMs(request.closeAfterIdleMs) : null;
     const expiresAt = typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null;
     const tab: TabData = {
       id: tabId,

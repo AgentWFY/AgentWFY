@@ -222,8 +222,6 @@ export interface BackendPageCapabilities {
 }
 
 export interface BackendCapabilities {
-  /** Transitional compatibility flag while tab-named UI surfaces still exist. */
-  tabs: boolean
   pages: BackendPageCapabilities
   clientFunctionProxy: boolean
 }

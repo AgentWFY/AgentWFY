@@ -23,9 +23,6 @@ export interface TabContextMenuRequest {
 }
 
 export interface TabsApi {
-  openTab(request: unknown): Promise<{ tabId: string }>
-  closeTab(request: unknown): Promise<void>
-  selectTab(request: unknown): Promise<void>
   updateViewBounds(request: UpdateTabViewBoundsRequest): Promise<void>
   showContextMenu(request: TabContextMenuRequest): Promise<TabContextMenuAction>
   onViewEvent(callback: (detail: TabViewEvent) => void): () => void

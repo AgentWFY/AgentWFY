@@ -4,10 +4,8 @@ import type { PaletteHost } from '../hosts.js'
 import type { EventBus } from '../../event-bus.js'
 import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
-import type { ExternalLauncher, RendererPush, TabApi } from '../hosts.js'
-import type { PageApi, PageOwnerHostKind } from '../../page/types.js'
-import { PageManager } from '../../page/page-manager.js'
-import { LegacyTabPageHost } from '../../page/legacy-tab-page-host.js'
+import type { ExternalLauncher, RendererPush } from '../hosts.js'
+import type { PageApi } from '../../page/types.js'
 import { runAgentDbSql } from '../../db/sqlite.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -25,10 +23,6 @@ interface BuiltInFunctionDeps {
   providerRegistry: ProviderRegistry
   /** Page support — when absent, page functions are not registered. */
   pageTools?: PageApi
-  /** Transitional tab support used to back the page API until concrete page hosts land. */
-  tabTools?: TabApi
-  legacyPageHostKind?: PageOwnerHostKind
-  legacyHeadlessPageHostKind?: PageOwnerHostKind
   /** Command palette host — when absent, palette functions are not registered. */
   getCommandPalette?: () => PaletteHost
   /** Renderer signal channel — when absent, UI nudges from runtime functions are skipped. */
@@ -67,18 +61,8 @@ async function findDocsReferencingFunctions(
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
   registerFileOps(registry, { runtimeRoot: deps.runtimeRoot })
   registerSql(registry, { runtimeRoot: deps.runtimeRoot })
-  const pageTools = deps.pageTools ?? (deps.tabTools
-    ? new PageManager({
-        agentId: deps.runtimeRoot,
-        hosts: [new LegacyTabPageHost(deps.tabTools, {
-          agentId: deps.runtimeRoot,
-          hostKind: deps.legacyPageHostKind,
-          headlessHostKind: deps.legacyHeadlessPageHostKind,
-        })],
-      })
-    : undefined)
-  if (pageTools) {
-    registerPages(registry, { pageTools, runtimeRoot: deps.runtimeRoot })
+  if (deps.pageTools) {
+    registerPages(registry, { pageTools: deps.pageTools, runtimeRoot: deps.runtimeRoot })
   }
   registerEvents(registry, { eventBus: deps.eventBus })
   registerAgent(registry, {

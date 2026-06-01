@@ -233,7 +233,6 @@ async function dispatchBackendRpc(
 
 function buildCapabilities(bundle: RuntimeBundle, clientBridge: ConnectedClientBridge): BackendCapabilities {
   return {
-    tabs: clientBridge.isConnected,
     pages: {
       clientProxy: clientBridge.isConnected,
       headless: bundle.hasHeadlessPages(),

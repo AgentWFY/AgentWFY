@@ -1,6 +1,5 @@
 import type { BaseWindow, Rectangle, View, WebContentsView } from 'electron';
-import type { TabData } from '#shared/runtime/hosts.js';
-import type { TabViewState } from './desktop-page-types.js';
+import type { TabData, TabViewState } from './desktop-page-types.js';
 
 export const FALLBACK_VIEW_WIDTH = 1280;
 export const FALLBACK_VIEW_HEIGHT = 720;

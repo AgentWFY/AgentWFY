@@ -18,10 +18,8 @@ import {
   getOrCreateDesktopRuntime,
   getOrCreateDesktopTraceWriter,
 } from './runtime/desktop-runtime-registry.js';
-import type { TabApi, VisibleTabHost } from '#shared/runtime/hosts.js';
 import type { PageApi } from '#shared/page/types.js';
 import { PageManager } from '#shared/page/page-manager.js';
-import { TabRouter } from '#shared/runtime/tab-router.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
@@ -36,7 +34,6 @@ import { createLocalAgentRuntime } from '#shared/agent/local_runtime.js';
 import { LocalChatController } from './chat/local_chat_controller.js';
 import { getAgentMeta, getRemoteAgentCacheRoot } from './agent-meta.js';
 import { createRemoteAgentContext, destroyRemoteAgentContext } from './agent-context-remote.js';
-import { ElectronBrowserHost } from './electron-browser-host.js';
 
 export interface AgentContextFactoryDeps {
   getMainWindow: () => BaseWindow | null;
@@ -81,7 +78,7 @@ export class AgentContextFactory {
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
     const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry, { dataDir: cacheRoot });
-    const { tabViewManager, tabTools, pageTools } = this.createTabRuntime(agentId, shortcutManager);
+    const { tabViewManager, pageTools } = this.createTabRuntime(agentId, shortcutManager);
     // Refs let onSnapshotApplied resync after later (re)connect snapshots,
     // which replace the mirror wholesale without emitting per-row changes.
     let backendRef: AgentBackend | null = null;
@@ -96,7 +93,6 @@ export class AgentContextFactory {
       remoteConfig,
       shortcutManager,
       tabViewManager,
-      tabTools,
       pageTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
       isActiveForAgent: () => this.deps.getActiveAgentId() === agentId,
@@ -141,7 +137,6 @@ export class AgentContextFactory {
       unregisterSender,
       getOverlayViews: this.deps.getOverlayViews,
     });
-    const tabTools: TabApi = buildTabTools(tabViewManager);
     const pageTools: PageApi = buildLocalDesktopPageTools(agentId, tabViewManager);
 
     const runtime = await createLocalAgentRuntime({
@@ -149,7 +144,6 @@ export class AgentContextFactory {
       hosts: {
         notificationHost: getElectronNotificationHost(),
         pageTools,
-        tabTools,
         getCommandPalette: () => this.deps.getCommandPalette(),
         rendererPush: createElectronRendererPush(this.deps.getRendererWebContents()!),
         externalLauncher: getElectronExternalLauncher(),
@@ -186,7 +180,6 @@ export class AgentContextFactory {
       triggerReloadDebounceTimer: null,
       taskActionsReloadDebounceTimer: null,
       providerStatePushTimer: null,
-      tabTools,
       pageTools,
     };
     agentCtxRef = agentCtx;
@@ -308,7 +301,7 @@ export class AgentContextFactory {
   private createTabRuntime(
     ownerAgentId: string,
     shortcutManager: ShortcutManager,
-  ): { tabViewManager: TabViewManager; tabTools: TabApi; pageTools: PageApi } {
+  ): { tabViewManager: TabViewManager; pageTools: PageApi } {
     const agentSession = this.ensureAgentSession(ownerAgentId);
     const registerSender = (webContentsId: number) => this.deps.registerTabSender(webContentsId, ownerAgentId);
     const unregisterSender = (webContentsId: number) => this.deps.unregisterTabSender(webContentsId);
@@ -328,10 +321,9 @@ export class AgentContextFactory {
       getOverlayViews: this.deps.getOverlayViews,
     });
 
-    const tabTools: TabApi = buildTabTools(tabViewManager);
     const pageTools: PageApi = buildLocalDesktopPageTools(ownerAgentId, tabViewManager);
 
-    return { tabViewManager, tabTools, pageTools };
+    return { tabViewManager, pageTools };
   }
 }
 
@@ -343,38 +335,4 @@ function buildLocalDesktopPageTools(agentId: string, tabViewManager: TabViewMana
       new ElectronHeadlessPageHost(tabViewManager, { agentId }),
     ],
   });
-}
-
-function buildTabTools(tabViewManager: TabViewManager): TabApi {
-  return new TabRouter({
-    visibleTabHost: buildVisibleTabTools(tabViewManager),
-    browserHost: new ElectronBrowserHost(tabViewManager),
-  });
-}
-
-function buildVisibleTabTools(tabViewManager: TabViewManager): VisibleTabHost {
-  return {
-    getTabs: () => tabViewManager.getTabsHandler(),
-    getCurrentTab: () => tabViewManager.getCurrentTabHandler(),
-    openTab: (req) => tabViewManager.openTabHandler(req),
-    closeTab: (req) => tabViewManager.closeTabHandler(req),
-    selectTab: (req) => tabViewManager.selectTabHandler(req),
-    reloadTab: (req) => tabViewManager.reloadTabHandler(req),
-    captureTab: (req) => tabViewManager.captureTabById(req),
-    getTabConsoleLogs: (req) => tabViewManager.getTabConsoleLogsById(req),
-    execTabJs: (req) => tabViewManager.execTabJsById(req),
-    sendInput: (req) => tabViewManager.sendInputById(req),
-    inspectElement: (req) => tabViewManager.inspectElementById(req),
-    tabDebuggerSend: (req) => tabViewManager.tabDebuggerSendById(req),
-    tabDebuggerSubscribe: async (req) => {
-      tabViewManager.tabDebuggerSubscribeById(req);
-    },
-    tabDebuggerPoll: (req) => tabViewManager.tabDebuggerPollById(req),
-    tabDebuggerUnsubscribe: async (req) => {
-      tabViewManager.tabDebuggerUnsubscribeById(req.subscriptionId);
-    },
-    tabDebuggerDetach: async (req) => {
-      tabViewManager.tabDebuggerDetachById(req.tabId);
-    },
-  };
 }

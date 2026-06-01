@@ -1,5 +1,5 @@
 import type { Event as ElectronEvent } from 'electron';
-import type { Viewport } from '#shared/runtime/hosts.js';
+import type { PageViewport } from '#shared/page/types.js';
 import { PageCdpSubscriptionManager } from '#shared/page/cdp-subscription-manager.js';
 import type { TabViewState } from './desktop-page-types.js';
 
@@ -22,7 +22,7 @@ export class DesktopPageDebugger {
     this.deps = deps;
   }
 
-  applyHeadlessViewport(state: TabViewState, viewport: Viewport): void {
+  applyHeadlessViewport(state: TabViewState, viewport: PageViewport): void {
     try {
       this.ensureAttached(state);
     } catch (err) {

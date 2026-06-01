@@ -3,9 +3,6 @@ export const Channels = {
     run: 'sql:run',
   },
   tabs: {
-    openTab: 'tabs:openTab',
-    closeTab: 'tabs:closeTab',
-    selectTab: 'tabs:selectTab',
     updateViewBounds: 'tabs:updateViewBounds',
     showContextMenu: 'tabs:showContextMenu',
     viewEvent: 'tabs:viewEvent',

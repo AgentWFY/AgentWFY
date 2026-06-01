@@ -93,15 +93,6 @@ if (isApp) {
     sql,
     agentId: agentIdSync,
     tabs: {
-      openTab(request: unknown): Promise<{ tabId: string }> {
-        return ipcRenderer.invoke(Channels.tabs.openTab, request);
-      },
-      closeTab(request: unknown): Promise<void> {
-        return ipcRenderer.invoke(Channels.tabs.closeTab, request);
-      },
-      selectTab(request: unknown): Promise<void> {
-        return ipcRenderer.invoke(Channels.tabs.selectTab, request);
-      },
       updateViewBounds(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.updateViewBounds, request);
       },
@@ -400,12 +391,6 @@ if (isAgentView) {
         const request = { ...params as Record<string, unknown> };
         if (typeof request.display !== 'string') {
           request.display = 'foreground';
-        }
-        nextParams = request;
-      } else if (name === 'openTab' && params && typeof params === 'object') {
-        const request = { ...params as Record<string, unknown> };
-        if (typeof request.headless !== 'boolean') {
-          request.headless = false;
         }
         nextParams = request;
       }

@@ -1,5 +1,4 @@
-import type { TabData } from '#shared/runtime/hosts.js';
-import type { TabState } from './desktop-page-types.js';
+import type { TabData, TabState } from './desktop-page-types.js';
 
 interface CloseTabResult {
   closed: boolean

@@ -1846,13 +1846,53 @@ its actual capabilities.
 
 ### Phase 9: Remove Old Tab Runtime Types And Docs
 
-- Remove `TabApi`, `VisibleTabHost`, `BrowserHost`, and `TabRouter` once
+Status as of 2026-06-01: **implemented and build-verified**.
+
+Implemented in:
+
+- `shared/runtime/hosts.ts`
+- `shared/runtime/functions/index.ts`
+- `shared/runtime/types.ts`
+- `shared/page/page-viewport.ts`
+- `desktop/agent-context.ts`
+- `desktop/agent-context-factory.ts`
+- `desktop/agent-context-remote.ts`
+- `desktop/page/desktop-page-types.ts`
+- `desktop/preload.cts`
+- `desktop/ipc/channels.cts`
+- `server/headless-view-runtime.ts`
+- `shared/backend/protocol.ts`
+- `shared/system-docs/system.pages.md`
+- `shared/system-docs/system.page-debugger.md`
+
+Notes:
+
+- Removed `TabApi`, `VisibleTabHost`, `BrowserHost`, `TabRouter`, the legacy
+  tab-backed page host, and the old tab runtime function registry.
+- `TabData` is now a desktop-only tab presenter type instead of a shared
+  runtime model.
+- Removed old agent-facing `window.agentwfy.openTab` defaulting from desktop
+  preload and daemon headless view runtime.
+- Removed tab lifecycle IPC aliases (`tabs.openTab`, `tabs.closeTab`, and
+  `tabs.selectTab`). Page lifecycle calls use `pages.*`; tab-named IPC remains
+  only for desktop presenter state, bounds, reorder, pin, context menu,
+  DevTools, and diagnostics.
+- Replaced old system tab/debugger docs with page docs and updated public docs
+  and preview examples to use page APIs.
+- Removed the transitional `tabs` backend capability flag; remote capabilities
+  now expose page support explicitly.
+
+Verification performed:
+
+- `./scripts/build`
+
+- [x] Remove `TabApi`, `VisibleTabHost`, `BrowserHost`, and `TabRouter` once
   replaced.
-- Remove `TabData` as a shared runtime model.
-- Replace system docs for tabs/debugger with page docs.
-- Update system views using `window.agentwfy.openTab`.
-- Update renderer chat links/provider settings/finder to use page APIs.
-- Keep tab-specific UI state only in presenter modules.
+- [x] Remove `TabData` as a shared runtime model.
+- [x] Replace system docs for tabs/debugger with page docs.
+- [x] Update system views using `window.agentwfy.openTab`.
+- [x] Update renderer chat links/provider settings/finder to use page APIs.
+- [x] Keep tab-specific UI state only in presenter modules.
 
 Goal: finish the clean vocabulary break.
 

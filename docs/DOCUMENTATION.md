@@ -300,48 +300,49 @@ const rows = await runSql({
 - The `plugins` table is entirely read-only
 - Foreign keys are always enabled
 
-### Tab Management
+### Page Management
 
-#### `getTabs()`
+#### `getPages({ display? })`
 
-Get all open tabs with their state.
+Get open pages with their state. `display` can be `foreground`, `background`,
+`headless`, `user-facing`, or `all`.
 
-#### `openTab({ viewName?, filePath?, url?, title?, headless?, viewport?, params? })`
+#### `openPage({ source, display, title?, viewport?, params? })`
 
-Open a new tab. Exactly **one** of `viewName`, `filePath`, or `url` is required.
+Open a page. `display` is required: `foreground`, `background`, or `headless`.
 
 ```js
-await openTab({ viewName: 'system.docs' })
-await openTab({ filePath: 'output/dashboard.html', title: 'Dashboard' })
-await openTab({ viewName: 'my-report', params: { month: '2025-03' } })
+await openPage({ display: 'foreground', source: { type: 'view', name: 'system.docs' } })
+await openPage({ display: 'foreground', source: { type: 'file', path: 'output/dashboard.html' }, title: 'Dashboard' })
+await openPage({ display: 'foreground', source: { type: 'view', name: 'my-report', params: { month: '2025-03' } } })
 
-// Headless tab for automation
-const { tabId } = await openTab({ url: 'https://example.com', headless: true })
-const screenshot = await captureTab({ tabId })
-await closeTab({ tabId })
+// Headless page for automation
+const { pageId } = await openPage({ display: 'headless', source: { type: 'url', url: 'https://example.com' } })
+const screenshot = await capturePage({ pageId })
+await closePage({ pageId })
 ```
 
-#### `closeTab({ tabId })`
+#### `closePage({ pageId })`
 
-#### `selectTab({ tabId })`
+#### `showPage({ pageId })`
 
-#### `reloadTab({ tabId })`
+#### `reloadPage({ pageId })`
 
-#### `captureTab({ tabId })`
+#### `capturePage({ pageId })`
 
 Take a screenshot. The image is automatically attached to the agent response.
 
-#### `getTabConsoleLogs({ tabId, since?, limit? })`
+#### `getPageConsoleLogs({ pageId, since?, limit? })`
 
-Get browser console output from a tab.
+Get browser console output from a page.
 
-#### `execTabJs({ tabId, code, timeoutMs? })`
+#### `runPageJs({ pageId, code, timeoutMs? })`
 
-Execute JavaScript **in the browser context** of a tab. Has access to the DOM.
+Execute JavaScript **in the browser context** of a page. Has access to the DOM.
 
 ```js
-const title = await execTabJs({
-  tabId: 'tab-123',
+const title = await runPageJs({
+  pageId: 'page-123',
   code: 'document.querySelector("h1").textContent'
 })
 ```
@@ -442,7 +443,7 @@ Every agent has its own SQLite database at `.agentwfy/agent.db` with 6 tables. A
 - `plugin.*`: Plugin documentation, **read-only**
 - Other dotted names: Available on demand but not preloaded
 
-**11 Built-in System Docs:** `system`, `system.views`, `system.config`, `system.plugins`, `system.plugins.dev`, `system.plugins.guide`, `system.tasks`, `system.triggers`, `system.tabs`, `system.eventbus`, `system.sessions`
+**12 Built-in System Docs:** `system`, `system.views`, `system.config`, `system.plugins`, `system.plugins.dev`, `system.plugins.guide`, `system.tasks`, `system.triggers`, `system.pages`, `system.page-debugger`, `system.eventbus`, `system.sessions`
 
 ### Views Table
 
@@ -568,7 +569,7 @@ await runSql({
   `]
 })
 
-await openTab({ viewName: 'my-dashboard' })
+await openPage({ display: 'foreground', source: { type: 'view', name: 'my-dashboard' } })
 ```
 
 ### View Runtime API
@@ -601,7 +602,7 @@ Views automatically have access to CSS custom properties that match the app's th
 
 ```js
 // Open with parameters
-await openTab({ viewName: 'invoice-viewer', params: { invoiceId: '42' } })
+await openPage({ display: 'foreground', source: { type: 'view', name: 'invoice-viewer', params: { invoiceId: '42' } } })
 
 // Read inside the view
 const params = new URLSearchParams(window.location.search)
@@ -669,15 +670,15 @@ customElements.define('dashboard-filters', DashboardFilters)`,
 
 The extension (`.js` or `.css`) in the module name determines the Content-Type served to views. Names without a `.js` or `.css` suffix are rejected.
 
-Reload the tab after updating any module.
+Reload the page after updating any module.
 
-### Headless Tabs for Automation
+### Headless Pages for Automation
 
 ```js
-const { tabId } = await openTab({ url: 'https://example.com/data', headless: true })
-const data = await execTabJs({ tabId, code: 'document.querySelector(".results").innerText' })
-const screenshot = await captureTab({ tabId })
-await closeTab({ tabId })
+const { pageId } = await openPage({ display: 'headless', source: { type: 'url', url: 'https://example.com/data' } })
+const data = await runPageJs({ pageId, code: 'document.querySelector(".results").innerText' })
+const screenshot = await capturePage({ pageId })
+await closePage({ pageId })
 ```
 
 ### Tab Features
@@ -687,7 +688,7 @@ await closeTab({ tabId })
 - **Middle-click to close**
 - **Right-click context menu**: Pin, reload, open DevTools
 - **Change indicator**: Dot appears when a view's content has been updated
-- **Headless tabs**: Not shown in the tab bar. Inspect with `getTabs()` (filter by `headless`), or use `captureTab` / `execTabJs` for debugging.
+- **Headless pages**: Not shown in the tab bar. Inspect with `getPages({ display: 'headless' })`, or use `capturePage` / `runPageJs` for debugging.
 
 ---
 

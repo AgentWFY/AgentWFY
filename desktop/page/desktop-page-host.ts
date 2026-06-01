@@ -1,4 +1,3 @@
-import type { TabData, ViewportInput } from '#shared/runtime/hosts.js';
 import type { PageHandle } from '#shared/page/page-handle.js';
 import type { PageHost, PageHostOpenRequest, PageOpenContext } from '#shared/page/page-host.js';
 import {
@@ -12,10 +11,12 @@ import {
   type PageOwnerHostKind,
   type PageScreenshot,
   type PageSource,
+  type PageViewportInput,
 } from '#shared/page/types.js';
 import { pageCapabilitiesFromHandleMethods } from '#shared/page/capabilities.js';
 import { pageSourceParams, pageSourceToLegacyTabOpenSource } from '#shared/page/page-source.js';
 import type { TabViewManager } from '../tab-view-manager.js';
+import type { TabData } from './desktop-page-types.js';
 
 export class DesktopPageHost implements PageHost {
   readonly hostKind: PageOwnerHostKind;
@@ -51,7 +52,7 @@ export class DesktopPageHost implements PageHost {
       ...pageSourceToLegacyTabOpenSource(request.source),
       title: request.title,
       headless: this.headless,
-      viewport: request.viewport as ViewportInput | undefined,
+      viewport: request.viewport as PageViewportInput | undefined,
       width: request.width,
       height: request.height,
       closeAfterIdleMs: request.closeAfterIdleMs as PageCloseAfterIdleMs | undefined,

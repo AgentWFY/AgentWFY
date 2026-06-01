@@ -1,19 +1,18 @@
 import type { FunctionRegistry } from '../function_registry.js'
 import type {
   PageApi,
+  PageCloseAfterIdleMs,
   PageDisplay,
   PageDisplayFilter,
+  PageViewport,
   PageSource,
 } from '../../page/types.js'
 import { formatPageSource, normalizePageSource } from '../../page/page-source.js'
 import {
-  DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS,
-  normalizeViewportInput,
-  resolveHeadlessCloseAfterIdleMs,
-  resolveViewport,
-  type HeadlessCloseAfterIdleMs,
-  type Viewport,
-} from '../hosts.js'
+  DEFAULT_PAGE_CLOSE_AFTER_IDLE_MS,
+  resolvePageCloseAfterIdleMs,
+} from '../../page/idle-close.js'
+import { normalizePageViewportInput, resolvePageViewport } from '../../page/page-viewport.js'
 import { getViewByName } from '../../db/views.js'
 import type {
   WorkerHostMethodMap,
@@ -31,7 +30,7 @@ function formatDuration(ms: number): string {
   return `${ms}ms`
 }
 
-function formatViewport(viewport: Viewport): string {
+function formatViewport(viewport: PageViewport): string {
   return `${viewport.width}x${viewport.height}`
 }
 
@@ -39,8 +38,8 @@ function buildOpenPageInfo(opts: {
   pageId: string
   source: PageSource
   display: PageDisplay
-  viewport?: Viewport
-  closeAfterIdleMs?: HeadlessCloseAfterIdleMs
+  viewport?: PageViewport
+  closeAfterIdleMs?: PageCloseAfterIdleMs
   usedDefaultCloseAfterIdle: boolean
 }): string {
   if (opts.display !== 'headless') {
@@ -54,7 +53,7 @@ function buildOpenPageInfo(opts: {
 
   const timeoutMs = typeof opts.closeAfterIdleMs === 'number'
     ? opts.closeAfterIdleMs
-    : DEFAULT_HEADLESS_CLOSE_AFTER_IDLE_MS
+    : DEFAULT_PAGE_CLOSE_AFTER_IDLE_MS
   const suffix = opts.usedDefaultCloseAfterIdle
     ? '; pass closeAfterIdleMs:"never" to keep it open'
     : ''
@@ -142,10 +141,10 @@ export function registerPages(
     }
 
     const viewport = display === 'headless'
-      ? resolveViewport(normalizeViewportInput(original))
+      ? resolvePageViewport(normalizePageViewportInput(original))
       : undefined
     const closeAfterIdleMs = display === 'headless'
-      ? resolveHeadlessCloseAfterIdleMs(original.closeAfterIdleMs)
+      ? resolvePageCloseAfterIdleMs(original.closeAfterIdleMs)
       : undefined
 
     const result = await pageTools.openPage({

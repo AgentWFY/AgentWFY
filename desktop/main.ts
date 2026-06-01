@@ -5,7 +5,6 @@ import { setFallbackStoreReader } from '#shared/settings/config.js';
 import { registerViewHandlers } from './ipc/views.js';
 import { registerDialogSubscribers } from './ipc/dialog.js';
 import { registerSqlHandlers } from './ipc/sql.js';
-import { registerTabsHandlers } from './ipc/tabs.js';
 import { registerPageHandlers } from './ipc/pages.js';
 import { registerTabViewHandlers } from './ipc/tab-views.js';
 import { registerCommandPaletteHandlers } from './command-palette/ipc.js';
@@ -140,10 +139,6 @@ onGlobalConfigChange(handleConfigChange);
 
 registerSqlHandlers(
   (e) => windowManager.getBackendForSender(e.sender.id),
-);
-registerTabsHandlers(
-  (e) => windowManager.getContextForSender(e.sender.id).tabTools,
-  (e) => windowManager.getCacheRootForEvent(e),
 );
 registerPageHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).pageTools,

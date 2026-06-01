@@ -7,7 +7,7 @@ import { RemoteAgentDbSync } from './remote-agent-db-sync.js'
 import type { TabViewManager } from './tab-view-manager.js'
 import type { ShortcutManager } from './shortcuts/manager.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
-import type { PaletteHost, TabApi } from '#shared/runtime/hosts.js'
+import type { PaletteHost } from '#shared/runtime/hosts.js'
 import type { PageApi } from '#shared/page/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { registerPalette } from '#shared/runtime/functions/palette.js'
@@ -20,14 +20,13 @@ export async function createRemoteAgentContext(opts: {
   remoteConfig: RemoteAgentConfig
   shortcutManager: ShortcutManager
   tabViewManager: TabViewManager
-  tabTools: TabApi
   pageTools: PageApi
   getCommandPalette?: () => PaletteHost
   isActiveForAgent?: () => boolean
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
-  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools, pageTools } = opts
+  const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, pageTools } = opts
 
   const clientFunctionRegistry = createClientFunctionRegistry({
     getCommandPalette: opts.getCommandPalette,
@@ -78,7 +77,6 @@ export async function createRemoteAgentContext(opts: {
     providerStatePushTimer: null,
     tabViewManager,
     shortcutManager,
-    tabTools,
     pageTools,
     remoteConfig,
   }
