@@ -27,6 +27,7 @@ interface LegacyTabPageHostOptions {
   agentId: string
   hostKind?: PageOwnerHostKind
   headlessHostKind?: PageOwnerHostKind
+  displays?: PageDisplay[]
 }
 
 export class LegacyTabPageHost implements PageHost {
@@ -34,6 +35,7 @@ export class LegacyTabPageHost implements PageHost {
   private readonly tabTools: TabApi
   private readonly agentId: string
   private readonly headlessHostKind: PageOwnerHostKind
+  private readonly displays: ReadonlySet<PageDisplay>
   private readonly pages = new Map<string, TabData>()
 
   constructor(tabTools: TabApi, options: LegacyTabPageHostOptions) {
@@ -41,10 +43,11 @@ export class LegacyTabPageHost implements PageHost {
     this.agentId = options.agentId
     this.hostKind = options.hostKind ?? 'desktop'
     this.headlessHostKind = options.headlessHostKind ?? 'desktop-headless'
+    this.displays = new Set(options.displays ?? ['foreground', 'headless'])
   }
 
   canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return request.display === 'foreground' || request.display === 'headless'
+    return this.displays.has(request.display)
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {

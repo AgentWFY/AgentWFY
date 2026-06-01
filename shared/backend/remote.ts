@@ -21,8 +21,25 @@ import {
   type BackupRestoreRequest,
   type BackupRestoreResponse,
   type BackupStatusResponse,
+  type ClientPageInfo,
+  type ClientPageRpcMethod,
   type ClientFunctionsInvokeRequest,
   type ClientFunctionsInvokeResponse,
+  type ClientPagesCaptureRequest,
+  type ClientPagesCloseRequest,
+  type ClientPagesDetachCdpRequest,
+  type ClientPagesGetConsoleLogsRequest,
+  type ClientPagesInspectElementRequest,
+  type ClientPagesOpenRequest,
+  type ClientPagesPollCdpRequest,
+  type ClientPagesReloadRequest,
+  type ClientPagesRunJsRequest,
+  type ClientPagesSendCdpRequest,
+  type ClientPagesSendInputRequest,
+  type ClientPagesShowRequest,
+  type ClientPagesSnapshotResponse,
+  type ClientPagesSubscribeCdpRequest,
+  type ClientPagesUnsubscribeCdpRequest,
   type ConfigClearRequest,
   type ConfigMutationResponse,
   type ConfigRemoveRequest,
@@ -87,6 +104,7 @@ import type {
   Unsubscribe,
 } from './interface.js'
 import type { AgentDbChange } from '../db/sqlite.js'
+import type { OpenPageResult, PageApi, PageInfo } from '../page/types.js'
 import { isClientRuntimeFunction } from '../runtime/client-functions.js'
 import { DAEMON_BUILT_IN_FUNCTIONS } from '../runtime/daemon-functions.js'
 import { WsClient, type WsClientConfig } from './ws_client.js'
@@ -98,12 +116,21 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes
 }
 
+function isClientPageRpcMethod(method: string): method is ClientPageRpcMethod {
+  return method.startsWith('client.pages.')
+}
+
 export interface RemoteBackendConfig extends WsClientConfig {
   /** Stable identifier for this backend instance (e.g. the agent slug). */
   id: string
   /** Desktop-local runtime functions that should be callable through this backend
    *  and from the daemon via client.functions.invoke. */
   desktopFunctions?: RemoteDesktopFunctions
+  /** Client-hosted pages exposed to the daemon through typed client.pages.* RPC. */
+  clientPages?: PageApi
+  clientId?: string
+  clientKind?: ClientPageInfo['kind']
+  isActiveForAgent?: () => boolean
 }
 
 export interface RemoteDesktopFunctions {
@@ -134,16 +161,25 @@ export class RemoteBackend implements AgentBackend {
   private readonly baseUrl: string
   private readonly agentToken: string
   private readonly desktopFunctions: RemoteDesktopFunctions | undefined
+  private readonly clientPages: PageApi | undefined
+  private readonly clientId: string
+  private readonly clientKind: ClientPageInfo['kind']
+  private readonly isActiveForAgent: () => boolean
 
   private readonly eventSubscribers = new Set<(event: AgentBackendEvent) => void>()
   private readonly dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
   private dbSync: RemoteDbSync | null = null
+  private nextPageSnapshotVersion = 1
 
   constructor(config: RemoteBackendConfig) {
     this.id = config.id
     this.baseUrl = config.baseUrl.replace(/\/$/, '')
     this.agentToken = config.agentToken
     this.desktopFunctions = config.desktopFunctions
+    this.clientPages = config.clientPages
+    this.clientId = config.clientId ?? 'default-client'
+    this.clientKind = config.clientKind ?? 'desktop'
+    this.isActiveForAgent = config.isActiveForAgent ?? (() => true)
     this.ws = new WsClient(config)
     this.ws.setMessageHandler((message) => this.handleWsMessage(message))
   }
@@ -382,6 +418,16 @@ export class RemoteBackend implements AgentBackend {
   }
 
   private async handleServerRpc(message: WsRpcRequest): Promise<void> {
+    if (isClientPageRpcMethod(message.method)) {
+      try {
+        const value = await this.handleServerPageRpc(message.method, message.params)
+        this.ws.send({ type: 'rpc:result', id: message.id, ok: true, value })
+      } catch (err) {
+        this.sendRpcError(message.id, errorFromUnknown(err))
+      }
+      return
+    }
+
     if (message.method !== 'client.functions.invoke') {
       this.sendRpcError(message.id, { name: 'UnknownMethod', message: `Unknown client RPC method: ${message.method}` })
       return
@@ -402,6 +448,159 @@ export class RemoteBackend implements AgentBackend {
       this.ws.send({ type: 'rpc:result', id: message.id, ok: true, value: result })
     } catch (err) {
       this.sendRpcError(message.id, errorFromUnknown(err))
+    }
+  }
+
+  private async handleServerPageRpc(method: ClientPageRpcMethod, params: unknown): Promise<unknown> {
+    const pages = this.clientPages
+    if (!pages) {
+      throw new Error('Client page API is not available in this runtime')
+    }
+
+    switch (method) {
+      case 'client.pages.snapshot':
+        return this.createPageSnapshot()
+      case 'client.pages.open': {
+        const req = params as ClientPagesOpenRequest
+        this.assertCanMutateClientSurface(req.display, 'openPage')
+        const result = await pages.openPage(req)
+        return this.decorateOpenPageResult(result)
+      }
+      case 'client.pages.close': {
+        const req = params as ClientPagesCloseRequest
+        await pages.closePage({ pageId: req.pageId })
+        return undefined
+      }
+      case 'client.pages.show': {
+        const req = params as ClientPagesShowRequest
+        this.assertCanMutateClientSurface('foreground', 'showPage')
+        return this.decorateClientPage(await pages.showPage({ pageId: req.pageId }))
+      }
+      case 'client.pages.reload': {
+        const req = params as ClientPagesReloadRequest
+        return this.decorateClientPage(await pages.reloadPage({ pageId: req.pageId }))
+      }
+      case 'client.pages.capture':
+        return pages.capturePage(params as ClientPagesCaptureRequest)
+      case 'client.pages.runJs': {
+        const req = params as ClientPagesRunJsRequest
+        return pages.runPageJs({
+          pageId: req.pageId,
+          code: req.code,
+          timeoutMs: req.timeoutMs,
+        })
+      }
+      case 'client.pages.sendInput':
+        await pages.sendPageInput(params as ClientPagesSendInputRequest)
+        return undefined
+      case 'client.pages.inspectElement': {
+        const req = params as ClientPagesInspectElementRequest
+        return pages.inspectPageElement({
+          pageId: req.pageId,
+          selector: req.selector,
+        })
+      }
+      case 'client.pages.getConsoleLogs': {
+        const req = params as ClientPagesGetConsoleLogsRequest
+        return pages.getPageConsoleLogs({
+          pageId: req.pageId,
+          since: req.since,
+          limit: req.limit,
+        })
+      }
+      case 'client.pages.sendCdp': {
+        const req = params as ClientPagesSendCdpRequest
+        return pages.sendPageCdp({
+          pageId: req.pageId,
+          method: req.method,
+          params: req.params,
+          sessionId: req.sessionId,
+        })
+      }
+      case 'client.pages.subscribeCdp': {
+        const req = params as ClientPagesSubscribeCdpRequest
+        return pages.subscribePageCdp({
+          pageId: req.pageId,
+          events: req.events,
+        })
+      }
+      case 'client.pages.pollCdp':
+        return pages.pollPageCdp(params as ClientPagesPollCdpRequest)
+      case 'client.pages.unsubscribeCdp': {
+        const req = params as ClientPagesUnsubscribeCdpRequest
+        await pages.unsubscribePageCdp({ subscriptionId: req.subscriptionId })
+        return undefined
+      }
+      case 'client.pages.detachCdp': {
+        const req = params as ClientPagesDetachCdpRequest
+        await pages.detachPageCdp({ pageId: req.pageId })
+        return undefined
+      }
+      default:
+        throw new Error(`Unknown client page RPC method: ${method}`)
+    }
+  }
+
+  private async createPageSnapshot(): Promise<ClientPagesSnapshotResponse> {
+    const pages = this.clientPages
+    if (!pages) {
+      throw new Error('Client page API is not available in this runtime')
+    }
+
+    const client = this.clientInfo()
+    const pageList = (await pages.getPages({ display: 'all' })).map(page => this.decorateClientPage(page, client))
+    const currentPage = client.activeForAgent ? await pages.getCurrentPage() : null
+    return {
+      pages: pageList,
+      currentPageId: currentPage?.pageId ?? null,
+      client,
+      version: this.nextPageSnapshotVersion++,
+    }
+  }
+
+  private decorateOpenPageResult(result: OpenPageResult): OpenPageResult {
+    const page = this.decorateClientPage(result.page)
+    return {
+      ...result,
+      page,
+      pageId: page.pageId,
+    }
+  }
+
+  private decorateClientPage(page: PageInfo, client = this.clientInfo()): PageInfo {
+    const presentation = page.presentation
+    const activeForAgent = client.activeForAgent
+    return {
+      ...page,
+      owner: {
+        ...page.owner,
+        client,
+      },
+      ...(page.display !== 'headless'
+        ? {
+            presentation: {
+              surfaceId: presentation?.surfaceId ?? `${client.id}:pages`,
+              visibleNow: activeForAgent ? presentation?.visibleNow === true : false,
+              ...(activeForAgent
+                ? presentation?.visibilityReason ? { visibilityReason: presentation.visibilityReason } : {}
+                : { visibilityReason: 'inactive-agent' as const }),
+            },
+          }
+        : {}),
+    }
+  }
+
+  private assertCanMutateClientSurface(display: unknown, operation: string): void {
+    if (display !== 'foreground') return
+    if (this.isActiveForAgent()) return
+    throw new Error(`${operation} cannot target the foreground page surface because this client is not active for the agent`)
+  }
+
+  private clientInfo(): ClientPageInfo {
+    return {
+      id: this.clientId,
+      kind: this.clientKind,
+      activeForAgent: this.isActiveForAgent(),
     }
   }
 

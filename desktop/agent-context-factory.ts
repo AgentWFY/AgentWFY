@@ -99,6 +99,7 @@ export class AgentContextFactory {
       tabTools,
       pageTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
+      isActiveForAgent: () => this.deps.getActiveAgentId() === agentId,
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
       onSnapshotApplied: resyncFromMirror,
     });

@@ -21,6 +21,7 @@ import {
   encodeWsMessage,
   errorFromUnknown,
   type BackendRpcMethod,
+  type BackendCapabilities,
   type BackupRestoreRequest,
   type ConfigClearRequest,
   type ConfigRemoveRequest,
@@ -125,10 +126,7 @@ async function dispatchBackendRpc(
       return {
         agentId: bundle.backend.id,
         protocolVersion: PROTOCOL_VERSION,
-        capabilities: {
-          tabs: clientBridge.isConnected,
-          clientFunctionProxy: clientBridge.isConnected,
-        },
+        capabilities: buildCapabilities(bundle, clientBridge),
       }
     case 'sessions.list':
       return bundle.backend.sessions.list(params as SessionsListRequest)
@@ -230,6 +228,18 @@ async function dispatchBackendRpc(
       return bundle.backend.backup.status()
     default:
       throw new Error(`Unknown RPC method: ${method}`)
+  }
+}
+
+function buildCapabilities(bundle: RuntimeBundle, clientBridge: ConnectedClientBridge): BackendCapabilities {
+  return {
+    tabs: clientBridge.isConnected,
+    pages: {
+      clientProxy: clientBridge.isConnected,
+      headless: bundle.hasHeadlessPages(),
+      connectedClientIds: clientBridge.isConnected ? ['default-client'] : [],
+    },
+    clientFunctionProxy: clientBridge.isConnected,
   }
 }
 
@@ -335,7 +345,7 @@ function handleWebSocket(
     type: 'hello',
     protocolVersion: PROTOCOL_VERSION,
     agentId: bundle.backend.id,
-    capabilities: { tabs: true, clientFunctionProxy: true },
+    capabilities: buildCapabilities(bundle, clientBridge),
     dbVersion: bundle.getDbVersion(),
   }))
   console.log('agentwfy-server: client connected')

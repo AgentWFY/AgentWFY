@@ -3,6 +3,10 @@ import { LocalBackend } from '#shared/backend/local.js'
 import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import { registerClientFunctionProxies, type ClientFunctionInvoker } from '#shared/runtime/client-functions.js'
 import { TabRouter } from '#shared/runtime/tab-router.js'
+import { PageManager } from '#shared/page/page-manager.js'
+import { LegacyTabPageHost } from '#shared/page/legacy-tab-page-host.js'
+import { RemoteClientPageHost, type ClientPageRpcInvoker } from '#shared/page/remote-client-page-host.js'
+import type { PageHost } from '#shared/page/page-host.js'
 import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import {
@@ -38,12 +42,13 @@ export interface RuntimeBundle {
   /** Current DB change-log version. Read after RPCs / on hello so remote
    *  mirrors can sync their `localVersion`. */
   getDbVersion(): number
+  hasHeadlessPages(): boolean
   dispose(): Promise<void>
 }
 
 export async function createAgentRuntime(
   runtimeRoot: string,
-  clientFunctionInvoker?: ClientFunctionInvoker,
+  clientFunctionInvoker?: ClientFunctionInvoker & Partial<ClientPageRpcInvoker>,
 ): Promise<RuntimeBundle> {
   const dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
   const dbResetSubscribers = new Set<() => void>()
@@ -68,15 +73,31 @@ export async function createAgentRuntime(
     )
   }
 
+  const tabTools = new TabRouter({
+    browserHost: browserHost ?? undefined,
+  })
+  const pageHosts: PageHost[] = []
+  if (clientFunctionInvoker && isClientPageRpcInvoker(clientFunctionInvoker)) {
+    pageHosts.push(new RemoteClientPageHost(clientFunctionInvoker, {
+      agentId: runtimeRoot,
+    }))
+  }
+  pageHosts.push(new LegacyTabPageHost(tabTools, {
+    agentId: runtimeRoot,
+    hostKind: 'remote-client',
+    headlessHostKind: 'daemon-headless',
+    displays: ['headless'],
+  }))
+  const pageTools = new PageManager({
+    agentId: runtimeRoot,
+    hosts: pageHosts,
+  })
+
   const runtime = await createLocalAgentRuntime({
     runtimeRoot,
     hosts: {
-      tabTools: new TabRouter({
-        browserHost: browserHost ?? undefined,
-        clientInvoker: clientFunctionInvoker,
-      }),
-      legacyPageHostKind: 'remote-client',
-      legacyHeadlessPageHostKind: 'daemon-headless',
+      pageTools,
+      tabTools,
     },
     onDbChange: (change) => {
       if (change.table === 'triggers') {
@@ -170,8 +191,15 @@ export async function createAgentRuntime(
       },
     },
     getDbVersion: () => getAgentDbCurrentVersion(runtimeRoot),
+    hasHeadlessPages: () => browserHost !== null,
     dispose,
   }
+}
+
+function isClientPageRpcInvoker(value: unknown): value is ClientPageRpcInvoker {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { invokeClientPageRpc?: unknown }
+  return typeof candidate.invokeClientPageRpc === 'function'
 }
 
 function resolveAgentPath(runtimeRoot: string, requestedPath: string): string {

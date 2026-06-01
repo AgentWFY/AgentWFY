@@ -1708,6 +1708,41 @@ Goal: make pages the internal runtime abstraction for local desktop agents.
 
 ### Phase 6: Add Typed Remote Page Protocol
 
+Status as of 2026-06-01: **implemented and build-verified**.
+
+Implemented in:
+
+- `shared/backend/protocol.ts`
+- `shared/backend/remote.ts`
+- `shared/page/remote-client-page-host.ts`
+- `shared/page/page-manager.ts`
+- `shared/page/legacy-tab-page-host.ts`
+- `server/client-bridge.ts`
+- `server/runtime-bootstrap.ts`
+- `server/index.ts`
+- `desktop/agent-context-remote.ts`
+- `desktop/agent-context-factory.ts`
+
+Notes:
+
+- Daemon user-facing pages now route through typed `client.pages.*` RPC
+  methods instead of `client.functions.invoke`.
+- The generic client function proxy is retained only for non-page UI functions
+  such as palette actions, external URL opening, and plugin confirmations.
+- The daemon runtime now builds an explicit `PageManager` with
+  `RemoteClientPageHost` for foreground/background pages and keeps the legacy
+  tab adapter limited to daemon headless pages until Phase 7.
+- Client page snapshots resync on reconnect, and mirrored client pages are
+  marked `unavailable` when the client disconnects.
+- Remote foreground opens/show operations fail clearly when the connected
+  desktop client is not active for the agent.
+- `PageManager` can honor an internally supplied page ID so daemon-generated
+  page IDs survive client-hosted page creation.
+
+Verification performed:
+
+- `./scripts/build`
+
 - Extend `shared/backend/protocol.ts` for typed page RPC and events.
 - Extend `ConnectedClientBridge` beyond generic function invocation.
 - Add client-side page RPC dispatch in `RemoteBackend` or a page-specific

@@ -10,13 +10,9 @@ import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import type { PaletteHost, TabApi } from '#shared/runtime/hosts.js'
 import type { PageApi } from '#shared/page/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
-import { registerTabs } from '#shared/runtime/functions/tabs.js'
-import { registerPages } from '#shared/runtime/functions/pages.js'
 import { registerPalette } from '#shared/runtime/functions/palette.js'
 import { registerOpenExternal } from '#shared/runtime/functions/index.js'
 import { getElectronExternalLauncher } from './runtime/hosts-electron.js'
-import { PageManager } from '#shared/page/page-manager.js'
-import { LegacyTabPageHost } from '#shared/page/legacy-tab-page-host.js'
 
 export async function createRemoteAgentContext(opts: {
   agentId: string
@@ -27,14 +23,13 @@ export async function createRemoteAgentContext(opts: {
   tabTools: TabApi
   pageTools: PageApi
   getCommandPalette?: () => PaletteHost
+  isActiveForAgent?: () => boolean
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
   const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, tabTools, pageTools } = opts
 
   const clientFunctionRegistry = createClientFunctionRegistry({
-    cacheRoot,
-    tabTools,
     getCommandPalette: opts.getCommandPalette,
   })
 
@@ -43,6 +38,9 @@ export async function createRemoteAgentContext(opts: {
     baseUrl: remoteConfig.baseUrl,
     agentToken: remoteConfig.agentToken,
     desktopFunctions: clientFunctionRegistry,
+    clientPages: pageTools,
+    clientKind: 'desktop',
+    isActiveForAgent: opts.isActiveForAgent,
   })
   const dbSync = new RemoteAgentDbSync({
     cacheRoot,
@@ -96,14 +94,9 @@ export async function destroyRemoteAgentContext(ctx: RemoteAgentContext): Promis
 }
 
 function createClientFunctionRegistry(opts: {
-  cacheRoot: string
-  tabTools: TabApi
   getCommandPalette?: () => PaletteHost
 }): FunctionRegistry {
   const registry = new FunctionRegistry()
-  const pageTools = createLegacyPageTools(opts.cacheRoot, opts.tabTools)
-  registerPages(registry, { pageTools, runtimeRoot: opts.cacheRoot })
-  registerTabs(registry, { tabTools: opts.tabTools, runtimeRoot: opts.cacheRoot }, { hidden: true })
   if (opts.getCommandPalette) {
     registerPalette(registry, { getCommandPalette: opts.getCommandPalette })
     registry.register('_confirmPluginInstall', async (params) => {
@@ -141,11 +134,4 @@ function createClientFunctionRegistry(opts: {
   registerOpenExternal(registry, getElectronExternalLauncher())
 
   return registry
-}
-
-function createLegacyPageTools(agentId: string, tabTools: TabApi) {
-  return new PageManager({
-    agentId,
-    hosts: [new LegacyTabPageHost(tabTools, { agentId })],
-  })
 }

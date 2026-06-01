@@ -73,7 +73,10 @@ export class PageManager implements PageApi {
       throw new Error(`No page host is available for display "${request.display}" and source type "${request.source.type}"`)
     }
 
-    const requestedPageId = `page-${crypto.randomUUID()}`
+    const requestedPageId = request.pageId?.trim() || `page-${crypto.randomUUID()}`
+    if (this.pageHosts.has(requestedPageId)) {
+      throw new Error(`Page ID is already in use: ${requestedPageId}`)
+    }
     const handle = await host.openPage({
       ...request,
       pageId: requestedPageId,
@@ -275,6 +278,9 @@ function validateOpenPageRequest(request: OpenPageRequest): void {
   }
   if (!request.source || typeof request.source !== 'object') {
     throw new Error('openPage requires a source object')
+  }
+  if (request.pageId !== undefined && (typeof request.pageId !== 'string' || request.pageId.trim().length === 0)) {
+    throw new Error('openPage pageId must be a non-empty string when provided')
   }
 }
 

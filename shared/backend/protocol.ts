@@ -45,6 +45,20 @@ import type {
 } from './interface.js'
 import type { ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent } from '../agent/types.js'
+import type {
+  CapturePageRequest,
+  CurrentPageRequest,
+  OpenPageRequest,
+  OpenPageResult,
+  PageApi,
+  PageCdpPollResult,
+  PageConsoleLog,
+  PageEvent,
+  PageInfo,
+  PageInputRequest,
+  PageQueryRequest,
+  PageScreenshot,
+} from '../page/types.js'
 import type { TraceEvent } from '../runtime/trace_types.js'
 import type { TaskOrigin, TaskRunRead } from '../task-runner/task_runner.js'
 
@@ -137,8 +151,26 @@ export type BackendRpcMethod =
   | 'backup.list'
   | 'backup.status'
 
+export type ClientPageRpcMethod =
+  | 'client.pages.snapshot'
+  | 'client.pages.open'
+  | 'client.pages.close'
+  | 'client.pages.show'
+  | 'client.pages.reload'
+  | 'client.pages.capture'
+  | 'client.pages.runJs'
+  | 'client.pages.sendInput'
+  | 'client.pages.inspectElement'
+  | 'client.pages.getConsoleLogs'
+  | 'client.pages.sendCdp'
+  | 'client.pages.subscribeCdp'
+  | 'client.pages.pollCdp'
+  | 'client.pages.unsubscribeCdp'
+  | 'client.pages.detachCdp'
+
 export type ClientRpcMethod =
   | 'client.functions.invoke'
+  | ClientPageRpcMethod
 
 export type RpcMethod = BackendRpcMethod | ClientRpcMethod
 
@@ -183,18 +215,39 @@ export interface WsDbReset {
   type: 'db:reset'
 }
 
+export interface BackendPageCapabilities {
+  clientProxy: boolean
+  headless: boolean
+  connectedClientIds: string[]
+}
+
+export interface BackendCapabilities {
+  /** Transitional compatibility flag while tab-named UI surfaces still exist. */
+  tabs: boolean
+  pages: BackendPageCapabilities
+  clientFunctionProxy: boolean
+}
+
 export interface WsHello {
   type: 'hello'
   protocolVersion: typeof PROTOCOL_VERSION
   agentId: string
-  capabilities: {
-    tabs: boolean
-    clientFunctionProxy: boolean
-  }
+  capabilities: BackendCapabilities
   /** Current DB change-log version on the daemon at hello time. Mirrors use
    *  this to decide whether they're caught up; if behind, they fetch a
    *  fresh snapshot. */
   dbVersion: number
+}
+
+export interface WsClientPageEvent {
+  type: 'client:page-event'
+  event: PageEvent
+}
+
+export interface WsClientPageSnapshotChanged {
+  type: 'client:page-snapshot-changed'
+  clientId: string
+  version: number
 }
 
 export type WsMessage =
@@ -205,6 +258,8 @@ export type WsMessage =
   | WsBackendEvent
   | WsDbChanged
   | WsDbReset
+  | WsClientPageEvent
+  | WsClientPageSnapshotChanged
 
 export function encodeWsMessage(message: WsMessage): string {
   return JSON.stringify(message)
@@ -234,10 +289,7 @@ export function decodeWsMessage(raw: string): WsMessage {
 export interface WhoamiResponse {
   agentId: string
   protocolVersion: typeof PROTOCOL_VERSION
-  capabilities: {
-    tabs: boolean
-    clientFunctionProxy: boolean
-  }
+  capabilities: BackendCapabilities
 }
 
 export interface SessionsListRequest { limit?: number; offset?: number; since?: number; until?: number }
@@ -270,6 +322,116 @@ export interface FunctionsInvokeResponse {
 
 export interface ClientFunctionsInvokeRequest { name: string; params: unknown }
 export interface ClientFunctionsInvokeResponse { value: unknown }
+
+export interface ClientPageInfo {
+  id: string
+  kind: 'desktop' | 'mobile' | 'web'
+  activeForAgent: boolean
+}
+
+export interface ClientPagesSnapshotRequest extends CurrentPageRequest, PageQueryRequest {}
+export interface ClientPagesSnapshotResponse {
+  pages: PageInfo[]
+  currentPageId: string | null
+  client: ClientPageInfo
+  version: number
+}
+
+export interface ClientPagesOpenRequest extends OpenPageRequest {
+  pageId: string
+}
+export type ClientPagesOpenResponse = OpenPageResult
+
+export interface ClientPagesPageIdRequest {
+  pageId: string
+}
+export type ClientPagesCloseRequest = ClientPagesPageIdRequest
+export type ClientPagesShowRequest = ClientPagesPageIdRequest
+export type ClientPagesShowResponse = PageInfo
+export type ClientPagesReloadRequest = ClientPagesPageIdRequest
+export type ClientPagesReloadResponse = PageInfo
+export type ClientPagesCaptureRequest = CapturePageRequest
+export type ClientPagesCaptureResponse = PageScreenshot
+export interface ClientPagesRunJsRequest {
+  pageId: string
+  code: string
+  timeoutMs?: number
+}
+export type ClientPagesRunJsResponse = unknown
+export type ClientPagesSendInputRequest = PageInputRequest
+export interface ClientPagesInspectElementRequest {
+  pageId: string
+  selector: string
+}
+export type ClientPagesInspectElementResponse = unknown
+export interface ClientPagesGetConsoleLogsRequest {
+  pageId: string
+  since?: number
+  limit?: number
+}
+export type ClientPagesGetConsoleLogsResponse = PageConsoleLog[]
+export interface ClientPagesSendCdpRequest {
+  pageId: string
+  method: string
+  params?: unknown
+  sessionId?: string
+}
+export type ClientPagesSendCdpResponse = unknown
+export interface ClientPagesSubscribeCdpRequest {
+  pageId: string
+  events: string[]
+}
+export interface ClientPagesSubscribeCdpResponse {
+  subscriptionId: string
+}
+export interface ClientPagesPollCdpRequest {
+  subscriptionId: string
+  maxBatch?: number
+  maxWaitMs?: number
+}
+export type ClientPagesPollCdpResponse = PageCdpPollResult
+export interface ClientPagesUnsubscribeCdpRequest {
+  subscriptionId: string
+}
+export type ClientPagesDetachCdpRequest = ClientPagesPageIdRequest
+
+export type ClientPageRpcRequest<M extends ClientPageRpcMethod> =
+  M extends 'client.pages.snapshot' ? ClientPagesSnapshotRequest :
+  M extends 'client.pages.open' ? ClientPagesOpenRequest :
+  M extends 'client.pages.close' ? ClientPagesCloseRequest :
+  M extends 'client.pages.show' ? ClientPagesShowRequest :
+  M extends 'client.pages.reload' ? ClientPagesReloadRequest :
+  M extends 'client.pages.capture' ? ClientPagesCaptureRequest :
+  M extends 'client.pages.runJs' ? ClientPagesRunJsRequest :
+  M extends 'client.pages.sendInput' ? ClientPagesSendInputRequest :
+  M extends 'client.pages.inspectElement' ? ClientPagesInspectElementRequest :
+  M extends 'client.pages.getConsoleLogs' ? ClientPagesGetConsoleLogsRequest :
+  M extends 'client.pages.sendCdp' ? ClientPagesSendCdpRequest :
+  M extends 'client.pages.subscribeCdp' ? ClientPagesSubscribeCdpRequest :
+  M extends 'client.pages.pollCdp' ? ClientPagesPollCdpRequest :
+  M extends 'client.pages.unsubscribeCdp' ? ClientPagesUnsubscribeCdpRequest :
+  M extends 'client.pages.detachCdp' ? ClientPagesDetachCdpRequest :
+  never
+
+export type ClientPageRpcResponse<M extends ClientPageRpcMethod> =
+  M extends 'client.pages.snapshot' ? ClientPagesSnapshotResponse :
+  M extends 'client.pages.open' ? ClientPagesOpenResponse :
+  M extends 'client.pages.close' ? void :
+  M extends 'client.pages.show' ? ClientPagesShowResponse :
+  M extends 'client.pages.reload' ? ClientPagesReloadResponse :
+  M extends 'client.pages.capture' ? ClientPagesCaptureResponse :
+  M extends 'client.pages.runJs' ? ClientPagesRunJsResponse :
+  M extends 'client.pages.sendInput' ? void :
+  M extends 'client.pages.inspectElement' ? ClientPagesInspectElementResponse :
+  M extends 'client.pages.getConsoleLogs' ? ClientPagesGetConsoleLogsResponse :
+  M extends 'client.pages.sendCdp' ? ClientPagesSendCdpResponse :
+  M extends 'client.pages.subscribeCdp' ? ClientPagesSubscribeCdpResponse :
+  M extends 'client.pages.pollCdp' ? ClientPagesPollCdpResponse :
+  M extends 'client.pages.unsubscribeCdp' ? void :
+  M extends 'client.pages.detachCdp' ? void :
+  never
+
+export type ClientPageApi = PageApi
 
 // Providers
 export type ProvidersListResponse = ProviderInfo[]

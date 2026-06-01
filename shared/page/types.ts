@@ -90,6 +90,10 @@ export interface PageInfo {
 }
 
 export interface OpenPageRequest {
+  /** Internal transport hook: daemon-hosted managers may assign the page ID
+   *  before asking a remote client to create the concrete page. Public runtime
+   *  helpers should omit this so the local PageManager generates IDs. */
+  pageId?: string
   source: PageSource
   display: PageDisplay
   title?: string
