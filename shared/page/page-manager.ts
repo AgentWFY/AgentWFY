@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import type { PageHandle } from './page-handle.js'
 import type { PageHost } from './page-host.js'
 import type {
@@ -73,7 +72,7 @@ export class PageManager implements PageApi {
       throw new Error(`No page host is available for display "${request.display}" and source type "${request.source.type}"`)
     }
 
-    const requestedPageId = request.pageId?.trim() || `page-${crypto.randomUUID()}`
+    const requestedPageId = request.pageId?.trim() || randomId('page')
     if (this.pageHosts.has(requestedPageId)) {
       throw new Error(`Page ID is already in use: ${requestedPageId}`)
     }
@@ -207,7 +206,7 @@ export class PageManager implements PageApi {
     if (!handle.subscribeCdp) {
       throw new Error(`Page host does not implement subscribePageCdp for "${request.pageId}"`)
     }
-    const subscriptionId = `pagecdp-${crypto.randomBytes(8).toString('hex')}`
+    const subscriptionId = `pagecdp-${randomHex(8)}`
     this.subscriptions.set(subscriptionId, {
       pageId: request.pageId,
       subscription: await handle.subscribeCdp(request.events),
@@ -322,4 +321,35 @@ function formatOpenPageInfo(page: PageInfo): string {
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function randomId(prefix: string): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return `${prefix}-${cryptoApi.randomUUID()}`
+  }
+  return `${prefix}-${randomHex(16)}`
+}
+
+function randomHex(byteCount: number): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+    const bytes = new Uint8Array(byteCount)
+    cryptoApi.getRandomValues(bytes)
+    return bytesToHex(bytes)
+  }
+
+  let out = ''
+  for (let i = 0; i < byteCount; i++) {
+    out += Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = ''
+  for (const byte of bytes) {
+    out += byte.toString(16).padStart(2, '0')
+  }
+  return out
 }

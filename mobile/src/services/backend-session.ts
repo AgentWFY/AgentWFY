@@ -19,8 +19,10 @@ import type {
 } from '#shared/backend/interface.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 import type { FileContent } from '#shared/agent/types.js'
+import type { PageApi, PageInfo } from '#shared/page/types.js'
 import type { AgentMeta } from '../agent-meta.js'
 import { createMobileBackend, type MobileBackend } from '../backend.js'
+import { MobilePageController } from '../page/mobile-page-host.js'
 import { bridge } from '../tauri-bridge.js'
 import { dispatch, listen } from '../events.js'
 import { agentRegistry } from './agent-registry.js'
@@ -37,6 +39,8 @@ class BackendSession {
   private activeMeta: AgentMeta | null = null
   private status: BackendStatusSnapshot = { ...IDLE_STATUS }
   private providers: ProviderState | null = null
+  private pageController: MobilePageController | null = null
+  private pageUnsubscribe: (() => void) | null = null
   private connectGeneration = 0
   private readonly rememberedSessionIds = new Map<string, string>()
 
@@ -59,6 +63,12 @@ class BackendSession {
    *  attached via the returned object will be silently dropped. */
   getBackend(): MobileBackend['backend'] | null { return this.session?.backend ?? null }
   getProviders(): ProviderState | null { return this.providers }
+  getPageTools(): PageApi | null { return this.pageController?.pageTools ?? null }
+  getCurrentPage(): PageInfo | null { return this.pageController?.getCurrentPage() ?? null }
+
+  renameCurrentViewPage(name: string): PageInfo | null {
+    return this.pageController?.renameCurrentView(name) ?? null
+  }
 
   // ── Connection lifecycle ─────────────────────────────────────────────────
 
@@ -73,24 +83,33 @@ class BackendSession {
 
     const preferredSessionId = this.rememberedSessionIds.get(agentId) ?? null
 
-    // Snap the session pointer to null synchronously BEFORE dispatching
+    // Snap agent-scoped runtime pointers synchronously BEFORE dispatching
     // agent-switched. Any listener that reacts to the switch by calling
-    // back into this service (e.g. refreshSessions) must see no live
-    // backend so it skips — otherwise it would talk to the previous
-    // agent's backend and stamp those rows onto the new agent's UI under
-    // the (already-bumped) current generation.
+    // back into this service must not see the previous agent's backend or
+    // page surface under the already-bumped generation.
     const oldSession = this.session
+    const oldPageController = this.pageController
+    this.pageUnsubscribe?.()
+    this.pageUnsubscribe = null
     this.session = null
+    this.pageController = null
 
     this.activeAgentId = agentId
     this.activeMeta = meta
     this.providers = null
+    const pageController = new MobilePageController(agentId)
+    this.pageController = pageController
+    this.pageUnsubscribe = pageController.subscribeCurrentPage((page) => {
+      if (gen !== this.connectGeneration) return
+      dispatch('page-changed', { page })
+    })
     this.setStatus({ state: 'connecting', message: 'Connecting…', updatedAt: Date.now() })
     dispatch('agent-switched', { agentId, meta })
     dispatch('error', { message: null })
     dispatch('providers-changed', { providers: null })
     dispatch('sessions-listed', { sessions: [] })
 
+    oldPageController?.dispose()
     if (oldSession) {
       await bridge.activeAgent.clearEndpoint().catch(() => {})
       await oldSession.stop().catch(() => {})
@@ -105,6 +124,10 @@ class BackendSession {
         agentId,
         baseUrl: remoteConfig.baseUrl,
         agentToken: remoteConfig.agentToken,
+        clientPages: pageController.pageTools,
+        clientId: 'mobile',
+        clientKind: 'mobile',
+        isActiveForAgent: () => isCurrent() && this.activeAgentId === agentId,
         onLocalDbChange: (change) => {
           if (!isCurrent()) return
           dispatch('db-change', { change })
@@ -132,14 +155,25 @@ class BackendSession {
       const message = messageFromUnknown(err)
       this.activeAgentId = null
       this.activeMeta = null
+      this.pageUnsubscribe?.()
+      this.pageUnsubscribe = null
+      this.pageController?.dispose()
+      this.pageController = null
       this.setStatus({ state: 'error', message: `Connect failed: ${message}`, updatedAt: Date.now() })
       dispatch('agent-switched', { agentId: null, meta: null })
+      dispatch('page-changed', { page: null })
       dispatch('error', { message })
       dispatch('set-screen', { screen: 'add-agent' })
       return
     }
 
     if (!isCurrent()) {
+      if (this.pageController === pageController) {
+        this.pageUnsubscribe?.()
+        this.pageUnsubscribe = null
+        this.pageController = null
+      }
+      pageController.dispose()
       await session.stop().catch(() => {})
       return
     }
@@ -163,15 +197,21 @@ class BackendSession {
   async disconnect(): Promise<void> {
     this.connectGeneration += 1
     const oldSession = this.session
+    const oldPageController = this.pageController
+    this.pageUnsubscribe?.()
+    this.pageUnsubscribe = null
     this.session = null
+    this.pageController = null
     this.activeAgentId = null
     this.activeMeta = null
     this.providers = null
     this.setStatus({ ...IDLE_STATUS })
     dispatch('agent-switched', { agentId: null, meta: null })
+    dispatch('page-changed', { page: null })
     dispatch('providers-changed', { providers: null })
     dispatch('sessions-listed', { sessions: [] })
 
+    oldPageController?.dispose()
     if (oldSession) {
       await bridge.activeAgent.clearEndpoint().catch(() => {})
       await oldSession.stop().catch(() => {})

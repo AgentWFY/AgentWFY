@@ -1800,6 +1800,39 @@ capabilities.
 
 ### Phase 8: Add Mobile Page Support
 
+Status as of 2026-06-01: **implemented and build-verified**.
+
+Implemented in:
+
+- `mobile/src/page/mobile-page-host.ts`
+- `mobile/src/backend.ts`
+- `mobile/src/services/backend-session.ts`
+- `mobile/src/components/app.ts`
+- `mobile/src/components/view_frame.ts`
+- `mobile/src/events.ts`
+- `shared/page/page-manager.ts`
+
+Notes:
+
+- Mobile now exposes a `MobilePageHost` through `PageManager` as its typed
+  `client.pages.*` implementation for remote daemon agents.
+- The mobile app shell tracks the active foreground page as `PageInfo` instead
+  of `activeViewName` / `activeViewVersion`.
+- Mobile starts with one foreground `view` page. Opening another foreground
+  view replaces the previous page; background view opens fail clearly.
+- Mobile page capabilities are explicit and currently report unsupported for
+  screenshot, external JS injection, input, console logs, inspection, CDP, and
+  screencast.
+- The iframe URL now uses the page ID as `tabId` and serializes page source
+  params into the real view query string.
+- `PageManager` no longer imports `node:crypto`, so it can run inside the
+  mobile WebView.
+
+Verification performed:
+
+- `./scripts/build-mobile`
+- `./scripts/build`
+
 - Replace `activeViewName`/`activeViewVersion` with page state.
 - Implement `MobilePageHost` and `IframePageHandle`.
 - Start with one foreground view page.

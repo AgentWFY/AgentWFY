@@ -9,8 +9,8 @@
 //
 //   Fact events    (services emit; UI listens):
 //     agents-changed, agent-switched, status-changed, db-change,
-//     snapshot-applied, session-state, session-created, session-removed,
-//     sessions-listed, providers-changed, error
+//     snapshot-applied, page-changed, session-state, session-created,
+//     session-removed, sessions-listed, providers-changed, error
 //
 // Components that own a slice of UI state (e.g. <awfy-app> owns the router
 // state) emit their own focused facts via dispatch() as needed.
@@ -22,6 +22,7 @@ import type {
   SessionSummary,
 } from '#shared/backend/interface.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
+import type { PageInfo } from '#shared/page/types.js'
 import type { InstalledAgent, AgentMeta } from './agent-meta.js'
 
 export type Screen = 'add-agent' | 'chat' | 'views'
@@ -48,6 +49,7 @@ export interface MobileEventMap {
   'status-changed': { status: BackendStatusSnapshot }
   'db-change': { change: AgentDbChange }
   'snapshot-applied': void
+  'page-changed': { page: PageInfo | null }
   'session-state': {
     sessionId: string
     title?: string | null
