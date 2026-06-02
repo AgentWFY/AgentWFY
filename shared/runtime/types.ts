@@ -153,11 +153,6 @@ export interface WorkerPageIdRequest {
   pageId?: string
 }
 
-export interface WorkerWaitForPageRequest extends WorkerPageIdRequest {
-  lifecycle?: 'ready'
-  timeoutMs?: number
-}
-
 export interface WorkerCapturePageRequest extends WorkerPageIdRequest {
   allowFallback?: boolean
 }
@@ -295,10 +290,6 @@ export interface WorkerHostMethodMap {
   getCurrentClientPage: {
     params: Record<string, never>
     result: WorkerPageInfo | null
-  }
-  waitForPage: {
-    params: WorkerWaitForPageRequest
-    result: WorkerPageInfo
   }
   capturePage: {
     params: WorkerCapturePageRequest

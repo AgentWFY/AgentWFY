@@ -14,7 +14,6 @@ one desktop presentation for user-facing pages.
   Opens and selects a client page. Fails if no client is connected.
 - `closePage(id)` -> close a page.
 - `reloadPage(id)` -> reload and return updated page metadata.
-- `waitForPage({ pageId, lifecycle?, timeoutMs? })` -> wait for `"ready"`.
 - `capturePage(id)` -> screenshot is auto-attached as an image to the tool
   result. The raw image data is not available to code; returns
   `{ attached: true, mimeType }`.

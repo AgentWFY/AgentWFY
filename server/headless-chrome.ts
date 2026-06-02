@@ -283,7 +283,7 @@ export class DaemonHeadlessPageHost implements PageHost {
       // Subscribe before navigating so we can't miss the load event. Without
       // this, capture/reload issued right after openPage can race navigation
       // and fail with "Not attached to an active page".
-      const loaded = this.waitForPageLoad(sessionId)
+      const loaded = this.awaitTargetLoad(sessionId)
       await this.client.send('Page.navigate', { url: resolved.url }, sessionId)
       await loaded
       record.lifecycle = 'ready'
@@ -353,7 +353,7 @@ export class DaemonHeadlessPageHost implements PageHost {
     const record = this.requireRecord(pageId)
     this.touchPage(pageId)
     record.lifecycle = 'opening'
-    const loaded = this.waitForPageLoad(record.sessionId)
+    const loaded = this.awaitTargetLoad(record.sessionId)
     const deadline = Date.now() + RELOAD_RETRY_BUDGET_MS
     try {
       while (true) {
@@ -463,7 +463,7 @@ export class DaemonHeadlessPageHost implements PageHost {
     }
   }
 
-  private waitForPageLoad(sessionId: string, timeoutMs = 10_000): Promise<void> {
+  private awaitTargetLoad(sessionId: string, timeoutMs = 10_000): Promise<void> {
     return new Promise<void>((resolve) => {
       let settled = false
       const finish = () => {

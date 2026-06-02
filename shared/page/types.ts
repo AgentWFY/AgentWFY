@@ -172,7 +172,6 @@ export interface PageApi {
   openPage(request: OpenPageRequest): Promise<OpenPageResult>
   closePage(request: { pageId: string }): Promise<void>
   reloadPage(request: { pageId: string }): Promise<PageInfo>
-  waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo>
   capturePage(request: CapturePageRequest): Promise<PageScreenshot>
   runPageJs(request: { pageId: string; code: string; timeoutMs?: number }): Promise<unknown>
   sendPageInput(request: PageInputRequest): Promise<void>

@@ -634,7 +634,6 @@ openClientPage(request: {
 
 closePage(request: { pageId: string }): Promise<void>
 reloadPage(request: { pageId: string }): Promise<PageInfo>
-waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo>
 
 capturePage(request: {
   pageId: string

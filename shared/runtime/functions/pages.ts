@@ -236,16 +236,6 @@ export function registerPages(
     return toWorkerPageInfo(await pageTools.reloadPage({ pageId }))
   })
 
-  registry.register('waitForPage', async (params) => {
-    const request = params as WorkerHostMethodMap['waitForPage']['params']
-    const pageId = resolvePageId(request)
-    return toWorkerPageInfo(await pageTools.waitForPage({
-      pageId,
-      lifecycle: request.lifecycle,
-      timeoutMs: request.timeoutMs,
-    }))
-  })
-
   registry.register('capturePage', async (params) => {
     const request = params as WorkerHostMethodMap['capturePage']['params']
     const pageId = resolvePageId(request)

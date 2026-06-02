@@ -16,8 +16,6 @@ import type {
 } from './types.js'
 import { formatPageSource } from './page-source.js'
 
-const DEFAULT_WAIT_FOR_PAGE_TIMEOUT_MS = 10_000
-
 interface PageManagerOptions {
   agentId: string
   hosts: PageHost[]
@@ -104,22 +102,6 @@ export class PageManager implements PageApi {
     const handle = await this.resolveHandle(request.pageId)
     await handle.reload()
     return handle.info()
-  }
-
-  async waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo> {
-    const lifecycle = request.lifecycle ?? 'ready'
-    const timeoutMs = normalizeTimeoutMs(request.timeoutMs)
-    const deadline = Date.now() + timeoutMs
-
-    while (true) {
-      const handle = await this.resolveHandle(request.pageId)
-      const page = handle.info()
-      if (page.lifecycle === lifecycle) return page
-      if (Date.now() >= deadline) {
-        throw new Error(`waitForPage timed out waiting for page "${request.pageId}" to reach ${lifecycle}`)
-      }
-      await delay(50)
-    }
   }
 
   async capturePage(request: CapturePageRequest): Promise<PageScreenshot> {
@@ -285,13 +267,6 @@ function assertCapability(page: PageInfo, capability: keyof PageCapabilities, op
   throw new Error(`${operation} is not supported for page "${page.pageId}"`)
 }
 
-function normalizeTimeoutMs(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_WAIT_FOR_PAGE_TIMEOUT_MS
-  }
-  return Math.max(1, Math.floor(value))
-}
-
 function formatOpenPageInfo(page: PageInfo): string {
   const source = formatPageSource(page.source)
   if (page.display === 'headless') {
@@ -302,10 +277,6 @@ function formatOpenPageInfo(page: PageInfo): string {
     return `Opened headless page ${page.pageId} for ${source}${viewport}.`
   }
   return `Opened ${page.display} page ${page.pageId} for ${source}.`
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function randomId(prefix: string): string {

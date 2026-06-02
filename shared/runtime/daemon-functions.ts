@@ -26,7 +26,6 @@ export const DAEMON_BUILT_IN_FUNCTIONS = [
   'closePage',
   'reloadPage',
   'getCurrentClientPage',
-  'waitForPage',
   'capturePage',
   'getPageConsoleLogs',
   'runPageJs',
