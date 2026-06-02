@@ -284,7 +284,7 @@ The replacement must preserve:
 
 > User has a page open, opens chat, and says: "look at the current page; something is broken."
 
-`getCurrentTab()` supports this today. The new API needs `getCurrentPage()`.
+`getCurrentTab()` supports this today. The new API needs `getCurrentClientPage()`.
 Listing pages with `display: 'foreground'` is not enough unless foreground is
 defined relative to a concrete client/surface.
 
@@ -614,23 +614,24 @@ Recommended low-level runtime API:
 
 ```ts
 getPages(request?: {
-  display?: PageDisplay | 'user-facing' | 'all'
-  clientId?: string
+  headless?: boolean
 }): Promise<PageInfo[]>
 
-getCurrentPage(request?: {
-  clientId?: string
-}): Promise<PageInfo | null>
+getCurrentClientPage(): Promise<PageInfo | null>
 
 openPage(request: {
   source: PageSource
-  display: PageDisplay
   title?: string
-  viewport?: 'mobile' | 'tablet' | 'desktop' | { width?: number; height?: number }
+  width?: number
+  height?: number
   closeAfterIdleMs?: number | 'never'
 }): Promise<{ pageId: string; page: PageInfo; info: string }>
 
-showPage(request: { pageId: string }): Promise<PageInfo>
+openClientPage(request: {
+  source: PageSource
+  title?: string
+}): Promise<{ pageId: string; page: PageInfo; info: string }>
+
 closePage(request: { pageId: string }): Promise<void>
 reloadPage(request: { pageId: string }): Promise<PageInfo>
 waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo>
@@ -678,7 +679,7 @@ used, it identifies the actual page that produced the screenshot.
 - `getPages()` should default to `display: 'all'` for agent runtime calls so
   agents can manage headless pages they opened. UI presenters can request only
   `user-facing` pages.
-- `getCurrentPage()` returns the foreground page for the current relevant
+- `getCurrentClientPage()` returns the foreground page for the current relevant
   client/surface, or `null`.
 - `openPage({ display: 'foreground' })` requires a user-facing page surface.
   If no suitable client/surface is available, it must fail clearly.
@@ -686,7 +687,7 @@ used, it identifies the actual page that produced the screenshot.
   background pages. If the host does not support background pages, it must fail
   clearly rather than silently foregrounding.
 - `openPage({ display: 'headless' })` requires a headless-capable host.
-- `showPage()` only applies to foreground/background user-facing pages. Calling
+- `selectTab()` only applies to foreground/background user-facing pages. Calling
   it on a headless page should fail unless a future explicit "materialize" API
   is added.
 - Operations must validate capabilities before dispatch. For example,
@@ -799,7 +800,7 @@ Responsibilities:
 - Touch pages on operations for idle-close behavior.
 - Own or delegate CDP subscription lifecycle.
 - Emit page events.
-- Provide `getPages()` and `getCurrentPage()`.
+- Provide `getPages()` and `getCurrentClientPage()`.
 - Mark client-hosted pages `unavailable` on disconnect and resync them on
   reconnect.
 
@@ -931,7 +932,7 @@ Responsibilities:
 
 - Render foreground/background user-facing pages as tabs.
 - Own tab-specific state: pinned, order, drag state, context menu state.
-- Send `showPage(pageId)` when the user selects a tab.
+- Send `selectTab(pageId)` when the user selects a tab.
 - Send page lifecycle actions when the user closes/reloads a tab.
 - React to page events and update tab entries.
 - Expose command-palette tab/page list entries.
@@ -996,7 +997,7 @@ Mobile UI presenter.
 Responsibilities:
 
 - Render current foreground page.
-- Use `showPage(pageId)` to switch foreground page if background pages exist.
+- Use `selectTab(pageId)` to switch foreground page if background pages exist.
 - Manage mobile memory policy.
 - Report accurate surface visibility and active agent state.
 
@@ -1121,7 +1122,7 @@ Server-to-client RPC methods:
 client.pages.snapshot
 client.pages.open
 client.pages.close
-client.pages.show
+tabs.selectTab
 client.pages.reload
 client.pages.capture
 client.pages.runJs
@@ -1192,9 +1193,9 @@ Reconnect rules:
 - If a different client replaces the previous connection, old client-hosted
   pages remain unavailable unless the new client reports matching page IDs.
 
-Current architecture effectively supports one connected client. The new types
-should include `clientId` anyway so multi-client behavior does not require a
-second redesign.
+Current architecture effectively supports one connected client. Multi-client
+routing should stay internal to page hosts rather than becoming an
+agent-facing page API argument.
 
 ## Display And Routing Rules
 
@@ -1235,14 +1236,14 @@ display: 'headless'
 
 ### Current Page
 
-`getCurrentPage()` resolves in this order:
+`getCurrentClientPage()` resolves in this order:
 
 1. Determine the relevant client/surface for this runtime call.
 2. Confirm the client is connected and active for the agent, if required.
 3. Return that surface's foreground page.
 4. Return `null` if no page is selected or no suitable surface exists.
 
-For scheduled/daemon-only tasks with no connected active client, `getCurrentPage()`
+For scheduled/daemon-only tasks with no connected active client, `getCurrentClientPage()`
 should return `null`.
 
 ## Edge Cases To Handle
@@ -1263,10 +1264,10 @@ should return `null`.
 
 ### Display Transitions
 
-- `showPage(backgroundPage)` promotes it to foreground and demotes the previous
+- `selectTab(backgroundPage)` promotes it to foreground and demotes the previous
   foreground page on that surface to background.
-- `showPage(foregroundPage)` is a no-op that still returns current `PageInfo`.
-- `showPage(headlessPage)` fails.
+- `selectTab(foregroundPage)` is a no-op that still returns current `PageInfo`.
+- `selectTab(headlessPage)` fails.
 - Closing a foreground page lets the presenter choose the next foreground page
   by local UI policy and emits `page.currentChanged`.
 - Opening `background` on a host without background support fails.
@@ -1278,7 +1279,7 @@ should return `null`.
   timeout.
 - Operations on `failed` pages should fail except close/reload/show.
 - Operations on `suspended` pages should fail unless the host can resume them.
-  `showPage` may resume suspended pages.
+  `selectTab` may resume suspended pages.
 - Operations on `unavailable` pages fail until a reconnect snapshot restores
   them.
 - Operations on `crashed` pages fail except close/reload where supported.
@@ -1687,7 +1688,7 @@ Notes:
 - `openPage({ display: 'background' })` now creates an unselected desktop tab
   without briefly showing it.
 - Renderer lifecycle/navigation calls now use page-named IPC (`pages.openPage`,
-  `pages.showPage`, `pages.closePage`, and `pages.getHeadlessCount`) while tab
+  `tabs.selectTab`, `pages.closePage`, and `pages.getHeadlessCount`) while tab
   presenter state, bounds, reorder, pin, and context-menu IPC remain tab-named.
 - Default view opening and command-palette view/tab actions now route through
   `PageApi`.
@@ -1700,8 +1701,8 @@ Verification performed:
 - Register page functions in local runtime.
 - Route foreground/background pages to desktop page host and presenter.
 - Route headless pages to Electron headless host initially.
-- Implement `getCurrentPage()` from presenter-owned foreground surface state.
-- Implement `showPage()` as foreground transition.
+- Implement `getCurrentClientPage()` from presenter-owned foreground surface state.
+- Implement `selectTab()` as foreground transition.
 - Update renderer IPC/preload names for runtime/page lifecycle operations.
 
 Goal: make pages the internal runtime abstraction for local desktop agents.
@@ -1914,7 +1915,7 @@ Remote desktop client:
 
 - Daemon headless page works with Chrome configured.
 - Foreground/background page opens through typed client page RPC.
-- `getCurrentPage()` returns the desktop client's selected page.
+- `getCurrentClientPage()` returns the desktop client's selected page.
 - Client disconnect marks client pages unavailable.
 - Reconnect resyncs page snapshot.
 - Pending page RPC rejects on disconnect.
@@ -1930,7 +1931,7 @@ Daemon headless:
 Mobile:
 
 - Foreground view page opens through page model.
-- `getCurrentPage()` returns the active mobile page.
+- `getCurrentClientPage()` returns the active mobile page.
 - Unsupported operations fail with capability errors.
 - Background open fails clearly in first implementation.
 - Agent switching clears or resyncs active page state correctly.

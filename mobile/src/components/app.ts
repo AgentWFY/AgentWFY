@@ -113,7 +113,7 @@ export class TlApp extends HTMLElement {
     // from A→B doesn't briefly show A's session under B's header.
     this.activeSessionId = null
     this.draftProviderId = null
-    this.activePage = backendSession.getCurrentPage()
+    this.activePage = backendSession.getCurrentClientPage()
     if (agentId !== null && this.screen === 'add-agent') {
       this.screen = 'chat'
     }

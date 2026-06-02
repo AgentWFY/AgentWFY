@@ -74,7 +74,7 @@ All paths are relative to the data directory root. Path traversal outside the da
 
 ### Pages
 
-For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openPage`, `closePage`, `showPage`, `reloadPage`, `capturePage`, `runPageJs`, `inspectPageElement`, `sendPageInput`, `getPageConsoleLogs`, `getPages`, `getCurrentPage`. Read `@docs/system.pages` and `@docs/system.page-debugger` for the full function reference.
+For displaying views and interacting with web pages in a browser context. Prefer `fetch` when a browser environment is not needed. Functions: `openPage`, `openClientPage`, `closePage`, `reloadPage`, `capturePage`, `runPageJs`, `inspectPageElement`, `sendPageInput`, `getPageConsoleLogs`, `getPages`, `getCurrentClientPage`. Read `@docs/system.pages` and `@docs/system.page-debugger` for the full function reference.
 
 ### Other APIs
 

@@ -112,11 +112,6 @@ export interface OpenPageResult {
 
 export interface PageQueryRequest {
   display?: PageDisplayFilter
-  clientId?: string
-}
-
-export interface CurrentPageRequest {
-  clientId?: string
 }
 
 export interface PageScreenshot {
@@ -173,9 +168,8 @@ export interface PageCdpSubscription {
 
 export interface PageApi {
   getPages(request?: PageQueryRequest): Promise<PageInfo[]>
-  getCurrentPage(request?: CurrentPageRequest): Promise<PageInfo | null>
+  getCurrentClientPage(): Promise<PageInfo | null>
   openPage(request: OpenPageRequest): Promise<OpenPageResult>
-  showPage(request: { pageId: string }): Promise<PageInfo>
   closePage(request: { pageId: string }): Promise<void>
   reloadPage(request: { pageId: string }): Promise<PageInfo>
   waitForPage(request: { pageId: string; lifecycle?: 'ready'; timeoutMs?: number }): Promise<PageInfo>

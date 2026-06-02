@@ -336,7 +336,7 @@ export class HeadlessViewRuntime {
     }
 
     try {
-      const value = await registry.call(call.name.trim(), normalizeViewRuntimeParams(call.name.trim(), call.params))
+      const value = await registry.call(call.name.trim(), call.params)
       sendJson(res, 200, { ok: true, value })
     } catch (err) {
       sendJson(res, 200, { ok: false, error: normalizeError(err) })
@@ -366,15 +366,6 @@ export class HeadlessViewRuntime {
     return err;
   }
 
-  function normalizeParams(name, params) {
-    if (name === 'openPage' && params && typeof params === 'object' && !Array.isArray(params)) {
-      const request = { ...params };
-      if (typeof request.display !== 'string') request.display = 'foreground';
-      return request;
-    }
-    return params;
-  }
-
   async function invoke(name, params) {
     const response = await fetch(ENDPOINT, {
       method: 'POST',
@@ -383,7 +374,7 @@ export class HeadlessViewRuntime {
         'content-type': 'application/json',
         ${JSON.stringify(BRIDGE_TOKEN_HEADER)}: TOKEN,
       },
-      body: JSON.stringify({ name, params: normalizeParams(name, params) }),
+      body: JSON.stringify({ name, params }),
     });
     let data = null;
     try {
@@ -447,15 +438,6 @@ export class HeadlessViewRuntime {
     if (!route || route.agentId !== this.agentId) return null
     return this.validatePage(route.pageId, refererUrl.searchParams.get(BRIDGE_TOKEN_QUERY_PARAM))
   }
-}
-
-function normalizeViewRuntimeParams(name: string, params: unknown): unknown {
-  if (name === 'openPage' && params && typeof params === 'object' && !Array.isArray(params)) {
-    const request = { ...params as Record<string, unknown> }
-    if (typeof request.display !== 'string') request.display = 'foreground'
-    return request
-  }
-  return params
 }
 
 function injectHeadStart(source: string, injection: string): string {

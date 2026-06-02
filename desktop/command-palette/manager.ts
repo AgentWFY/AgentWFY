@@ -679,8 +679,8 @@ export class CommandPaletteManager {
           group: 'Tabs' as const,
           settingValue: tab.selected ? 'current' : undefined,
           action: {
-            type: 'show-page' as const,
-            pageId: tab.id,
+            type: 'select-tab' as const,
+            tabId: tab.id,
           },
         }));
     } catch (err) {
@@ -982,9 +982,9 @@ export class CommandPaletteManager {
         break;
       }
 
-      case 'show-page': {
-        const showPageAction = action as Extract<CommandPaletteAction, { type: 'show-page' }>;
-        await this.deps.getPageTools().showPage({ pageId: showPageAction.pageId });
+      case 'select-tab': {
+        const selectTabAction = action as Extract<CommandPaletteAction, { type: 'select-tab' }>;
+        await this.deps.getTabViewManager().selectTabHandler({ tabId: selectTabAction.tabId });
         break;
       }
 

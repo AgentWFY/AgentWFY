@@ -108,6 +108,9 @@ if (isApp) {
       getTabState(): Promise<PushMap['tabs:stateChanged']> {
         return ipcRenderer.invoke(Channels.tabs.getState);
       },
+      selectTab(tabId: string): Promise<void> {
+        return ipcRenderer.invoke(Channels.tabs.selectTab, tabId);
+      },
       reorderTabs(fromIndex: number, toIndex: number): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.reorderTabs, { fromIndex, toIndex });
       },
@@ -125,14 +128,8 @@ if (isApp) {
       getPages(request?: unknown) {
         return ipcRenderer.invoke(Channels.pages.getPages, request);
       },
-      getCurrentPage(request?: unknown) {
-        return ipcRenderer.invoke(Channels.pages.getCurrentPage, request);
-      },
       openPage(request: unknown) {
         return ipcRenderer.invoke(Channels.pages.openPage, request);
-      },
-      showPage(request: unknown) {
-        return ipcRenderer.invoke(Channels.pages.showPage, request);
       },
       closePage(request: unknown) {
         return ipcRenderer.invoke(Channels.pages.closePage, request);
@@ -383,15 +380,7 @@ if (isAgentView) {
   const runtimeFunctions: Record<string, Function> = {};
   for (const name of runtimeFunctionNames) {
     runtimeFunctions[name] = (params: unknown) => {
-      let nextParams = params;
-      if (name === 'openPage' && params && typeof params === 'object') {
-        const request = { ...params as Record<string, unknown> };
-        if (typeof request.display !== 'string') {
-          request.display = 'foreground';
-        }
-        nextParams = request;
-      }
-      return ipcRenderer.invoke(Channels.runtimeFunctions.call, name, nextParams);
+      return ipcRenderer.invoke(Channels.runtimeFunctions.call, name, params);
     };
   }
 

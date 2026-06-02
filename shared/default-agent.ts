@@ -198,8 +198,7 @@ const DEFAULT_HOME_VIEW = `<!doctype html>
         params: [viewName],
       });
       if (rows.length > 0) {
-        await window.agentwfy.openPage({
-          display: 'foreground',
+        await window.agentwfy.openClientPage({
           source: { type: 'view', name: rows[0].name },
           title: rows[0].title || viewName,
         });

@@ -36,7 +36,6 @@ import {
   type ClientPagesRunJsRequest,
   type ClientPagesSendCdpRequest,
   type ClientPagesSendInputRequest,
-  type ClientPagesShowRequest,
   type ClientPagesSnapshotResponse,
   type ClientPagesSubscribeCdpRequest,
   type ClientPagesUnsubscribeCdpRequest,
@@ -462,7 +461,6 @@ export class RemoteBackend implements AgentBackend {
         return this.createPageSnapshot()
       case 'client.pages.open': {
         const req = params as ClientPagesOpenRequest
-        this.assertCanMutateClientSurface(req.display, 'openPage')
         const result = await pages.openPage(req)
         return this.decorateOpenPageResult(result)
       }
@@ -470,11 +468,6 @@ export class RemoteBackend implements AgentBackend {
         const req = params as ClientPagesCloseRequest
         await pages.closePage({ pageId: req.pageId })
         return undefined
-      }
-      case 'client.pages.show': {
-        const req = params as ClientPagesShowRequest
-        this.assertCanMutateClientSurface('foreground', 'showPage')
-        return this.decorateClientPage(await pages.showPage({ pageId: req.pageId }))
       }
       case 'client.pages.reload': {
         const req = params as ClientPagesReloadRequest
@@ -549,7 +542,7 @@ export class RemoteBackend implements AgentBackend {
 
     const client = this.clientInfo()
     const pageList = (await pages.getPages({ display: 'all' })).map(page => this.decorateClientPage(page, client))
-    const currentPage = client.activeForAgent ? await pages.getCurrentPage() : null
+    const currentPage = await pages.getCurrentClientPage()
     return {
       pages: pageList,
       currentPageId: currentPage?.pageId ?? null,
@@ -588,12 +581,6 @@ export class RemoteBackend implements AgentBackend {
           }
         : {}),
     }
-  }
-
-  private assertCanMutateClientSurface(display: unknown, operation: string): void {
-    if (display !== 'foreground') return
-    if (this.isActiveForAgent()) return
-    throw new Error(`${operation} cannot target the foreground page surface because this client is not active for the agent`)
   }
 
   private clientInfo(): ClientPageInfo {

@@ -64,7 +64,7 @@ class BackendSession {
   getBackend(): MobileBackend['backend'] | null { return this.session?.backend ?? null }
   getProviders(): ProviderState | null { return this.providers }
   getPageTools(): PageApi | null { return this.pageController?.pageTools ?? null }
-  getCurrentPage(): PageInfo | null { return this.pageController?.getCurrentPage() ?? null }
+  getCurrentClientPage(): PageInfo | null { return this.pageController?.getCurrentClientPage() ?? null }
 
   renameCurrentViewPage(name: string): PageInfo | null {
     return this.pageController?.renameCurrentView(name) ?? null

@@ -28,6 +28,7 @@ export interface TabsApi {
   onViewEvent(callback: (detail: TabViewEvent) => void): () => void
   onStateChanged(callback: (state: TabState) => void): () => void
   getTabState(): Promise<TabState>
+  selectTab(tabId: string): Promise<void>
   reorderTabs(fromIndex: number, toIndex: number): Promise<void>
   togglePin(tabId: string): Promise<void>
   toggleDevTools(tabId: string): Promise<void>

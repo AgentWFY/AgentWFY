@@ -88,7 +88,7 @@ export class RemoteClientPageHost implements PageHost {
     return page ? new RemoteClientPageHandle(this, this.invoker, page) : null
   }
 
-  async getCurrentPage(): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageInfo | null> {
     if (!this.invoker.isPageClientConnected) {
       this.markUnavailable()
       return null
@@ -96,7 +96,7 @@ export class RemoteClientPageHost implements PageHost {
     await this.refreshSnapshot().catch(() => {
       this.markUnavailable()
     })
-    if (!this.client.activeForAgent || !this.currentPageId) return null
+    if (!this.currentPageId) return null
     return this.pages.get(this.currentPageId) ?? null
   }
 
@@ -118,7 +118,7 @@ export class RemoteClientPageHost implements PageHost {
   remember(page: PageInfo): PageInfo {
     const normalized = this.decorateClientPage(page, this.invoker.isPageClientConnected)
     this.pages.set(normalized.pageId, normalized)
-    if (normalized.display === 'foreground' && this.client.activeForAgent) {
+    if (normalized.display === 'foreground') {
       this.currentPageId = normalized.pageId
     }
     return normalized
@@ -136,7 +136,7 @@ export class RemoteClientPageHost implements PageHost {
 
   private applySnapshot(snapshot: ClientPagesSnapshotResponse): void {
     this.client = snapshot.client
-    this.currentPageId = snapshot.client.activeForAgent ? snapshot.currentPageId : null
+    this.currentPageId = snapshot.currentPageId
     this.pages.clear()
     for (const page of snapshot.pages) {
       this.remember(page)
@@ -201,11 +201,6 @@ class RemoteClientPageHandle implements PageHandle {
 
   info(): PageInfo {
     return this.host.getKnownPage(this.pageId) ?? this.page
-  }
-
-  async show(): Promise<void> {
-    const page = await this.invoker.invokeClientPageRpc('client.pages.show', { pageId: this.pageId })
-    this.page = this.host.remember(page)
   }
 
   async close(): Promise<void> {

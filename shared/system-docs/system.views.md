@@ -2,14 +2,14 @@
 
 Views are HTML rendered as isolated webview runtimes. There are two kinds:
 
-- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened via `openPage({ display: 'foreground', source: { type: 'view', name } })`.
-- **File views** — HTML files in the working directory. Opened via `openPage({ display: 'foreground', source: { type: 'file', path } })`.
+- **DB views** — stored in `views` table (target="agent"), keyed by `name`. Opened for the user via `openClientPage({ source: { type: 'view', name } })`.
+- **File views** — HTML files in the working directory. Opened for the user via `openClientPage({ source: { type: 'file', path } })`.
 
-Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL pages (`openPage({ display: 'foreground', source: { type: 'url', url } })`) do NOT get the runtime.
+Both get CSS design tokens, base reset, and host APIs via `window.agentwfy.<method>(...)`. URL pages (`openClientPage({ source: { type: 'url', url } })`) do NOT get the runtime.
 
-**Opening by name:** `openPage({ display: 'foreground', source: { type: 'view', name: 'my-view' } })` resolves the view by its `name` column (primary key) and auto-populates the page title. Always use a `view` source to open views.
+**Opening by name:** `openClientPage({ source: { type: 'view', name: 'my-view' } })` resolves the view by its `name` column (primary key) and auto-populates the page title. Always use a `view` source to open views.
 
-**View params:** Pass custom parameters in the source via `openPage({ display: 'foreground', source: { type: 'view', name, params: { key: 'value' } } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
+**View params:** Pass custom parameters in the source via `openClientPage({ source: { type: 'view', name, params: { key: 'value' } } })`. Views read params with `new URLSearchParams(window.location.search).get('key')`. Use this for navigation between views (e.g. a list view opening a detail view with an entity ID).
 
 **Default behavior:** prefer file views in `.tmp/` directory for displaying data. Only create DB views when the user explicitly asks for a persistent view.
 
@@ -98,11 +98,11 @@ These are Electron platform constraints, not bugs. Design views with inline inte
 
 ## Debugging Views
 
-**Always use headless pages for development/testing.** When opening pages to test, debug, capture screenshots, or run JS, use `display: 'headless'`:
+**Always use headless pages for development/testing.** When opening pages to test, debug, capture screenshots, or run JS, use `openPage`:
 
 ```js
-await openPage({ display: 'headless', source: { type: 'view', name } })
-await openPage({ display: 'headless', source: { type: 'file', path } })
+await openPage({ source: { type: 'view', name } })
+await openPage({ source: { type: 'file', path } })
 ```
 
 Foreground pages steal the user's focus and clutter their page surface. Headless pages load fully in the background and support `capturePage`, `runPageJs`, and `getPageConsoleLogs`. Only open a foreground page when presenting a finished result to the user. Headless pages close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the page must stay open until `closePage`.

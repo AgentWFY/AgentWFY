@@ -2,7 +2,6 @@ import type { PageHandle } from './page-handle.js'
 import type { PageHost } from './page-host.js'
 import type {
   CapturePageRequest,
-  CurrentPageRequest,
   OpenPageRequest,
   OpenPageResult,
   PageApi,
@@ -53,9 +52,9 @@ export class PageManager implements PageApi {
     return pages.filter((page) => pageMatchesQuery(page, request))
   }
 
-  async getCurrentPage(request: CurrentPageRequest = {}): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageInfo | null> {
     for (const host of this.hosts) {
-      const page = await host.getCurrentPage?.(request) ?? null
+      const page = await host.getCurrentClientPage?.() ?? null
       if (page) {
         this.pageHosts.set(page.pageId, host)
         return page
@@ -92,19 +91,6 @@ export class PageManager implements PageApi {
       page,
       info: formatOpenPageInfo(page),
     }
-  }
-
-  async showPage(request: { pageId: string }): Promise<PageInfo> {
-    const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    if (page.display === 'headless') {
-      throw new Error(`showPage cannot show headless page "${request.pageId}"`)
-    }
-    if (!handle.show) {
-      throw new Error(`Page host does not support showPage for "${request.pageId}"`)
-    }
-    await handle.show()
-    return handle.info()
   }
 
   async closePage(request: { pageId: string }): Promise<void> {
@@ -288,7 +274,6 @@ function isPageDisplay(value: unknown): value is PageDisplay {
 }
 
 function pageMatchesQuery(page: PageInfo, request: PageQueryRequest): boolean {
-  if (request.clientId && page.owner.client?.id !== request.clientId) return false
   const display = request.display ?? 'all'
   if (display === 'all') return true
   if (display === 'user-facing') return page.display !== 'headless'

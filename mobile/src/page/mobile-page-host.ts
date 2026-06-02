@@ -37,8 +37,8 @@ export class MobilePageController {
     })
   }
 
-  getCurrentPage(): PageInfo | null {
-    return this.host.getCurrentPageSync()
+  getCurrentClientPage(): PageInfo | null {
+    return this.host.getCurrentClientPageSync()
   }
 
   subscribeCurrentPage(handler: CurrentPageSubscriber): () => void {
@@ -120,11 +120,11 @@ export class MobilePageHost implements PageHost {
     return this.pages.has(pageId) ? new IframePageHandle(this, pageId) : null
   }
 
-  async getCurrentPage(): Promise<PageInfo | null> {
-    return this.getCurrentPageSync()
+  async getCurrentClientPage(): Promise<PageInfo | null> {
+    return this.getCurrentClientPageSync()
   }
 
-  getCurrentPageSync(): PageInfo | null {
+  getCurrentClientPageSync(): PageInfo | null {
     const record = this.currentPageId ? this.pages.get(this.currentPageId) : null
     return record ? this.pageInfoFromRecord(record) : null
   }
@@ -142,23 +142,10 @@ export class MobilePageHost implements PageHost {
 
   subscribeCurrentPage(handler: CurrentPageSubscriber): () => void {
     this.currentPageSubscribers.add(handler)
-    handler(this.getCurrentPageSync())
+    handler(this.getCurrentClientPageSync())
     return () => {
       this.currentPageSubscribers.delete(handler)
     }
-  }
-
-  async showPage(pageId: string): Promise<void> {
-    const record = this.requireRecord(pageId)
-    const previousPageId = this.currentPageId
-    this.currentPageId = pageId
-    record.lastUsedAt = Date.now()
-    const page = this.pageInfoFromRecord(record)
-    this.emitPageEvent('page.currentChanged', pageId, page, {
-      previousPageId,
-      currentPageId: pageId,
-    })
-    this.emitCurrentPage()
   }
 
   async closePage(pageId: string): Promise<void> {
@@ -253,7 +240,7 @@ export class MobilePageHost implements PageHost {
   }
 
   private emitCurrentPage(): void {
-    const page = this.getCurrentPageSync()
+    const page = this.getCurrentClientPageSync()
     for (const handler of this.currentPageSubscribers) {
       try {
         handler(page)
@@ -299,10 +286,6 @@ export class IframePageHandle implements PageHandle {
 
   info(): PageInfo {
     return this.host.pageInfo(this.pageId)
-  }
-
-  async show(): Promise<void> {
-    await this.host.showPage(this.pageId)
   }
 
   async close(): Promise<void> {

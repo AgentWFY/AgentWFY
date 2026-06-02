@@ -86,27 +86,15 @@ export function registerPageHandlers(
   getHeadlessPageCount?: () => Promise<number> | number,
 ): void {
   ipcMain.handle(Channels.pages.getPages, async (event, payload: unknown) => {
-    const input = payload && typeof payload === 'object' ? payload as { display?: unknown; clientId?: unknown } : {};
+    const input = payload && typeof payload === 'object' ? payload as { display?: unknown } : {};
     return getPageTools(event).getPages({
       display: normalizeDisplayFilter(input.display),
-      ...(typeof input.clientId === 'string' ? { clientId: input.clientId } : {}),
-    });
-  });
-
-  ipcMain.handle(Channels.pages.getCurrentPage, async (event, payload: unknown) => {
-    const input = payload && typeof payload === 'object' ? payload as { clientId?: unknown } : {};
-    return getPageTools(event).getCurrentPage({
-      ...(typeof input.clientId === 'string' ? { clientId: input.clientId } : {}),
     });
   });
 
   ipcMain.handle(Channels.pages.openPage, async (event, payload: unknown) => {
     const request = await normalizeOpenPagePayload(payload, getCacheRoot(event));
     return getPageTools(event).openPage(request);
-  });
-
-  ipcMain.handle(Channels.pages.showPage, async (event, payload: unknown) => {
-    return getPageTools(event).showPage({ pageId: parsePageId(payload) });
   });
 
   ipcMain.handle(Channels.pages.closePage, async (event, payload: unknown) => {

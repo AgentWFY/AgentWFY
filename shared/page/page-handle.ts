@@ -9,7 +9,6 @@ import type {
 export interface PageHandle {
   readonly pageId: string
   info(): PageInfo
-  show?(): Promise<void>
   close(): Promise<void>
   reload(): Promise<void>
   capture?(): Promise<PageScreenshot>

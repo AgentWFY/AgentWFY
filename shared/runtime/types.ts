@@ -3,12 +3,8 @@ import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
 import type {
   PageCdpBufferedEvent,
   PageCloseAfterIdleMs,
-  PageDisplay,
-  PageDisplayFilter,
-  PageInfo,
   PageScreenshot,
   PageSource,
-  PageViewportInput,
 } from '../page/types.js'
 
 type ConsoleMethod = 'debug' | 'log' | 'info' | 'warn' | 'error'
@@ -112,18 +108,22 @@ interface WorkerGrepRequest {
   options?: WorkerGrepOptions
 }
 
-export interface WorkerGetPagesRequest {
-  display?: PageDisplayFilter
-  clientId?: string
+export interface WorkerPageInfo {
+  pageId: string
+  title: string
+  source: PageSource
+  headless: boolean
 }
 
-export type WorkerGetPagesResult = PageInfo[]
+export interface WorkerGetPagesRequest {
+  headless?: boolean
+}
+
+export type WorkerGetPagesResult = WorkerPageInfo[]
 
 export interface WorkerOpenPageRequest {
   source: PageSource
-  display?: PageDisplay
   title?: string
-  viewport?: PageViewportInput
   width?: number
   height?: number
   closeAfterIdleMs?: PageCloseAfterIdleMs
@@ -132,7 +132,19 @@ export interface WorkerOpenPageRequest {
 export interface WorkerOpenPageResult {
   id: string
   pageId: string
-  page: PageInfo
+  page: WorkerPageInfo
+  info: string
+}
+
+export interface WorkerOpenClientPageRequest {
+  source: PageSource
+  title?: string
+}
+
+export interface WorkerOpenClientPageResult {
+  id: string
+  pageId: string
+  page: WorkerPageInfo
   info: string
 }
 
@@ -268,9 +280,9 @@ export interface WorkerHostMethodMap {
     params: WorkerOpenPageRequest
     result: WorkerOpenPageResult
   }
-  showPage: {
-    params: WorkerPageIdRequest
-    result: PageInfo
+  openClientPage: {
+    params: WorkerOpenClientPageRequest
+    result: WorkerOpenClientPageResult
   }
   closePage: {
     params: WorkerPageIdRequest
@@ -278,15 +290,15 @@ export interface WorkerHostMethodMap {
   }
   reloadPage: {
     params: WorkerPageIdRequest
-    result: PageInfo
+    result: WorkerPageInfo
   }
-  getCurrentPage: {
-    params: { clientId?: string }
-    result: PageInfo | null
+  getCurrentClientPage: {
+    params: Record<string, never>
+    result: WorkerPageInfo | null
   }
   waitForPage: {
     params: WorkerWaitForPageRequest
-    result: PageInfo
+    result: WorkerPageInfo
   }
   capturePage: {
     params: WorkerCapturePageRequest

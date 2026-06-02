@@ -285,7 +285,7 @@ export class TlTabs extends HTMLElement {
         })
 
         tabItem.addEventListener('click', () => {
-          window.ipc?.pages.showPage({ pageId: tab.id })
+          window.ipc?.tabs.selectTab(tab.id)
         })
         tabItem.addEventListener('auxclick', (e) => {
           if (e.button === 1 && !tab.pinned) {

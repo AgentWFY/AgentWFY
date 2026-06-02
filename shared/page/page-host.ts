@@ -3,7 +3,6 @@ import type { PageHandle } from './page-handle.js'
 
 export interface PageOpenContext {
   agentId: string
-  clientId?: string
 }
 
 export type PageHostOpenRequest = OpenPageRequest & {
@@ -16,7 +15,7 @@ export interface PageHost {
   canOpen(request: OpenPageRequest, context: PageOpenContext): boolean
   openPage(request: PageHostOpenRequest): Promise<PageHandle>
   getPage(pageId: string): Promise<PageHandle | null>
-  getCurrentPage?(request?: { clientId?: string }): Promise<PageInfo | null>
+  getCurrentClientPage?(): Promise<PageInfo | null>
   listPages?(): Promise<PageInfo[]>
   onPageEvent?(handler: (event: PageEvent) => void): () => void
 }

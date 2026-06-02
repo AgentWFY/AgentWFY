@@ -8,6 +8,7 @@ export const Channels = {
     viewEvent: 'tabs:viewEvent',
     stateChanged: 'tabs:stateChanged',
     getState: 'tabs:getState',
+    selectTab: 'tabs:selectTab',
     reorderTabs: 'tabs:reorderTabs',
     togglePin: 'tabs:togglePin',
     toggleDevTools: 'tabs:toggleDevTools',
@@ -15,9 +16,7 @@ export const Channels = {
   },
   pages: {
     getPages: 'pages:getPages',
-    getCurrentPage: 'pages:getCurrentPage',
     openPage: 'pages:openPage',
-    showPage: 'pages:showPage',
     closePage: 'pages:closePage',
     reloadPage: 'pages:reloadPage',
     getHeadlessCount: 'pages:getHeadlessCount',

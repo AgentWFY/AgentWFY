@@ -17,6 +17,11 @@ export function registerTabViewHandlers(
     return getTabViewManager(event).getState();
   });
 
+  ipcMain.handle(Channels.tabs.selectTab, async (event, payload: unknown) => {
+    const tabId = toNonEmptyString(payload);
+    await getTabViewManager(event).selectTabHandler({ tabId });
+  });
+
   ipcMain.handle(Channels.tabs.reorderTabs, async (event, payload: unknown) => {
     const input = payload && typeof payload === 'object' ? payload as { fromIndex?: number; toIndex?: number } : {};
     const fromIndex = typeof input.fromIndex === 'number' ? input.fromIndex : -1;

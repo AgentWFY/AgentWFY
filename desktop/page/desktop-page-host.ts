@@ -73,7 +73,7 @@ export class DesktopPageHost implements PageHost {
     return new DesktopPageHandle(this.manager, this, tab);
   }
 
-  async getCurrentPage(): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageInfo | null> {
     if (this.headless) return null;
     const tab = await this.manager.getCurrentTabHandler();
     return tab ? this.pageInfoFromTab(tab) : null;
@@ -141,11 +141,6 @@ export class DesktopPageHandle implements PageHandle {
 
   info(): PageInfo {
     return this.host.pageInfoFromTab(this.tab);
-  }
-
-  async show(): Promise<void> {
-    await this.manager.selectTabHandler({ tabId: this.pageId });
-    await this.refresh();
   }
 
   async close(): Promise<void> {

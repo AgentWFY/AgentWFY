@@ -2,8 +2,8 @@ import type { FunctionRegistry } from '../function_registry.js'
 import type {
   PageApi,
   PageCloseAfterIdleMs,
-  PageDisplay,
-  PageDisplayFilter,
+  PageInfo,
+  PageQueryRequest,
   PageViewport,
   PageSource,
 } from '../../page/types.js'
@@ -16,6 +16,7 @@ import { normalizePageViewportInput, resolvePageViewport } from '../../page/page
 import { getViewByName } from '../../db/views.js'
 import type {
   WorkerHostMethodMap,
+  WorkerPageInfo,
   WorkerPageConsoleLogEntry,
   WorkerSendPageInputRequest,
 } from '../types.js'
@@ -37,15 +38,10 @@ function formatViewport(viewport: PageViewport): string {
 function buildOpenPageInfo(opts: {
   pageId: string
   source: PageSource
-  display: PageDisplay
   viewport?: PageViewport
   closeAfterIdleMs?: PageCloseAfterIdleMs
   usedDefaultCloseAfterIdle: boolean
 }): string {
-  if (opts.display !== 'headless') {
-    return `Opened ${opts.display} page ${opts.pageId} for ${formatPageSource(opts.source)}.`
-  }
-
   const viewport = opts.viewport ? formatViewport(opts.viewport) : '1280x720'
   if (opts.closeAfterIdleMs === 'never') {
     return `Opened headless page ${opts.pageId} for ${formatPageSource(opts.source)} (${viewport}). It stays open until closePage is called.`
@@ -58,6 +54,22 @@ function buildOpenPageInfo(opts: {
     ? '; pass closeAfterIdleMs:"never" to keep it open'
     : ''
   return `Opened headless page ${opts.pageId} for ${formatPageSource(opts.source)} (${viewport}). It closes after ${formatDuration(timeoutMs)} idle${suffix}.`
+}
+
+function buildOpenClientPageInfo(opts: {
+  pageId: string
+  source: PageSource
+}): string {
+  return `Opened client page ${opts.pageId} for ${formatPageSource(opts.source)}.`
+}
+
+function toWorkerPageInfo(page: PageInfo): WorkerPageInfo {
+  return {
+    pageId: page.pageId,
+    title: page.title,
+    source: page.source,
+    headless: page.display === 'headless',
+  }
 }
 
 function resolvePageId(params: unknown): string {
@@ -73,26 +85,36 @@ function resolvePageId(params: unknown): string {
   return pageId
 }
 
-function normalizeDisplay(value: unknown): PageDisplay {
-  if (value === 'foreground' || value === 'background' || value === 'headless') {
-    return value
+function getPagesQuery(params: unknown): PageQueryRequest {
+  if (params === undefined || params === null) return {}
+  if (typeof params !== 'object' || Array.isArray(params)) {
+    throw new Error(`getPages requires an options object when arguments are provided. ${DOCS_HINT}`)
   }
-  throw new Error(`openPage requires explicit display: "foreground", "background", or "headless". ${DOCS_HINT}`)
+  const request = params as { headless?: unknown }
+  for (const key of Object.keys(params)) {
+    if (key !== 'headless') {
+      throw new Error(`getPages does not accept option "${key}". ${DOCS_HINT}`)
+    }
+  }
+  if (request.headless === undefined || request.headless === null) return {}
+  if (typeof request.headless !== 'boolean') {
+    throw new Error(`getPages headless must be a boolean. ${DOCS_HINT}`)
+  }
+  return {
+    display: request.headless ? 'headless' : 'user-facing',
+  }
 }
 
-function normalizeDisplayFilter(value: unknown): PageDisplayFilter | undefined {
-  if (value === undefined || value === null) return undefined
-  if (
-    value === 'foreground' ||
-    value === 'background' ||
-    value === 'headless' ||
-    value === 'user-facing' ||
-    value === 'all'
-  ) {
-    return value
+function validateOptions(functionName: string, params: Record<string, unknown>, allowed: ReadonlySet<string>): void {
+  for (const key of Object.keys(params)) {
+    if (!allowed.has(key)) {
+      throw new Error(`${functionName} does not accept option "${key}". ${DOCS_HINT}`)
+    }
   }
-  throw new Error(`getPages display must be "foreground", "background", "headless", "user-facing", or "all". ${DOCS_HINT}`)
 }
+
+const OPEN_PAGE_OPTIONS = new Set(['source', 'title', 'width', 'height', 'closeAfterIdleMs'])
+const OPEN_CLIENT_PAGE_OPTIONS = new Set(['source', 'title'])
 
 export function registerPages(
   registry: FunctionRegistry,
@@ -101,28 +123,24 @@ export function registerPages(
   const { pageTools, runtimeRoot } = deps
 
   registry.register('getPages', async (params) => {
-    const request = (params ?? {}) as { display?: unknown; clientId?: unknown }
-    return pageTools.getPages({
-      display: normalizeDisplayFilter(request.display),
-      ...(typeof request.clientId === 'string' ? { clientId: request.clientId } : {}),
-    })
+    const pages = await pageTools.getPages(getPagesQuery(params))
+    return pages.map(toWorkerPageInfo)
   })
 
-  registry.register('getCurrentPage', async (params) => {
-    const request = (params ?? {}) as { clientId?: unknown }
-    return pageTools.getCurrentPage({
-      ...(typeof request.clientId === 'string' ? { clientId: request.clientId } : {}),
-    })
+  registry.register('getCurrentClientPage', async () => {
+    const page = await pageTools.getCurrentClientPage()
+    return page && page.display !== 'headless' ? toWorkerPageInfo(page) : null
   })
 
   registry.register('openPage', async (params) => {
     const original = params as WorkerHostMethodMap['openPage']['params']
-    if (!original) {
+    if (!original || typeof original !== 'object' || Array.isArray(original)) {
       throw new Error(`openPage requires a request object. ${DOCS_HINT}`)
     }
 
+    const rawRequest = original as unknown as Record<string, unknown>
+    validateOptions('openPage', rawRequest, OPEN_PAGE_OPTIONS)
     const source = normalizePageSource(original.source, { docsHint: DOCS_HINT })
-    const display = normalizeDisplay(original.display)
     let resolvedSource = source
     let resolvedTitle = original.title
 
@@ -140,16 +158,12 @@ export function registerPages(
       }
     }
 
-    const viewport = display === 'headless'
-      ? resolvePageViewport(normalizePageViewportInput(original))
-      : undefined
-    const closeAfterIdleMs = display === 'headless'
-      ? resolvePageCloseAfterIdleMs(original.closeAfterIdleMs)
-      : undefined
+    const viewport = resolvePageViewport(normalizePageViewportInput(original))
+    const closeAfterIdleMs = resolvePageCloseAfterIdleMs(original.closeAfterIdleMs)
 
     const result = await pageTools.openPage({
       source: resolvedSource,
-      display,
+      display: 'headless',
       title: resolvedTitle,
       viewport,
       closeAfterIdleMs,
@@ -158,21 +172,58 @@ export function registerPages(
     return {
       id: result.pageId,
       pageId: result.pageId,
-      page: result.page,
+      page: toWorkerPageInfo(result.page),
       info: buildOpenPageInfo({
         pageId: result.pageId,
         source: resolvedSource,
-        display,
         viewport,
         closeAfterIdleMs,
-        usedDefaultCloseAfterIdle: display === 'headless' && original.closeAfterIdleMs == null,
+        usedDefaultCloseAfterIdle: original.closeAfterIdleMs == null,
       }),
     }
   })
 
-  registry.register('showPage', async (params) => {
-    const pageId = resolvePageId(params)
-    return pageTools.showPage({ pageId })
+  registry.register('openClientPage', async (params) => {
+    const original = params as WorkerHostMethodMap['openClientPage']['params']
+    if (!original || typeof original !== 'object' || Array.isArray(original)) {
+      throw new Error(`openClientPage requires a request object. ${DOCS_HINT}`)
+    }
+
+    const rawRequest = original as unknown as Record<string, unknown>
+    validateOptions('openClientPage', rawRequest, OPEN_CLIENT_PAGE_OPTIONS)
+    const source = normalizePageSource(original.source, { docsHint: DOCS_HINT })
+    let resolvedSource = source
+    let resolvedTitle = original.title
+
+    if (source.type === 'view') {
+      const view = await getViewByName(runtimeRoot, source.name)
+      if (!view) {
+        throw new Error(`View not found: ${source.name}`)
+      }
+      resolvedSource = {
+        ...source,
+        name: view.name,
+      }
+      if (typeof resolvedTitle !== 'string') {
+        resolvedTitle = view.title || view.name
+      }
+    }
+
+    const result = await pageTools.openPage({
+      source: resolvedSource,
+      display: 'foreground',
+      title: resolvedTitle,
+    })
+
+    return {
+      id: result.pageId,
+      pageId: result.pageId,
+      page: toWorkerPageInfo(result.page),
+      info: buildOpenClientPageInfo({
+        pageId: result.pageId,
+        source: resolvedSource,
+      }),
+    }
   })
 
   registry.register('closePage', async (params) => {
@@ -182,17 +233,17 @@ export function registerPages(
 
   registry.register('reloadPage', async (params) => {
     const pageId = resolvePageId(params)
-    return pageTools.reloadPage({ pageId })
+    return toWorkerPageInfo(await pageTools.reloadPage({ pageId }))
   })
 
   registry.register('waitForPage', async (params) => {
     const request = params as WorkerHostMethodMap['waitForPage']['params']
     const pageId = resolvePageId(request)
-    return pageTools.waitForPage({
+    return toWorkerPageInfo(await pageTools.waitForPage({
       pageId,
       lifecycle: request.lifecycle,
       timeoutMs: request.timeoutMs,
-    })
+    }))
   })
 
   registry.register('capturePage', async (params) => {

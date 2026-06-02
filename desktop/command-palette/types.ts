@@ -94,8 +94,8 @@ export type CommandPaletteAction =
     type: 'enter-agents'
   }
   | {
-    type: 'show-page'
-    pageId: string
+    type: 'select-tab'
+    tabId: string
   }
   | {
     type: 'enter-tabs'

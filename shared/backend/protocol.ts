@@ -47,7 +47,6 @@ import type { ProviderInfo } from '../agent/provider_types.js'
 import type { FileContent } from '../agent/types.js'
 import type {
   CapturePageRequest,
-  CurrentPageRequest,
   OpenPageRequest,
   OpenPageResult,
   PageApi,
@@ -155,7 +154,6 @@ export type ClientPageRpcMethod =
   | 'client.pages.snapshot'
   | 'client.pages.open'
   | 'client.pages.close'
-  | 'client.pages.show'
   | 'client.pages.reload'
   | 'client.pages.capture'
   | 'client.pages.runJs'
@@ -327,7 +325,7 @@ export interface ClientPageInfo {
   activeForAgent: boolean
 }
 
-export interface ClientPagesSnapshotRequest extends CurrentPageRequest, PageQueryRequest {}
+export interface ClientPagesSnapshotRequest extends PageQueryRequest {}
 export interface ClientPagesSnapshotResponse {
   pages: PageInfo[]
   currentPageId: string | null
@@ -344,8 +342,6 @@ export interface ClientPagesPageIdRequest {
   pageId: string
 }
 export type ClientPagesCloseRequest = ClientPagesPageIdRequest
-export type ClientPagesShowRequest = ClientPagesPageIdRequest
-export type ClientPagesShowResponse = PageInfo
 export type ClientPagesReloadRequest = ClientPagesPageIdRequest
 export type ClientPagesReloadResponse = PageInfo
 export type ClientPagesCaptureRequest = CapturePageRequest
@@ -397,7 +393,6 @@ export type ClientPageRpcRequest<M extends ClientPageRpcMethod> =
   M extends 'client.pages.snapshot' ? ClientPagesSnapshotRequest :
   M extends 'client.pages.open' ? ClientPagesOpenRequest :
   M extends 'client.pages.close' ? ClientPagesCloseRequest :
-  M extends 'client.pages.show' ? ClientPagesShowRequest :
   M extends 'client.pages.reload' ? ClientPagesReloadRequest :
   M extends 'client.pages.capture' ? ClientPagesCaptureRequest :
   M extends 'client.pages.runJs' ? ClientPagesRunJsRequest :
@@ -415,7 +410,6 @@ export type ClientPageRpcResponse<M extends ClientPageRpcMethod> =
   M extends 'client.pages.snapshot' ? ClientPagesSnapshotResponse :
   M extends 'client.pages.open' ? ClientPagesOpenResponse :
   M extends 'client.pages.close' ? void :
-  M extends 'client.pages.show' ? ClientPagesShowResponse :
   M extends 'client.pages.reload' ? ClientPagesReloadResponse :
   M extends 'client.pages.capture' ? ClientPagesCaptureResponse :
   M extends 'client.pages.runJs' ? ClientPagesRunJsResponse :

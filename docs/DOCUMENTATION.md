@@ -302,29 +302,36 @@ const rows = await runSql({
 
 ### Page Management
 
-#### `getPages({ display? })`
+#### `getPages({ headless? })`
 
-Get open pages with their state. `display` can be `foreground`, `background`,
-`headless`, `user-facing`, or `all`.
+Get open pages. Pass `headless: true` for headless pages, `headless: false`
+for client pages, or omit it for all pages.
 
-#### `openPage({ source, display, title?, viewport?, params? })`
+#### `getCurrentClientPage()`
 
-Open a page. `display` is required: `foreground`, `background`, or `headless`.
+Get the client page the user currently has selected for this agent, or `null`.
+
+#### `openPage({ source, title?, width?, height?, closeAfterIdleMs? })`
+
+Open a headless page.
 
 ```js
-await openPage({ display: 'foreground', source: { type: 'view', name: 'system.docs' } })
-await openPage({ display: 'foreground', source: { type: 'file', path: 'output/dashboard.html' }, title: 'Dashboard' })
-await openPage({ display: 'foreground', source: { type: 'view', name: 'my-report', params: { month: '2025-03' } } })
-
-// Headless page for automation
-const { pageId } = await openPage({ display: 'headless', source: { type: 'url', url: 'https://example.com' } })
+const { pageId } = await openPage({ source: { type: 'url', url: 'https://example.com' } })
 const screenshot = await capturePage({ pageId })
 await closePage({ pageId })
 ```
 
-#### `closePage({ pageId })`
+#### `openClientPage({ source, title? })`
 
-#### `showPage({ pageId })`
+Open and select a client page.
+
+```js
+await openClientPage({ source: { type: 'view', name: 'system.docs' } })
+await openClientPage({ source: { type: 'file', path: 'output/dashboard.html' }, title: 'Dashboard' })
+await openClientPage({ source: { type: 'view', name: 'my-report', params: { month: '2025-03' } } })
+```
+
+#### `closePage({ pageId })`
 
 #### `reloadPage({ pageId })`
 

@@ -77,8 +77,8 @@ Partial failures in `openPage` (e.g. a non-existent view mid-sequence) still cre
 # Open as a headless background page
 ./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'headless', source: { type: 'view', name: 'system.docs' } })"
 
-# Select a page by id (ids come from getTabState)
-./scripts/preview --eval <name> "window.ipc.pages.showPage({ pageId: 'abc123' })"
+# Select a tab by id (ids come from getTabState)
+./scripts/preview --eval <name> "window.ipc.tabs.selectTab('abc123')"
 
 # Inspect the DOM of a specific tab — --tab matches the tab's URL substring
 ./scripts/preview --eval <name> --tab system.source-explorer \
@@ -186,7 +186,7 @@ Some bugs live in the window between a handler returning and the renderer reacti
 
 ### After changing tab state, wait a beat before screenshotting
 
-`showPage` and foreground `openPage` push state to the renderer, which then IPC's bounds back through the main process — the compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
+Tab selection and foreground `openPage` push state to the renderer, which then IPC's bounds back through the main process — the compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
 
 ### Preview vs real desktop
 
