@@ -108,9 +108,6 @@ if (isApp) {
       getTabState(): Promise<PushMap['tabs:stateChanged']> {
         return ipcRenderer.invoke(Channels.tabs.getState);
       },
-      getHeadlessCount(): Promise<number> {
-        return ipcRenderer.invoke(Channels.tabs.getHeadlessCount);
-      },
       reorderTabs(fromIndex: number, toIndex: number): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.reorderTabs, { fromIndex, toIndex });
       },

@@ -12,6 +12,7 @@ import {
 import { normalizePageViewportInput, resolvePageViewport } from '#shared/page/page-viewport.js';
 import type {
   PageCloseAfterIdleMs,
+  PageSource,
   PageViewport,
   PageViewportInput,
 } from '#shared/page/types.js';
@@ -402,14 +403,14 @@ export class TabViewManager {
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
     if (type === 'url') return target;
 
-    const encodedTabId = encodeURIComponent(tabId);
+    const encodedPageId = encodeURIComponent(tabId);
     const rev = Date.now();
     const host = agentHostname(this.deps.agentId);
     let url: string;
     if (type === 'file') {
-      url = `https://${host}/view/${encodeURIComponent(target)}?source=file&rev=${rev}&tabId=${encodedTabId}`;
+      url = `https://${host}/view/${encodeURIComponent(target)}?source=file&rev=${rev}&pageId=${encodedPageId}`;
     } else {
-      url = `https://${host}/view/${encodeURIComponent(target)}?rev=${rev}&tabId=${encodedTabId}`;
+      url = `https://${host}/view/${encodeURIComponent(target)}?rev=${rev}&pageId=${encodedPageId}`;
     }
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -601,7 +602,7 @@ export class TabViewManager {
     await this.resolveReadyTabViewState(tabId);
   }
 
-  // --- Tab handlers ---
+  // --- Page-backed tab handlers ---
 
   async getTabsHandler(): Promise<TabData[]> {
     return this.presenter.listTabsForRuntime();
@@ -611,11 +612,9 @@ export class TabViewManager {
     return this.presenter.currentTabForRuntime();
   }
 
-  async openTabHandler(request: {
-    tabId?: string;
-    viewName?: string;
-    filePath?: string;
-    url?: string;
+  async openPageView(request: {
+    pageId?: string;
+    source: PageSource;
     title?: string;
     headless?: boolean;
     viewport?: PageViewportInput;
@@ -624,41 +623,43 @@ export class TabViewManager {
     closeAfterIdleMs?: PageCloseAfterIdleMs;
     params?: Record<string, string>;
     select?: boolean;
-  }): Promise<{ tabId: string }> {
-    const type: TabDataType = request.url ? 'url' : request.filePath ? 'file' : 'view';
+  }): Promise<{ pageId: string }> {
+    const type: TabDataType = request.source.type === 'url'
+      ? 'url'
+      : request.source.type === 'file' ? 'file' : 'view';
     let target: string;
     if (type === 'url') {
-      target = request.url!;
+      target = request.source.type === 'url' ? request.source.url : '';
       // A scheme-less URL makes loadURL reject with ERR_INVALID_URL after the
-      // tab is already attached and selected, leaving a zombie tab that
-      // occludes the previous one and hangs execTabJs/devtools. Validate up
+      // page is already attached and selected, leaving a zombie page that
+      // occludes the previous one and hangs runPageJs/devtools. Validate up
       // front so callers get a synchronous error instead.
       let parsed: URL;
       try {
         parsed = new URL(target);
       } catch {
         const looksLikePath = target.startsWith('/') || target.startsWith('./') || target.startsWith('file/');
-        const hint = looksLikePath ? ' Did you mean to pass filePath instead of url?' : '';
-        throw new Error(`openTab url must be an absolute URL with a scheme (got ${JSON.stringify(target)}).${hint}`);
+        const hint = looksLikePath ? ' Did you mean to pass source.type "file" instead of "url"?' : '';
+        throw new Error(`openPage source url must be absolute with a scheme (got ${JSON.stringify(target)}).${hint}`);
       }
       // An unknown scheme (`view://`, `agent://`, …) parses fine but loadURL
       // rejects with ERR_UNKNOWN_URL_SCHEME asynchronously — the catch on
-      // loadURL below merely logs it, so the agent sees a blank tab with no
+      // loadURL below merely logs it, so the agent sees a blank page with no
       // error. Reject up front with a hint pointing at the right field.
       const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:', 'file:']);
       if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
         const hint = parsed.protocol === 'view:'
-          ? ' Did you mean to pass viewName instead of url?'
+          ? ' Did you mean to pass source.type "view" instead of "url"?'
           : '';
-        throw new Error(`openTab url scheme "${parsed.protocol}" is not supported (got ${JSON.stringify(target)}). Use http(s): or file:.${hint}`);
+        throw new Error(`openPage source url scheme "${parsed.protocol}" is not supported (got ${JSON.stringify(target)}). Use http(s): or file:.${hint}`);
       }
     } else if (type === 'file') {
-      target = request.filePath!;
+      target = request.source.type === 'file' ? request.source.path : '';
     } else {
-      target = request.viewName!;
+      target = request.source.type === 'view' ? request.source.name : '';
     }
 
-    const tabId = request.tabId ?? this.generateTabId();
+    const tabId = request.pageId ?? this.generateTabId();
     const isHeadless = Boolean(request.headless);
     const shouldSelect = !isHeadless && request.select !== false;
     const viewport = isHeadless ? resolvePageViewport(normalizePageViewportInput(request)) : null;
@@ -702,7 +703,7 @@ export class TabViewManager {
     const src = this.buildTabSrc(type, target, tabId, request.params);
     state.view.webContents.loadURL(src).catch((error: unknown) => {
       if (!isAbortedLoadError(error)) {
-        console.error('[tabs] openTab loadURL failed:', error);
+        console.error('[tabs] openPage loadURL failed:', error);
       }
     });
 
@@ -712,7 +713,7 @@ export class TabViewManager {
     }
 
     this.pushStateToRenderer();
-    return { tabId };
+    return { pageId: tabId };
   }
 
   async closeTabHandler(request: { tabId: string }): Promise<void> {
@@ -1085,9 +1086,9 @@ export class TabViewManager {
       return null;
     }
 
-    const rawTabId = parsedUrl.searchParams.get('tabId');
-    const tabId = typeof rawTabId === 'string' && rawTabId.trim().length > 0 ? rawTabId.trim() : null;
-    return { viewName: info.target, tabId };
+    const rawPageId = parsedUrl.searchParams.get('pageId');
+    const pageId = typeof rawPageId === 'string' && rawPageId.trim().length > 0 ? rawPageId.trim() : null;
+    return { viewName: info.target, tabId: pageId };
   }
 
   updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {

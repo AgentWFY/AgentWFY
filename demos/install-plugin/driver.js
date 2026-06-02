@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Install the anthropic-provider plugin from the public registry.
 //
-//   1. Open `system.plugins` as a tab.
+//   1. Open `system.plugins` as a page.
 //   2. Switch to the "Browse Plugins" sub-tab.
 //   3. Click Install on the anthropic-provider row.
 //   4. Confirm in the install dialog.

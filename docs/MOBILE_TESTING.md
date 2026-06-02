@@ -185,7 +185,7 @@ HTTPS).
 ./scripts/mobile-preview --screenshot iPhone-16-Pro home-view.png
 ```
 
-The iframe loads `agentview://localhost/view/home?tabId=mobile&rev=…`, served
+The iframe loads `agentview://localhost/view/home?pageId=mobile&rev=…`, served
 by the Rust URI handler against the local SQLite mirror.
 
 ### 6. Confirm `db:changed` flow

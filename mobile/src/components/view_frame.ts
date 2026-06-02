@@ -46,7 +46,7 @@ function buildViewSrc(options: {
   version: number
   params: Record<string, string>
 }): string {
-  let src = `agentview://localhost/view/${encodeURIComponent(options.name)}?tabId=${encodeURIComponent(options.pageId)}&rev=${encodeURIComponent(String(options.version))}`
+  let src = `agentview://localhost/view/${encodeURIComponent(options.name)}?pageId=${encodeURIComponent(options.pageId)}&rev=${encodeURIComponent(String(options.version))}`
   for (const [key, value] of Object.entries(options.params)) {
     src += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`
   }

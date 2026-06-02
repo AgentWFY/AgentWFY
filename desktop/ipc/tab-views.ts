@@ -4,7 +4,6 @@ import { Channels } from './channels.cjs';
 
 export function registerTabViewHandlers(
   getTabViewManager: (e: IpcMainInvokeEvent) => TabViewManager,
-  getHeadlessTabCount?: () => Promise<number> | number,
 ): void {
   ipcMain.handle(Channels.tabs.updateViewBounds, async (event, payload: unknown) => {
     getTabViewManager(event).setTabViewBounds(payload);
@@ -16,10 +15,6 @@ export function registerTabViewHandlers(
 
   ipcMain.handle(Channels.tabs.getState, async (event) => {
     return getTabViewManager(event).getState();
-  });
-
-  ipcMain.handle(Channels.tabs.getHeadlessCount, async () => {
-    return getHeadlessTabCount ? getHeadlessTabCount() : 0;
   });
 
   ipcMain.handle(Channels.tabs.reorderTabs, async (event, payload: unknown) => {

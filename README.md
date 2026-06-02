@@ -14,7 +14,7 @@ AgentWFY handles that part. You get a window, HTML views pinned as tabs, schedul
 
 It's built for two things:
 
-- **Looking at your data.** Point it at a folder, CSV, or API and ask for a dashboard. You get an HTML **view** pinned as a tab.
+- **Looking at your data.** Point it at a folder, CSV, or API and ask for a dashboard. You get an HTML **view** opened in the workspace.
 - **Running things on a schedule.** Cron jobs, webhooks, file watchers. **Tasks** do the work; **triggers** decide when.
 
 The safety story is boring on purpose. One SQLite file, auto-backed-up, with access only to the directory you picked. If a run goes sideways, roll the file back.
@@ -36,7 +36,7 @@ AgentWFY sits in between. There's one tool, `execJs`, that runs JavaScript. The 
 - **SQLite per agent** — docs, views, tasks, triggers, config, and plugins all live in one file.
 - **Views** — HTML dashboards, forms, and charts, stored in the database and rendered as tabs.
 - **Triggers** — cron (down to seconds), HTTP webhooks, file watchers, event bus.
-- **Browser control** — open tabs, screenshot, run JavaScript in the page.
+- **Browser control** — open pages, screenshot, run JavaScript in the page.
 - **Sub-agents** — spawn children for parallel work, coordinate over pub/sub.
 - **HTTP API** — local REST server to hook up curl, Home Assistant, n8n, and the rest.
 - **Plugins** — a Node.js escape hatch for custom functions, providers, views, and config.

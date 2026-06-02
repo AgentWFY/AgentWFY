@@ -14,23 +14,6 @@ export class RendererBridge {
     this.getRendererWebContents = deps.getRendererWebContents;
   }
 
-  emitTabViewEvent(
-    tabId: string,
-    type: 'did-start-loading' | 'did-stop-loading' | 'did-fail-load',
-    detail?: { errorCode?: number; errorDescription?: string }
-  ): void {
-    const wc = this.getRendererWebContents();
-    if (!wc || wc.isDestroyed()) {
-      return;
-    }
-
-    wc.send('tabs:viewEvent', {
-      tabId,
-      type,
-      ...(detail || {}),
-    });
-  }
-
   focusMainRendererWindow(): void {
     const win = this.getMainWindow();
     const wc = this.getRendererWebContents();

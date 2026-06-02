@@ -38,15 +38,15 @@ export function parseAgentPath(pathname: string): AgentPathInfo | null {
   return { kind: match[1] as AgentPathKind, target };
 }
 
-// View document requests carry `tabId` (set by buildTabSrc). Sub-resource
+// View document requests carry `pageId` (set by buildTabSrc). Sub-resource
 // fetches resolve relative to the view URL and never inherit query params, so
-// tabId reliably distinguishes documents from data-dir asset fetches that
+// pageId reliably distinguishes documents from data-dir asset fetches that
 // happen to land under /view/...
 export function isViewDocumentUrl(url: URL): boolean {
   const info = parseAgentPath(url.pathname);
   if (!info || info.kind !== 'view') return false;
-  if (url.searchParams.has('tabId')) return true;
-  // No tabId: only treat as a document if the target looks like a bare view
+  if (url.searchParams.has('pageId')) return true;
+  // No pageId: only treat as a document if the target looks like a bare view
   // name (no path segments, no extension). Anything with `.` or `/` is a
   // sub-resource fetch.
   return !info.target.includes('/') && !info.target.includes('.');

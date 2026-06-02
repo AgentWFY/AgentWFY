@@ -8,7 +8,6 @@ export const Channels = {
     viewEvent: 'tabs:viewEvent',
     stateChanged: 'tabs:stateChanged',
     getState: 'tabs:getState',
-    getHeadlessCount: 'tabs:getHeadlessCount',
     reorderTabs: 'tabs:reorderTabs',
     togglePin: 'tabs:togglePin',
     toggleDevTools: 'tabs:toggleDevTools',

@@ -1,6 +1,6 @@
 // Path-based handler for the agentview:// custom URI scheme. Reads view and
 // module content out of the local mirror SQLite and serves it back to the
-// WebView so iframes can do `<iframe src="agentview://localhost/view/dashboard?tabId=mobile">`.
+// WebView so iframes can do `<iframe src="agentview://localhost/view/dashboard?pageId=mobile">`.
 //
 // iOS WKWebView blocks WKURLSchemeHandler from claiming http/https, so we
 // can't mirror desktop's https-interception trick on mobile. A custom scheme
@@ -400,10 +400,10 @@ fn split_path(path: &str) -> Option<(&'static str, String)> {
 }
 
 /// Mirror of isViewDocumentUrl in shared/protocol/view-document.ts.
-/// Documents carry `tabId`; sub-resource fetches resolve relative to the view
-/// URL and never inherit query params, so tabId reliably distinguishes them.
+/// Documents carry `pageId`; sub-resource fetches resolve relative to the view
+/// URL and never inherit query params, so pageId reliably distinguishes them.
 fn is_view_document_request(target: &str, query: &str) -> bool {
-    if has_query_key(query, "tabId") {
+    if has_query_key(query, "pageId") {
         return true;
     }
     !target.contains('/') && !target.contains('.')

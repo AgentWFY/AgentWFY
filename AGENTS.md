@@ -66,7 +66,7 @@ The renderer is served via the `app://` protocol rooted at `dist/desktop/rendere
 
 **Plugins (`shared/plugins/`)**: Stored as code strings in the `plugins` table, executed via `new Function()` with full Node.js `require()` access. Each plugin gets a `PluginApi` for registering functions, providers, and pub/sub handlers. Plugin data is namespaced as `plugin.{name}.*` in docs/views/config and auto-cleaned on uninstall.
 
-**Runtime Functions (`shared/runtime/`)**: `FunctionRegistry` maps function names to handlers. Built-in functions: `runSql`, file ops (`read`, `write`, `ls`, `find`, `grep`, `mkdir`), tab management, tasks, events, sub-agents, fetch. Plugins can register additional functions.
+**Runtime Functions (`shared/runtime/`)**: `FunctionRegistry` maps function names to handlers. Built-in functions: `runSql`, file ops (`read`, `write`, `ls`, `find`, `grep`, `mkdir`), page management, tasks, events, sub-agents, fetch. Plugins can register additional functions.
 
 **IPC (`desktop/ipc/`)**: Channels defined in `channels.ts`. Each domain (files, sql, tabs, sessions, bus, plugins, providers, agents) has its own handler module. All handlers are async.
 

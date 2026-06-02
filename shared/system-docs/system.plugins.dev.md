@@ -257,7 +257,7 @@ Plugin providers can store their configuration in the `config` table under plugi
 
 ### Provider settings view
 
-Set `settingsView` to the name of a view in the views table. The chat UI shows a gear icon next to the provider name in the provider picker — clicking it opens this view as a tab. Use this to build custom auth flows (OAuth), model pickers, or any provider-specific configuration UI.
+Set `settingsView` to the name of a view in the views table. The chat UI shows a gear icon next to the provider name in the provider picker — clicking it opens this view as a foreground page. Use this to build custom auth flows (OAuth), model pickers, or any provider-specific configuration UI.
 
 ### Example: Custom Provider
 
@@ -357,13 +357,13 @@ A package can contain one or multiple plugins (plugin pack).
 
 - **plugins**: names must match `[a-z0-9-]+` (no dots — dots are namespace separators).
 - **docs**: must start with `plugin.<name>` where `<name>` matches a plugin in the `plugins` table. Example: `plugin.ffmpeg`, `plugin.ffmpeg.usage`. Names must match `[a-z0-9._-]+`.
-- **views**: must start with `plugin.<name>`. Example: `plugin.my-llm.settings`. Views are synced to the agent's `views` table on install and can be opened as tabs.
+- **views**: must start with `plugin.<name>`. Example: `plugin.my-llm.settings`. Views are synced to the agent's `views` table on install and can be opened as pages.
 - **config**: must start with `plugin.<name>`. Example: `plugin.my-llm.apiKey`. Config rows are synced to the agent's `config` table on install. Use `value` for default values or `NULL` for unset.
 - **assets**: must use `<name>/<filename>` format. Example: `ffmpeg/ffmpeg-darwin-arm64`. Extracted to `.agentwfy/plugin-assets/<name>/<filename>` on install.
 
 ### Welcome view
 
-If a plugin package includes a view named `plugin.<name>.welcome`, it is automatically opened as a tab after installation. Use this for onboarding — API key setup, getting started instructions, or first-run configuration.
+If a plugin package includes a view named `plugin.<name>.welcome`, it is automatically opened as a foreground page after installation. Use this for onboarding — API key setup, getting started instructions, or first-run configuration.
 
 ## Plugin Docs
 

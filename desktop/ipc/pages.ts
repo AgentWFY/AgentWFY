@@ -6,7 +6,6 @@ import type {
   PageApi,
   PageDisplay,
   PageDisplayFilter,
-  PageSource,
 } from '#shared/page/types.js';
 import { normalizePageSource } from '#shared/page/page-source.js';
 
@@ -16,9 +15,9 @@ function parsePageId(value: unknown): string {
   }
 
   const input = value && typeof value === 'object'
-    ? value as { pageId?: unknown; id?: unknown; tabId?: unknown }
+    ? value as { pageId?: unknown; id?: unknown }
     : {};
-  const pageId = input.pageId ?? input.id ?? input.tabId;
+  const pageId = input.pageId ?? input.id;
   if (typeof pageId === 'string' && pageId.trim().length > 0) {
     return pageId.trim();
   }
@@ -46,31 +45,6 @@ function normalizeDisplayFilter(value: unknown): PageDisplayFilter | undefined {
   throw new Error('display must be "foreground", "background", "headless", "user-facing", or "all"');
 }
 
-function legacySourceFromPayload(input: Record<string, unknown>): PageSource | null {
-  const viewName = typeof input.viewName === 'string' && input.viewName.length > 0
-    ? input.viewName
-    : (typeof input.view === 'string' && input.view.length > 0 ? input.view : undefined);
-  const filePath = typeof input.filePath === 'string' && input.filePath.length > 0 ? input.filePath : undefined;
-  const url = typeof input.url === 'string' && input.url.length > 0 ? input.url : undefined;
-
-  const sourceCount = (viewName ? 1 : 0) + (filePath ? 1 : 0) + (url ? 1 : 0);
-  if (sourceCount === 0) return null;
-  if (sourceCount !== 1) {
-    throw new Error('openPage requires exactly one source');
-  }
-
-  const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
-    ? Object.fromEntries(
-        Object.entries(input.params as Record<string, unknown>).filter(([, v]) => typeof v === 'string')
-      ) as Record<string, string>
-    : undefined;
-  const hasParams = !!params && Object.keys(params).length > 0;
-
-  if (viewName) return { type: 'view', name: viewName, ...(hasParams ? { params } : {}) };
-  if (filePath) return { type: 'file', path: filePath, ...(hasParams ? { params } : {}) };
-  return { type: 'url', url: url! };
-}
-
 async function normalizeOpenPagePayload(
   payload: unknown,
   cacheRoot: string,
@@ -80,8 +54,7 @@ async function normalizeOpenPagePayload(
   }
 
   const input = payload as Record<string, unknown>;
-  const rawSource = input.source ?? legacySourceFromPayload(input);
-  const source = normalizePageSource(rawSource);
+  const source = normalizePageSource(input.source);
   const display = normalizeDisplay(input.display);
   let resolvedSource = source;
   let resolvedTitle = typeof input.title === 'string' ? input.title : undefined;

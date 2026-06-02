@@ -139,7 +139,7 @@ export class HeadlessViewRuntime {
         url.searchParams.set(key, value)
       }
     }
-    url.searchParams.set('tabId', request.pageId)
+    url.searchParams.set('pageId', request.pageId)
     url.searchParams.set('rev', String(Date.now()))
     url.searchParams.set(BRIDGE_TOKEN_QUERY_PARAM, page.token)
     return url.toString()
@@ -427,7 +427,7 @@ export class HeadlessViewRuntime {
   }
 
   private resolvePageFromRequest(req: IncomingMessage, url: URL): RegisteredPage | null {
-    const queryPageId = url.searchParams.get('pageId') || url.searchParams.get('tabId')
+    const queryPageId = url.searchParams.get('pageId')
     const queryToken = url.searchParams.get(BRIDGE_TOKEN_QUERY_PARAM)
     if (queryPageId && queryToken) {
       const page = this.validatePage(queryPageId, queryToken)

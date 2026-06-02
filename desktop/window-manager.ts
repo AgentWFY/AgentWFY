@@ -500,7 +500,7 @@ class WindowManager {
   getAllContexts() { return this.orchestrator.getAllContexts(); }
   getActiveBackend() { return this.orchestrator.getActiveAgentContext()?.backend ?? null; }
 
-  async getHeadlessTabCount(): Promise<number> {
+  async getHeadlessPageCount(): Promise<number> {
     const results = await Promise.allSettled(
       this.orchestrator.getAllContexts().map(ctx => ctx.pageTools.getPages({ display: 'headless' })),
     );

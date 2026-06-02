@@ -71,13 +71,13 @@ Partial failures in `openPage` (e.g. a non-existent view mid-sequence) still cre
 # State of all tabs (runs in main renderer — window.ipc is available)
 ./scripts/preview --eval <name> "await window.ipc.tabs.getTabState()"
 
-# Open a view as a tab
+# Open a view as a foreground page
 ./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'foreground', source: { type: 'view', name: 'system.source-explorer' } })"
 
 # Open as a headless background page
 ./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'headless', source: { type: 'view', name: 'system.docs' } })"
 
-# Select a tab by id (ids come from getTabState)
+# Select a page by id (ids come from getTabState)
 ./scripts/preview --eval <name> "window.ipc.pages.showPage({ pageId: 'abc123' })"
 
 # Inspect the DOM of a specific tab — --tab matches the tab's URL substring
@@ -175,7 +175,7 @@ Some bugs live in the window between a handler returning and the renderer reacti
 
 - **Pipeline IPC calls in one `--eval`.** Fire the trigger and the inspector as parallel promises — they arrive on main in IPC order, so the inspector reads main-state the moment the handler returns, before the renderer's ResizeObserver / rAF cycle can paper over it:
   ```js
-  const trigger = window.ipc.pages.closePage({ pageId: tabId });
+  const trigger = window.ipc.pages.closePage({ pageId });
   const snap = window.ipc.tabs.describe();
   await trigger;
   return await snap;   // main-state immediately post-handler

@@ -37,7 +37,7 @@ await sleep(700);
 
 await installCursorHelpers(NAME);
 
-// === Phase 1: setup + open tabs + pin + click around in compact mode ===
+// === Phase 1: setup + open pages + pin + click around in compact mode ===
 evalMain(NAME, `(async () => {
   const d = window.__demo;
   const ipc = window.ipc;

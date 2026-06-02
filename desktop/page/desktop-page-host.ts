@@ -14,7 +14,7 @@ import {
   type PageViewportInput,
 } from '#shared/page/types.js';
 import { pageCapabilitiesFromHandleMethods } from '#shared/page/capabilities.js';
-import { pageSourceParams, pageSourceToLegacyTabOpenSource } from '#shared/page/page-source.js';
+import { pageSourceParams } from '#shared/page/page-source.js';
 import type { TabViewManager } from '../tab-view-manager.js';
 import type { TabData } from './desktop-page-types.js';
 
@@ -47,9 +47,9 @@ export class DesktopPageHost implements PageHost {
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
-    const result = await this.manager.openTabHandler({
-      tabId: request.pageId,
-      ...pageSourceToLegacyTabOpenSource(request.source),
+    const result = await this.manager.openPageView({
+      pageId: request.pageId,
+      source: request.source,
       title: request.title,
       headless: this.headless,
       viewport: request.viewport as PageViewportInput | undefined,
@@ -59,10 +59,10 @@ export class DesktopPageHost implements PageHost {
       params: pageSourceParams(request.source),
       select: request.display === 'foreground',
     });
-    this.createdByByPageId.set(result.tabId, request.createdBy ?? 'agent');
-    const handle = await this.getPage(result.tabId);
+    this.createdByByPageId.set(result.pageId, request.createdBy ?? 'agent');
+    const handle = await this.getPage(result.pageId);
     if (!handle) {
-      throw new Error(`Failed to create desktop page "${result.tabId}"`);
+      throw new Error(`Failed to create desktop page "${result.pageId}"`);
     }
     return handle;
   }

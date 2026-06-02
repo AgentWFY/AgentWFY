@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Chat-and-trace demo: select Test Provider, send "tools", open and
-// close the tool-trace popup, open Source Explorer as a tab, drift the
-// cursor over the tab content to show the overlay staying on top.
+// close the tool-trace popup, open Source Explorer as a page, drift the
+// cursor over the page content to show the overlay staying on top.
 //
 // Invoked by scripts/record-demo with $PREVIEW_NAME set.
 

@@ -43,7 +43,7 @@ For an overview and quick start, see the [README](../README.md). For testing (pr
   - [CSS Design Tokens](#css-design-tokens)
   - [View Parameters](#view-parameters)
   - [Modules](#modules)
-  - [Headless Tabs for Automation](#headless-tabs-for-automation)
+  - [Headless Pages for Automation](#headless-pages-for-automation)
   - [Tab Features](#tab-features)
 - [Tasks & Automation](#tasks--automation)
   - [Creating a Task](#creating-a-task)

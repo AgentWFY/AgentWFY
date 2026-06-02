@@ -5,7 +5,7 @@
 //   1. Agent multi-choice — test provider emits an execJs tool call that
 //      calls pickFromPalette; user picks; agent reports the choice.
 //   2. Task picker — a task lists system views, calls pickFromPalette,
-//      and opens the chosen view as a tab. Triggered from the command
+//      and opens the chosen view as a page. Triggered from the command
 //      palette "Run Task" flow.
 //
 // Invoked by scripts/record-demo with $PREVIEW_NAME set.

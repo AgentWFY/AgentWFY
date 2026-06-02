@@ -200,7 +200,7 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 | Select a provider | In main: `document.querySelector('.provider-card[data-provider-id="test-provider"]')`, dispatch `mousedown`. |
 | Send a chat message | In main: set `textarea#msg-input` value via the native `HTMLTextAreaElement.prototype.value` setter, dispatch `InputEvent`, then `KeyboardEvent{key:'Enter'}`. |
 | Tool trace popup | In main: click `.tool-header[data-tool-id]`. Wait for streaming to finish (`.composer-stop` hidden) before clicking, or the popup race-conditions with the message re-render. Close with `.tool-popup-close`. |
-| Open a view as a tab | In main (direct): `window.ipc.pages.openPage({ display: 'foreground', source: { type: 'view', name: 'system.source-explorer' } })`. In palette: type the view name into `#searchInput`, then Enter. |
+| Open a view as a page | In main (direct): `window.ipc.pages.openPage({ display: 'foreground', source: { type: 'view', name: 'system.source-explorer' } })`. In palette: type the view name into `#searchInput`, then Enter. |
 | Command palette, settings screen | In main: `window.ipc.commandPalette.show({ screen: 'settings' })`. In palette: type into the filter (`#searchInput`), flip the target to Global/Agent if needed (`.settings-target-btn[data-target="global"]`), type the value into `.settings-card[data-setting-key="..."] input.settings-card-input`, click the `Save` button. |
 | Theme flip to dark | Palette settings flow above with `data-setting-key="system.theme"` and value `dark`. Applies live (no reload) once the app processes the palette's Save. |
 | Zen mode | `window.ipc.zenMode.set(true)` / `set(false)`. |

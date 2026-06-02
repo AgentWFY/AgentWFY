@@ -89,14 +89,3 @@ export function pageSourceParams(source: PageSource): Record<string, string> | u
   if (source.type === 'url') return undefined
   return source.params
 }
-
-export function pageSourceToLegacyTabOpenSource(source: PageSource): { viewName?: string; filePath?: string; url?: string } {
-  switch (source.type) {
-    case 'view':
-      return { viewName: source.name }
-    case 'file':
-      return { filePath: source.path }
-    case 'url':
-      return { url: source.url }
-  }
-}

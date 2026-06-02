@@ -143,11 +143,10 @@ registerSqlHandlers(
 registerPageHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).pageTools,
   (e) => windowManager.getCacheRootForEvent(e),
-  () => windowManager.getHeadlessTabCount(),
+  () => windowManager.getHeadlessPageCount(),
 );
 registerTabViewHandlers(
   (e) => windowManager.getContextForSender(e.sender.id).tabViewManager,
-  () => windowManager.getHeadlessTabCount(),
 );
 registerCommandPaletteHandlers(() => windowManager.getCommandPalette());
 registerTaskRunnerHandlers(
