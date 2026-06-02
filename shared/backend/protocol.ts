@@ -52,8 +52,7 @@ import type {
   PageApi,
   PageCdpPollResult,
   PageConsoleLog,
-  PageEvent,
-  PageInfo,
+  PageHostInfo,
   PageInputRequest,
   PageQueryRequest,
   PageScreenshot,
@@ -223,17 +222,6 @@ export interface WsHello {
   dbVersion: number
 }
 
-export interface WsClientPageEvent {
-  type: 'client:page-event'
-  event: PageEvent
-}
-
-export interface WsClientPageSnapshotChanged {
-  type: 'client:page-snapshot-changed'
-  clientId: string
-  version: number
-}
-
 export type WsMessage =
   | WsHello
   | WsRpcRequest
@@ -242,8 +230,6 @@ export type WsMessage =
   | WsBackendEvent
   | WsDbChanged
   | WsDbReset
-  | WsClientPageEvent
-  | WsClientPageSnapshotChanged
 
 export function encodeWsMessage(message: WsMessage): string {
   return JSON.stringify(message)
@@ -306,17 +292,10 @@ export interface FunctionsInvokeResponse {
 export interface ClientFunctionsInvokeRequest { name: string; params: unknown }
 export interface ClientFunctionsInvokeResponse { value: unknown }
 
-export interface ClientPageInfo {
-  id: string
-  kind: 'desktop' | 'mobile' | 'web'
-  activeForAgent: boolean
-}
-
 export interface ClientPagesSnapshotRequest extends PageQueryRequest {}
 export interface ClientPagesSnapshotResponse {
-  pages: PageInfo[]
+  pages: PageHostInfo[]
   currentPageId: string | null
-  client: ClientPageInfo
   version: number
 }
 
@@ -330,7 +309,7 @@ export interface ClientPagesPageIdRequest {
 }
 export type ClientPagesCloseRequest = ClientPagesPageIdRequest
 export type ClientPagesReloadRequest = ClientPagesPageIdRequest
-export type ClientPagesReloadResponse = PageInfo
+export type ClientPagesReloadResponse = PageHostInfo
 export type ClientPagesCaptureRequest = CapturePageRequest
 export type ClientPagesCaptureResponse = PageScreenshot
 export interface ClientPagesRunJsRequest {

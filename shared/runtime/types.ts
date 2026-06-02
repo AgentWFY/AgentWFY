@@ -3,6 +3,7 @@ import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
 import type {
   PageCdpBufferedEvent,
   PageCloseAfterIdleMs,
+  PageInfo,
   PageScreenshot,
   PageSource,
 } from '../page/types.js'
@@ -108,18 +109,11 @@ interface WorkerGrepRequest {
   options?: WorkerGrepOptions
 }
 
-export interface WorkerPageInfo {
-  pageId: string
-  title: string
-  source: PageSource
-  headless: boolean
-}
-
 export interface WorkerGetPagesRequest {
   headless?: boolean
 }
 
-export type WorkerGetPagesResult = WorkerPageInfo[]
+export type WorkerGetPagesResult = PageInfo[]
 
 export interface WorkerOpenPageRequest {
   source: PageSource
@@ -132,7 +126,7 @@ export interface WorkerOpenPageRequest {
 export interface WorkerOpenPageResult {
   id: string
   pageId: string
-  page: WorkerPageInfo
+  page: PageInfo
   info: string
 }
 
@@ -144,7 +138,7 @@ export interface WorkerOpenClientPageRequest {
 export interface WorkerOpenClientPageResult {
   id: string
   pageId: string
-  page: WorkerPageInfo
+  page: PageInfo
   info: string
 }
 
@@ -285,11 +279,11 @@ export interface WorkerHostMethodMap {
   }
   reloadPage: {
     params: WorkerPageIdRequest
-    result: WorkerPageInfo
+    result: PageInfo
   }
   getCurrentClientPage: {
     params: Record<string, never>
-    result: WorkerPageInfo | null
+    result: PageInfo | null
   }
   capturePage: {
     params: WorkerCapturePageRequest

@@ -27,9 +27,8 @@ import type {
   PageCdpSubscription,
   PageCloseAfterIdleMs,
   PageConsoleLog,
-  PageInfo,
+  PageHostInfo,
   PageInputRequest,
-  PageOwner,
   PageScreenshot,
   PageSource,
   PageViewport,
@@ -54,7 +53,6 @@ interface ResolvedOpenTarget {
   source: PageSource
   title: string
   url: string
-  currentUrl?: string
 }
 
 interface PageRecord extends IdleCloseEntry {
@@ -63,17 +61,11 @@ interface PageRecord extends IdleCloseEntry {
   sessionId: string
   viewport: PageViewport
   source: PageSource
-  currentUrl?: string
   title: string
-  owner: PageOwner
-  createdBy: PageInfo['createdBy']
-  lifecycle: PageInfo['lifecycle']
   logs: PageConsoleLog[]
-  openedAt: number
   lastUsedAt: number
   closeAfterIdleMs: PageCloseAfterIdleMs
   expiresAt: number | null
-  lastError?: PageInfo['lastError']
 }
 
 export async function createDaemonHeadlessPageHostFromEnv(
@@ -247,12 +239,7 @@ export class DaemonHeadlessPageHost implements PageHost {
         viewport,
         source: resolved.source,
         title: request.title || resolved.title,
-        ...(resolved.currentUrl ? { currentUrl: resolved.currentUrl } : {}),
-        owner: request.owner,
-        createdBy: request.createdBy ?? 'agent',
-        lifecycle: 'opening',
         logs: [],
-        openedAt: now,
         lastUsedAt: now,
         closeAfterIdleMs,
         expiresAt: typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null,
@@ -275,8 +262,6 @@ export class DaemonHeadlessPageHost implements PageHost {
       const loaded = this.awaitTargetLoad(sessionId)
       await this.client.send('Page.navigate', { url: resolved.url }, sessionId)
       await loaded
-      record.lifecycle = 'ready'
-      delete record.lastError
 
       const handle = await this.getPage(pageId)
       if (!handle) throw new Error(`Failed to create daemon headless page "${pageId}"`)
@@ -297,29 +282,18 @@ export class DaemonHeadlessPageHost implements PageHost {
     return record ? new DaemonHeadlessChromePageHandle(this, record) : null
   }
 
-  async listPages(): Promise<PageInfo[]> {
+  async listPages(): Promise<PageHostInfo[]> {
     return [...this.pages.values()].map(record => this.pageInfoFromRecord(record))
   }
 
-  pageInfoFromRecord(record: PageRecord): PageInfo {
+  pageInfoFromRecord(record: PageRecord): PageHostInfo {
     return {
       pageId: record.pageId,
       title: record.title,
       source: record.source,
-      ...(record.source.type === 'url' && record.currentUrl ? { currentUrl: record.currentUrl } : {}),
       display: 'headless',
-      lifecycle: record.lifecycle,
       viewport: record.viewport,
-      owner: record.owner,
-      createdBy: record.createdBy,
-      content: {
-        stale: false,
-      },
-      openedAt: record.openedAt,
-      lastUsedAt: record.lastUsedAt,
       closeAfterIdleMs: record.closeAfterIdleMs,
-      ...(record.expiresAt !== null ? { expiresAt: record.expiresAt } : {}),
-      ...(record.lastError ? { lastError: record.lastError } : {}),
     }
   }
 
@@ -340,7 +314,6 @@ export class DaemonHeadlessPageHost implements PageHost {
   async reloadPage(pageId: string): Promise<void> {
     const record = this.requireRecord(pageId)
     this.touchPage(pageId)
-    record.lifecycle = 'opening'
     const loaded = this.awaitTargetLoad(record.sessionId)
     const deadline = Date.now() + RELOAD_RETRY_BUDGET_MS
     try {
@@ -354,11 +327,7 @@ export class DaemonHeadlessPageHost implements PageHost {
         }
       }
       await loaded
-      record.lifecycle = 'ready'
-      delete record.lastError
     } catch (err) {
-      record.lifecycle = 'failed'
-      record.lastError = pageError(err)
       throw err
     }
   }
@@ -478,7 +447,6 @@ export class DaemonHeadlessPageHost implements PageHost {
           source: request.source,
           title: 'Web Page',
           url: request.source.url,
-          currentUrl: request.source.url,
         }
       case 'view': {
         const record = await getViewContent(this.runtimeRoot, request.source.name)
@@ -578,17 +546,8 @@ export class DaemonHeadlessPageHost implements PageHost {
       return
     }
 
-    if (event.method === 'Page.frameNavigated' && record.source.type === 'url') {
-      const params = event.params as { frame?: { parentId?: unknown; url?: unknown } }
-      if (!params.frame?.parentId && typeof params.frame?.url === 'string') {
-        record.currentUrl = params.frame.url
-      }
-      return
-    }
-
     if (event.method === 'Inspector.targetCrashed' || event.method === 'Target.targetCrashed') {
-      record.lifecycle = 'crashed'
-      record.lastError = { message: 'Chrome target crashed' }
+      return
     }
   }
 
@@ -612,7 +571,7 @@ class DaemonHeadlessChromePageHandle implements PageHandle {
     this.pageId = record.pageId
   }
 
-  info(): PageInfo {
+  info(): PageHostInfo {
     return this.host.pageInfoFromRecord(this.record)
   }
 
@@ -712,17 +671,6 @@ function consoleLevel(level: string): string {
     default:
       return 'info'
   }
-}
-
-function pageError(error: unknown): NonNullable<PageInfo['lastError']> {
-  if (error instanceof Error) {
-    const code = (error as Error & { code?: unknown }).code
-    return {
-      message: error.message,
-      ...(typeof code === 'string' || typeof code === 'number' ? { code } : {}),
-    }
-  }
-  return { message: String(error) }
 }
 
 function resolveDaemonViewport(input: unknown, width: unknown, height: unknown): PageViewport {

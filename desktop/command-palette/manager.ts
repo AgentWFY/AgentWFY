@@ -742,7 +742,6 @@ export class CommandPaletteManager {
             source: { type: 'view', name: view.name },
             display: 'foreground',
             title: view.title || view.name,
-            createdBy: 'user',
           }).catch((err) => {
             console.error(`[command-palette] failed to open welcome view ${viewName}:`, err);
           });
@@ -977,7 +976,6 @@ export class CommandPaletteManager {
           source: { type: 'view', name: openViewAction.viewName },
           display: 'foreground',
           title: openViewAction.title,
-          createdBy: 'user',
         });
         break;
       }

@@ -1,13 +1,13 @@
 import type {
   OpenPageResult,
   PageDisplayFilter,
-  PageInfo,
+  PageHostInfo,
 } from '#shared/page/types.js'
 
 export interface PagesApi {
-  getPages(request?: { display?: PageDisplayFilter }): Promise<PageInfo[]>
+  getPages(request?: { display?: PageDisplayFilter }): Promise<PageHostInfo[]>
   openPage(request: unknown): Promise<OpenPageResult>
   closePage(request: unknown): Promise<void>
-  reloadPage(request: unknown): Promise<PageInfo>
+  reloadPage(request: unknown): Promise<PageHostInfo>
   getHeadlessCount(): Promise<number>
 }

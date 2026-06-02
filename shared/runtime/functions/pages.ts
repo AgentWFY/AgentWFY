@@ -2,6 +2,7 @@ import type { FunctionRegistry } from '../function_registry.js'
 import type {
   PageApi,
   PageCloseAfterIdleMs,
+  PageHostInfo,
   PageInfo,
   PageQueryRequest,
   PageViewport,
@@ -16,7 +17,6 @@ import { normalizePageViewportInput, resolvePageViewport } from '../../page/page
 import { getViewByName } from '../../db/views.js'
 import type {
   WorkerHostMethodMap,
-  WorkerPageInfo,
   WorkerPageConsoleLogEntry,
   WorkerSendPageInputRequest,
 } from '../types.js'
@@ -63,7 +63,7 @@ function buildOpenClientPageInfo(opts: {
   return `Opened client page ${opts.pageId} for ${formatPageSource(opts.source)}.`
 }
 
-function toWorkerPageInfo(page: PageInfo): WorkerPageInfo {
+function toPageInfo(page: PageHostInfo): PageInfo {
   return {
     pageId: page.pageId,
     title: page.title,
@@ -124,12 +124,12 @@ export function registerPages(
 
   registry.register('getPages', async (params) => {
     const pages = await pageTools.getPages(getPagesQuery(params))
-    return pages.map(toWorkerPageInfo)
+    return pages.map(toPageInfo)
   })
 
   registry.register('getCurrentClientPage', async () => {
     const page = await pageTools.getCurrentClientPage()
-    return page && page.display !== 'headless' ? toWorkerPageInfo(page) : null
+    return page && page.display !== 'headless' ? toPageInfo(page) : null
   })
 
   registry.register('openPage', async (params) => {
@@ -172,7 +172,7 @@ export function registerPages(
     return {
       id: result.pageId,
       pageId: result.pageId,
-      page: toWorkerPageInfo(result.page),
+      page: toPageInfo(result.page),
       info: buildOpenPageInfo({
         pageId: result.pageId,
         source: resolvedSource,
@@ -218,7 +218,7 @@ export function registerPages(
     return {
       id: result.pageId,
       pageId: result.pageId,
-      page: toWorkerPageInfo(result.page),
+      page: toPageInfo(result.page),
       info: buildOpenClientPageInfo({
         pageId: result.pageId,
         source: resolvedSource,
@@ -233,7 +233,7 @@ export function registerPages(
 
   registry.register('reloadPage', async (params) => {
     const pageId = resolvePageId(params)
-    return toWorkerPageInfo(await pageTools.reloadPage({ pageId }))
+    return toPageInfo(await pageTools.reloadPage({ pageId }))
   })
 
   registry.register('capturePage', async (params) => {

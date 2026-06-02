@@ -22,7 +22,7 @@ import type {
   SessionSummary,
 } from '#shared/backend/interface.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
-import type { PageInfo } from '#shared/page/types.js'
+import type { PageHostInfo } from '#shared/page/types.js'
 import type { InstalledAgent, AgentMeta } from './agent-meta.js'
 
 export type Screen = 'add-agent' | 'chat' | 'views'
@@ -49,7 +49,7 @@ export interface MobileEventMap {
   'status-changed': { status: BackendStatusSnapshot }
   'db-change': { change: AgentDbChange }
   'snapshot-applied': void
-  'page-changed': { page: PageInfo | null }
+  'page-changed': { page: PageHostInfo | null }
   'session-state': {
     sessionId: string
     title?: string | null

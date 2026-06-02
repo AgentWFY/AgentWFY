@@ -1,4 +1,4 @@
-import type { PageEvent, PageInfo, PageOwner, OpenPageRequest } from './types.js'
+import type { PageHostInfo, OpenPageRequest, PageHostKind } from './types.js'
 import type { PageHandle } from './page-handle.js'
 
 export interface PageOpenContext {
@@ -7,15 +7,13 @@ export interface PageOpenContext {
 
 export type PageHostOpenRequest = OpenPageRequest & {
   pageId: string
-  owner: PageOwner
 }
 
 export interface PageHost {
-  readonly hostKind: PageInfo['owner']['hostKind']
+  readonly hostKind: PageHostKind
   canOpen(request: OpenPageRequest, context: PageOpenContext): boolean
   openPage(request: PageHostOpenRequest): Promise<PageHandle>
   getPage(pageId: string): Promise<PageHandle | null>
-  getCurrentClientPage?(): Promise<PageInfo | null>
-  listPages?(): Promise<PageInfo[]>
-  onPageEvent?(handler: (event: PageEvent) => void): () => void
+  getCurrentClientPage?(): Promise<PageHostInfo | null>
+  listPages?(): Promise<PageHostInfo[]>
 }

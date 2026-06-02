@@ -576,7 +576,7 @@ await runSql({
   `]
 })
 
-await openPage({ display: 'foreground', source: { type: 'view', name: 'my-dashboard' } })
+await openClientPage({ source: { type: 'view', name: 'my-dashboard' } })
 ```
 
 ### View Runtime API
@@ -609,7 +609,7 @@ Views automatically have access to CSS custom properties that match the app's th
 
 ```js
 // Open with parameters
-await openPage({ display: 'foreground', source: { type: 'view', name: 'invoice-viewer', params: { invoiceId: '42' } } })
+await openClientPage({ source: { type: 'view', name: 'invoice-viewer', params: { invoiceId: '42' } } })
 
 // Read inside the view
 const params = new URLSearchParams(window.location.search)
@@ -682,7 +682,7 @@ Reload the page after updating any module.
 ### Headless Pages for Automation
 
 ```js
-const { pageId } = await openPage({ display: 'headless', source: { type: 'url', url: 'https://example.com/data' } })
+const { pageId } = await openPage({ source: { type: 'url', url: 'https://example.com/data' } })
 const data = await runPageJs({ pageId, code: 'document.querySelector(".results").innerText' })
 const screenshot = await capturePage({ pageId })
 await closePage({ pageId })
@@ -695,7 +695,7 @@ await closePage({ pageId })
 - **Middle-click to close**
 - **Right-click context menu**: Pin, reload, open DevTools
 - **Change indicator**: Dot appears when a view's content has been updated
-- **Headless pages**: Not shown in the tab bar. Inspect with `getPages({ display: 'headless' })`, or use `capturePage` / `runPageJs` for debugging.
+- **Headless pages**: Not shown in the tab bar. Inspect with `getPages({ headless: true })`, or use `capturePage` / `runPageJs` for debugging.
 
 ---
 

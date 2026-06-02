@@ -72,7 +72,6 @@ async function normalizeOpenPagePayload(
     source: resolvedSource,
     display,
     title: resolvedTitle,
-    createdBy: 'user',
     ...(input.viewport !== undefined ? { viewport: input.viewport as OpenPageRequest['viewport'] } : {}),
     ...(typeof input.width === 'number' ? { width: input.width } : {}),
     ...(typeof input.height === 'number' ? { height: input.height } : {}),

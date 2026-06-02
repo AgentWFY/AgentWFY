@@ -21,7 +21,6 @@ import {
   type BackupRestoreRequest,
   type BackupRestoreResponse,
   type BackupStatusResponse,
-  type ClientPageInfo,
   type ClientPageRpcMethod,
   type ClientFunctionsInvokeRequest,
   type ClientFunctionsInvokeResponse,
@@ -103,7 +102,7 @@ import type {
   Unsubscribe,
 } from './interface.js'
 import type { AgentDbChange } from '../db/sqlite.js'
-import type { OpenPageResult, PageApi, PageInfo } from '../page/types.js'
+import type { PageApi } from '../page/types.js'
 import { isClientRuntimeFunction } from '../runtime/client-functions.js'
 import { DAEMON_BUILT_IN_FUNCTIONS } from '../runtime/daemon-functions.js'
 import { WsClient, type WsClientConfig } from './ws_client.js'
@@ -127,9 +126,6 @@ export interface RemoteBackendConfig extends WsClientConfig {
   desktopFunctions?: RemoteDesktopFunctions
   /** Client-hosted pages exposed to the daemon through typed client.pages.* RPC. */
   clientPages?: PageApi
-  clientId?: string
-  clientKind?: ClientPageInfo['kind']
-  isActiveForAgent?: () => boolean
 }
 
 export interface RemoteDesktopFunctions {
@@ -161,9 +157,6 @@ export class RemoteBackend implements AgentBackend {
   private readonly agentToken: string
   private readonly desktopFunctions: RemoteDesktopFunctions | undefined
   private readonly clientPages: PageApi | undefined
-  private readonly clientId: string
-  private readonly clientKind: ClientPageInfo['kind']
-  private readonly isActiveForAgent: () => boolean
 
   private readonly eventSubscribers = new Set<(event: AgentBackendEvent) => void>()
   private readonly dbChangeSubscribers = new Set<(change: AgentDbChange) => void>()
@@ -176,9 +169,6 @@ export class RemoteBackend implements AgentBackend {
     this.agentToken = config.agentToken
     this.desktopFunctions = config.desktopFunctions
     this.clientPages = config.clientPages
-    this.clientId = config.clientId ?? 'default-client'
-    this.clientKind = config.clientKind ?? 'desktop'
-    this.isActiveForAgent = config.isActiveForAgent ?? (() => true)
     this.ws = new WsClient(config)
     this.ws.setMessageHandler((message) => this.handleWsMessage(message))
   }
@@ -461,8 +451,7 @@ export class RemoteBackend implements AgentBackend {
         return this.createPageSnapshot()
       case 'client.pages.open': {
         const req = params as ClientPagesOpenRequest
-        const result = await pages.openPage(req)
-        return this.decorateOpenPageResult(result)
+        return pages.openPage(req)
       }
       case 'client.pages.close': {
         const req = params as ClientPagesCloseRequest
@@ -471,7 +460,7 @@ export class RemoteBackend implements AgentBackend {
       }
       case 'client.pages.reload': {
         const req = params as ClientPagesReloadRequest
-        return this.decorateClientPage(await pages.reloadPage({ pageId: req.pageId }))
+        return pages.reloadPage({ pageId: req.pageId })
       }
       case 'client.pages.capture':
         return pages.capturePage(params as ClientPagesCaptureRequest)
@@ -540,54 +529,12 @@ export class RemoteBackend implements AgentBackend {
       throw new Error('Client page API is not available in this runtime')
     }
 
-    const client = this.clientInfo()
-    const pageList = (await pages.getPages({ display: 'all' })).map(page => this.decorateClientPage(page, client))
+    const pageList = await pages.getPages({ display: 'all' })
     const currentPage = await pages.getCurrentClientPage()
     return {
       pages: pageList,
       currentPageId: currentPage?.pageId ?? null,
-      client,
       version: this.nextPageSnapshotVersion++,
-    }
-  }
-
-  private decorateOpenPageResult(result: OpenPageResult): OpenPageResult {
-    const page = this.decorateClientPage(result.page)
-    return {
-      ...result,
-      page,
-      pageId: page.pageId,
-    }
-  }
-
-  private decorateClientPage(page: PageInfo, client = this.clientInfo()): PageInfo {
-    const presentation = page.presentation
-    const activeForAgent = client.activeForAgent
-    return {
-      ...page,
-      owner: {
-        ...page.owner,
-        client,
-      },
-      ...(page.display !== 'headless'
-        ? {
-            presentation: {
-              surfaceId: presentation?.surfaceId ?? `${client.id}:pages`,
-              visibleNow: activeForAgent ? presentation?.visibleNow === true : false,
-              ...(activeForAgent
-                ? presentation?.visibilityReason ? { visibilityReason: presentation.visibilityReason } : {}
-                : { visibilityReason: 'inactive-agent' as const }),
-            },
-          }
-        : {}),
-    }
-  }
-
-  private clientInfo(): ClientPageInfo {
-    return {
-      id: this.clientId,
-      kind: this.clientKind,
-      activeForAgent: this.isActiveForAgent(),
     }
   }
 

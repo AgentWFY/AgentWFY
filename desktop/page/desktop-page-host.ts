@@ -5,10 +5,10 @@ import {
   type PageCloseAfterIdleMs,
   type PageConsoleLog,
   type PageDisplay,
-  type PageInfo,
+  type PageHostInfo,
   type PageInputRequest,
   type OpenPageRequest,
-  type PageOwnerHostKind,
+  type PageHostKind,
   type PageScreenshot,
   type PageSource,
   type PageViewportInput,
@@ -18,16 +18,15 @@ import type { TabViewManager } from '../tab-view-manager.js';
 import type { TabData } from './desktop-page-types.js';
 
 export class DesktopPageHost implements PageHost {
-  readonly hostKind: PageOwnerHostKind;
+  readonly hostKind: PageHostKind;
   protected readonly manager: TabViewManager;
   protected readonly agentId: string;
   protected readonly displays: ReadonlySet<PageDisplay>;
   protected readonly headless: boolean;
-  private readonly createdByByPageId = new Map<string, PageInfo['createdBy']>();
 
   constructor(manager: TabViewManager, options: {
     agentId: string
-    hostKind?: PageOwnerHostKind
+    hostKind?: PageHostKind
     display?: PageDisplay | PageDisplay[]
     headless?: boolean
   }) {
@@ -58,7 +57,6 @@ export class DesktopPageHost implements PageHost {
       params: pageSourceParams(request.source),
       select: request.display === 'foreground',
     });
-    this.createdByByPageId.set(result.pageId, request.createdBy ?? 'agent');
     const handle = await this.getPage(result.pageId);
     if (!handle) {
       throw new Error(`Failed to create desktop page "${result.pageId}"`);
@@ -72,56 +70,29 @@ export class DesktopPageHost implements PageHost {
     return new DesktopPageHandle(this.manager, this, tab);
   }
 
-  async getCurrentClientPage(): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageHostInfo | null> {
     if (this.headless) return null;
     const tab = await this.manager.getCurrentTabHandler();
     return tab ? this.pageInfoFromTab(tab) : null;
   }
 
-  async listPages(): Promise<PageInfo[]> {
+  async listPages(): Promise<PageHostInfo[]> {
     const tabs = await this.manager.getTabsHandler();
     return tabs
       .filter(tab => Boolean(tab.headless) === this.headless)
       .map(tab => this.pageInfoFromTab(tab));
   }
 
-  forgetPage(pageId: string): void {
-    this.createdByByPageId.delete(pageId);
-  }
-
-  pageInfoFromTab(tab: TabData): PageInfo {
-    const pageId = tab.tabId || tab.id;
+  pageInfoFromTab(tab: TabData): PageHostInfo {
     const display = displayFromTab(tab);
     return {
-      pageId,
+      pageId: tab.tabId || tab.id,
       title: tab.title || '',
       source: sourceFromTab(tab),
-      ...(tab.type === 'url' && tab.target ? { currentUrl: tab.target } : {}),
       display,
-      lifecycle: 'ready',
       ...(tab.viewport ? { viewport: tab.viewport } : {}),
-      owner: {
-        agentId: this.agentId,
-        hostKind: this.hostKind,
-      },
-      ...(display !== 'headless'
-        ? {
-            presentation: {
-              surfaceId: 'desktop-tabs',
-              visibleNow: tab.selected,
-              ...(tab.selected ? { visibilityReason: 'visible' as const } : {}),
-            },
-          }
-        : {}),
-      createdBy: this.createdByByPageId.get(pageId) ?? 'agent',
-      content: {
-        stale: tab.viewChanged,
-        ...(typeof tab.viewUpdatedAt === 'number' ? { version: tab.viewUpdatedAt } : {}),
-      },
-      openedAt: tab.openedAt ?? 0,
-      ...(typeof tab.lastUsedAt === 'number' ? { lastUsedAt: tab.lastUsedAt } : {}),
+      ...(typeof tab.viewUpdatedAt === 'number' ? { version: tab.viewUpdatedAt } : {}),
       ...(tab.closeAfterIdleMs ? { closeAfterIdleMs: tab.closeAfterIdleMs } : {}),
-      ...(typeof tab.expiresAt === 'number' ? { expiresAt: tab.expiresAt } : {}),
     };
   }
 }
@@ -137,13 +108,12 @@ export class DesktopPageHandle implements PageHandle {
     this.pageId = tab.tabId || tab.id;
   }
 
-  info(): PageInfo {
+  info(): PageHostInfo {
     return this.host.pageInfoFromTab(this.tab);
   }
 
   async close(): Promise<void> {
     await this.manager.closeTabHandler({ tabId: this.pageId });
-    this.host.forgetPage(this.pageId);
   }
 
   async reload(): Promise<void> {

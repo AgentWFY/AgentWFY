@@ -19,7 +19,7 @@ import type {
 } from '#shared/backend/interface.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 import type { FileContent } from '#shared/agent/types.js'
-import type { PageApi, PageInfo } from '#shared/page/types.js'
+import type { PageApi, PageHostInfo } from '#shared/page/types.js'
 import type { AgentMeta } from '../agent-meta.js'
 import { createMobileBackend, type MobileBackend } from '../backend.js'
 import { MobilePageController } from '../page/mobile-page-host.js'
@@ -64,9 +64,9 @@ class BackendSession {
   getBackend(): MobileBackend['backend'] | null { return this.session?.backend ?? null }
   getProviders(): ProviderState | null { return this.providers }
   getPageTools(): PageApi | null { return this.pageController?.pageTools ?? null }
-  getCurrentClientPage(): PageInfo | null { return this.pageController?.getCurrentClientPage() ?? null }
+  getCurrentClientPage(): PageHostInfo | null { return this.pageController?.getCurrentClientPage() ?? null }
 
-  renameCurrentViewPage(name: string): PageInfo | null {
+  renameCurrentViewPage(name: string): PageHostInfo | null {
     return this.pageController?.renameCurrentView(name) ?? null
   }
 
@@ -125,9 +125,6 @@ class BackendSession {
         baseUrl: remoteConfig.baseUrl,
         agentToken: remoteConfig.agentToken,
         clientPages: pageController.pageTools,
-        clientId: 'mobile',
-        clientKind: 'mobile',
-        isActiveForAgent: () => isCurrent() && this.activeAgentId === agentId,
         onLocalDbChange: (change) => {
           if (!isCurrent()) return
           dispatch('db-change', { change })

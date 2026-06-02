@@ -12,7 +12,6 @@ import type {
   Unsubscribe,
 } from '#shared/backend/interface.js'
 import { RemoteBackend } from '#shared/backend/remote.js'
-import type { ClientPageInfo } from '#shared/backend/protocol.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { PageApi } from '#shared/page/types.js'
 import { MobileRemoteMirror } from './remote-mirror.js'
@@ -32,9 +31,6 @@ export interface MobileBackendOptions {
   onStatus?: (status: BackendStatusSnapshot) => void
   onEvent?: (event: AgentBackendEvent) => void
   clientPages?: PageApi
-  clientId?: string
-  clientKind?: ClientPageInfo['kind']
-  isActiveForAgent?: () => boolean
 }
 
 export async function createMobileBackend(opts: MobileBackendOptions): Promise<MobileBackend> {
@@ -43,9 +39,6 @@ export async function createMobileBackend(opts: MobileBackendOptions): Promise<M
     baseUrl: opts.baseUrl,
     agentToken: opts.agentToken,
     clientPages: opts.clientPages,
-    clientId: opts.clientId ?? 'mobile',
-    clientKind: opts.clientKind ?? 'mobile',
-    isActiveForAgent: opts.isActiveForAgent,
   })
 
   const subscriberUnsubs: Unsubscribe[] = []

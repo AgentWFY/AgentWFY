@@ -18,7 +18,7 @@ import { dispatch, listen, type Screen } from '../events.js'
 import { bridge } from '../tauri-bridge.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
-import type { PageInfo } from '#shared/page/types.js'
+import type { PageHostInfo } from '#shared/page/types.js'
 
 type BodyKind = 'session-list' | 'agent-chat' | 'draft-compose' | 'view-list' | 'view-frame'
 
@@ -42,7 +42,7 @@ export class TlApp extends HTMLElement {
   private screen: Screen = 'add-agent'
   private activeSessionId: string | null = null
   private draftProviderId: string | null = null
-  private activePage: PageInfo | null = null
+  private activePage: PageHostInfo | null = null
 
   private unsubs: Array<() => void> = []
 
@@ -176,7 +176,6 @@ export class TlApp extends HTMLElement {
         display: 'foreground',
         source: { type: 'view', name: trimmed },
         title: trimmed,
-        createdBy: 'user',
       })
       this.activePage = result.page
       this.screen = 'views'
@@ -219,7 +218,7 @@ export class TlApp extends HTMLElement {
     }
   }
 
-  private onPageChanged(page: PageInfo | null): void {
+  private onPageChanged(page: PageHostInfo | null): void {
     this.activePage = page
     if (page !== null) this.screen = 'views'
     this.render()
@@ -343,7 +342,7 @@ export class TlApp extends HTMLElement {
       const viewName = activeViewName(this.activePage)
       if (viewName) this.currentBodyEl.setAttribute('view-name', viewName)
       this.currentBodyEl.setAttribute('page-id', this.activePage.pageId)
-      this.currentBodyEl.setAttribute('view-version', String(this.activePage.content?.version ?? 0))
+      this.currentBodyEl.setAttribute('view-version', String(this.activePage.version ?? 0))
       this.currentBodyEl.setAttribute('view-params', JSON.stringify(activeViewParams(this.activePage)))
     }
   }
@@ -381,10 +380,10 @@ export class TlApp extends HTMLElement {
   }
 }
 
-function activeViewName(page: PageInfo | null): string | null {
+function activeViewName(page: PageHostInfo | null): string | null {
   return page?.source.type === 'view' ? page.source.name : null
 }
 
-function activeViewParams(page: PageInfo): Record<string, string> {
+function activeViewParams(page: PageHostInfo): Record<string, string> {
   return page.source.type === 'view' ? page.source.params ?? {} : {}
 }

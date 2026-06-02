@@ -1,5 +1,4 @@
 import type {
-  ClientPageInfo,
   ClientPageRpcMethod,
   ClientPageRpcRequest,
   ClientPageRpcResponse,
@@ -13,7 +12,7 @@ import type {
   PageCdpPollResult,
   PageCdpSubscription,
   PageConsoleLog,
-  PageInfo,
+  PageHostInfo,
   PageInputRequest,
   PageScreenshot,
 } from './types.js'
@@ -27,37 +26,23 @@ export interface ClientPageRpcInvoker {
   onPageClientConnectionChange?(handler: (connected: boolean) => void): () => void
 }
 
-interface RemoteClientPageHostOptions {
-  agentId: string
-  clientId?: string
-  clientKind?: ClientPageInfo['kind']
-}
-
 export class RemoteClientPageHost implements PageHost {
   readonly hostKind = 'remote-client' as const
 
-  private readonly agentId: string
   private readonly invoker: ClientPageRpcInvoker
   private readonly unsubscribeConnection: (() => void) | undefined
-  private readonly pages = new Map<string, PageInfo>()
-  private client: ClientPageInfo
+  private readonly pages = new Map<string, PageHostInfo>()
   private currentPageId: string | null = null
 
-  constructor(invoker: ClientPageRpcInvoker, options: RemoteClientPageHostOptions) {
+  constructor(invoker: ClientPageRpcInvoker) {
     this.invoker = invoker
-    this.agentId = options.agentId
-    this.client = {
-      id: options.clientId ?? 'default-client',
-      kind: options.clientKind ?? 'desktop',
-      activeForAgent: false,
-    }
     this.unsubscribeConnection = invoker.onPageClientConnectionChange?.((connected) => {
       if (connected) {
         void this.refreshSnapshot().catch((err) => {
           console.warn('[remote-client-page-host] snapshot refresh failed:', err)
         })
       } else {
-        this.markUnavailable()
+        this.clearClientPages()
       }
     })
   }
@@ -71,8 +56,7 @@ export class RemoteClientPageHost implements PageHost {
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
-    const { owner: _owner, ...openRequest } = request
-    const result = await this.invoker.invokeClientPageRpc('client.pages.open', openRequest as ClientPagesOpenRequest)
+    const result = await this.invoker.invokeClientPageRpc('client.pages.open', request as ClientPagesOpenRequest)
     const page = this.remember(result.page)
     return new RemoteClientPageHandle(this, this.invoker, page)
   }
@@ -81,47 +65,46 @@ export class RemoteClientPageHost implements PageHost {
     let page = this.pages.get(pageId) ?? null
     if (!page && this.invoker.isPageClientConnected) {
       await this.refreshSnapshot().catch(() => {
-        this.markUnavailable()
+        this.clearClientPages()
       })
       page = this.pages.get(pageId) ?? null
     }
     return page ? new RemoteClientPageHandle(this, this.invoker, page) : null
   }
 
-  async getCurrentClientPage(): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageHostInfo | null> {
     if (!this.invoker.isPageClientConnected) {
-      this.markUnavailable()
+      this.clearClientPages()
       return null
     }
     await this.refreshSnapshot().catch(() => {
-      this.markUnavailable()
+      this.clearClientPages()
     })
     if (!this.currentPageId) return null
     return this.pages.get(this.currentPageId) ?? null
   }
 
-  async listPages(): Promise<PageInfo[]> {
+  async listPages(): Promise<PageHostInfo[]> {
     if (this.invoker.isPageClientConnected) {
       await this.refreshSnapshot().catch(() => {
-        this.markUnavailable()
+        this.clearClientPages()
       })
     } else {
-      this.markUnavailable()
+      this.clearClientPages()
     }
     return [...this.pages.values()]
   }
 
-  getKnownPage(pageId: string): PageInfo | null {
+  getKnownPage(pageId: string): PageHostInfo | null {
     return this.pages.get(pageId) ?? null
   }
 
-  remember(page: PageInfo): PageInfo {
-    const normalized = this.decorateClientPage(page, this.invoker.isPageClientConnected)
-    this.pages.set(normalized.pageId, normalized)
-    if (normalized.display === 'foreground') {
-      this.currentPageId = normalized.pageId
+  remember(page: PageHostInfo): PageHostInfo {
+    this.pages.set(page.pageId, page)
+    if (page.display === 'foreground') {
+      this.currentPageId = page.pageId
     }
-    return normalized
+    return page
   }
 
   forget(pageId: string): void {
@@ -135,7 +118,6 @@ export class RemoteClientPageHost implements PageHost {
   }
 
   private applySnapshot(snapshot: ClientPagesSnapshotResponse): void {
-    this.client = snapshot.client
     this.currentPageId = snapshot.currentPageId
     this.pages.clear()
     for (const page of snapshot.pages) {
@@ -143,48 +125,9 @@ export class RemoteClientPageHost implements PageHost {
     }
   }
 
-  private markUnavailable(): void {
-    this.client = {
-      ...this.client,
-      activeForAgent: false,
-    }
+  private clearClientPages(): void {
     this.currentPageId = null
-    for (const [pageId, page] of this.pages) {
-      this.pages.set(pageId, this.decorateClientPage({
-        ...page,
-        lifecycle: 'unavailable',
-      }, false))
-    }
-  }
-
-  private decorateClientPage(page: PageInfo, connected: boolean): PageInfo {
-    const presentation = page.presentation
-    const isUserFacing = page.display !== 'headless'
-    const activeForAgent = connected && this.client.activeForAgent
-    const visibilityReason = !connected
-      ? 'suspended'
-      : activeForAgent
-        ? presentation?.visibilityReason
-        : 'inactive-agent'
-
-    return {
-      ...page,
-      lifecycle: connected ? page.lifecycle : 'unavailable',
-      owner: {
-        agentId: this.agentId,
-        hostKind: this.hostKind,
-        client: this.client,
-      },
-      ...(isUserFacing
-        ? {
-            presentation: {
-              surfaceId: presentation?.surfaceId ?? `${this.client.id}:pages`,
-              visibleNow: activeForAgent ? presentation?.visibleNow === true : false,
-              ...(visibilityReason ? { visibilityReason } : {}),
-            },
-          }
-        : {}),
-    }
+    this.pages.clear()
   }
 }
 
@@ -194,12 +137,12 @@ class RemoteClientPageHandle implements PageHandle {
   constructor(
     private readonly host: RemoteClientPageHost,
     private readonly invoker: ClientPageRpcInvoker,
-    private page: PageInfo,
+    private page: PageHostInfo,
   ) {
     this.pageId = page.pageId
   }
 
-  info(): PageInfo {
+  info(): PageHostInfo {
     return this.host.getKnownPage(this.pageId) ?? this.page
   }
 

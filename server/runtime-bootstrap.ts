@@ -73,9 +73,7 @@ export async function createAgentRuntime(
 
   const pageHosts: PageHost[] = []
   if (clientFunctionInvoker && isClientPageRpcInvoker(clientFunctionInvoker)) {
-    pageHosts.push(new RemoteClientPageHost(clientFunctionInvoker, {
-      agentId: runtimeRoot,
-    }))
+    pageHosts.push(new RemoteClientPageHost(clientFunctionInvoker))
   }
   if (daemonHeadlessPageHost) pageHosts.push(daemonHeadlessPageHost)
   const pageTools = new PageManager({

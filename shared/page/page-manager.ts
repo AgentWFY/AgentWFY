@@ -8,7 +8,7 @@ import type {
   PageCdpPollResult,
   PageCdpSubscription,
   PageDisplay,
-  PageInfo,
+  PageHostInfo,
   PageInputRequest,
   PageQueryRequest,
   PageScreenshot,
@@ -36,8 +36,8 @@ export class PageManager implements PageApi {
     this.hosts = options.hosts
   }
 
-  async getPages(request: PageQueryRequest = {}): Promise<PageInfo[]> {
-    const pages: PageInfo[] = []
+  async getPages(request: PageQueryRequest = {}): Promise<PageHostInfo[]> {
+    const pages: PageHostInfo[] = []
     for (const host of this.hosts) {
       const hostPages = await host.listPages?.() ?? []
       for (const page of hostPages) {
@@ -49,7 +49,7 @@ export class PageManager implements PageApi {
     return pages.filter((page) => pageMatchesQuery(page, request))
   }
 
-  async getCurrentClientPage(): Promise<PageInfo | null> {
+  async getCurrentClientPage(): Promise<PageHostInfo | null> {
     for (const host of this.hosts) {
       const page = await host.getCurrentClientPage?.() ?? null
       if (page) {
@@ -75,11 +75,6 @@ export class PageManager implements PageApi {
     const handle = await host.openPage({
       ...request,
       pageId: requestedPageId,
-      owner: {
-        agentId: this.agentId,
-        hostKind: host.hostKind,
-      },
-      createdBy: request.createdBy ?? 'agent',
     })
     this.pageHosts.set(handle.pageId, host)
     const page = handle.info()
@@ -97,7 +92,7 @@ export class PageManager implements PageApi {
     this.pageHosts.delete(request.pageId)
   }
 
-  async reloadPage(request: { pageId: string }): Promise<PageInfo> {
+  async reloadPage(request: { pageId: string }): Promise<PageHostInfo> {
     const handle = await this.resolveHandle(request.pageId)
     await handle.reload()
     return handle.info()
@@ -240,14 +235,14 @@ function isPageDisplay(value: unknown): value is PageDisplay {
   return value === 'foreground' || value === 'background' || value === 'headless'
 }
 
-function pageMatchesQuery(page: PageInfo, request: PageQueryRequest): boolean {
+function pageMatchesQuery(page: PageHostInfo, request: PageQueryRequest): boolean {
   const display = request.display ?? 'all'
   if (display === 'all') return true
   if (display === 'user-facing') return page.display !== 'headless'
   return page.display === display
 }
 
-function formatOpenPageInfo(page: PageInfo): string {
+function formatOpenPageInfo(page: PageHostInfo): string {
   const source = formatPageSource(page.source)
   if (page.display === 'headless') {
     const viewport = page.viewport ? ` (${page.viewport.width}x${page.viewport.height})` : ''

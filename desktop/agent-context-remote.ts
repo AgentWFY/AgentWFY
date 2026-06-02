@@ -22,7 +22,6 @@ export async function createRemoteAgentContext(opts: {
   tabViewManager: TabViewManager
   pageTools: PageApi
   getCommandPalette?: () => PaletteHost
-  isActiveForAgent?: () => boolean
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
@@ -38,8 +37,6 @@ export async function createRemoteAgentContext(opts: {
     agentToken: remoteConfig.agentToken,
     desktopFunctions: clientFunctionRegistry,
     clientPages: pageTools,
-    clientKind: 'desktop',
-    isActiveForAgent: opts.isActiveForAgent,
   })
   const dbSync = new RemoteAgentDbSync({
     cacheRoot,

@@ -670,7 +670,6 @@ export class AgentOrchestrator {
         source: { type: 'view', name: view.name },
         display: 'foreground',
         title: view.title || view.name,
-        createdBy: 'system',
       });
     } catch (err) {
       console.error('[default-view] Failed to open default view:', err);

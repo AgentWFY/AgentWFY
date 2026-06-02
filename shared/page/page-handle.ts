@@ -1,14 +1,14 @@
 import type {
   PageCdpSubscription,
   PageConsoleLog,
-  PageInfo,
+  PageHostInfo,
   PageInputRequest,
   PageScreenshot,
 } from './types.js'
 
 export interface PageHandle {
   readonly pageId: string
-  info(): PageInfo
+  info(): PageHostInfo
   close(): Promise<void>
   reload(): Promise<void>
   capture?(): Promise<PageScreenshot>
