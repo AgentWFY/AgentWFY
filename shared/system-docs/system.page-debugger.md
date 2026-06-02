@@ -1,6 +1,6 @@
 # system.page-debugger
 
-Chrome DevTools Protocol helpers for pages that report `capabilities.cdp`.
+Chrome DevTools Protocol helpers for pages whose host supports CDP.
 
 - `sendPageCdp({ pageId, method, params?, sessionId? })` -> CDP result.
 - `subscribePageCdp({ pageId, events })` -> async-iterable subscription

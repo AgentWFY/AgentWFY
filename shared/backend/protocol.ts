@@ -213,22 +213,10 @@ export interface WsDbReset {
   type: 'db:reset'
 }
 
-export interface BackendPageCapabilities {
-  clientProxy: boolean
-  headless: boolean
-  connectedClientIds: string[]
-}
-
-export interface BackendCapabilities {
-  pages: BackendPageCapabilities
-  clientFunctionProxy: boolean
-}
-
 export interface WsHello {
   type: 'hello'
   protocolVersion: typeof PROTOCOL_VERSION
   agentId: string
-  capabilities: BackendCapabilities
   /** Current DB change-log version on the daemon at hello time. Mirrors use
    *  this to decide whether they're caught up; if behind, they fetch a
    *  fresh snapshot. */
@@ -285,7 +273,6 @@ export function decodeWsMessage(raw: string): WsMessage {
 export interface WhoamiResponse {
   agentId: string
   protocolVersion: typeof PROTOCOL_VERSION
-  capabilities: BackendCapabilities
 }
 
 export interface SessionsListRequest { limit?: number; offset?: number; since?: number; until?: number }

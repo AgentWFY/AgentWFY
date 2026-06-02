@@ -1,5 +1,4 @@
 import { PageManager } from '#shared/page/page-manager.js'
-import { EMPTY_PAGE_CAPABILITIES } from '#shared/page/capabilities.js'
 import type { PageHandle } from '#shared/page/page-handle.js'
 import type { PageHost, PageHostOpenRequest, PageOpenContext } from '#shared/page/page-host.js'
 import type {
@@ -212,7 +211,6 @@ export class MobilePageHost implements PageHost {
       source: record.source,
       display: 'foreground',
       lifecycle: 'ready',
-      capabilities: EMPTY_PAGE_CAPABILITIES,
       owner: {
         ...record.owner,
         agentId: this.agentId,

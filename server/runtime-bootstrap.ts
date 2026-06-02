@@ -40,7 +40,6 @@ export interface RuntimeBundle {
   /** Current DB change-log version. Read after RPCs / on hello so remote
    *  mirrors can sync their `localVersion`. */
   getDbVersion(): number
-  hasHeadlessPages(): boolean
   dispose(): Promise<void>
 }
 
@@ -181,7 +180,6 @@ export async function createAgentRuntime(
       },
     },
     getDbVersion: () => getAgentDbCurrentVersion(runtimeRoot),
-    hasHeadlessPages: () => daemonHeadlessPageHost !== null,
     dispose,
   }
 }

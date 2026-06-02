@@ -23,7 +23,6 @@ import type { PageHandle } from '#shared/page/page-handle.js'
 import type { PageHost, PageHostOpenRequest, PageOpenContext } from '#shared/page/page-host.js'
 import type {
   OpenPageRequest,
-  PageCapabilities,
   PageCdpPollResult,
   PageCdpSubscription,
   PageCloseAfterIdleMs,
@@ -43,16 +42,6 @@ const VIEWPORT_ALIASES: Record<string, PageViewport> = {
   mobile: { width: 375, height: 667 },
   tablet: { width: 768, height: 1024 },
   desktop: { width: 1280, height: 720 },
-}
-
-const DAEMON_HEADLESS_CAPABILITIES: PageCapabilities = {
-  screenshot: true,
-  js: true,
-  input: true,
-  consoleLogs: true,
-  inspect: true,
-  cdp: true,
-  screencast: true,
 }
 
 interface DaemonHeadlessPageHostOptions {
@@ -320,7 +309,6 @@ export class DaemonHeadlessPageHost implements PageHost {
       ...(record.source.type === 'url' && record.currentUrl ? { currentUrl: record.currentUrl } : {}),
       display: 'headless',
       lifecycle: record.lifecycle,
-      capabilities: DAEMON_HEADLESS_CAPABILITIES,
       viewport: record.viewport,
       owner: record.owner,
       createdBy: record.createdBy,

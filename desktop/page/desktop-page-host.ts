@@ -13,7 +13,6 @@ import {
   type PageSource,
   type PageViewportInput,
 } from '#shared/page/types.js';
-import { pageCapabilitiesFromHandleMethods } from '#shared/page/capabilities.js';
 import { pageSourceParams } from '#shared/page/page-source.js';
 import type { TabViewManager } from '../tab-view-manager.js';
 import type { TabData } from './desktop-page-types.js';
@@ -100,7 +99,6 @@ export class DesktopPageHost implements PageHost {
       ...(tab.type === 'url' && tab.target ? { currentUrl: tab.target } : {}),
       display,
       lifecycle: 'ready',
-      capabilities: pageCapabilitiesFromHandleMethods(DesktopPageHandle.prototype),
       ...(tab.viewport ? { viewport: tab.viewport } : {}),
       owner: {
         agentId: this.agentId,

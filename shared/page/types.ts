@@ -32,16 +32,6 @@ export type PageViewportInput = PageViewportAlias | PageViewportSpec
 
 export type PageCloseAfterIdleMs = number | 'never'
 
-export interface PageCapabilities {
-  screenshot: boolean
-  js: boolean
-  input: boolean
-  consoleLogs: boolean
-  inspect: boolean
-  cdp: boolean
-  screencast: boolean
-}
-
 export type PageOwnerHostKind =
   | 'desktop'
   | 'desktop-headless'
@@ -66,7 +56,6 @@ export interface PageInfo {
   currentUrl?: string
   display: PageDisplay
   lifecycle: PageLifecycle
-  capabilities: PageCapabilities
   viewport?: PageViewport
   owner: PageOwner
   presentation?: {
@@ -190,7 +179,6 @@ export type PageEventType =
   | 'page.closed'
   | 'page.currentChanged'
   | 'page.lifecycleChanged'
-  | 'page.capabilitiesChanged'
   | 'page.contentStaleChanged'
   | 'page.consoleLog'
 

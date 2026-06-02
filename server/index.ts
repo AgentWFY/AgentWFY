@@ -21,7 +21,6 @@ import {
   encodeWsMessage,
   errorFromUnknown,
   type BackendRpcMethod,
-  type BackendCapabilities,
   type BackupRestoreRequest,
   type ConfigClearRequest,
   type ConfigRemoveRequest,
@@ -117,7 +116,6 @@ async function dispatchBackendRpc(
   method: BackendRpcMethod,
   params: unknown,
   bundle: RuntimeBundle,
-  clientBridge: ConnectedClientBridge,
 ): Promise<unknown> {
   switch (method) {
     case 'health':
@@ -126,7 +124,6 @@ async function dispatchBackendRpc(
       return {
         agentId: bundle.backend.id,
         protocolVersion: PROTOCOL_VERSION,
-        capabilities: buildCapabilities(bundle, clientBridge),
       }
     case 'sessions.list':
       return bundle.backend.sessions.list(params as SessionsListRequest)
@@ -231,17 +228,6 @@ async function dispatchBackendRpc(
   }
 }
 
-function buildCapabilities(bundle: RuntimeBundle, clientBridge: ConnectedClientBridge): BackendCapabilities {
-  return {
-    pages: {
-      clientProxy: clientBridge.isConnected,
-      headless: bundle.hasHeadlessPages(),
-      connectedClientIds: clientBridge.isConnected ? ['default-client'] : [],
-    },
-    clientFunctionProxy: clientBridge.isConnected,
-  }
-}
-
 function attachBackendEvents(bundle: RuntimeBundle, connection: WsConnection): () => void {
   let nextEventId = 1
   return bundle.backend.events.subscribe((event) => {
@@ -308,7 +294,7 @@ function handleWebSocket(
       if (!message || message.type !== 'rpc') return
 
       const rpc = message as WsRpcRequest
-      void dispatchBackendRpc(rpc.method as BackendRpcMethod, rpc.params, bundle, clientBridge)
+      void dispatchBackendRpc(rpc.method as BackendRpcMethod, rpc.params, bundle)
         .then((value) => {
           connection.send(encodeWsMessage({ type: 'rpc:result', id: rpc.id, ok: true, value }))
         })
@@ -344,7 +330,6 @@ function handleWebSocket(
     type: 'hello',
     protocolVersion: PROTOCOL_VERSION,
     agentId: bundle.backend.id,
-    capabilities: buildCapabilities(bundle, clientBridge),
     dbVersion: bundle.getDbVersion(),
   }))
   console.log('agentwfy-server: client connected')

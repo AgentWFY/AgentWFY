@@ -5,7 +5,6 @@ import type {
   OpenPageRequest,
   OpenPageResult,
   PageApi,
-  PageCapabilities,
   PageCdpPollResult,
   PageCdpSubscription,
   PageDisplay,
@@ -106,8 +105,6 @@ export class PageManager implements PageApi {
 
   async capturePage(request: CapturePageRequest): Promise<PageScreenshot> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'screenshot', 'capturePage')
     if (!handle.capture) {
       throw new Error(`Page host does not implement capturePage for "${request.pageId}"`)
     }
@@ -116,8 +113,6 @@ export class PageManager implements PageApi {
 
   async runPageJs(request: { pageId: string; code: string; timeoutMs?: number }): Promise<unknown> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'js', 'runPageJs')
     if (!handle.runJs) {
       throw new Error(`Page host does not implement runPageJs for "${request.pageId}"`)
     }
@@ -126,8 +121,6 @@ export class PageManager implements PageApi {
 
   async sendPageInput(request: PageInputRequest): Promise<void> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'input', 'sendPageInput')
     if (!handle.sendInput) {
       throw new Error(`Page host does not implement sendPageInput for "${request.pageId}"`)
     }
@@ -136,8 +129,6 @@ export class PageManager implements PageApi {
 
   async inspectPageElement(request: { pageId: string; selector: string }): Promise<unknown> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'inspect', 'inspectPageElement')
     if (!handle.inspectElement) {
       throw new Error(`Page host does not implement inspectPageElement for "${request.pageId}"`)
     }
@@ -146,8 +137,6 @@ export class PageManager implements PageApi {
 
   async getPageConsoleLogs(request: { pageId: string; since?: number; limit?: number }) {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'consoleLogs', 'getPageConsoleLogs')
     if (!handle.getConsoleLogs) {
       throw new Error(`Page host does not implement getPageConsoleLogs for "${request.pageId}"`)
     }
@@ -159,8 +148,6 @@ export class PageManager implements PageApi {
 
   async sendPageCdp(request: { pageId: string; method: string; params?: unknown; sessionId?: string }): Promise<unknown> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'cdp', 'sendPageCdp')
     if (!handle.sendCdp) {
       throw new Error(`Page host does not implement sendPageCdp for "${request.pageId}"`)
     }
@@ -169,8 +156,6 @@ export class PageManager implements PageApi {
 
   async subscribePageCdp(request: { pageId: string; events: string[] }): Promise<{ subscriptionId: string }> {
     const handle = await this.resolveHandle(request.pageId)
-    const page = handle.info()
-    assertCapability(page, 'cdp', 'subscribePageCdp')
     if (!handle.subscribeCdp) {
       throw new Error(`Page host does not implement subscribePageCdp for "${request.pageId}"`)
     }
@@ -260,11 +245,6 @@ function pageMatchesQuery(page: PageInfo, request: PageQueryRequest): boolean {
   if (display === 'all') return true
   if (display === 'user-facing') return page.display !== 'headless'
   return page.display === display
-}
-
-function assertCapability(page: PageInfo, capability: keyof PageCapabilities, operation: string): void {
-  if (page.capabilities[capability]) return
-  throw new Error(`${operation} is not supported for page "${page.pageId}"`)
 }
 
 function formatOpenPageInfo(page: PageInfo): string {
