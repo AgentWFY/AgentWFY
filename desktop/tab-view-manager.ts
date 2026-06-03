@@ -2,6 +2,7 @@ import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsV
 import crypto from 'crypto';
 import path from 'path';
 import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/protocol/view-document.js';
+import { getViewByName } from '#shared/db/views.js';
 import { agentHostname } from './protocol/agent-hostname.js';
 import { Channels } from './ipc/channels.cjs';
 import type { SendToRenderer } from './ipc/schema.js';
@@ -161,6 +162,7 @@ interface TabViewManagerDeps {
   // stack (command palette, confirmation dialog, preview cursor).
   // Invoked once per bringToFront; should be cheap.
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
+  cacheRoot: string;
 }
 
 export class TabViewManager {
@@ -398,6 +400,16 @@ export class TabViewManager {
 
   touchTab(tabId: string): void {
     this.headlessIdleClose.touch(tabId);
+  }
+
+  private async resolveViewUpdatedAt(viewName: string): Promise<number | null> {
+    try {
+      const view = await getViewByName(this.deps.cacheRoot, viewName);
+      return view?.updated_at ?? null;
+    } catch (error: unknown) {
+      console.warn(`[tabs] failed to read view metadata for "${viewName}":`, error);
+      return null;
+    }
   }
 
   private buildTabSrc(type: TabDataType, target: string, tabId: string, params?: Record<string, string>): string {
@@ -666,13 +678,14 @@ export class TabViewManager {
     const now = Date.now();
     const closeAfterIdleMs = isHeadless ? resolvePageCloseAfterIdleMs(request.closeAfterIdleMs) : null;
     const expiresAt = typeof closeAfterIdleMs === 'number' ? now + closeAfterIdleMs : null;
+    const viewUpdatedAt = type === 'view' ? await this.resolveViewUpdatedAt(target) : null;
     const tab: TabData = {
       id: tabId,
       tabId,
       type,
       title: request.title || (type === 'url' ? 'Web Page' : type === 'file' ? 'File View' : 'Agent View'),
       target,
-      viewUpdatedAt: null,
+      viewUpdatedAt,
       viewChanged: false,
       pinned: false,
       headless: isHeadless,
@@ -755,7 +768,16 @@ export class TabViewManager {
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {
-    if (!this.presenter.markTabFresh(request.tabId)) return;
+    const tab = this.tabById(request.tabId);
+    if (!tab) {
+      throw new Error(`Page not found: ${request.tabId}`);
+    }
+    const viewUpdatedAt = tab.type === 'view' && tab.target
+      ? await this.resolveViewUpdatedAt(tab.target)
+      : undefined;
+    if (!this.presenter.markTabFresh(request.tabId, { viewUpdatedAt })) {
+      throw new Error(`Page not found: ${request.tabId}`);
+    }
     this.reloadTabView(request.tabId);
     this.pushStateToRenderer();
     // Wait for the page to finish loading so callers know when the reload is complete.

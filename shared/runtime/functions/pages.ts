@@ -235,10 +235,7 @@ export function registerPages(
   registry.register('capturePage', async (params) => {
     const request = params as WorkerHostMethodMap['capturePage']['params']
     const pageId = resolvePageId(request)
-    return pageTools.capturePage({
-      pageId,
-      allowFallback: request.allowFallback,
-    })
+    return pageTools.capturePage({ pageId })
   })
 
   registry.register('getPageConsoleLogs', async (params) => {

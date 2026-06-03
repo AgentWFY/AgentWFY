@@ -78,7 +78,7 @@ export class AgentContextFactory {
     fs.mkdirSync(path.join(cacheRoot, '.agentwfy'), { recursive: true });
     configureAgentDb(cacheRoot, { syncSystemData: false });
     const shortcutManager = new ShortcutManager(agentId, this.deps.actionRegistry, { dataDir: cacheRoot });
-    const { tabViewManager, pageTools } = this.createTabRuntime(agentId, shortcutManager);
+    const { tabViewManager, pageTools } = this.createTabRuntime(agentId, cacheRoot, shortcutManager);
     // Refs let onSnapshotApplied resync after later (re)connect snapshots,
     // which replace the mirror wholesale without emitting per-row changes.
     let backendRef: AgentBackend | null = null;
@@ -131,6 +131,7 @@ export class AgentContextFactory {
       },
       handleAction: this.deps.handleShortcutAction,
       agentId,
+      cacheRoot: agentId,
       session: agentSession,
       registerSender,
       unregisterSender,
@@ -299,6 +300,7 @@ export class AgentContextFactory {
 
   private createTabRuntime(
     ownerAgentId: string,
+    cacheRoot: string,
     shortcutManager: ShortcutManager,
   ): { tabViewManager: TabViewManager; pageTools: PageApi } {
     const agentSession = this.ensureAgentSession(ownerAgentId);
@@ -314,6 +316,7 @@ export class AgentContextFactory {
       },
       handleAction: this.deps.handleShortcutAction,
       agentId: ownerAgentId,
+      cacheRoot,
       session: agentSession,
       registerSender,
       unregisterSender,

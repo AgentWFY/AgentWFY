@@ -79,7 +79,6 @@ export interface PageScreenshot {
 
 export interface CapturePageRequest {
   pageId: string
-  allowFallback?: boolean
 }
 
 export interface PageInputRequest {

@@ -17,6 +17,10 @@ import type {
   PageScreenshot,
 } from './types.js'
 
+function pageClientNotConnectedError(operation: string): Error {
+  return new Error(`Desktop client is not connected; ${operation} requires an active desktop client`)
+}
+
 export interface ClientPageRpcInvoker {
   readonly isPageClientConnected: boolean
   invokeClientPageRpc<M extends ClientPageRpcMethod>(
@@ -75,10 +79,13 @@ export class RemoteClientPageHost implements PageHost {
   async getCurrentClientPage(): Promise<PageHostInfo | null> {
     if (!this.invoker.isPageClientConnected) {
       this.clearClientPages()
-      return null
+      throw pageClientNotConnectedError('getCurrentClientPage')
     }
     await this.refreshSnapshot().catch(() => {
       this.clearClientPages()
+      if (!this.invoker.isPageClientConnected) {
+        throw pageClientNotConnectedError('getCurrentClientPage')
+      }
     })
     if (!this.selectedClientPageId) return null
     return this.pages.get(this.selectedClientPageId) ?? null

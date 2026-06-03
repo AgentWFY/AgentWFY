@@ -103,9 +103,12 @@ export class DesktopTabPresenter {
     return true;
   }
 
-  markTabFresh(tabId: string): boolean {
+  markTabFresh(tabId: string, options: { viewUpdatedAt?: number | null } = {}): boolean {
     const tab = this.tabs.find(t => t.id === tabId);
     if (!tab) return false;
+    if (options.viewUpdatedAt !== undefined) {
+      tab.viewUpdatedAt = options.viewUpdatedAt;
+    }
     tab.viewChanged = false;
     return true;
   }

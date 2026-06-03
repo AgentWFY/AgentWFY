@@ -147,10 +147,6 @@ export interface WorkerPageIdRequest {
   pageId?: string
 }
 
-export interface WorkerCapturePageRequest extends WorkerPageIdRequest {
-  allowFallback?: boolean
-}
-
 export interface WorkerGetPageConsoleLogsRequest extends WorkerPageIdRequest {
   since?: number
   limit?: number
@@ -286,7 +282,7 @@ export interface WorkerHostMethodMap {
     result: PageInfo | null
   }
   capturePage: {
-    params: WorkerCapturePageRequest
+    params: WorkerPageIdRequest
     result: PageScreenshot
   }
   getPageConsoleLogs: {
