@@ -48,7 +48,7 @@ Every fresh install ships with these views. Pick visually distinct ones for stac
 | `system.plugins` | Plugin manager page. |
 | `system.openai-compatible-provider.settings-view` | Provider settings. |
 
-`openPage({ display: 'foreground', source: { type: 'view', name: 'does-not-exist' } })` rejects with `View not found`. `./scripts/preview --sqlite <name> "SELECT name FROM views"` enumerates whatever's actually installed (plugins can register more).
+`openPage({ source: { type: 'view', name: 'does-not-exist' } })` rejects with `View not found`. `./scripts/preview --sqlite <name> "SELECT name FROM views"` enumerates whatever's actually installed (plugins can register more).
 
 A handy "reset to a clean tab state" snippet:
 
@@ -71,11 +71,8 @@ Partial failures in `openPage` (e.g. a non-existent view mid-sequence) still cre
 # State of all tabs (runs in main renderer — window.ipc is available)
 ./scripts/preview --eval <name> "await window.ipc.tabs.getTabState()"
 
-# Open a view as a foreground page
-./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'foreground', source: { type: 'view', name: 'system.source-explorer' } })"
-
-# Open as a headless background page
-./scripts/preview --eval <name> "window.ipc.pages.openPage({ display: 'headless', source: { type: 'view', name: 'system.docs' } })"
+# Open a view as a selected client page
+./scripts/preview --eval <name> "window.ipc.pages.openPage({ source: { type: 'view', name: 'system.source-explorer' } })"
 
 # Select a tab by id (ids come from getTabState)
 ./scripts/preview --eval <name> "window.ipc.tabs.selectTab('abc123')"
@@ -186,7 +183,7 @@ Some bugs live in the window between a handler returning and the renderer reacti
 
 ### After changing tab state, wait a beat before screenshotting
 
-Tab selection and foreground `openPage` push state to the renderer, which then IPC's bounds back through the main process — the compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
+Tab selection and client-page `openPage` push state to the renderer, which then IPC's bounds back through the main process — the compositor sample lags that round-trip. `--screenshot` already settles for 500ms; if you're still seeing the previous tab, add another `sleep 0.5` or poll the DOM via `--eval --tab <target>` until the expected content appears.
 
 ### Preview vs real desktop
 
@@ -414,7 +411,7 @@ There's no explicit close button. Middle-click (`button === 1`) or right-click a
 
 ### Headless-page repro needs full-viewport body
 
-When inserting test views that use `openPage({ display: 'headless' })` to exercise stacking, make both the selected and headless view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded headless page — the repro becomes unfalsifiable.
+When inserting test views that use agent-runtime `openPage({ source })` to exercise stacking, make both the selected and headless view bodies cover the full viewport (`html,body { height:100%; margin:0 }` + a colored background). A body that only wraps its text leaves the WebContentsView's own opaque background color showing, which is indistinguishable from a correctly-occluded headless page — the repro becomes unfalsifiable.
 
 ### Test provider setup
 

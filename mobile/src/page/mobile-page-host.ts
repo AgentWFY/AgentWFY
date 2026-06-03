@@ -51,23 +51,16 @@ export class MobilePageHost implements PageHost {
 
   private readonly pages = new Map<string, MobilePageRecord>()
   private readonly currentPageSubscribers = new Set<CurrentPageSubscriber>()
-  private currentPageId: string | null = null
+  private activePageId: string | null = null
   private nextContentVersion = 1
 
-  canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return request.source.type === 'view'
-      && (request.display === 'foreground' || request.display === 'background')
+  canOpen(request: OpenPageRequest, context: PageOpenContext): boolean {
+    return context.client && request.source.type === 'view'
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
     if (request.source.type !== 'view') {
       throw new Error('Mobile pages currently support view sources only')
-    }
-    if (request.display === 'background') {
-      throw new Error('Mobile background pages are not implemented yet')
-    }
-    if (request.display !== 'foreground') {
-      throw new Error(`Mobile pages do not support display "${request.display}"`)
     }
 
     const record: MobilePageRecord = {
@@ -79,7 +72,7 @@ export class MobilePageHost implements PageHost {
 
     this.pages.clear()
     this.pages.set(record.pageId, record)
-    this.currentPageId = record.pageId
+    this.activePageId = record.pageId
 
     this.emitCurrentPage()
 
@@ -95,7 +88,7 @@ export class MobilePageHost implements PageHost {
   }
 
   getCurrentClientPageSync(): PageHostInfo | null {
-    const record = this.currentPageId ? this.pages.get(this.currentPageId) : null
+    const record = this.activePageId ? this.pages.get(this.activePageId) : null
     return record ? this.pageInfoFromRecord(record) : null
   }
 
@@ -114,9 +107,9 @@ export class MobilePageHost implements PageHost {
   async closePage(pageId: string): Promise<void> {
     if (!this.pages.has(pageId)) return
     this.pages.delete(pageId)
-    const wasCurrent = this.currentPageId === pageId
-    if (wasCurrent) this.currentPageId = null
-    if (wasCurrent) {
+    const wasActive = this.activePageId === pageId
+    if (wasActive) this.activePageId = null
+    if (wasActive) {
       this.emitCurrentPage()
     }
   }
@@ -128,7 +121,7 @@ export class MobilePageHost implements PageHost {
   }
 
   renameCurrentView(name: string): PageHostInfo | null {
-    const record = this.currentPageId ? this.pages.get(this.currentPageId) : null
+    const record = this.activePageId ? this.pages.get(this.activePageId) : null
     if (!record) return null
     const previousName = record.source.name
     record.source = {
@@ -148,7 +141,7 @@ export class MobilePageHost implements PageHost {
 
   dispose(): void {
     this.pages.clear()
-    this.currentPageId = null
+    this.activePageId = null
     this.emitCurrentPage()
     this.currentPageSubscribers.clear()
   }
@@ -158,7 +151,7 @@ export class MobilePageHost implements PageHost {
       pageId: record.pageId,
       title: record.title,
       source: record.source,
-      display: 'foreground',
+      headless: false,
       version: record.version,
     }
   }

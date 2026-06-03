@@ -1,7 +1,3 @@
-export type PageDisplay = 'foreground' | 'background' | 'headless'
-
-export type PageDisplayFilter = PageDisplay | 'user-facing' | 'all'
-
 export type PageSource =
   | { type: 'view'; name: string; params?: Record<string, string> }
   | { type: 'file'; path: string; params?: Record<string, string> }
@@ -41,7 +37,7 @@ export interface PageHostInfo {
   pageId: string
   title: string
   source: PageSource
-  display: PageDisplay
+  headless: boolean
   viewport?: PageViewport
   version?: number
   closeAfterIdleMs?: PageCloseAfterIdleMs
@@ -53,7 +49,6 @@ export interface OpenPageRequest {
    *  helpers should omit this so the local PageManager generates IDs. */
   pageId?: string
   source: PageSource
-  display: PageDisplay
   title?: string
   viewport?: PageViewportInput
   width?: number
@@ -68,7 +63,7 @@ export interface OpenPageResult {
 }
 
 export interface PageQueryRequest {
-  display?: PageDisplayFilter
+  headless?: boolean
 }
 
 export interface PageScreenshot {
@@ -127,6 +122,7 @@ export interface PageApi {
   getPages(request?: PageQueryRequest): Promise<PageHostInfo[]>
   getCurrentClientPage(): Promise<PageHostInfo | null>
   openPage(request: OpenPageRequest): Promise<OpenPageResult>
+  openClientPage(request: OpenPageRequest): Promise<OpenPageResult>
   closePage(request: { pageId: string }): Promise<void>
   reloadPage(request: { pageId: string }): Promise<PageHostInfo>
   capturePage(request: CapturePageRequest): Promise<PageScreenshot>

@@ -502,7 +502,7 @@ class WindowManager {
 
   async getHeadlessPageCount(): Promise<number> {
     const results = await Promise.allSettled(
-      this.orchestrator.getAllContexts().map(ctx => ctx.pageTools.getPages({ display: 'headless' })),
+      this.orchestrator.getAllContexts().map(ctx => ctx.pageTools.getPages({ headless: true })),
     );
     return results.reduce((total, result) => {
       if (result.status !== 'fulfilled') return total;

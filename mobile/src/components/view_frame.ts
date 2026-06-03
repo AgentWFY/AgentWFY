@@ -1,4 +1,4 @@
-// The agentview:// iframe for the current foreground mobile page. Reuses
+// The agentview:// iframe for the current mobile page. Reuses
 // the same iframe element across version bumps so the WebView doesn't tear
 // down its session — only swaps src when the page source actually changes.
 

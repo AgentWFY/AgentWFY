@@ -28,7 +28,7 @@ export class DesktopPageLayout {
   private collapsed = false;
   // True only for the agent currently shown in the window. All
   // WebContentsViews share mainWindow.contentView.children, so inactive
-  // managers keep user-facing pages at 0x0 bounds.
+  // managers keep client pages at 0x0 bounds.
   private isActive = false;
 
   constructor(deps: DesktopPageLayoutDeps) {

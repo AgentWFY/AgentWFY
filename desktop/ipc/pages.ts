@@ -4,8 +4,6 @@ import { getViewByName } from '#shared/db/views.js';
 import type {
   OpenPageRequest,
   PageApi,
-  PageDisplay,
-  PageDisplayFilter,
 } from '#shared/page/types.js';
 import { normalizePageSource } from '#shared/page/page-source.js';
 
@@ -25,24 +23,10 @@ function parsePageId(value: unknown): string {
   throw new Error('pageId must be a non-empty string');
 }
 
-function normalizeDisplay(value: unknown): PageDisplay {
-  if (value === undefined || value === null) return 'foreground';
-  if (value === 'foreground' || value === 'background' || value === 'headless') return value;
-  throw new Error('display must be "foreground", "background", or "headless"');
-}
-
-function normalizeDisplayFilter(value: unknown): PageDisplayFilter | undefined {
+function normalizeHeadlessFilter(value: unknown): boolean | undefined {
   if (value === undefined || value === null) return undefined;
-  if (
-    value === 'foreground' ||
-    value === 'background' ||
-    value === 'headless' ||
-    value === 'user-facing' ||
-    value === 'all'
-  ) {
-    return value;
-  }
-  throw new Error('display must be "foreground", "background", "headless", "user-facing", or "all"');
+  if (typeof value === 'boolean') return value;
+  throw new Error('headless must be a boolean');
 }
 
 async function normalizeOpenPagePayload(
@@ -55,7 +39,6 @@ async function normalizeOpenPagePayload(
 
   const input = payload as Record<string, unknown>;
   const source = normalizePageSource(input.source);
-  const display = normalizeDisplay(input.display);
   let resolvedSource = source;
   let resolvedTitle = typeof input.title === 'string' ? input.title : undefined;
 
@@ -70,7 +53,6 @@ async function normalizeOpenPagePayload(
 
   return {
     source: resolvedSource,
-    display,
     title: resolvedTitle,
     ...(input.viewport !== undefined ? { viewport: input.viewport as OpenPageRequest['viewport'] } : {}),
     ...(typeof input.width === 'number' ? { width: input.width } : {}),
@@ -85,15 +67,15 @@ export function registerPageHandlers(
   getHeadlessPageCount?: () => Promise<number> | number,
 ): void {
   ipcMain.handle(Channels.pages.getPages, async (event, payload: unknown) => {
-    const input = payload && typeof payload === 'object' ? payload as { display?: unknown } : {};
+    const input = payload && typeof payload === 'object' ? payload as { headless?: unknown } : {};
     return getPageTools(event).getPages({
-      display: normalizeDisplayFilter(input.display),
+      headless: normalizeHeadlessFilter(input.headless),
     });
   });
 
   ipcMain.handle(Channels.pages.openPage, async (event, payload: unknown) => {
     const request = await normalizeOpenPagePayload(payload, getCacheRoot(event));
-    return getPageTools(event).openPage(request);
+    return getPageTools(event).openClientPage(request);
   });
 
   ipcMain.handle(Channels.pages.closePage, async (event, payload: unknown) => {

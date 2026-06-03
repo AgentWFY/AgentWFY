@@ -7,7 +7,6 @@ import type {
   PageApi,
   PageCdpPollResult,
   PageCdpSubscription,
-  PageDisplay,
   PageHostInfo,
   PageInputRequest,
   PageQueryRequest,
@@ -61,11 +60,20 @@ export class PageManager implements PageApi {
   }
 
   async openPage(request: OpenPageRequest): Promise<OpenPageResult> {
+    return this.openPageInHost(request, false)
+  }
+
+  async openClientPage(request: OpenPageRequest): Promise<OpenPageResult> {
+    return this.openPageInHost(request, true)
+  }
+
+  private async openPageInHost(request: OpenPageRequest, client: boolean): Promise<OpenPageResult> {
     validateOpenPageRequest(request)
-    const context = { agentId: this.agentId }
+    const context = { agentId: this.agentId, client }
     const host = this.hosts.find(candidate => candidate.canOpen(request, context))
     if (!host) {
-      throw new Error(`No page host is available for display "${request.display}" and source type "${request.source.type}"`)
+      const kind = client ? 'client' : 'headless'
+      throw new Error(`No page host is available for ${kind} page source type "${request.source.type}"`)
     }
 
     const requestedPageId = request.pageId?.trim() || randomId('page')
@@ -220,9 +228,6 @@ function validateOpenPageRequest(request: OpenPageRequest): void {
   if (!request || typeof request !== 'object') {
     throw new Error('openPage requires a request object')
   }
-  if (!isPageDisplay(request.display)) {
-    throw new Error('openPage requires explicit display: "foreground", "background", or "headless"')
-  }
   if (!request.source || typeof request.source !== 'object') {
     throw new Error('openPage requires a source object')
   }
@@ -231,27 +236,20 @@ function validateOpenPageRequest(request: OpenPageRequest): void {
   }
 }
 
-function isPageDisplay(value: unknown): value is PageDisplay {
-  return value === 'foreground' || value === 'background' || value === 'headless'
-}
-
 function pageMatchesQuery(page: PageHostInfo, request: PageQueryRequest): boolean {
-  const display = request.display ?? 'all'
-  if (display === 'all') return true
-  if (display === 'user-facing') return page.display !== 'headless'
-  return page.display === display
+  return request.headless === undefined || page.headless === request.headless
 }
 
 function formatOpenPageInfo(page: PageHostInfo): string {
   const source = formatPageSource(page.source)
-  if (page.display === 'headless') {
+  if (page.headless) {
     const viewport = page.viewport ? ` (${page.viewport.width}x${page.viewport.height})` : ''
     if (page.closeAfterIdleMs === 'never') {
       return `Opened headless page ${page.pageId} for ${source}${viewport}. It stays open until closePage is called.`
     }
     return `Opened headless page ${page.pageId} for ${source}${viewport}.`
   }
-  return `Opened ${page.display} page ${page.pageId} for ${source}.`
+  return `Opened client page ${page.pageId} for ${source}.`
 }
 
 function randomId(prefix: string): string {

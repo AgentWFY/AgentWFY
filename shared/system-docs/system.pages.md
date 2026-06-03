@@ -1,7 +1,6 @@
 # system.pages
 
-Pages are browser/view contexts the agent can inspect or control. Tabs are only
-one desktop presentation for user-facing pages.
+Pages are browser/view contexts the agent can inspect or control.
 
 - `getPages({ headless? })` -> page metadata. Pass `headless: true` for
   headless pages, `headless: false` for client pages, or omit it for all pages.
@@ -39,7 +38,7 @@ Returned page metadata is intentionally small:
 { pageId, title, source, headless }
 ```
 
-Use headless pages for development/testing and user-facing pages only when the
-user should see the result. Headless pages close after 30 minutes idle by
+Use headless pages for development/testing and client pages only when the user
+should see the result. Headless pages close after 30 minutes idle by
 default; pass `closeAfterIdleMs: "never"` only when the page must stay open
 until `closePage`.

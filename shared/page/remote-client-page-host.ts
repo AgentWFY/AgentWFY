@@ -32,7 +32,7 @@ export class RemoteClientPageHost implements PageHost {
   private readonly invoker: ClientPageRpcInvoker
   private readonly unsubscribeConnection: (() => void) | undefined
   private readonly pages = new Map<string, PageHostInfo>()
-  private currentPageId: string | null = null
+  private selectedClientPageId: string | null = null
 
   constructor(invoker: ClientPageRpcInvoker) {
     this.invoker = invoker
@@ -51,13 +51,13 @@ export class RemoteClientPageHost implements PageHost {
     this.unsubscribeConnection?.()
   }
 
-  canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return request.display === 'foreground' || request.display === 'background'
+  canOpen(_request: OpenPageRequest, context: PageOpenContext): boolean {
+    return context.client
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
     const result = await this.invoker.invokeClientPageRpc('client.pages.open', request as ClientPagesOpenRequest)
-    const page = this.remember(result.page)
+    const page = this.remember(result.page, { selected: true })
     return new RemoteClientPageHandle(this, this.invoker, page)
   }
 
@@ -80,8 +80,8 @@ export class RemoteClientPageHost implements PageHost {
     await this.refreshSnapshot().catch(() => {
       this.clearClientPages()
     })
-    if (!this.currentPageId) return null
-    return this.pages.get(this.currentPageId) ?? null
+    if (!this.selectedClientPageId) return null
+    return this.pages.get(this.selectedClientPageId) ?? null
   }
 
   async listPages(): Promise<PageHostInfo[]> {
@@ -99,17 +99,17 @@ export class RemoteClientPageHost implements PageHost {
     return this.pages.get(pageId) ?? null
   }
 
-  remember(page: PageHostInfo): PageHostInfo {
+  remember(page: PageHostInfo, options?: { selected?: boolean }): PageHostInfo {
     this.pages.set(page.pageId, page)
-    if (page.display === 'foreground') {
-      this.currentPageId = page.pageId
+    if (options?.selected) {
+      this.selectedClientPageId = page.pageId
     }
     return page
   }
 
   forget(pageId: string): void {
     this.pages.delete(pageId)
-    if (this.currentPageId === pageId) this.currentPageId = null
+    if (this.selectedClientPageId === pageId) this.selectedClientPageId = null
   }
 
   private async refreshSnapshot(): Promise<void> {
@@ -118,15 +118,15 @@ export class RemoteClientPageHost implements PageHost {
   }
 
   private applySnapshot(snapshot: ClientPagesSnapshotResponse): void {
-    this.currentPageId = snapshot.currentPageId
+    this.selectedClientPageId = snapshot.selectedClientPageId
     this.pages.clear()
     for (const page of snapshot.pages) {
-      this.remember(page)
+      this.pages.set(page.pageId, page)
     }
   }
 
   private clearClientPages(): void {
-    this.currentPageId = null
+    this.selectedClientPageId = null
     this.pages.clear()
   }
 }

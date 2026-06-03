@@ -1463,7 +1463,7 @@ export class TlAgentChat extends HTMLElement {
 
       const tabRequest = parseTabLink(href)
       if (tabRequest) {
-        window.ipc?.pages.openPage({ ...tabRequest, display: 'foreground' })
+        window.ipc?.pages.openPage(tabRequest)
       } else if (href.startsWith('http://') || href.startsWith('https://')) {
         window.ipc?.dialog.openExternal(href)
       }
@@ -1869,7 +1869,6 @@ export class TlAgentChat extends HTMLElement {
     try {
       await window.ipc?.pages.openPage({
         source: { type: 'view', name: viewName },
-        display: 'foreground',
       })
     } catch (e) {
       console.error('[agent-chat] failed to open provider settings view', e)

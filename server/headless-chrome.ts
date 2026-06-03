@@ -190,8 +190,8 @@ export class DaemonHeadlessPageHost implements PageHost {
     return new DaemonHeadlessPageHost(client, options, child, userDataDir)
   }
 
-  canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return request.display === 'headless'
+  canOpen(_request: OpenPageRequest, context: PageOpenContext): boolean {
+    return !context.client
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
@@ -291,7 +291,7 @@ export class DaemonHeadlessPageHost implements PageHost {
       pageId: record.pageId,
       title: record.title,
       source: record.source,
-      display: 'headless',
+      headless: true,
       viewport: record.viewport,
       closeAfterIdleMs: record.closeAfterIdleMs,
     }

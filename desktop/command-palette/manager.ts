@@ -738,9 +738,8 @@ export class CommandPaletteManager {
       const viewName = `plugin.${name}.welcome`;
       void getViewByName(cacheRoot, viewName).then((view) => {
         if (view) {
-          void this.deps.getPageTools().openPage({
+          void this.deps.getPageTools().openClientPage({
             source: { type: 'view', name: view.name },
-            display: 'foreground',
             title: view.title || view.name,
           }).catch((err) => {
             console.error(`[command-palette] failed to open welcome view ${viewName}:`, err);
@@ -972,9 +971,8 @@ export class CommandPaletteManager {
     switch (type) {
       case 'open-view': {
         const openViewAction = action as Extract<CommandPaletteAction, { type: 'open-view' }>;
-        await this.deps.getPageTools().openPage({
+        await this.deps.getPageTools().openClientPage({
           source: { type: 'view', name: openViewAction.viewName },
-          display: 'foreground',
           title: openViewAction.title,
         });
         break;

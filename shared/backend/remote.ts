@@ -451,7 +451,7 @@ export class RemoteBackend implements AgentBackend {
         return this.createPageSnapshot()
       case 'client.pages.open': {
         const req = params as ClientPagesOpenRequest
-        return pages.openPage(req)
+        return pages.openClientPage(req)
       }
       case 'client.pages.close': {
         const req = params as ClientPagesCloseRequest
@@ -529,11 +529,11 @@ export class RemoteBackend implements AgentBackend {
       throw new Error('Client page API is not available in this runtime')
     }
 
-    const pageList = await pages.getPages({ display: 'all' })
-    const currentPage = await pages.getCurrentClientPage()
+    const pageList = await pages.getPages()
+    const selectedClientPage = await pages.getCurrentClientPage()
     return {
       pages: pageList,
-      currentPageId: currentPage?.pageId ?? null,
+      selectedClientPageId: selectedClientPage?.pageId ?? null,
       version: this.nextPageSnapshotVersion++,
     }
   }

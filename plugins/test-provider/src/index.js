@@ -231,8 +231,7 @@ await runSql({
   sql: 'INSERT INTO views (name, title, content) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET title = excluded.title, content = excluded.content',
   params: ['remote-sync-demo', 'Remote Sync Demo', html],
 });
-await openPage({
-  display: 'foreground',
+await openClientPage({
   source: { type: 'view', name: 'remote-sync-demo' },
   title: 'Remote Sync Demo',
 });

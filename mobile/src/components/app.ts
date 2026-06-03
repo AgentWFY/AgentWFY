@@ -2,7 +2,7 @@
 //   screen           — 'add-agent' | 'chat' | 'views'
 //   activeSessionId  — non-null while a session is loaded
 //   draftProviderId  — non-null while composing a new session
-//   activePage       — non-null while a foreground mobile page is open
+//   activePage       — non-null while a mobile page is open
 //
 // Listens for the intent events that mutate these fields and re-mounts the
 // body component with the right attributes. Toggles .is-fullscreen on
@@ -172,8 +172,7 @@ export class TlApp extends HTMLElement {
     }
 
     try {
-      const result = await pages.openPage({
-        display: 'foreground',
+      const result = await pages.openClientPage({
         source: { type: 'view', name: trimmed },
         title: trimmed,
       })

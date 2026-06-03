@@ -68,7 +68,7 @@ function toPageInfo(page: PageHostInfo): PageInfo {
     pageId: page.pageId,
     title: page.title,
     source: page.source,
-    headless: page.display === 'headless',
+    headless: page.headless,
   }
 }
 
@@ -100,9 +100,7 @@ function getPagesQuery(params: unknown): PageQueryRequest {
   if (typeof request.headless !== 'boolean') {
     throw new Error(`getPages headless must be a boolean. ${DOCS_HINT}`)
   }
-  return {
-    display: request.headless ? 'headless' : 'user-facing',
-  }
+  return { headless: request.headless }
 }
 
 function validateOptions(functionName: string, params: Record<string, unknown>, allowed: ReadonlySet<string>): void {
@@ -129,7 +127,7 @@ export function registerPages(
 
   registry.register('getCurrentClientPage', async () => {
     const page = await pageTools.getCurrentClientPage()
-    return page && page.display !== 'headless' ? toPageInfo(page) : null
+    return page ? toPageInfo(page) : null
   })
 
   registry.register('openPage', async (params) => {
@@ -163,7 +161,6 @@ export function registerPages(
 
     const result = await pageTools.openPage({
       source: resolvedSource,
-      display: 'headless',
       title: resolvedTitle,
       viewport,
       closeAfterIdleMs,
@@ -209,9 +206,8 @@ export function registerPages(
       }
     }
 
-    const result = await pageTools.openPage({
+    const result = await pageTools.openClientPage({
       source: resolvedSource,
-      display: 'foreground',
       title: resolvedTitle,
     })
 

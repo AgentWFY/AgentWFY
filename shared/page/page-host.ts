@@ -3,6 +3,7 @@ import type { PageHandle } from './page-handle.js'
 
 export interface PageOpenContext {
   agentId: string
+  client: boolean
 }
 
 export type PageHostOpenRequest = OpenPageRequest & {

@@ -6,7 +6,6 @@ export class ElectronHeadlessPageHost extends DesktopPageHost {
     super(manager, {
       agentId: options.agentId,
       hostKind: 'desktop-headless',
-      display: 'headless',
       headless: true,
     });
   }

@@ -173,7 +173,6 @@ export class TlProviderGrid extends HTMLElement {
       me.preventDefault()
       window.ipc?.pages.openPage({
         source: { type: 'view', name: 'system.plugins', params: { tag: 'providers', tab: 'browse-plugins' } },
-        display: 'foreground',
       })
       return
     }
@@ -273,7 +272,6 @@ export class TlProviderGrid extends HTMLElement {
   private openSettingsView(viewName: string) {
     window.ipc?.pages.openPage({
       source: { type: 'view', name: viewName },
-      display: 'foreground',
     }).catch(e => {
       console.error('[provider-grid] failed to open settings view', e)
     })

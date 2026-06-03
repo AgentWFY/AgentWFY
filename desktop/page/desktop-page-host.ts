@@ -4,7 +4,6 @@ import {
   type PageCdpSubscription,
   type PageCloseAfterIdleMs,
   type PageConsoleLog,
-  type PageDisplay,
   type PageHostInfo,
   type PageInputRequest,
   type OpenPageRequest,
@@ -21,27 +20,21 @@ export class DesktopPageHost implements PageHost {
   readonly hostKind: PageHostKind;
   protected readonly manager: TabViewManager;
   protected readonly agentId: string;
-  protected readonly displays: ReadonlySet<PageDisplay>;
   protected readonly headless: boolean;
 
   constructor(manager: TabViewManager, options: {
     agentId: string
     hostKind?: PageHostKind
-    display?: PageDisplay | PageDisplay[]
     headless?: boolean
   }) {
     this.manager = manager;
     this.agentId = options.agentId;
     this.hostKind = options.hostKind ?? 'desktop';
     this.headless = options.headless ?? false;
-    const displays = options.display
-      ? Array.isArray(options.display) ? options.display : [options.display]
-      : this.headless ? ['headless' as const] : ['foreground' as const, 'background' as const];
-    this.displays = new Set(displays);
   }
 
-  canOpen(request: OpenPageRequest, _context: PageOpenContext): boolean {
-    return this.displays.has(request.display);
+  canOpen(_request: OpenPageRequest, context: PageOpenContext): boolean {
+    return context.client === !this.headless;
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
@@ -55,7 +48,7 @@ export class DesktopPageHost implements PageHost {
       height: request.height,
       closeAfterIdleMs: request.closeAfterIdleMs as PageCloseAfterIdleMs | undefined,
       params: pageSourceParams(request.source),
-      select: request.display === 'foreground',
+      select: !this.headless,
     });
     const handle = await this.getPage(result.pageId);
     if (!handle) {
@@ -84,12 +77,11 @@ export class DesktopPageHost implements PageHost {
   }
 
   pageInfoFromTab(tab: TabData): PageHostInfo {
-    const display = displayFromTab(tab);
     return {
       pageId: tab.tabId || tab.id,
       title: tab.title || '',
       source: sourceFromTab(tab),
-      display,
+      headless: Boolean(tab.headless),
       ...(tab.viewport ? { viewport: tab.viewport } : {}),
       ...(typeof tab.viewUpdatedAt === 'number' ? { version: tab.viewUpdatedAt } : {}),
       ...(tab.closeAfterIdleMs ? { closeAfterIdleMs: tab.closeAfterIdleMs } : {}),
@@ -209,11 +201,6 @@ export class DesktopPageHandle implements PageHandle {
       this.tab = tab;
     }
   }
-}
-
-export function displayFromTab(tab: TabData): PageDisplay {
-  if (tab.headless) return 'headless';
-  return tab.selected ? 'foreground' : 'background';
 }
 
 export function sourceFromTab(tab: TabData): PageSource {

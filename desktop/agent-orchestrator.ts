@@ -666,9 +666,8 @@ export class AgentOrchestrator {
       if (!view) return;
       const state = ctx.tabViewManager.getState();
       if (state.tabs.length > 0) return;
-      await ctx.pageTools.openPage({
+      await ctx.pageTools.openClientPage({
         source: { type: 'view', name: view.name },
-        display: 'foreground',
         title: view.title || view.name,
       });
     } catch (err) {

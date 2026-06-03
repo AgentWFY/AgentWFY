@@ -295,7 +295,7 @@ export interface ClientFunctionsInvokeResponse { value: unknown }
 export interface ClientPagesSnapshotRequest extends PageQueryRequest {}
 export interface ClientPagesSnapshotResponse {
   pages: PageHostInfo[]
-  currentPageId: string | null
+  selectedClientPageId: string | null
   version: number
 }
 

@@ -524,7 +524,7 @@ export class TabViewManager {
   // Inverse of activateViews. Called on the outgoing agent during a switch
   // so its views can't leak through when the incoming agent has no selected
   // tab on top (e.g. user just closed the last tab). Views stay attached
-  // and setVisible(true) so captureTab keeps working for background sessions.
+  // and setVisible(true) so captureTab keeps working for non-selected tabs.
   deactivateViews(): void {
     this.layout.deactivateViews();
   }
@@ -725,7 +725,7 @@ export class TabViewManager {
 
     if (result.wasSelected) {
       // Promote the new selection to the top of z-order with full bounds.
-      // Background tabs sit at 0x0 bounds after the renderer reports them
+      // Non-selected tabs sit at 0x0 bounds after the renderer reports them
       // not-visible, so without this the tab that was 2nd-from-top (also
       // 0x0) stays on top and any older full-bounds tab underneath leaks
       // through — the tab bar shows the new selection while the viewport
@@ -766,8 +766,8 @@ export class TabViewManager {
     const state = await this.resolveReadyTabViewState(request.tabId);
     const wc = state.view.webContents;
     const originalBounds = state.view.getBounds();
-    // capturePage needs a real compositor surface. Background user-facing
-    // pages are normally parked at 0x0, and headless desktop pages live at a
+    // capturePage needs a real compositor surface. Non-selected client pages
+    // are normally parked at 0x0, and headless desktop pages live at a
     // far-negative origin; both can produce empty images or no surface. Put
     // them at the selected tab bounds for the duration, then keep/promote the
     // selected tab above them so the user-facing pixels do not change.

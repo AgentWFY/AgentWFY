@@ -105,7 +105,7 @@ await openPage({ source: { type: 'view', name } })
 await openPage({ source: { type: 'file', path } })
 ```
 
-Foreground pages steal the user's focus and clutter their page surface. Headless pages load fully in the background and support `capturePage`, `runPageJs`, and `getPageConsoleLogs`. Only open a foreground page when presenting a finished result to the user. Headless pages close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the page must stay open until `closePage`.
+Client pages take over the user's selected page surface. Headless pages load without selecting a client tab and support `capturePage`, `runPageJs`, and `getPageConsoleLogs`. Only use `openClientPage` when presenting a finished result to the user. Headless pages close after 30 minutes idle by default; pass `closeAfterIdleMs: "never"` only when the page must stay open until `closePage`.
 
 Always close headless pages and remove `.tmp/` files when done.
 
