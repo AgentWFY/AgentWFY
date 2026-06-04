@@ -61,7 +61,7 @@ evalMain(NAME, `(async () => {
 await sleep(600);
 
 evalMain(NAME, `(async () => {
-  const open = window.ipc.pages.openPage({
+  const open = window.ipc.pages.openClientPage({
     source: { type: 'view', name: 'system.source-explorer' },
   });
   await Promise.race([open, new Promise(resolve => setTimeout(resolve, 1200))]);

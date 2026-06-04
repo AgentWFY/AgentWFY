@@ -1,7 +1,6 @@
 import { BaseWindow, BrowserWindow, Menu, nativeTheme, WebContents, WebContentsView, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type Rectangle } from 'electron';
 import crypto from 'crypto';
 import path from 'path';
-import { isViewDocumentUrl, parseAgentPath, isAgentViewHostname } from '#shared/protocol/view-document.js';
 import { getViewByName } from '#shared/db/views.js';
 import { agentHostname } from './protocol/agent-hostname.js';
 import { Channels } from './ipc/channels.cjs';
@@ -28,6 +27,7 @@ import {
   PAGE_MOUSE_EVENT_TYPES,
   normalizePageInput,
 } from '#shared/page/page-input.js';
+import { buildInspectElementCode } from '#shared/page/element-inspection.js';
 import {
   FALLBACK_VIEW_HEIGHT,
   FALLBACK_VIEW_WIDTH,
@@ -46,7 +46,6 @@ import type {
   TabViewBoundsPayload,
   TabViewSetBoundsPayload,
   TabViewState,
-  ViewRuntimeEntry,
 } from './page/desktop-page-types.js';
 export type {
   TabContextMenuAction,
@@ -122,14 +121,6 @@ export function toNonEmptyString(value: unknown): string {
   return normalized;
 }
 
-function resolveOwnerWindowId(webContents: WebContents): number | null {
-  const hostWebContents = (webContents as WebContents & { hostWebContents?: WebContents }).hostWebContents;
-  const owner = hostWebContents
-    ? BrowserWindow.fromWebContents(hostWebContents)
-    : BrowserWindow.fromWebContents(webContents);
-  return owner?.id ?? null;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -167,7 +158,6 @@ interface TabViewManagerDeps {
 
 export class TabViewManager {
   private readonly tabViewsByTabId = new Map<string, TabViewState>();
-  private readonly viewRuntimeEntries = new Map<number, ViewRuntimeEntry>();
   private readonly presenter: DesktopTabPresenter;
   private readonly layout: DesktopPageLayout;
   private readonly pageDebugger: DesktopPageDebugger;
@@ -277,25 +267,6 @@ export class TabViewManager {
     };
 
     const viewWebContents = view.webContents;
-    const updateFromNavigation = (url: string) => {
-      this.updateTrackedViewWebContents(viewWebContents, url);
-    };
-
-    viewWebContents.on('did-start-navigation', (_navEvent, url, _isInPlace, isMainFrame) => {
-      if (isMainFrame) {
-        updateFromNavigation(url);
-      }
-    });
-
-    viewWebContents.on('did-navigate', (_navEvent, url) => {
-      updateFromNavigation(url);
-    });
-
-    viewWebContents.on('did-navigate-in-page', (_navEvent, url, isMainFrame) => {
-      if (isMainFrame) {
-        updateFromNavigation(url);
-      }
-    });
 
     viewWebContents.on('did-start-loading', () => {
       this.deps.sendToRenderer(Channels.tabs.viewEvent, { tabId, type: 'did-start-loading' });
@@ -331,15 +302,6 @@ export class TabViewManager {
       this.deps.handleAction?.(action);
     });
 
-    viewWebContents.on('focus', () => {
-      const entry = this.viewRuntimeEntries.get(viewWebContents.id);
-      if (!entry) {
-        return;
-      }
-      entry.ownerWindowId = resolveOwnerWindowId(viewWebContents);
-      entry.lastFocusedAt = Date.now();
-    });
-
     viewWebContents.on('console-message', (consoleEvent) => {
       state.logs.push({
         level: WEB_CONTENTS_LOG_LEVEL_MAP[consoleEvent.level] || 'info',
@@ -354,7 +316,6 @@ export class TabViewManager {
 
     viewWebContents.once('destroyed', () => {
       this.clearHeadlessIdleTimer(tabId);
-      this.removeTrackedViewWebContents(viewWebContents.id);
       this.deps.unregisterSender?.(viewWebContents.id);
       const existing = this.tabViewsByTabId.get(tabId);
       if (existing?.view === view) {
@@ -455,7 +416,6 @@ export class TabViewManager {
     this.cleanupDebuggerForTab(tabId);
 
     this.tabViewsByTabId.delete(tabId);
-    this.removeTrackedViewWebContents(state.view.webContents.id);
 
     const mainWindow = this.deps.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -729,8 +689,8 @@ export class TabViewManager {
     return { pageId: tabId };
   }
 
-  async closeTabHandler(request: { tabId: string }): Promise<void> {
-    const result = this.presenter.closeTab(request.tabId);
+  async closeTabHandler(request: { tabId: string; force?: boolean }): Promise<void> {
+    const result = this.presenter.closeTab(request.tabId, { force: request.force });
     if (!result.closed) return;
 
     this.clearHeadlessIdleTimer(request.tabId);
@@ -1005,211 +965,10 @@ export class TabViewManager {
     tabId: string
     selector: string
   }): Promise<unknown> {
-    if (typeof request.selector !== 'string' || !request.selector.trim()) {
-      throw new Error('inspectElement requires a non-empty CSS selector');
-    }
-
-    const selectorLiteral = JSON.stringify(request.selector);
-    const code = `
-    const el = document.querySelector(${selectorLiteral});
-    if (!el) return { found: false };
-
-    const cs = getComputedStyle(el);
-    const rect = el.getBoundingClientRect();
-
-    return {
-      found: true,
-      tagName: el.tagName.toLowerCase(),
-      textContent: (el.textContent || '').trim().slice(0, 500),
-      attributes: Object.fromEntries(Array.from(el.attributes).map(a => [a.name, a.value])),
-      classes: Array.from(el.classList),
-      box: {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        left: rect.left,
-      },
-      styles: {
-        display: cs.display,
-        visibility: cs.visibility,
-        opacity: cs.opacity,
-        position: cs.position,
-        overflow: cs.overflow,
-        zIndex: cs.zIndex,
-        boxSizing: cs.boxSizing,
-        color: cs.color,
-        backgroundColor: cs.backgroundColor,
-        fontSize: cs.fontSize,
-        fontWeight: cs.fontWeight,
-        lineHeight: cs.lineHeight,
-        textAlign: cs.textAlign,
-        border: cs.border,
-        borderCollapse: cs.borderCollapse,
-        padding: cs.padding,
-        margin: cs.margin,
-        width: cs.width,
-        height: cs.height,
-        minWidth: cs.minWidth,
-        maxWidth: cs.maxWidth,
-        minHeight: cs.minHeight,
-        maxHeight: cs.maxHeight,
-        cursor: cs.cursor,
-        pointerEvents: cs.pointerEvents,
-        userSelect: cs.userSelect,
-        whiteSpace: cs.whiteSpace,
-        textOverflow: cs.textOverflow,
-        flexGrow: cs.flexGrow,
-        flexShrink: cs.flexShrink,
-        gridTemplateColumns: cs.gridTemplateColumns,
-      },
-      isVisible: cs.display !== 'none'
-        && cs.visibility !== 'hidden'
-        && parseFloat(cs.opacity) > 0
-        && rect.width > 0
-        && rect.height > 0,
-      isInViewport: rect.top < window.innerHeight
-        && rect.bottom > 0
-        && rect.left < window.innerWidth
-        && rect.right > 0,
-      childCount: el.children.length,
-      parentTag: el.parentElement ? el.parentElement.tagName.toLowerCase() : null,
-    };`;
-
-    return this.execTabJsById({ tabId: request.tabId, code });
-  }
-
-  // --- Webview tracking ---
-
-  parseTrackedViewFromUrl(urlString: string): { viewName: string; tabId: string | null } | null {
-    if (typeof urlString !== 'string' || !urlString.startsWith('https://')) {
-      return null;
-    }
-
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(urlString);
-    } catch {
-      return null;
-    }
-
-    if (!isAgentViewHostname(parsedUrl.hostname)) {
-      return null;
-    }
-    if (!isViewDocumentUrl(parsedUrl)) {
-      return null;
-    }
-
-    const info = parseAgentPath(parsedUrl.pathname);
-    if (!info || info.kind !== 'view') {
-      return null;
-    }
-
-    const rawPageId = parsedUrl.searchParams.get('pageId');
-    const pageId = typeof rawPageId === 'string' && rawPageId.trim().length > 0 ? rawPageId.trim() : null;
-    return { viewName: info.target, tabId: pageId };
-  }
-
-  updateTrackedViewWebContents(webContents: WebContents, urlString: string): void {
-    const tracked = this.parseTrackedViewFromUrl(urlString);
-    if (!tracked) {
-      this.removeTrackedViewWebContents(webContents.id);
-      return;
-    }
-
-    const now = Date.now();
-    const existing = this.viewRuntimeEntries.get(webContents.id);
-    if (!existing) {
-      const entry: ViewRuntimeEntry = {
-        webContentsId: webContents.id,
-        webContents,
-        viewName: tracked.viewName,
-        tabId: tracked.tabId,
-        ownerWindowId: resolveOwnerWindowId(webContents),
-        lastNavigationAt: now,
-        lastFocusedAt: 0,
-        logs: [],
-      };
-      this.viewRuntimeEntries.set(webContents.id, entry);
-      return;
-    }
-
-    existing.viewName = tracked.viewName;
-    existing.tabId = tracked.tabId;
-    existing.ownerWindowId = resolveOwnerWindowId(webContents);
-    existing.lastNavigationAt = now;
-  }
-
-  private removeTrackedViewWebContents(webContentsId: number): void {
-    this.viewRuntimeEntries.delete(webContentsId);
-  }
-
-  clearTrackedViewWebContents(): void {
-    this.viewRuntimeEntries.clear();
-  }
-
-  registerWebContentsTracking(_event: Electron.Event, webContents: WebContents): void {
-    if (webContents.getType() !== 'webview') {
-      return;
-    }
-
-    const updateFromNavigation = (url: string) => {
-      this.updateTrackedViewWebContents(webContents, url);
-    };
-
-    webContents.on('did-start-navigation', (_navEvent, url, _isInPlace, isMainFrame) => {
-      if (isMainFrame) {
-        updateFromNavigation(url);
-      }
+    return this.execTabJsById({
+      tabId: request.tabId,
+      code: buildInspectElementCode(request.selector),
     });
-
-    webContents.on('did-navigate', (_navEvent, url) => {
-      updateFromNavigation(url);
-    });
-
-    webContents.on('did-navigate-in-page', (_navEvent, url, isMainFrame) => {
-      if (isMainFrame) {
-        updateFromNavigation(url);
-      }
-    });
-
-    webContents.on('focus', () => {
-      const entry = this.viewRuntimeEntries.get(webContents.id);
-      if (!entry) {
-        return;
-      }
-      entry.ownerWindowId = resolveOwnerWindowId(webContents);
-      entry.lastFocusedAt = Date.now();
-    });
-
-    webContents.on('console-message', (consoleEvent) => {
-      const entry = this.viewRuntimeEntries.get(webContents.id);
-      if (!entry) {
-        return;
-      }
-
-      entry.logs.push({
-        level: WEB_CONTENTS_LOG_LEVEL_MAP[consoleEvent.level] || 'info',
-        message: consoleEvent.message,
-        timestamp: Date.now(),
-      });
-
-      if (entry.logs.length > VIEW_LOG_BUFFER_MAX) {
-        entry.logs.splice(0, entry.logs.length - VIEW_LOG_BUFFER_MAX);
-      }
-    });
-
-    webContents.once('destroyed', () => {
-      this.removeTrackedViewWebContents(webContents.id);
-    });
-
-    const initialUrl = webContents.getURL();
-    if (initialUrl) {
-      this.updateTrackedViewWebContents(webContents, initialUrl);
-    }
   }
 
   // --- Tab state mutations ---

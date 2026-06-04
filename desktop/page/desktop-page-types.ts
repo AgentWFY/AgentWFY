@@ -1,4 +1,4 @@
-import type { WebContents, WebContentsView } from 'electron';
+import type { WebContentsView } from 'electron';
 import type { PageCloseAfterIdleMs, PageViewport } from '#shared/page/types.js';
 
 export type TabDataType = 'view' | 'file' | 'url'
@@ -38,17 +38,6 @@ export interface ViewConsoleLogEntry {
   level: string
   message: string
   timestamp: number
-}
-
-export interface ViewRuntimeEntry {
-  webContentsId: number
-  webContents: WebContents
-  viewName: string
-  tabId: string | null
-  ownerWindowId: number | null
-  lastNavigationAt: number
-  lastFocusedAt: number
-  logs: ViewConsoleLogEntry[]
 }
 
 export interface TabViewState {

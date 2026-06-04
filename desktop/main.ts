@@ -1,4 +1,4 @@
-import { app, BaseWindow, BrowserWindow, dialog, Menu, nativeImage, protocol, net, webContents } from 'electron';
+import { app, BaseWindow, dialog, Menu, nativeImage, protocol, net, webContents } from 'electron';
 import { registerAppHandlers } from './ipc/app.js';
 import { registerStoreHandlers, startFileWatcher, stopFileWatcher, onAnyChange, storeGet } from './ipc/store.js';
 import { setFallbackStoreReader } from '#shared/settings/config.js';
@@ -454,30 +454,6 @@ app.on('ready', async () => {
   startAutoUpdater();
 
   createInitialWindow();
-});
-
-app.on('web-contents-created', (_event, webContents) => {
-  if (webContents.getType() !== 'webview') return;
-
-  const hostWc = (webContents as Electron.WebContents & { hostWebContents?: Electron.WebContents }).hostWebContents;
-  const ownerWin = hostWc
-    ? BrowserWindow.fromWebContents(hostWc)
-    : BrowserWindow.fromWebContents(webContents);
-
-  if (ownerWin) {
-    const ctx = windowManager.tryGetContextForSender(ownerWin.webContents.id);
-    if (ctx) {
-      ctx.tabViewManager.registerWebContentsTracking(_event, webContents);
-      return;
-    }
-  }
-
-  const contexts = windowManager.getAllContexts();
-  if (contexts.length === 1) {
-    contexts[0].tabViewManager.registerWebContentsTracking(_event, webContents);
-  } else {
-    console.warn('[web-contents-created] Could not determine owning window for webview; skipping registration');
-  }
 });
 
 app.on('window-all-closed', () => {

@@ -1115,7 +1115,6 @@ export class CommandPaletteManager {
         }
         this.hide({ focusMain: true });
         this.deps.getTabViewManager().destroyAllTabViews();
-        this.deps.getTabViewManager().clearTrackedViewWebContents();
         this.deps.reloadRenderer();
         return;
       }

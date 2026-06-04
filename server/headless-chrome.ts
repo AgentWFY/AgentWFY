@@ -19,6 +19,10 @@ import {
   resolvePageCloseAfterIdleMs,
   type IdleCloseEntry,
 } from '#shared/page/idle-close.js'
+import {
+  normalizePageViewportInput,
+  resolvePageViewport,
+} from '#shared/page/page-viewport.js'
 import type { PageHandle } from '#shared/page/page-handle.js'
 import type { PageHost, PageHostOpenRequest, PageOpenContext } from '#shared/page/page-host.js'
 import type {
@@ -36,12 +40,6 @@ import type {
 import type { HeadlessViewRuntime } from './headless-view-runtime.js'
 
 const RELOAD_RETRY_BUDGET_MS = 3000
-
-const VIEWPORT_ALIASES: Record<string, PageViewport> = {
-  mobile: { width: 375, height: 667 },
-  tablet: { width: 768, height: 1024 },
-  desktop: { width: 1280, height: 720 },
-}
 
 interface DaemonHeadlessPageHostOptions {
   runtimeRoot: string
@@ -231,7 +229,7 @@ export class DaemonHeadlessPageHost implements PageHost {
 
       const now = Date.now()
       const closeAfterIdleMs = resolvePageCloseAfterIdleMs(request.closeAfterIdleMs)
-      const viewport = resolveDaemonViewport(request.viewport, request.width, request.height)
+      const viewport = resolvePageViewport(normalizePageViewportInput(request))
       const record: PageRecord = {
         pageId,
         targetId,
@@ -671,25 +669,4 @@ function consoleLevel(level: string): string {
     default:
       return 'info'
   }
-}
-
-function resolveDaemonViewport(input: unknown, width: unknown, height: unknown): PageViewport {
-  if (typeof input === 'string') {
-    return VIEWPORT_ALIASES[input] ?? VIEWPORT_ALIASES.desktop
-  }
-  const viewport = input && typeof input === 'object'
-    ? input as { width?: unknown; height?: unknown }
-    : {}
-  return {
-    width: normalizeViewportDimension(viewport.width ?? width, VIEWPORT_ALIASES.desktop.width),
-    height: normalizeViewportDimension(viewport.height ?? height, VIEWPORT_ALIASES.desktop.height),
-  }
-}
-
-function normalizeViewportDimension(value: unknown, fallback: number): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback
-  }
-  return Math.max(1, Math.floor(parsed))
 }

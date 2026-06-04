@@ -205,7 +205,6 @@ export class AgentContextFactory {
         ctx.providerStatePushTimer = null;
       }
       ctx.tabViewManager.destroyAllTabViews();
-      ctx.tabViewManager.clearTrackedViewWebContents();
       destroyRemoteAgentContext(ctx).catch((err) => {
         console.warn('[AgentContextFactory] destroyRemoteAgentContext failed:', err);
       });
@@ -247,7 +246,6 @@ export class AgentContextFactory {
 
     ctx.pluginRegistry?.deactivateAll();
     ctx.tabViewManager.destroyAllTabViews();
-    ctx.tabViewManager.clearTrackedViewWebContents();
     ctx.triggerEngine.stop();
 
     this.deps.actionRegistry.clearAgent(agentId);

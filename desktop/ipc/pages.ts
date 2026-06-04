@@ -34,7 +34,7 @@ async function normalizeOpenPagePayload(
   cacheRoot: string,
 ): Promise<OpenPageRequest> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('openPage requires a request object');
+    throw new Error('openClientPage requires a request object');
   }
 
   const input = payload as Record<string, unknown>;
@@ -73,7 +73,7 @@ export function registerPageHandlers(
     });
   });
 
-  ipcMain.handle(Channels.pages.openPage, async (event, payload: unknown) => {
+  ipcMain.handle(Channels.pages.openClientPage, async (event, payload: unknown) => {
     const request = await normalizeOpenPagePayload(payload, getCacheRoot(event));
     return getPageTools(event).openClientPage(request);
   });

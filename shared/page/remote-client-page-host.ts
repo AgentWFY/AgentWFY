@@ -60,6 +60,10 @@ export class RemoteClientPageHost implements PageHost {
   }
 
   async openPage(request: PageHostOpenRequest): Promise<PageHandle> {
+    if (!this.invoker.isPageClientConnected) {
+      this.clearClientPages()
+      throw pageClientNotConnectedError('openClientPage')
+    }
     const result = await this.invoker.invokeClientPageRpc('client.pages.open', request as ClientPagesOpenRequest)
     const page = this.remember(result.page, { selected: true })
     return new RemoteClientPageHandle(this, this.invoker, page)
@@ -79,12 +83,12 @@ export class RemoteClientPageHost implements PageHost {
   async getCurrentClientPage(): Promise<PageHostInfo | null> {
     if (!this.invoker.isPageClientConnected) {
       this.clearClientPages()
-      throw pageClientNotConnectedError('getCurrentClientPage')
+      return null
     }
     await this.refreshSnapshot().catch(() => {
       this.clearClientPages()
       if (!this.invoker.isPageClientConnected) {
-        throw pageClientNotConnectedError('getCurrentClientPage')
+        return
       }
     })
     if (!this.selectedClientPageId) return null

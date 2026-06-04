@@ -16,7 +16,7 @@ export const Channels = {
   },
   pages: {
     getPages: 'pages:getPages',
-    openPage: 'pages:openPage',
+    openClientPage: 'pages:openClientPage',
     closePage: 'pages:closePage',
     reloadPage: 'pages:reloadPage',
     getHeadlessCount: 'pages:getHeadlessCount',

@@ -105,7 +105,7 @@ export class DesktopPageHandle implements PageHandle {
   }
 
   async close(): Promise<void> {
-    await this.manager.closeTabHandler({ tabId: this.pageId });
+    await this.manager.closeTabHandler({ tabId: this.pageId, force: true });
   }
 
   async reload(): Promise<void> {

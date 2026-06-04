@@ -81,9 +81,9 @@ export class DesktopTabPresenter {
     return tabs.find(tab => tab.id === this.selectedTabId && !tab.headless) ?? null;
   }
 
-  closeTab(tabId: string): CloseTabResult {
+  closeTab(tabId: string, options: { force?: boolean } = {}): CloseTabResult {
     const tab = this.tabs.find(t => t.id === tabId);
-    if (!tab || tab.pinned) return { closed: false, wasSelected: false };
+    if (!tab || (tab.pinned && !options.force)) return { closed: false, wasSelected: false };
 
     const wasSelected = this.selectedTabId === tabId;
     this.tabs = this.tabs.filter(t => t.id !== tabId);

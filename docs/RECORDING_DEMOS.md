@@ -130,7 +130,7 @@ Each tab is its own WebContentsView. `clickInTab(name, viewName, selector)` hide
 ```js
 import { clickInTab, hoverInTab, waitInTab } from '../../scripts/lib/demo.mjs';
 
-evalMain(NAME, `window.ipc.pages.openPage({ source: { type: 'view', name: 'system.plugins' } })`);
+evalMain(NAME, `window.ipc.pages.openClientPage({ source: { type: 'view', name: 'system.plugins' } })`);
 await sleep(1200);
 
 await clickInTab(NAME, 'system.plugins', '.tab-btn[data-tab="browse-plugins"]');
@@ -200,7 +200,7 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 | Select a provider | In main: `document.querySelector('.provider-card[data-provider-id="test-provider"]')`, dispatch `mousedown`. |
 | Send a chat message | In main: set `textarea#msg-input` value via the native `HTMLTextAreaElement.prototype.value` setter, dispatch `InputEvent`, then `KeyboardEvent{key:'Enter'}`. |
 | Tool trace popup | In main: click `.tool-header[data-tool-id]`. Wait for streaming to finish (`.composer-stop` hidden) before clicking, or the popup race-conditions with the message re-render. Close with `.tool-popup-close`. |
-| Open a view as a page | In main (direct): `window.ipc.pages.openPage({ source: { type: 'view', name: 'system.source-explorer' } })`. In palette: type the view name into `#searchInput`, then Enter. |
+| Open a view as a page | In main (direct): `window.ipc.pages.openClientPage({ source: { type: 'view', name: 'system.source-explorer' } })`. In palette: type the view name into `#searchInput`, then Enter. |
 | Command palette, settings screen | In main: `window.ipc.commandPalette.show({ screen: 'settings' })`. In palette: type into the filter (`#searchInput`), flip the target to Global/Agent if needed (`.settings-target-btn[data-target="global"]`), type the value into `.settings-card[data-setting-key="..."] input.settings-card-input`, click the `Save` button. |
 | Theme flip to dark | Palette settings flow above with `data-setting-key="system.theme"` and value `dark`. Applies live (no reload) once the app processes the palette's Save. |
 | Zen mode | `window.ipc.zenMode.set(true)` / `set(false)`. |
@@ -230,7 +230,7 @@ The palette is a separate WebContentsView with its own DOM. Drive it with `--eva
 
 ## Existing demos
 
-- **`demos/chat-and-trace/`** (~15 s) — provider selection, message send, tool trace popup open/close, Source Explorer tab via direct `openPage`, cursor drift over tab content.
+- **`demos/chat-and-trace/`** (~15 s) — provider selection, message send, tool trace popup open/close, Source Explorer tab via direct `openClientPage`, cursor drift over tab content.
 - **`demos/full-tour/`** (~36 s) — chat flow plus: Source Explorer via command palette (natively-typed filter), zen mode, chat ↔ tasks ↔ triggers panels, sidebar collapse/restore, and palette Settings flow (Global target, type `dark`, Save) with the live light→dark theme flip.
 - **`demos/install-plugin/`** (~30 s) — installs the `anthropic-provider` plugin from the public registry. Opens the command palette, types "plugin", clicks the *Plugins & Agents* result, switches to Browse Plugins, clicks Install on the registry row, confirms in the install dialog, and lands back on Installed Plugins with the new provider live in the chat sidebar. Demonstrates driving the palette view, a tab WebContentsView, and the confirm-dialog view from the same driver.
 

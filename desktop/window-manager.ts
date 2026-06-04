@@ -314,7 +314,6 @@ class WindowManager {
       this.confirmation?.destroy();
       for (const ctx of this.orchestrator.getAllContexts()) {
         ctx.tabViewManager.destroyAllTabViews();
-        ctx.tabViewManager.clearTrackedViewWebContents();
       }
     });
 

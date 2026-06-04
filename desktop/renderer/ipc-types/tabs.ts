@@ -14,7 +14,7 @@ export interface UpdateTabViewBoundsRequest {
   visible: boolean
 }
 
-export type TabContextMenuAction = 'toggle-pin' | 'reload' | null
+export type TabContextMenuAction = 'toggle-pin' | 'reload' | 'toggle-devtools' | null
 
 export interface TabContextMenuRequest {
   x: number

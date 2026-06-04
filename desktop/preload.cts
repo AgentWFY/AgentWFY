@@ -96,7 +96,7 @@ if (isApp) {
       updateViewBounds(request: unknown): Promise<void> {
         return ipcRenderer.invoke(Channels.tabs.updateViewBounds, request);
       },
-      showContextMenu(request: unknown): Promise<'toggle-pin' | 'reload' | null> {
+      showContextMenu(request: unknown): Promise<'toggle-pin' | 'reload' | 'toggle-devtools' | null> {
         return ipcRenderer.invoke(Channels.tabs.showContextMenu, request);
       },
       onViewEvent(callback: (detail: PushMap['tabs:viewEvent']) => void): () => void {
@@ -128,8 +128,8 @@ if (isApp) {
       getPages(request?: unknown) {
         return ipcRenderer.invoke(Channels.pages.getPages, request);
       },
-      openPage(request: unknown) {
-        return ipcRenderer.invoke(Channels.pages.openPage, request);
+      openClientPage(request: unknown) {
+        return ipcRenderer.invoke(Channels.pages.openClientPage, request);
       },
       closePage(request: unknown) {
         return ipcRenderer.invoke(Channels.pages.closePage, request);

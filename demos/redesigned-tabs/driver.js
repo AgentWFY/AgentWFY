@@ -61,19 +61,19 @@ evalMain(NAME, `(async () => {
   });
   await d.sleep(200);
 
-  const t1 = await ipc.pages.openPage({
+  const t1 = await ipc.pages.openClientPage({
     source: { type: 'view', name: 'system.docs' },
   });
   await d.sleep(200);
-  await ipc.pages.openPage({
+  await ipc.pages.openClientPage({
     source: { type: 'view', name: 'system.openai-compatible-provider.settings-view' },
   });
   await d.sleep(200);
-  await ipc.pages.openPage({
+  await ipc.pages.openClientPage({
     source: { type: 'view', name: 'demo-notes' },
   });
   await d.sleep(200);
-  await ipc.pages.openPage({
+  await ipc.pages.openClientPage({
     source: { type: 'url', url: 'https://www.anthropic.com/news' },
   });
   await d.sleep(700);
