@@ -46,6 +46,7 @@ export interface AgentContextFactoryDeps {
   registerTabSender: (webContentsId: number, agentId: string) => void;
   unregisterTabSender: (webContentsId: number) => void;
   onRuntimeDbChange: (agentId: string, change: AgentDbChange) => void;
+  onRemoteSnapshotApplied?: (agentId: string) => void;
   clientPath: string;
   getOverlayViews?: () => ReadonlyArray<WebContentsView>;
   actionRegistry: ActionRegistry;
@@ -82,10 +83,14 @@ export class AgentContextFactory {
     // Refs let onSnapshotApplied resync after later (re)connect snapshots,
     // which replace the mirror wholesale without emitting per-row changes.
     let backendRef: AgentBackend | null = null;
-    const resyncFromMirror = () => {
+    const resyncDerivedStateFromMirror = () => {
       if (!backendRef) return;
       syncTaskActions(this.deps.actionRegistry, cacheRoot, backendRef);
       shortcutManager.reload();
+    };
+    const handleSnapshotApplied = () => {
+      resyncDerivedStateFromMirror();
+      this.deps.onRemoteSnapshotApplied?.(agentId);
     };
     const ctx = await createRemoteAgentContext({
       agentId,
@@ -96,10 +101,10 @@ export class AgentContextFactory {
       pageTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
-      onSnapshotApplied: resyncFromMirror,
+      onSnapshotApplied: handleSnapshotApplied,
     });
     backendRef = ctx.backend;
-    resyncFromMirror();
+    resyncDerivedStateFromMirror();
     this.attachAgentViewHandler(
       agentId,
       cacheRoot,

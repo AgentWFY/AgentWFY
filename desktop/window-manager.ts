@@ -99,6 +99,7 @@ class WindowManager {
       registerTabSender: (id, root) => this.orchestrator.registerTabSender(id, root),
       unregisterTabSender: (id) => this.orchestrator.unregisterTabSender(id),
       onRuntimeDbChange: (root, change) => this.orchestrator.onRuntimeDbChange(root, change),
+      onRemoteSnapshotApplied: (agentId) => this.orchestrator.onRemoteSnapshotApplied(agentId),
       clientPath: this.clientPath,
       getOverlayViews: () => this.collectOverlayViews(),
       actionRegistry: this.actionRegistry,

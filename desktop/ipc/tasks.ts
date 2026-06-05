@@ -22,11 +22,15 @@ export function registerTaskRunnerHandlers(
   });
 
   ipcMain.handle(Channels.tasks.listRunning, async (event) => {
-    return getBackend(event).tasks.listRunning();
+    const backend = getBackend(event);
+    if (isDisconnectedRemoteBackend(backend)) return [];
+    return backend.tasks.listRunning();
   });
 
   ipcMain.handle(Channels.tasks.readRun, async (event, runId: string) => {
-    return getBackend(event).tasks.readRun({ runId });
+    const backend = getBackend(event);
+    assertRemoteBackendConnected(backend, 'read task run details');
+    return backend.tasks.readRun({ runId });
   });
 
   ipcMain.handle(Channels.tasks.listShortcuts, async (event) => {
@@ -41,10 +45,24 @@ export function registerTaskRunnerHandlers(
   });
 
   ipcMain.handle(Channels.tasks.listLogHistory, async (event) => {
-    return getBackend(event).tasks.listLogHistory();
+    const backend = getBackend(event);
+    if (isDisconnectedRemoteBackend(backend)) return [];
+    return backend.tasks.listLogHistory();
   });
 
   ipcMain.handle(Channels.tasks.readLog, async (event, logFileName: string) => {
-    return getBackend(event).tasks.readLog({ logFileName });
+    const backend = getBackend(event);
+    assertRemoteBackendConnected(backend, 'read task log');
+    return backend.tasks.readLog({ logFileName });
   });
+}
+
+function isDisconnectedRemoteBackend(backend: AgentBackend): boolean {
+  return backend.kind === 'remote' && backend.status.get().state !== 'connected';
+}
+
+function assertRemoteBackendConnected(backend: AgentBackend, action: string): void {
+  if (!isDisconnectedRemoteBackend(backend)) return;
+  const status = backend.status.get();
+  throw new Error(`Remote agent is ${status.state}. Reconnect before trying to ${action}.`);
 }

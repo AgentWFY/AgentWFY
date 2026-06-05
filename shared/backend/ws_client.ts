@@ -211,8 +211,6 @@ export class WsClient {
         message: 'Connecting to remote agent...',
         reconnectAttempt: this.reconnectAttempt,
       })
-      const socket = new this.WebSocketCtor(this.buildWsUrl())
-      this.socket = socket
 
       const settleOk = () => {
         if (settled) return
@@ -225,6 +223,21 @@ export class WsClient {
         reject(error)
       }
 
+      let socket: WebSocketLike
+      try {
+        socket = new this.WebSocketCtor(this.buildWsUrl())
+      } catch (err) {
+        const message = connectionFailureMessage(this.baseUrl, err)
+        this.setStatus({
+          state: 'error',
+          message,
+          reconnectAttempt: this.reconnectAttempt,
+        })
+        settleErr(new WsClientError('WebSocketError', message))
+        return
+      }
+      this.socket = socket
+
       socket.addEventListener('open', () => {
         opened = true
         this.reconnectAttempt = 0
@@ -235,10 +248,11 @@ export class WsClient {
         void this.handleRawMessage(event.data)
       })
       socket.addEventListener('error', (event) => {
-        const error = new WsClientError('WebSocketError', describeWebSocketIssue(event))
+        const message = connectionFailureMessage(this.baseUrl, describeWebSocketIssue(event))
+        const error = new WsClientError('WebSocketError', message)
         this.setStatus({
           state: 'error',
-          message: `Remote agent connection failed: ${error.message}`,
+          message,
           reconnectAttempt: this.reconnectAttempt,
         })
         settleErr(error)
@@ -247,12 +261,19 @@ export class WsClient {
         if (this.socket === socket) this.socket = null
         this.rejectAllPending(new WsClientError('Disconnected', 'Remote server WebSocket closed'))
         if (!settled) {
-          settleErr(new WsClientError('Disconnected', 'Remote server WebSocket closed before opening'))
+          const message = connectionFailureMessage(this.baseUrl, describeWebSocketIssue(event))
+          this.setStatus({
+            state: 'error',
+            message,
+            reconnectAttempt: this.reconnectAttempt,
+          })
+          settleErr(new WsClientError('Disconnected', message))
         }
         if (!this.stopped && opened) {
+          const issue = normalizeConnectionIssueText(describeWebSocketIssue(event)) ?? 'Connection lost'
           this.setStatus({
             state: 'disconnected',
-            message: `${describeWebSocketIssue(event)}. Reconnecting...`,
+            message: `${issue}. Reconnecting...`,
             reconnectAttempt: this.reconnectAttempt,
             nextRetryMs: this.initialReconnectMs,
           })
@@ -275,12 +296,14 @@ export class WsClient {
       })
       this.ensureConnected()
         .catch((err) => {
-          console.warn('[WsClient] reconnect failed:', err)
+          const message = messageFromUnknown(err)
+          console.warn('[WsClient] reconnect failed:', message)
           this.reconnectAttempt += 1
           delay = delay === 0 ? this.initialReconnectMs : Math.min(delay * 2, this.maxReconnectMs)
+          const failure = stripTrailingPeriod(connectionFailureMessage(this.baseUrl, message))
           this.setStatus({
             state: 'error',
-            message: `Remote agent unavailable: ${messageFromUnknown(err)}. Retrying in ${formatDelay(delay)}.`,
+            message: `${failure}. Retrying in ${formatDelay(delay)}.`,
             reconnectAttempt: this.reconnectAttempt,
             nextRetryMs: delay,
           })
@@ -386,6 +409,40 @@ function describeWebSocketIssue(event: unknown): string {
     if (details.length > 0) return `WebSocket ${details.join(' ')}`
   }
   return 'WebSocket connection failed'
+}
+
+function connectionFailureMessage(baseUrl: string, issue: unknown): string {
+  const message = typeof issue === 'string' ? issue : messageFromUnknown(issue)
+  if (message.startsWith('Cannot reach remote agent at ')) return message
+
+  const detail = normalizeConnectionIssueText(message)
+  const prefix = `Cannot reach remote agent at ${baseUrl}`
+  if (detail) return `${prefix}: ${detail}`
+  return `${prefix}. Check that the daemon is running and the URL/token are correct.`
+}
+
+function normalizeConnectionIssueText(message: string): string | null {
+  const text = message.trim()
+  if (!text) return null
+
+  const lower = text.toLowerCase()
+  if (
+    lower === 'typeerror'
+    || lower === 'error'
+    || lower === 'unknown error'
+    || lower === 'websocket error'
+    || lower === 'websocket connection failed'
+    || lower === '[object errorevent]'
+    || lower === '[object event]'
+  ) {
+    return null
+  }
+
+  return text
+}
+
+function stripTrailingPeriod(message: string): string {
+  return message.endsWith('.') ? message.slice(0, -1) : message
 }
 
 function formatDelay(ms: number): string {

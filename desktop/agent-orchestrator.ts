@@ -40,6 +40,8 @@ export class AgentOrchestrator {
   private persistedAgentIds: string[] = [];
   private tabSenderMap = new Map<number, string>();
   private pendingInits = new Map<string, Promise<AgentContext>>();
+  private defaultViewOpenPromises = new Map<string, Promise<void>>();
+  private pendingDefaultViewRetryAgentIds = new Set<string>();
   private readonly deps: AgentOrchestratorDeps;
 
   constructor(deps: AgentOrchestratorDeps) {
@@ -172,6 +174,8 @@ export class AgentOrchestrator {
     if (!ctx) return;
 
     this.deps.factory.destroyContext(agentId, ctx);
+    this.defaultViewOpenPromises.delete(agentId);
+    this.pendingDefaultViewRetryAgentIds.delete(agentId);
 
     // Clean up sender map entries for this agent
     for (const [senderId, id] of this.tabSenderMap) {
@@ -576,6 +580,18 @@ export class AgentOrchestrator {
     }, 5000);
   }
 
+  onRemoteSnapshotApplied(agentId: string): void {
+    if (!this.deps.isWindowAvailable()) return;
+    if (this.activeAgentId !== agentId) return;
+
+    const ctx = this.agentContexts.get(agentId);
+    if (!ctx || ctx.mode !== 'remote') return;
+
+    this.retryDefaultViewAfterRemoteSnapshot(ctx).catch((err) => {
+      console.error('[default-view] Failed to retry after remote snapshot:', err);
+    });
+  }
+
   // --- Lifecycle ---
 
   hasActiveWork(): boolean {
@@ -657,20 +673,63 @@ export class AgentOrchestrator {
     storeSet('installedAgents', this.persistedAgentIds);
   }
 
+  private async retryDefaultViewAfterRemoteSnapshot(ctx: RemoteAgentContext): Promise<void> {
+    const existing = this.defaultViewOpenPromises.get(ctx.agentId);
+    if (existing) await existing.catch(() => {});
+    if (this.activeAgentId !== ctx.agentId) return;
+    if (!this.pendingDefaultViewRetryAgentIds.has(ctx.agentId)) return;
+    await this.openDefaultViewForContext(ctx);
+  }
+
   private async openDefaultViewForContext(ctx: AgentContext): Promise<void> {
+    while (true) {
+      const existing = this.defaultViewOpenPromises.get(ctx.agentId);
+      if (!existing) break;
+      await existing.catch(() => {});
+      if (this.agentContexts.get(ctx.agentId) !== ctx) return;
+    }
+
+    const promise = this.doOpenDefaultViewForContext(ctx);
+    this.defaultViewOpenPromises.set(ctx.agentId, promise);
     try {
+      await promise;
+    } finally {
+      if (this.defaultViewOpenPromises.get(ctx.agentId) === promise) {
+        this.defaultViewOpenPromises.delete(ctx.agentId);
+      }
+    }
+  }
+
+  private async doOpenDefaultViewForContext(ctx: AgentContext): Promise<void> {
+    try {
+      const currentState = ctx.tabViewManager.getState();
+      if (currentState.tabs.length > 0) {
+        this.pendingDefaultViewRetryAgentIds.delete(ctx.agentId);
+        return;
+      }
+
       const configValue = getConfigValue(ctx.cacheRoot, SystemConfigKeys.defaultView, 'home');
       const trimmed = typeof configValue === 'string' ? configValue.trim() : '';
       const viewName = trimmed || 'home';
       const view = await getViewByName(ctx.cacheRoot, viewName);
-      if (!view) return;
+      if (!view) {
+        if (ctx.mode === 'remote') this.pendingDefaultViewRetryAgentIds.add(ctx.agentId);
+        return;
+      }
+
       const state = ctx.tabViewManager.getState();
-      if (state.tabs.length > 0) return;
+      if (state.tabs.length > 0) {
+        this.pendingDefaultViewRetryAgentIds.delete(ctx.agentId);
+        return;
+      }
+
       await ctx.pageTools.openClientPage({
         source: { type: 'view', name: view.name },
         title: view.title || view.name,
       });
+      this.pendingDefaultViewRetryAgentIds.delete(ctx.agentId);
     } catch (err) {
+      if (ctx.mode === 'remote') this.pendingDefaultViewRetryAgentIds.add(ctx.agentId);
       console.error('[default-view] Failed to open default view:', err);
     }
   }
