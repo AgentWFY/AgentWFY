@@ -48,6 +48,8 @@ interface WorkerReadRequest {
   path: string
   offset?: number
   limit?: number
+  full?: boolean
+  maxBytes?: number
   asBase64?: boolean
 }
 

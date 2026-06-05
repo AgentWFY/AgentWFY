@@ -1,5 +1,5 @@
 import { runAgentDbSql } from '../../db/sqlite.js'
-import { paginateText, applyTextEdits, truncateLine, escapeRegex, GREP_MAX_LINE_LENGTH, DEFAULT_LS_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_GREP_LIMIT } from './text_utils.js'
+import { paginateText, applyTextEdits, truncateLine, escapeRegex, GREP_MAX_LINE_LENGTH, DEFAULT_LS_LIMIT, DEFAULT_FIND_LIMIT, DEFAULT_GREP_LIMIT, type ReadTextOptions } from './text_utils.js'
 
 export interface DbPath {
   table: string
@@ -39,8 +39,7 @@ function requireName(dbPath: DbPath, op: string): string {
 export async function dbRead(
   runtimeRoot: string,
   dbPath: DbPath,
-  offset?: number,
-  limit?: number,
+  options: ReadTextOptions = {},
 ): Promise<string> {
   const name = requireName(dbPath, 'read')
   const rows = await runAgentDbSql(runtimeRoot, {
@@ -50,7 +49,10 @@ export async function dbRead(
   if (rows.length === 0) {
     throw new Error(`Not found: @${dbPath.table}/${name}`)
   }
-  return paginateText((rows[0] as Record<string, unknown>).content as string, offset, limit)
+  return paginateText((rows[0] as Record<string, unknown>).content as string, {
+    ...options,
+    ref: options.ref ?? `@${dbPath.table}/${name}`,
+  })
 }
 
 // --- write ---

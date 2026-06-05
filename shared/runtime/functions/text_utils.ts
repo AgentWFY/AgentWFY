@@ -14,6 +14,14 @@ interface TruncationResult {
   firstLineExceedsLimit: boolean
 }
 
+export interface ReadTextOptions {
+  offset?: number
+  limit?: number
+  full?: boolean
+  maxBytes?: number
+  ref?: string
+}
+
 export function truncateHead(text: string, maxLines: number, maxBytes: number): TruncationResult {
   const totalBytes = Buffer.byteLength(text, 'utf-8')
   const lines = text.split('\n')
@@ -60,6 +68,50 @@ export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function formatLineCount(lines: number): string {
+  return `${lines} line${lines === 1 ? '' : 's'}`
+}
+
+function readArgs(ref: string, extra: string): string {
+  return extra
+    ? `read({ path: ${JSON.stringify(ref)}, ${extra} })`
+    : `read({ path: ${JSON.stringify(ref)} })`
+}
+
+function makeDefaultReadLimitError(
+  ref: string,
+  totalBytes: number,
+  totalLines: number,
+  maxBytes: number,
+): Error {
+  const reasons: string[] = []
+  if (totalBytes > maxBytes) reasons.push(`${formatSize(totalBytes)} exceeds ${formatSize(maxBytes)}`)
+  if (totalLines > MAX_READ_LINES) reasons.push(`${formatLineCount(totalLines)} exceeds ${formatLineCount(MAX_READ_LINES)}`)
+  return new Error(
+    `read: ${ref} is ${formatSize(totalBytes)} across ${formatLineCount(totalLines)}, ` +
+    `which is above the default complete-read limit (${formatSize(maxBytes)} / ${formatLineCount(MAX_READ_LINES)}). ` +
+    `Default ${readArgs(ref, '')} only succeeds when it can return the entire content. ` +
+    `To intentionally read the whole file now, use ${readArgs(ref, 'full: true')}. ` +
+    `To inspect it in chunks, use ${readArgs(ref, 'offset: 1')} and continue with the next offset shown; ` +
+    `if a line itself is larger than the default cap, add maxBytes, e.g. ${readArgs(ref, `offset: 1, maxBytes: ${totalBytes}`)}. ` +
+    `Why this failed: ${reasons.join('; ')}.`
+  )
+}
+
+function makeFullReadMaxBytesError(
+  ref: string,
+  totalBytes: number,
+  totalLines: number,
+  maxBytes: number,
+): Error {
+  return new Error(
+    `read: ${ref} is ${formatSize(totalBytes)} across ${formatLineCount(totalLines)}, ` +
+    `which exceeds the explicit maxBytes=${maxBytes} (${formatSize(maxBytes)}) safety cap for full read. ` +
+    `Increase the cap, e.g. ${readArgs(ref, `full: true, maxBytes: ${totalBytes}`)}, ` +
+    `or read in chunks with ${readArgs(ref, 'offset: 1')}.`
+  )
 }
 
 export function truncateLine(line: string, maxLen: number): string {
@@ -127,14 +179,36 @@ export function applyTextEdits(
   return result
 }
 
-export function paginateText(raw: string, offset?: number, limit?: number): string {
+export function paginateText(raw: string, options: ReadTextOptions = {}): string {
+  const { offset, limit, full = false } = options
+  const ref = options.ref ?? 'content'
+  const maxBytes = Math.floor(options.maxBytes ?? MAX_READ_BYTES)
   const allLines = raw.split('\n')
   const totalLines = allLines.length
+  const totalBytes = Buffer.byteLength(raw, 'utf-8')
   const startLine = offset ? Math.max(0, offset - 1) : 0
   const startLineDisplay = startLine + 1
 
+  if (full) {
+    if (offset !== undefined || limit !== undefined) {
+      throw new Error(
+        `read: ${ref} requested full: true together with offset/limit. ` +
+        `Use ${readArgs(ref, 'full: true')} for the entire content, or ${readArgs(ref, 'offset: 1')} for chunked reading.`
+      )
+    }
+    if (options.maxBytes !== undefined && totalBytes > maxBytes) {
+      throw makeFullReadMaxBytesError(ref, totalBytes, totalLines, maxBytes)
+    }
+    return raw
+  }
+
+  const explicitChunk = offset !== undefined || limit !== undefined
+  if (!explicitChunk && (totalBytes > maxBytes || totalLines > MAX_READ_LINES)) {
+    throw makeDefaultReadLimitError(ref, totalBytes, totalLines, maxBytes)
+  }
+
   if (startLine >= totalLines) {
-    throw new Error(`Offset ${offset} is beyond end of content (${totalLines} lines total)`)
+    throw new Error(`read: offset ${offset} is beyond end of ${ref} (${formatLineCount(totalLines)} total)`)
   }
 
   let selectedContent: string
@@ -148,10 +222,17 @@ export function paginateText(raw: string, offset?: number, limit?: number): stri
     selectedContent = allLines.slice(startLine).join('\n')
   }
 
-  const trunc = truncateHead(selectedContent, MAX_READ_LINES, MAX_READ_BYTES)
+  const maxLines = limit !== undefined ? Math.floor(limit) : MAX_READ_LINES
+  const trunc = truncateHead(selectedContent, maxLines, maxBytes)
 
   if (trunc.firstLineExceedsLimit) {
-    return `[Line ${startLineDisplay} is ${formatSize(Buffer.byteLength(allLines[startLine], 'utf-8'))}, exceeds ${formatSize(MAX_READ_BYTES)} limit.]`
+    const lineBytes = Buffer.byteLength(allLines[startLine], 'utf-8')
+    throw new Error(
+      `read: line ${startLineDisplay} in ${ref} is ${formatSize(lineBytes)}, ` +
+      `which exceeds maxBytes=${maxBytes} (${formatSize(maxBytes)}). ` +
+      `Use ${readArgs(ref, 'full: true')} to read the whole content, ` +
+      `or retry this chunk with ${readArgs(ref, `offset: ${startLineDisplay}, maxBytes: ${lineBytes}`)}.`
+    )
   }
 
   if (trunc.truncated) {
@@ -160,7 +241,7 @@ export function paginateText(raw: string, offset?: number, limit?: number): stri
     if (trunc.truncatedBy === 'lines') {
       return trunc.content + `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalLines}. Use offset=${nextOffset} to continue.]`
     }
-    return trunc.content + `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalLines} (${formatSize(MAX_READ_BYTES)} limit). Use offset=${nextOffset} to continue.]`
+    return trunc.content + `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalLines} (${formatSize(maxBytes)} limit). Use offset=${nextOffset} to continue.]`
   }
 
   if (userLimitedLines !== undefined && startLine + userLimitedLines < totalLines) {

@@ -187,17 +187,19 @@ These are all the functions available inside `execJs` code blocks. All are async
 
 ### File Operations
 
-#### `read({ path, offset?, limit? })`
+#### `read({ path, offset?, limit?, full?, maxBytes? })`
 
-Read a text file with optional pagination.
+Read a text file.
 - `path` (string): Relative path from agent root
-- `offset` (number, optional): Starting line number (1-based)
-- `limit` (number, optional): Max lines to read
-- Returns: String with content and line info
-- Limits: 2,000 lines max, 50KB max per read
+- Returns: String content
+- Usually call `read({ path })`. It returns complete content when the file fits under 50KB / 2,000 lines.
+- If a file is larger, `read` throws with the exact next call to use.
+- Use `full: true` for an intentional full large read.
+- Use `offset` / `limit` for chunks. `maxBytes` raises the byte cap when needed.
 
 ```js
 const content = await read({ path: 'data/config.json' })
+const fullLargeFile = await read({ path: 'views/large.html', full: true })
 ```
 
 #### `write({ path, content })` / `write({ path, base64 })`

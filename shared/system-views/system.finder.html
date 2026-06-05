@@ -768,7 +768,7 @@ body {
     try {
       if (cls.kind === 'image' && !node.fullPath.startsWith('@')) {
         if (cls.label === 'SVG') {
-          const text = await aw.read({ path: node.fullPath });
+          const text = await aw.read({ path: node.fullPath, full: true });
           setPreview({ kind: 'image-svg', node, text });
         } else {
           const r = await aw.read({ path: node.fullPath, asBase64: true });
@@ -777,14 +777,14 @@ body {
       } else if (cls.kind === 'binary') {
         // Try reading as text first; fall back to binary metadata
         try {
-          const text = await aw.read({ path: node.fullPath });
+          const text = await aw.read({ path: node.fullPath, offset: 1 });
           setPreview({ kind: 'text', node, text, label: cls.label });
         } catch {
           const r = await aw.read({ path: node.fullPath, asBase64: true });
           setPreview({ kind: 'binary', node, mimeType: r.mimeType, size: r.size, label: cls.label });
         }
       } else {
-        const text = await aw.read({ path: node.fullPath });
+        const text = await aw.read({ path: node.fullPath, offset: 1 });
         setPreview({ kind: 'text', node, text, label: cls.label });
       }
     } catch (e) {

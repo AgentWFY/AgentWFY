@@ -45,9 +45,21 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
     if (typeof request.limit !== 'undefined' && (!Number.isFinite(request.limit) || request.limit < 1)) {
       throw new Error('read limit must be a number >= 1 when provided')
     }
+    if (typeof request.full !== 'undefined' && typeof request.full !== 'boolean') {
+      throw new Error('read full must be a boolean when provided')
+    }
+    if (typeof request.maxBytes !== 'undefined' && (!Number.isFinite(request.maxBytes) || request.maxBytes < 1)) {
+      throw new Error('read maxBytes must be a number >= 1 when provided')
+    }
 
     const dbPath = parseDbPath(request.path)
-    if (dbPath) return dbRead(runtimeRoot, dbPath, request.offset, request.limit)
+    if (dbPath) return dbRead(runtimeRoot, dbPath, {
+      offset: request.offset,
+      limit: request.limit,
+      full: request.full,
+      maxBytes: request.maxBytes,
+      ref: request.path,
+    })
 
     const filePath = await assertPathAllowed(runtimeRoot, request.path)
 
@@ -68,7 +80,13 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
 
     // Text file
     const raw = await fs.readFile(filePath, 'utf-8')
-    return paginateText(raw, request.offset, request.limit)
+    return paginateText(raw, {
+      offset: request.offset,
+      limit: request.limit,
+      full: request.full,
+      maxBytes: request.maxBytes,
+      ref: request.path,
+    })
   })
 
   registry.register('write', async (params) => {
