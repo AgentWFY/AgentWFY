@@ -28,6 +28,8 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 ```sh
 ./scripts/mobile-run ios dev                       # default sim
 ./scripts/mobile-run ios dev "iPhone 16 Pro"       # specific sim
+./scripts/mobile-device-run                        # real iPhone: build, install, launch
+./scripts/mobile-device-run --no-build             # real iPhone: reinstall last archive
 ./scripts/mobile-run dev                           # desktop window (non-mobile)
 ./scripts/mobile-run build                         # release build, no bundling
 ```
@@ -35,6 +37,23 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 `mobile-run` rebuilds the mobile frontend through `scripts/build-mobile`
 first (mobile only — fast), then invokes the vendored tauri CLI with
 whatever args you pass.
+
+For real iPhones, prefer `mobile-device-run` over opening the generated
+Xcode project and pressing Run. Tauri's Xcode build phase expects CLI state
+that is set up by the Tauri command, and `tauri ios run` can also fail after
+a successful archive while exporting an IPA. `mobile-device-run` avoids that
+export step: it builds an iOS archive with `tauri ios build --archive-only`,
+then installs and launches the archived `.app` with Apple's `devicectl`.
+
+Pass a device name or identifier when more than one real device is connected:
+
+```sh
+./scripts/mobile-device-run "Stephan's iPhone"
+./scripts/mobile-device-run --no-build FD52913B-F882-41EC-AF71-E1B849822C1D
+```
+
+If signing succeeds but install or launch fails, retry with `--no-build` so
+you do not repeat the signing/archive step.
 
 For Android:
 

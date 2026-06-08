@@ -27,6 +27,7 @@
     "make": "node scripts/make",
     "preview": "node scripts/preview",
     "record-demo": "scripts/record-demo",
+    "mobile-device-run": "scripts/mobile-device-run",
     "mobile-run": "scripts/mobile-run",
     "mobile-tauri": "scripts/mobile-tauri",
     "mobile-doctor": "scripts/mobile-doctor"

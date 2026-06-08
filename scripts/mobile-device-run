@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Build/archive the iOS app, then install and launch it on a real device via
+# Apple's CoreDevice CLI. This avoids `tauri ios run`'s archive export step,
+# which can fail after a successful build with a missing temporary
+# -exportOptionsPlist.
+#
+# Usage:
+#   ./scripts/mobile-device-run
+#   ./scripts/mobile-device-run "Stephan's iPhone"
+#   ./scripts/mobile-device-run --no-build "Stephan's iPhone"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD=true
+
+if [ "${1:-}" = "--no-build" ]; then
+  BUILD=false
+  shift
+fi
+
+DEVICE="${1:-}"
+BUNDLE_ID="$(
+  node --input-type=module -e \
+    "import fs from 'node:fs'; const c=JSON.parse(fs.readFileSync('$ROOT/mobile/src-tauri/tauri.conf.json','utf8')); console.log(c.identifier)"
+)"
+APP_PATH="$ROOT/mobile/src-tauri/gen/apple/build/agentwfy-mobile_iOS.xcarchive/Products/Applications/AgentWFY Mobile.app"
+
+if [ -z "$DEVICE" ]; then
+  DEVICES_JSON="$(mktemp)"
+  xcrun devicectl list devices --json-output "$DEVICES_JSON" >/dev/null
+  DEVICE="$(
+    node --input-type=module -e \
+      "import fs from 'node:fs'; const j=JSON.parse(fs.readFileSync('$DEVICES_JSON','utf8')); const ds=(j.result?.devices ?? []).filter(d => String(d.state ?? d.connectionProperties?.tunnelState ?? '').toLowerCase() === 'connected'); if (ds.length !== 1) { console.error(ds.length === 0 ? 'No connected real iOS devices found.' : 'Multiple connected real iOS devices found; pass a device name or identifier.'); process.exit(2) } console.log(ds[0].identifier)"
+  )"
+  rm -f "$DEVICES_JSON"
+fi
+
+if [ "$BUILD" = true ]; then
+  node "$SCRIPT_DIR/build-mobile"
+  "$SCRIPT_DIR/mobile-tauri" ios build --debug --target aarch64 --archive-only --ci
+fi
+
+if [ ! -d "$APP_PATH" ]; then
+  echo "[mobile-device-run] app bundle not found: $APP_PATH" >&2
+  echo "[mobile-device-run] run without --no-build first." >&2
+  exit 1
+fi
+
+echo "[mobile-device-run] installing on: $DEVICE"
+xcrun devicectl --timeout 180 device install app --device "$DEVICE" "$APP_PATH"
+
+echo "[mobile-device-run] launching: $BUNDLE_ID"
+xcrun devicectl --timeout 60 device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
