@@ -26,6 +26,7 @@
     "package": "node scripts/build-desktop && node scripts/package",
     "make": "node scripts/make",
     "preview": "node scripts/preview",
+    "remote-agent": "node scripts/remote-agent",
     "record-demo": "scripts/record-demo",
     "mobile-device-run": "scripts/mobile-device-run",
     "mobile-run": "scripts/mobile-run",

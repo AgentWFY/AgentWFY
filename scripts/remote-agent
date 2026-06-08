@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+// Start an AgentWFY remote daemon for mobile/manual testing.
+//
+// Usage:
+//   npm run remote-agent
+//   npm run remote-agent -- /path/to/agent
+
+import { spawn, execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path, { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(__dirname, '..')
+const serverEntry = join(root, 'dist', 'server', 'index.js')
+
+const args = process.argv.slice(2)
+let forceBuild = false
+let skipBuild = false
+let folderArg = null
+
+for (const arg of args) {
+  if (arg === '-h' || arg === '--help') {
+    printUsage()
+    process.exit(0)
+  }
+  if (arg === '--build') {
+    forceBuild = true
+    continue
+  }
+  if (arg === '--no-build') {
+    skipBuild = true
+    continue
+  }
+  if (folderArg !== null) {
+    console.error(`error: unexpected argument: ${arg}`)
+    printUsage()
+    process.exit(2)
+  }
+  folderArg = arg
+}
+
+if (forceBuild && skipBuild) {
+  console.error('error: --build and --no-build cannot be used together')
+  process.exit(2)
+}
+
+if (forceBuild || (!skipBuild && !existsSync(serverEntry))) {
+  execFileSync(process.execPath, [join(root, 'scripts', 'build-server')], {
+    cwd: root,
+    stdio: 'inherit',
+    env: withQuietNodeWarnings(process.env),
+  })
+}
+
+if (!existsSync(serverEntry)) {
+  console.error(`error: server entry not found at ${serverEntry}`)
+  console.error('Run `npm run build-server` first, or omit --no-build.')
+  process.exit(1)
+}
+
+const isTemporary = folderArg === null
+const runtimeRoot = isTemporary
+  ? mkdtempSync(path.join(os.tmpdir(), 'agentwfy-remote-agent-'))
+  : path.resolve(folderArg)
+
+mkdirSync(runtimeRoot, { recursive: true })
+ensureAgentSeeded(runtimeRoot)
+
+const configToken = readRemoteServerToken(runtimeRoot)
+const token = configToken ?? generateToken()
+const port = await getFreePort('127.0.0.1')
+const baseUrl = `http://127.0.0.1:${port}`
+
+console.log('')
+console.log('AgentWFY remote test server')
+console.log(`  Agent root: ${runtimeRoot}${isTemporary ? ' (temporary, removed on stop)' : ''}`)
+console.log(`  URL:        ${baseUrl}`)
+console.log(`  Token:      ${token}`)
+console.log('')
+console.log(`Tunnel command: cloudflared tunnel --url ${baseUrl}`)
+console.log('')
+console.log('Press Ctrl-C to stop.')
+console.log('')
+
+const child = spawn(process.execPath, [serverEntry, 'start'], {
+  cwd: root,
+  stdio: 'inherit',
+  env: {
+    ...withQuietNodeWarnings(process.env),
+    AGENTWFY_AGENT_ROOT: runtimeRoot,
+    AGENTWFY_REMOTE_HOST: '127.0.0.1',
+    AGENTWFY_REMOTE_PORT: String(port),
+    ...(configToken ? {} : { AGENTWFY_REMOTE_TOKEN: token }),
+  },
+})
+
+let shuttingDown = false
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    if (shuttingDown) return
+    shuttingDown = true
+    // Ctrl-C in a terminal reaches both this wrapper and the child because
+    // they share a process group. If only the wrapper receives the signal
+    // (for example, from launch tooling), forward it after the child has had
+    // a chance to exit on its own.
+    setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill(signal)
+      }
+    }, 500).unref()
+  })
+}
+
+child.on('exit', (code, signal) => {
+  if (isTemporary) {
+    rmSync(runtimeRoot, { recursive: true, force: true })
+  }
+  if (signal === 'SIGINT') process.exit(130)
+  if (signal === 'SIGTERM') process.exit(143)
+  process.exit(code ?? 0)
+})
+
+child.on('error', (err) => {
+  if (isTemporary) {
+    rmSync(runtimeRoot, { recursive: true, force: true })
+  }
+  console.error('remote-agent: failed to start server:', err)
+  process.exit(1)
+})
+
+function printUsage() {
+  console.log(`
+Usage:
+  npm run remote-agent
+  npm run remote-agent -- /path/to/agent
+
+Options:
+  --build       Build server before starting.
+  --no-build    Do not auto-build when dist/server/index.js is missing.
+
+No folder creates a temporary seeded agent. A provided folder is used as the
+agent root; if it already has .agentwfy/remote-server.json, that token is used,
+otherwise this command uses a one-run ephemeral token.
+`.trim())
+}
+
+function ensureAgentSeeded(agentRoot) {
+  const code = `
+    import { ensureViewsSchema } from '#shared/db/views.js';
+    import { seedDefaultAgent } from '#shared/default-agent.js';
+    const root = ${JSON.stringify(agentRoot)};
+    await ensureViewsSchema(root);
+    await seedDefaultAgent(root);
+  `
+  execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+    cwd: root,
+    stdio: 'inherit',
+    env: withQuietNodeWarnings(process.env),
+  })
+}
+
+function readRemoteServerToken(agentRoot) {
+  const configPath = path.join(agentRoot, '.agentwfy', 'remote-server.json')
+  try {
+    const raw = JSON.parse(readFileSync(configPath, 'utf-8'))
+    return typeof raw?.token === 'string' && raw.token.length > 0 ? raw.token : null
+  } catch {
+    return null
+  }
+}
+
+function generateToken() {
+  return randomBytes(32).toString('base64url')
+}
+
+function getFreePort(host) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.on('error', reject)
+    server.listen(0, host, () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : null
+      server.close(() => {
+        if (typeof port === 'number') resolve(port)
+        else reject(new Error('Failed to allocate a free TCP port'))
+      })
+    })
+  })
+}
+
+function withQuietNodeWarnings(env) {
+  const existing = env.NODE_OPTIONS ?? ''
+  const flag = '--disable-warning=ExperimentalWarning'
+  return {
+    ...env,
+    NODE_OPTIONS: existing.includes(flag) ? existing : `${existing} ${flag}`.trim(),
+  }
+}
