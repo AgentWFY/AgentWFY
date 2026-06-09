@@ -26,15 +26,164 @@ BUNDLE_ID="$(
 )"
 APP_PATH="$ROOT/mobile/src-tauri/gen/apple/build/agentwfy-mobile_iOS.xcarchive/Products/Applications/AgentWFY Mobile.app"
 
+select_coredevice() {
+  local devices_json
+  local status
+  devices_json="$(mktemp)"
+  if xcrun devicectl --timeout 30 list devices --json-output "$devices_json" >/dev/null; then
+    :
+  else
+    status=$?
+    rm -f "$devices_json"
+    return "$status"
+  fi
+  if node --input-type=module - "$devices_json" <<'JS'
+import fs from 'node:fs'
+
+const jsonPath = process.argv[2]
+const devices = JSON.parse(fs.readFileSync(jsonPath, 'utf8')).result?.devices ?? []
+
+const isIosDevice = (device) => {
+  const platform = String(device.hardwareProperties?.platform ?? '').toLowerCase()
+  const type = String(device.hardwareProperties?.deviceType ?? '').toLowerCase()
+  const reality = String(device.hardwareProperties?.reality ?? '').toLowerCase()
+  return reality === 'physical' && (platform.includes('ios') || type === 'iphone' || type === 'ipad' || type === 'ipod')
+}
+
+const isConnected = (device) => {
+  const state = String(device.state ?? '').toLowerCase()
+  const tunnelState = String(device.connectionProperties?.tunnelState ?? '').toLowerCase()
+  return state === 'connected' || tunnelState === 'connected'
+}
+
+const devicesToUse = devices.filter((device) => isIosDevice(device) && isConnected(device))
+
+if (devicesToUse.length === 0) {
+  process.exit(3)
+}
+
+if (devicesToUse.length > 1) {
+  console.error('Multiple connected real iOS devices found; pass a device name or identifier:')
+  for (const device of devicesToUse) {
+    const name = device.deviceProperties?.name ?? device.identifier
+    console.error(`  ${name} (${device.identifier})`)
+  }
+  process.exit(2)
+}
+
+console.log(devicesToUse[0].identifier)
+JS
+  then
+    status=0
+  else
+    status=$?
+  fi
+  rm -f "$devices_json"
+  return "$status"
+}
+
+select_xcdevice() {
+  local devices_json
+  local status
+  devices_json="$(mktemp)"
+  if xcrun xcdevice list > "$devices_json"; then
+    :
+  else
+    status=$?
+    rm -f "$devices_json"
+    return "$status"
+  fi
+  if node --input-type=module - "$devices_json" <<'JS'
+import fs from 'node:fs'
+
+const jsonPath = process.argv[2]
+const devices = JSON.parse(fs.readFileSync(jsonPath, 'utf8'))
+const iosDevices = devices.filter((device) => (
+  device.simulator !== true &&
+  device.ignored !== true &&
+  String(device.platform ?? '').toLowerCase() === 'com.apple.platform.iphoneos'
+))
+const availableDevices = iosDevices.filter((device) => device.available !== false)
+const devicesToUse = availableDevices.length > 0 ? availableDevices : iosDevices
+
+if (devicesToUse.length === 0) {
+  process.exit(3)
+}
+
+if (devicesToUse.length > 1) {
+  console.error('Multiple real iOS devices found; pass a device name or identifier:')
+  for (const device of devicesToUse) {
+    console.error(`  ${device.name ?? device.identifier} (${device.identifier})`)
+  }
+  process.exit(2)
+}
+
+console.log(devicesToUse[0].identifier)
+JS
+  then
+    status=0
+  else
+    status=$?
+  fi
+  rm -f "$devices_json"
+  return "$status"
+}
+
+json_device_identifier() {
+  local json_path="$1"
+  local fallback="$2"
+  node --input-type=module - "$json_path" "$fallback" <<'JS'
+import fs from 'node:fs'
+
+const jsonPath = process.argv[2]
+const fallback = process.argv[3]
+const result = JSON.parse(fs.readFileSync(jsonPath, 'utf8')).result
+console.log(result?.identifier ?? result?.device?.identifier ?? fallback)
+JS
+}
+
+prepare_device() {
+  local selector="$1"
+  local pair_json
+  local details_json
+
+  pair_json="$(mktemp)"
+  if xcrun devicectl --timeout 90 manage pair --device "$selector" --json-output "$pair_json" >/dev/null 2>&1; then
+    selector="$(json_device_identifier "$pair_json" "$selector")"
+  fi
+  rm -f "$pair_json"
+
+  details_json="$(mktemp)"
+  if xcrun devicectl --timeout 90 device info details --device "$selector" --json-output "$details_json" >/dev/null 2>&1; then
+    selector="$(json_device_identifier "$details_json" "$selector")"
+  fi
+  rm -f "$details_json"
+
+  printf '%s\n' "$selector"
+}
+
 if [ -z "$DEVICE" ]; then
-  DEVICES_JSON="$(mktemp)"
-  xcrun devicectl list devices --json-output "$DEVICES_JSON" >/dev/null
-  DEVICE="$(
-    node --input-type=module -e \
-      "import fs from 'node:fs'; const j=JSON.parse(fs.readFileSync('$DEVICES_JSON','utf8')); const ds=(j.result?.devices ?? []).filter(d => String(d.state ?? d.connectionProperties?.tunnelState ?? '').toLowerCase() === 'connected'); if (ds.length !== 1) { console.error(ds.length === 0 ? 'No connected real iOS devices found.' : 'Multiple connected real iOS devices found; pass a device name or identifier.'); process.exit(2) } console.log(ds[0].identifier)"
-  )"
-  rm -f "$DEVICES_JSON"
+  COREDEVICE_STATUS=0
+  DEVICE="$(select_coredevice)" || COREDEVICE_STATUS=$?
+  if [ "$COREDEVICE_STATUS" -eq 2 ]; then
+    exit 2
+  fi
+  if [ "$COREDEVICE_STATUS" -ne 0 ]; then
+    XCDEVICE_STATUS=0
+    DEVICE="$(select_xcdevice)" || XCDEVICE_STATUS=$?
+    if [ "$XCDEVICE_STATUS" -eq 2 ]; then
+      exit 2
+    fi
+    if [ "$XCDEVICE_STATUS" -ne 0 ]; then
+      echo "No connected real iOS devices found." >&2
+      echo "Connect an unlocked iPhone/iPad with Developer Mode enabled, or pass a device name or identifier." >&2
+      exit 2
+    fi
+    echo "[mobile-device-run] CoreDevice is not connected yet; using xcdevice UDID: $DEVICE"
+  fi
 fi
+
+DEVICE="$(prepare_device "$DEVICE")"
 
 if [ "$BUILD" = true ]; then
   node "$SCRIPT_DIR/build-mobile"
