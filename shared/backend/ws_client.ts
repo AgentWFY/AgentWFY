@@ -79,6 +79,7 @@ export class WsClient {
   private readonly pending = new Map<string, PendingRpc>()
   private socket: WebSocketLike | null = null
   private connectPromise: Promise<void> | null = null
+  private cancelConnect: (() => void) | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private statusSnapshot: BackendStatusSnapshot = {
     state: 'disconnected',
@@ -128,6 +129,8 @@ export class WsClient {
       this.reconnectTimer = null
     }
     this.rejectAllPending(new WsClientError('Disconnected', 'Remote backend stopped'))
+    this.cancelConnect?.()
+    this.cancelConnect = null
     this.socket?.close()
     this.socket = null
     await this.connectPromise?.catch(() => {})
@@ -212,16 +215,26 @@ export class WsClient {
         reconnectAttempt: this.reconnectAttempt,
       })
 
+      let cancelOpen: (() => void) | null = null
+      const clearCancel = () => {
+        if (this.cancelConnect === cancelOpen) this.cancelConnect = null
+      }
       const settleOk = () => {
         if (settled) return
         settled = true
+        clearCancel()
         resolve()
       }
       const settleErr = (error: unknown) => {
         if (settled) return
         settled = true
+        clearCancel()
         reject(error)
       }
+      cancelOpen = () => {
+        settleErr(new WsClientError('Disconnected', 'Remote backend stopped'))
+      }
+      this.cancelConnect = cancelOpen
 
       let socket: WebSocketLike
       try {
@@ -239,15 +252,18 @@ export class WsClient {
       this.socket = socket
 
       socket.addEventListener('open', () => {
+        if (this.stopped || this.socket !== socket || settled) return
         opened = true
         this.reconnectAttempt = 0
         this.setStatus({ state: 'connected', message: 'Remote agent connected' })
         settleOk()
       })
       socket.addEventListener('message', (event) => {
+        if (this.stopped || this.socket !== socket) return
         void this.handleRawMessage(event.data)
       })
       socket.addEventListener('error', (event) => {
+        if (this.stopped || this.socket !== socket) return
         const message = connectionFailureMessage(this.baseUrl, describeWebSocketIssue(event))
         const error = new WsClientError('WebSocketError', message)
         this.setStatus({
@@ -258,8 +274,12 @@ export class WsClient {
         settleErr(error)
       })
       socket.addEventListener('close', (event) => {
-        if (this.socket === socket) this.socket = null
-        this.rejectAllPending(new WsClientError('Disconnected', 'Remote server WebSocket closed'))
+        const isCurrentSocket = this.socket === socket
+        if (isCurrentSocket) {
+          this.socket = null
+          this.rejectAllPending(new WsClientError('Disconnected', 'Remote server WebSocket closed'))
+        }
+        if (!isCurrentSocket || this.stopped) return
         if (!settled) {
           const message = connectionFailureMessage(this.baseUrl, describeWebSocketIssue(event))
           this.setStatus({
@@ -296,6 +316,7 @@ export class WsClient {
       })
       this.ensureConnected()
         .catch((err) => {
+          if (this.stopped) return
           const message = messageFromUnknown(err)
           console.warn('[WsClient] reconnect failed:', message)
           this.reconnectAttempt += 1
