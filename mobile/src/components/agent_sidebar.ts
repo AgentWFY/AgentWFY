@@ -11,7 +11,7 @@ import type { BackendStatusSnapshot } from '#shared/backend/interface.js'
 import { dispatch, listen } from '../events.js'
 import type { InstalledAgent } from '../agent-meta.js'
 import { ICON_PLUG, ICON_PLUS, ICON_TRASH } from './icons.js'
-import { displayHost, escapeHtml } from './util.js'
+import { displayHost, escapeHtml, requestConfirmation } from './util.js'
 
 export class TlAgentSidebar extends HTMLElement {
   private slotsEl!: HTMLDivElement
@@ -35,7 +35,7 @@ export class TlAgentSidebar extends HTMLElement {
     this.unsubs.push(
       listen('agents-changed', ({ agents }) => this.renderSlots(agents)),
       listen('agent-switched', () => this.renderSlots(agentRegistry.getAgents())),
-      listen('status-changed', () => this.renderSlots(agentRegistry.getAgents())),
+      listen('status-changed', ({ status }) => this.patchStatus(status)),
     )
     this.renderSlots(agentRegistry.getAgents())
 
@@ -77,6 +77,16 @@ export class TlAgentSidebar extends HTMLElement {
         }
       })
       bindContextMenu(btn, agentId, this)
+    })
+  }
+
+  private patchStatus(status: BackendStatusSnapshot): void {
+    const activeAgentId = backendSession.getActiveAgentId()
+    this.slotsEl.querySelectorAll<HTMLDivElement>('.rail-slot').forEach((slot) => {
+      const agentId = slot.querySelector<HTMLButtonElement>('[data-agent-id]')?.dataset.agentId ?? null
+      const isActive = agentId !== null && agentId === activeAgentId
+      slot.classList.toggle('is-active', isActive)
+      slot.dataset.status = isActive ? status.state : 'disconnected'
     })
   }
 
@@ -124,11 +134,20 @@ export class TlAgentSidebar extends HTMLElement {
     })
     menu.querySelector<HTMLButtonElement>('[data-action="remove"]')?.addEventListener('click', () => {
       this.hideMenu()
-      if (!confirm(`Remove agent "${agentId}"?`)) return
-      dispatch('remove-agent', { agentId })
+      void this.confirmRemoveAgent(agentId)
     })
 
     this.menuEl = menu
+  }
+
+  private async confirmRemoveAgent(agentId: string): Promise<void> {
+    const confirmed = await requestConfirmation({
+      title: 'Remove agent',
+      message: `Remove "${agentId}" from this device?`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (confirmed) dispatch('remove-agent', { agentId })
   }
 
   hideMenu = (): void => {

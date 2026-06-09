@@ -1327,6 +1327,51 @@ awfy-live-status {
 
 .main-header-actions { position: relative; }
 
+/* ── Confirmation dialog ──────────────────────────────────────── */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.36);
+}
+
+.confirm-dialog {
+  width: min(340px, 100%);
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+}
+
+.confirm-dialog h2 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.confirm-dialog p {
+  margin-top: 8px;
+  color: var(--text-2);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.confirm-actions .btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
 /* ── Utilities ─────────────────────────────────────────────────── */
 
 .muted { color: var(--text-muted); }

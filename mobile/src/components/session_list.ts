@@ -11,7 +11,7 @@ import { dispatch, listen } from '../events.js'
 import type { ProviderState, SessionSummary } from '#shared/backend/interface.js'
 import type { BackendStatusSnapshot } from '#shared/backend/interface.js'
 import { ICON_PLUS_SM, ICON_TRASH } from './icons.js'
-import { escapeHtml, formatRelative } from './util.js'
+import { escapeHtml, formatRelative, requestConfirmation } from './util.js'
 
 export class TlSessionList extends HTMLElement {
   private listEl!: HTMLDivElement
@@ -112,10 +112,19 @@ export class TlSessionList extends HTMLElement {
         const id = btn.dataset.sessionId!
         const t = this.sessions.find((s) => s.sessionId === id)
         const label = t?.title || 'this session'
-        if (!confirm(`Remove session "${label}"?`)) return
-        dispatch('remove-session', { sessionId: id })
+        void this.confirmRemoveSession(id, label)
       })
     })
+  }
+
+  private async confirmRemoveSession(sessionId: string, title: string): Promise<void> {
+    const confirmed = await requestConfirmation({
+      title: 'Remove session',
+      message: `Remove "${title}"?`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (confirmed) dispatch('remove-session', { sessionId })
   }
 }
 

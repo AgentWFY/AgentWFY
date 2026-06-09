@@ -8,7 +8,7 @@ import { dispatch, listen } from '../events.js'
 import { bridge } from '../tauri-bridge.js'
 import type { BackendStatusSnapshot, SessionSummary } from '#shared/backend/interface.js'
 import { ICON_BACK, ICON_KEBAB, ICON_REFRESH, ICON_TRASH } from './icons.js'
-import { escapeHtml } from './util.js'
+import { escapeHtml, requestConfirmation } from './util.js'
 
 type HeaderKind = 'picker' | 'session' | 'draft' | 'view'
 
@@ -125,8 +125,7 @@ export class TlMainHeader extends HTMLElement {
       this.menuListEl?.classList.add('hidden')
       const agentId = this.getAttribute('agent-id')
       if (!agentId) return
-      if (!confirm(`Remove agent "${agentId}"?`)) return
-      dispatch('remove-agent', { agentId })
+      void this.confirmRemoveAgent(agentId)
     })
 
     this.querySelector<HTMLButtonElement>('[data-role="remove-session"]')?.addEventListener('click', () => {
@@ -134,11 +133,30 @@ export class TlMainHeader extends HTMLElement {
       const sessionId = this.getAttribute('session-id')
       if (!sessionId) return
       const title = this.knownSessionTitles.get(sessionId) || 'Untitled session'
-      if (!confirm(`Remove session "${title}"?`)) return
-      dispatch('remove-session', { sessionId })
+      void this.confirmRemoveSession(sessionId, title)
     })
 
     this.patchTitle()
+  }
+
+  private async confirmRemoveAgent(agentId: string): Promise<void> {
+    const confirmed = await requestConfirmation({
+      title: 'Remove agent',
+      message: `Remove "${agentId}" from this device?`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (confirmed) dispatch('remove-agent', { agentId })
+  }
+
+  private async confirmRemoveSession(sessionId: string, title: string): Promise<void> {
+    const confirmed = await requestConfirmation({
+      title: 'Remove session',
+      message: `Remove "${title}"?`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (confirmed) dispatch('remove-session', { sessionId })
   }
 
   private patchTitle() {

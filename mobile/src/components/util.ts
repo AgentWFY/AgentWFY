@@ -55,3 +55,55 @@ export function autoSizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = 'auto'
   textarea.style.height = `${Math.min(140, Math.max(36, textarea.scrollHeight))}px`
 }
+
+export interface ConfirmationOptions {
+  title: string
+  message: string
+  confirmLabel?: string
+  cancelLabel?: string
+  danger?: boolean
+}
+
+export function requestConfirmation(options: ConfirmationOptions): Promise<boolean> {
+  const previousActive = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null
+  const backdrop = document.createElement('div')
+  backdrop.className = 'confirm-backdrop'
+  backdrop.innerHTML = `
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">${escapeHtml(options.title)}</h2>
+      <p>${escapeHtml(options.message)}</p>
+      <div class="confirm-actions">
+        <button type="button" class="btn ghost" data-role="cancel">${escapeHtml(options.cancelLabel ?? 'Cancel')}</button>
+        <button type="button" class="btn ${options.danger ? 'danger' : 'primary'}" data-role="confirm">${escapeHtml(options.confirmLabel ?? 'OK')}</button>
+      </div>
+    </div>
+  `
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      document.removeEventListener('keydown', onKeyDown)
+      backdrop.remove()
+      previousActive?.focus()
+      resolve(value)
+    }
+    const onKeyDown = (evt: KeyboardEvent) => {
+      if (evt.key === 'Escape') finish(false)
+    }
+
+    backdrop.addEventListener('click', (evt) => {
+      if (evt.target === backdrop) finish(false)
+    })
+    backdrop.querySelector<HTMLButtonElement>('[data-role="cancel"]')?.addEventListener('click', () => finish(false))
+    backdrop.querySelector<HTMLButtonElement>('[data-role="confirm"]')?.addEventListener('click', () => finish(true))
+    document.addEventListener('keydown', onKeyDown)
+    document.body.appendChild(backdrop)
+    queueMicrotask(() => {
+      backdrop.querySelector<HTMLButtonElement>('[data-role="confirm"]')?.focus()
+    })
+  })
+}
