@@ -15,6 +15,7 @@ import {
   type AgentMeta,
   type InstalledAgent,
 } from '../agent-meta.js'
+import { bridge } from '../tauri-bridge.js'
 import { dispatch } from '../events.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 
@@ -67,8 +68,17 @@ class AgentRegistry {
   }
 
   async remove(agentId: string): Promise<void> {
+    let cacheError: unknown = null
+    try {
+      await bridge.mirrorDb.removeAgent(agentId)
+    } catch (err) {
+      cacheError = err
+    }
     await removeInstalledAgent(agentId)
     await this.refresh()
+    if (cacheError) {
+      dispatch('error', { message: `Removing local agent data failed: ${messageFromUnknown(cacheError)}` })
+    }
   }
 }
 

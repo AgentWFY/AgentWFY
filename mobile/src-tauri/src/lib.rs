@@ -7,8 +7,8 @@ mod view_protocol;
 
 use active_agent::{clear_active_agent_endpoint, set_active_agent_endpoint, ActiveAgent};
 use mirror_db::{
-    mirror_db_apply_change, mirror_db_open, mirror_db_query, mirror_db_replace_snapshot,
-    MirrorDbState,
+    mirror_db_apply_change, mirror_db_open, mirror_db_query, mirror_db_remove_agent,
+    mirror_db_replace_snapshot, MirrorDbState,
 };
 use store::{store_get, store_remove, store_set, StoreState};
 
@@ -37,6 +37,7 @@ pub fn run() {
                 mirror_db_query,
                 mirror_db_apply_change,
                 mirror_db_replace_snapshot,
+                mirror_db_remove_agent,
                 set_active_agent_endpoint,
                 clear_active_agent_endpoint,
                 store_get,
@@ -52,6 +53,7 @@ pub fn run() {
                 mirror_db_query,
                 mirror_db_apply_change,
                 mirror_db_replace_snapshot,
+                mirror_db_remove_agent,
                 set_active_agent_endpoint,
                 clear_active_agent_endpoint,
                 store_get,

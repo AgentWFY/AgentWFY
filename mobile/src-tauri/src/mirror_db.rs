@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::{params_from_iter, types::Value as SqlValue, types::ValueRef, Connection};
@@ -78,9 +78,38 @@ pub struct ChangeWire {
     pub row: Option<Map<String, JsonValue>>,
 }
 
-fn agent_dir(app: &tauri::AppHandle, agent_id: &str) -> Result<PathBuf, String> {
+fn agents_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let dir = base.join("agents").join(agent_id);
+    Ok(base.join("agents"))
+}
+
+fn agent_dir_path(app: &tauri::AppHandle, agent_id: &str) -> Result<PathBuf, String> {
+    if agent_id.trim().is_empty() {
+        return Err("agent id is required".to_string());
+    }
+
+    let rel = Path::new(agent_id);
+    let mut has_normal_component = false;
+    for component in rel.components() {
+        match component {
+            Component::Normal(_) => has_normal_component = true,
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return Err(format!("invalid agent id: {agent_id}"));
+            }
+        }
+    }
+    if !has_normal_component {
+        return Err(format!("invalid agent id: {agent_id}"));
+    }
+
+    Ok(agents_root(app)?.join(rel))
+}
+
+fn agent_dir(app: &tauri::AppHandle, agent_id: &str) -> Result<PathBuf, String> {
+    let dir = agent_dir_path(app, agent_id)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
@@ -108,7 +137,9 @@ pub fn mirror_db_open(
     if !path.exists() {
         map.remove(&agent_id);
         // Don't bump active here — the caller is about to snapshot+reopen.
-        return Ok(OpenResult { status: "not_initialized" });
+        return Ok(OpenResult {
+            status: "not_initialized",
+        });
     }
     let conn = open_connection(&path)?;
     map.insert(agent_id.clone(), conn);
@@ -135,8 +166,7 @@ pub fn mirror_db_query(
         .collect::<Result<_, _>>()?;
 
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let column_names: Vec<String> =
-        stmt.column_names().into_iter().map(String::from).collect();
+    let column_names: Vec<String> = stmt.column_names().into_iter().map(String::from).collect();
     let rows = stmt
         .query_map(params_from_iter(sql_params), |row| {
             let mut obj = Map::with_capacity(column_names.len());
@@ -158,7 +188,10 @@ pub fn mirror_db_apply_change(
     change: ChangeWire,
 ) -> Result<(), String> {
     if !CHANGE_TRACKED_TABLES.contains(&change.table.as_str()) {
-        return Err(format!("applyMirrorChange: untracked table {}", change.table));
+        return Err(format!(
+            "applyMirrorChange: untracked table {}",
+            change.table
+        ));
     }
 
     let map = state.inner.lock().map_err(|e| e.to_string())?;
@@ -170,7 +203,8 @@ pub fn mirror_db_apply_change(
 
     if change.op == "delete" {
         let sql = format!("DELETE FROM {} WHERE name = ?", change.table);
-        conn.execute(&sql, [row_id_sql]).map_err(|e| e.to_string())?;
+        conn.execute(&sql, [row_id_sql])
+            .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
@@ -212,10 +246,7 @@ pub fn mirror_db_apply_change(
                         .map(|c| format!("{} = ?", c))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    let sql = format!(
-                        "UPDATE {} SET {} WHERE name = ?",
-                        change.table, set_clause
-                    );
+                    let sql = format!("UPDATE {} SET {} WHERE name = ?", change.table, set_clause);
                     let mut bind: Vec<SqlValue> = values.clone();
                     bind.push(json_to_sql(prev)?);
                     let changed = conn
@@ -263,8 +294,7 @@ pub fn mirror_db_apply_change(
          END",
         table = change.table
     );
-    conn.execute(&recreate_sql, [])
-        .map_err(|e| e.to_string())?;
+    conn.execute(&recreate_sql, []).map_err(|e| e.to_string())?;
 
     result
 }
@@ -305,6 +335,37 @@ pub fn mirror_db_replace_snapshot(
     Ok(())
 }
 
+#[tauri::command]
+pub fn mirror_db_remove_agent(
+    app: tauri::AppHandle,
+    state: State<MirrorDbState>,
+    active: State<ActiveAgent>,
+    agent_id: String,
+) -> Result<(), String> {
+    let dir = agent_dir_path(&app, &agent_id)?;
+
+    {
+        let mut map = state.inner.lock().map_err(|e| e.to_string())?;
+        map.remove(&agent_id);
+    }
+
+    let clear_active = active.get().as_deref() == Some(agent_id.as_str())
+        || active
+            .endpoint()
+            .map(|endpoint| endpoint.agent_id == agent_id)
+            .unwrap_or(false);
+    if clear_active {
+        active.set(None);
+        active.set_endpoint(None);
+    }
+
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 fn json_to_sql(value: &JsonValue) -> Result<SqlValue, String> {
     Ok(match value {
         JsonValue::Null => SqlValue::Null,
@@ -332,6 +393,8 @@ fn sql_value_ref_to_json(value: ValueRef<'_>) -> JsonValue {
         ValueRef::Integer(i) => JsonValue::from(i),
         ValueRef::Real(f) => JsonValue::from(f),
         ValueRef::Text(t) => JsonValue::String(String::from_utf8_lossy(t).into_owned()),
-        ValueRef::Blob(b) => JsonValue::Array(b.iter().map(|byte| JsonValue::from(*byte)).collect()),
+        ValueRef::Blob(b) => {
+            JsonValue::Array(b.iter().map(|byte| JsonValue::from(*byte)).collect())
+        }
     }
 }

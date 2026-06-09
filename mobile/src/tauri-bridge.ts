@@ -75,6 +75,9 @@ export const bridge = {
         bytes: Array.from(u8),
       })
     },
+    removeAgent(agentId: string): Promise<void> {
+      return invoke<void>('mirror_db_remove_agent', { agentId })
+    },
   },
 
   /** Daemon endpoint info shared with the Rust URI scheme handler so it can
