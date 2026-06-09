@@ -18,7 +18,7 @@ import type {
 } from './types.js'
 
 function pageClientNotConnectedError(operation: string): Error {
-  return new Error(`Desktop client is not connected; ${operation} requires an active desktop client`)
+  return new Error(`Client is not connected; ${operation} requires an active client`)
 }
 
 export interface ClientPageRpcInvoker {

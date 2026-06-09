@@ -3,7 +3,7 @@
 // delegated to WsClient in ./ws_client.ts. This file is purely the
 // AgentBackend translation layer: shape the protocol methods into the
 // AgentBackend API surface, fan out events/db-changes, and route incoming
-// server-initiated client.functions.invoke RPCs to the desktop's client
+// server-initiated client.functions.invoke RPCs to the connected client's
 // function registry.
 //
 // Constraints:
@@ -121,14 +121,14 @@ function isClientPageRpcMethod(method: string): method is ClientPageRpcMethod {
 export interface RemoteBackendConfig extends WsClientConfig {
   /** Stable identifier for this backend instance (e.g. the agent slug). */
   id: string
-  /** Desktop-local runtime functions that should be callable through this backend
+  /** Client-local runtime functions that should be callable through this backend
    *  and from the daemon via client.functions.invoke. */
-  desktopFunctions?: RemoteDesktopFunctions
+  clientFunctions?: RemoteClientFunctions
   /** Client-hosted pages exposed to the daemon through typed client.pages.* RPC. */
   clientPages?: PageApi
 }
 
-export interface RemoteDesktopFunctions {
+export interface RemoteClientFunctions {
   getMethodNames(): string[]
   has(name: string): boolean
   call(name: string, params: unknown): Promise<unknown>
@@ -155,7 +155,7 @@ export class RemoteBackend implements AgentBackend {
   private readonly ws: WsClient
   private readonly baseUrl: string
   private readonly agentToken: string
-  private readonly desktopFunctions: RemoteDesktopFunctions | undefined
+  private readonly clientFunctions: RemoteClientFunctions | undefined
   private readonly clientPages: PageApi | undefined
 
   private readonly eventSubscribers = new Set<(event: AgentBackendEvent) => void>()
@@ -167,7 +167,7 @@ export class RemoteBackend implements AgentBackend {
     this.id = config.id
     this.baseUrl = config.baseUrl.replace(/\/$/, '')
     this.agentToken = config.agentToken
-    this.desktopFunctions = config.desktopFunctions
+    this.clientFunctions = config.clientFunctions
     this.clientPages = config.clientPages
     this.ws = new WsClient(config)
     this.ws.setMessageHandler((message) => this.handleWsMessage(message))
@@ -215,8 +215,8 @@ export class RemoteBackend implements AgentBackend {
       const remoteList = await this.ws.rpc<Record<string, never>, FunctionsListResponse>('functions.list', {})
       const merged = new Map<string, FunctionInfo>()
       for (const info of remoteList) merged.set(info.name, info)
-      if (this.desktopFunctions) {
-        for (const name of this.desktopFunctions.getMethodNames()) {
+      if (this.clientFunctions) {
+        for (const name of this.clientFunctions.getMethodNames()) {
           if (!merged.has(name)) merged.set(name, { name })
         }
       }
@@ -226,15 +226,15 @@ export class RemoteBackend implements AgentBackend {
       if (req.name === 'runSql' && this.dbSync) {
         return this.dbSync.runSql(req.params)
       }
-      if (isClientRuntimeFunction(req.name) && this.desktopFunctions?.has(req.name)) {
-        return this.desktopFunctions.call(req.name, req.params)
+      if (isClientRuntimeFunction(req.name) && this.clientFunctions?.has(req.name)) {
+        return this.clientFunctions.call(req.name, req.params)
       }
       return this.invokeRemoteFunction(req)
     },
     getNamesSync: () => {
       const names = new Set<string>(DAEMON_BUILT_IN_FUNCTIONS)
-      if (this.desktopFunctions) {
-        for (const name of this.desktopFunctions.getMethodNames()) names.add(name)
+      if (this.clientFunctions) {
+        for (const name of this.clientFunctions.getMethodNames()) names.add(name)
       }
       return [...names]
     },
@@ -422,7 +422,7 @@ export class RemoteBackend implements AgentBackend {
       return
     }
 
-    if (!this.desktopFunctions) {
+    if (!this.clientFunctions) {
       this.sendRpcError(message.id, {
         name: 'ClientFunctionUnavailable',
         message: 'Client function registry is not available in this runtime',
@@ -432,7 +432,7 @@ export class RemoteBackend implements AgentBackend {
 
     try {
       const req = message.params as ClientFunctionsInvokeRequest
-      const value = await this.desktopFunctions.call(req.name, req.params)
+      const value = await this.clientFunctions.call(req.name, req.params)
       const result: ClientFunctionsInvokeResponse = { value }
       this.ws.send({ type: 'rpc:result', id: message.id, ok: true, value: result })
     } catch (err) {

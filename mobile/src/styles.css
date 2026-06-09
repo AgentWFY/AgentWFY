@@ -1342,6 +1342,8 @@ awfy-live-status {
 
 .confirm-dialog {
   width: min(340px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
   padding: 16px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1356,6 +1358,59 @@ awfy-live-status {
 
 .confirm-dialog p {
   margin-top: 8px;
+  color: var(--text-2);
+}
+
+.confirm-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.confirm-body:empty { display: none; }
+
+.confirm-plugin-card {
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.confirm-plugin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.confirm-plugin-name {
+  min-width: 0;
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.confirm-plugin-version {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.confirm-plugin-raw-name,
+.confirm-plugin-description,
+.confirm-plugin-meta,
+.confirm-plugin-empty {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.confirm-plugin-description {
   color: var(--text-2);
 }
 

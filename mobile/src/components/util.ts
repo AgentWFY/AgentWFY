@@ -59,6 +59,7 @@ export function autoSizeTextarea(textarea: HTMLTextAreaElement): void {
 export interface ConfirmationOptions {
   title: string
   message: string
+  renderBody?: (container: HTMLElement) => void
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -74,12 +75,16 @@ export function requestConfirmation(options: ConfirmationOptions): Promise<boole
     <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
       <h2 id="confirm-title">${escapeHtml(options.title)}</h2>
       <p>${escapeHtml(options.message)}</p>
+      <div class="confirm-body" data-role="body"></div>
       <div class="confirm-actions">
         <button type="button" class="btn ghost" data-role="cancel">${escapeHtml(options.cancelLabel ?? 'Cancel')}</button>
         <button type="button" class="btn ${options.danger ? 'danger' : 'primary'}" data-role="confirm">${escapeHtml(options.confirmLabel ?? 'OK')}</button>
       </div>
     </div>
   `
+
+  const body = backdrop.querySelector<HTMLElement>('[data-role="body"]')
+  if (body && options.renderBody) options.renderBody(body)
 
   return new Promise<boolean>((resolve) => {
     let settled = false

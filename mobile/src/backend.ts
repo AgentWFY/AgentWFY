@@ -14,6 +14,7 @@ import type {
 import { RemoteBackend } from '#shared/backend/remote.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { PageApi } from '#shared/page/types.js'
+import { createMobileClientFunctionRegistry } from './client-functions/index.js'
 import { MobileRemoteMirror } from './remote-mirror.js'
 
 export interface MobileBackend {
@@ -34,10 +35,13 @@ export interface MobileBackendOptions {
 }
 
 export async function createMobileBackend(opts: MobileBackendOptions): Promise<MobileBackend> {
+  const clientFunctions = createMobileClientFunctionRegistry()
+
   const backend = new RemoteBackend({
     id: opts.agentId,
     baseUrl: opts.baseUrl,
     agentToken: opts.agentToken,
+    clientFunctions,
     clientPages: opts.clientPages,
   })
 

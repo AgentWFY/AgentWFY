@@ -1,6 +1,8 @@
 /** Daemon-side built-in runtime function names — what registerAllBuiltInFunctions
- *  (in ./functions/index.ts) registers, minus the client-side gated registrations
- *  (palette/openExternal — those live in CLIENT_RUNTIME_FUNCTIONS).
+ *  (in ./functions/index.ts) registers, plus daemon-owned functions registered
+ *  by the remote server bootstrap. Client-side-only functions such as
+ *  pickFromPalette/openExternal live in CLIENT_RUNTIME_FUNCTIONS and are added
+ *  by the connected client's function registry.
  *
  *  Surfaced to remote-agent views via the preload bridge so `window.agentwfy.X`
  *  works without an async list() round-trip. Calls fail with the underlying
@@ -49,4 +51,7 @@ export const DAEMON_BUILT_IN_FUNCTIONS = [
   'readTaskRun',
   'getAvailableFunctions',
   'getAvailableProviders',
+  'requestInstallPlugin',
+  'requestTogglePlugin',
+  'requestUninstallPlugin',
 ] as const

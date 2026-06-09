@@ -6,7 +6,7 @@
 //   - Backend events are pushed as one-way event envelopes.
 //
 // Auth:
-//   - Desktop clients pass the per-agent token as ?token=<token>.
+//   - App clients pass the per-agent token as ?token=<token>.
 //   - Authorization: Bearer <token> is also accepted for non-browser clients.
 //
 // File reads have two transports, split by caller, not by content:

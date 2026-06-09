@@ -1,8 +1,8 @@
 // agentwfy-server entry point.
 //
-// The daemon exposes one authenticated WebSocket. Desktop clients use that
+// The daemon exposes one authenticated WebSocket. App clients use that
 // socket for backend RPC, live backend events, and client-function RPCs sent
-// from daemon-side agents back to the connected desktop.
+// from daemon-side agents back to the connected client.
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'

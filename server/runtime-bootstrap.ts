@@ -215,7 +215,7 @@ function registerRemotePluginManagement(opts: {
 }): void {
   const requireClient = (): ClientFunctionInvoker => {
     if (!opts.clientFunctionInvoker) {
-      throw new Error('A connected desktop client is required for plugin confirmation')
+      throw new Error('A connected client is required for plugin confirmation')
     }
     return opts.clientFunctionInvoker
   }

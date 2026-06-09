@@ -6,12 +6,10 @@ import type { RemoteAgentConfig } from './agent-meta.js'
 import { RemoteAgentDbSync } from './remote-agent-db-sync.js'
 import type { TabViewManager } from './tab-view-manager.js'
 import type { ShortcutManager } from './shortcuts/manager.js'
-import { FunctionRegistry } from '#shared/runtime/function_registry.js'
 import type { PaletteHost } from '#shared/runtime/hosts.js'
 import type { PageApi } from '#shared/page/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
-import { registerPalette } from '#shared/runtime/functions/palette.js'
-import { registerOpenExternal } from '#shared/runtime/functions/index.js'
+import { createClientFunctionRegistry } from '#shared/runtime/client-function-registry.js'
 import { getElectronExternalLauncher } from './runtime/hosts-electron.js'
 
 export async function createRemoteAgentContext(opts: {
@@ -28,14 +26,15 @@ export async function createRemoteAgentContext(opts: {
   const { agentId, cacheRoot, remoteConfig, shortcutManager, tabViewManager, pageTools } = opts
 
   const clientFunctionRegistry = createClientFunctionRegistry({
-    getCommandPalette: opts.getCommandPalette,
+    getPaletteHost: opts.getCommandPalette,
+    externalLauncher: getElectronExternalLauncher(),
   })
 
   const remoteBackend = new RemoteBackend({
     id: agentId,
     baseUrl: remoteConfig.baseUrl,
     agentToken: remoteConfig.agentToken,
-    desktopFunctions: clientFunctionRegistry,
+    clientFunctions: clientFunctionRegistry,
     clientPages: pageTools,
   })
   const dbSync = new RemoteAgentDbSync({
@@ -86,47 +85,4 @@ export async function destroyRemoteAgentContext(ctx: RemoteAgentContext): Promis
     console.warn('[agent-context-remote] backend.stop failed:', err)
   })
   ctx.eventBus.dispose()
-}
-
-function createClientFunctionRegistry(opts: {
-  getCommandPalette?: () => PaletteHost
-}): FunctionRegistry {
-  const registry = new FunctionRegistry()
-  if (opts.getCommandPalette) {
-    registerPalette(registry, { getCommandPalette: opts.getCommandPalette })
-    registry.register('_confirmPluginInstall', async (params) => {
-      const req = params as { packagePath?: string; plugins?: Array<Record<string, unknown>> }
-      const host = opts.getCommandPalette?.()
-      if (!host?.confirmPluginInstall) {
-        throw new Error('Plugin install confirmation is not available')
-      }
-      if (typeof req.packagePath !== 'string' || !Array.isArray(req.plugins)) {
-        throw new Error('_confirmPluginInstall requires packagePath and plugins')
-      }
-      return host.confirmPluginInstall(req.packagePath, req.plugins)
-    }, 'built-in', { hidden: true })
-    registry.register('_confirmPluginToggle', async (params) => {
-      const req = params as Record<string, unknown> & { currentEnabled?: unknown }
-      const host = opts.getCommandPalette?.()
-      if (!host?.confirmPluginToggle) {
-        throw new Error('Plugin toggle confirmation is not available')
-      }
-      if (typeof req.currentEnabled !== 'boolean') {
-        throw new Error('_confirmPluginToggle requires currentEnabled')
-      }
-      return host.confirmPluginToggle(req as Record<string, unknown> & { currentEnabled: boolean })
-    }, 'built-in', { hidden: true })
-    registry.register('_confirmPluginUninstall', async (params) => {
-      const req = params as Record<string, unknown>
-      const host = opts.getCommandPalette?.()
-      if (!host?.confirmPluginUninstall) {
-        throw new Error('Plugin uninstall confirmation is not available')
-      }
-      return host.confirmPluginUninstall(req)
-    }, 'built-in', { hidden: true })
-  }
-
-  registerOpenExternal(registry, getElectronExternalLauncher())
-
-  return registry
 }
