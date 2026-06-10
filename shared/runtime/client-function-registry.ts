@@ -1,7 +1,7 @@
 import { FunctionRegistry } from './function_registry.js'
 import type { ExternalLauncher, PaletteHost } from './hosts.js'
 import type { WorkerHostMethodMap } from './types.js'
-import { registerOpenExternal } from './functions/index.js'
+import { registerOpenExternal } from './functions/open_external.js'
 
 export interface PluginConfirmationHost {
   confirmPluginInstall(
