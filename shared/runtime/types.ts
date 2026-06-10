@@ -432,6 +432,14 @@ export interface WorkerHostMethodMap {
     params: { packagePath: string }
     result: { installed: string[] }
   }
+  requestInstallPluginFromBytes: {
+    params: { fileName?: string; packageBytes: string }
+    result: { installed: string[] }
+  }
+  requestInstallPluginFromUrl: {
+    params: { downloadUrl: string; fileName?: string }
+    result: { installed: string[] }
+  }
   requestTogglePlugin: {
     params: { pluginName: string }
     result: { toggled: boolean; enabled?: boolean }

@@ -25,6 +25,8 @@ import type { loadPlugins } from '#shared/plugins/loader.js'
 import { createDaemonHeadlessPageHostFromEnv } from './headless-chrome.js'
 import { HeadlessViewRuntime } from './headless-view-runtime.js'
 
+const MAX_PLUGIN_PACKAGE_BYTES = 100 * 1024 * 1024
+
 export interface RuntimeBundle {
   backend: LocalBackend
   dbChanges: {
@@ -207,6 +209,52 @@ function publicPluginMeta(plugin: {
   return meta
 }
 
+function parsePluginDownloadUrl(value: unknown): URL {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('downloadUrl must be a non-empty string')
+  }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error('downloadUrl must be a valid URL')
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('downloadUrl must use http or https')
+  }
+  return url
+}
+
+function displayNameFromUrl(url: URL, requestedName: unknown): string {
+  if (typeof requestedName === 'string' && requestedName.trim().length > 0) {
+    return requestedName.trim()
+  }
+  const lastSegment = url.pathname.split('/').filter(Boolean).at(-1)
+  return lastSegment && lastSegment.trim().length > 0 ? lastSegment : 'downloaded.plugins.awfy'
+}
+
+async function downloadPluginPackage(downloadUrl: unknown): Promise<Buffer> {
+  const url = parsePluginDownloadUrl(downloadUrl)
+  const response = await fetch(url, { redirect: 'follow' })
+  if (!response.ok) {
+    throw new Error(`Download failed: HTTP ${response.status}`)
+  }
+
+  const contentLength = response.headers.get('content-length')
+  if (contentLength) {
+    const size = Number(contentLength)
+    if (Number.isFinite(size) && size > MAX_PLUGIN_PACKAGE_BYTES) {
+      throw new Error(`Plugin package is too large (${size} bytes)`)
+    }
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (bytes.length > MAX_PLUGIN_PACKAGE_BYTES) {
+    throw new Error(`Plugin package is too large (${bytes.length} bytes)`)
+  }
+  return bytes
+}
+
 function registerRemotePluginManagement(opts: {
   runtimeRoot: string
   functionRegistry: FunctionRegistry
@@ -260,6 +308,17 @@ function registerRemotePluginManagement(opts: {
     const displayName = typeof request.fileName === 'string' && request.fileName.trim().length > 0
       ? request.fileName.trim()
       : 'uploaded.plugins.awfy'
+    return confirmAndInstall(readValidatedPackageFromBytes(bytes), displayName)
+  })
+
+  opts.functionRegistry.register('requestInstallPluginFromUrl', async (params) => {
+    const request = params as { downloadUrl?: unknown; fileName?: unknown } | undefined
+    if (!request) {
+      throw new Error('requestInstallPluginFromUrl requires downloadUrl')
+    }
+    const url = parsePluginDownloadUrl(request.downloadUrl)
+    const displayName = displayNameFromUrl(url, request.fileName)
+    const bytes = await downloadPluginPackage(url.toString())
     return confirmAndInstall(readValidatedPackageFromBytes(bytes), displayName)
   })
 

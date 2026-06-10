@@ -18,6 +18,7 @@ import { dispatch, listen, type Screen } from '../events.js'
 import { bridge } from '../tauri-bridge.js'
 import { messageFromUnknown } from '#shared/backend/protocol.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
+import type { ProviderState } from '#shared/backend/interface.js'
 import type { PageHostInfo } from '#shared/page/types.js'
 
 type BodyKind = 'session-list' | 'agent-chat' | 'draft-compose' | 'view-list' | 'view-frame'
@@ -65,6 +66,7 @@ export class TlApp extends HTMLElement {
       listen('close-view', () => { void this.closeView() }),
       listen('reload-view', () => { void this.reloadView() }),
       listen('page-changed', ({ page }) => this.onPageChanged(page)),
+      listen('providers-changed', ({ providers }) => this.onProvidersChanged(providers)),
       listen('session-created', ({ summary }) => {
         // When the user sends a draft, the new session arrives via this
         // event. Promote the draft to an active session if we were drafting.
@@ -220,6 +222,14 @@ export class TlApp extends HTMLElement {
   private onPageChanged(page: PageHostInfo | null): void {
     this.activePage = page
     if (page !== null) this.screen = 'views'
+    this.render()
+  }
+
+  private onProvidersChanged(providers: ProviderState | null): void {
+    if (this.draftProviderId === null) return
+    const nextProviderId = fallbackDraftProviderId(providers, this.draftProviderId)
+    if (nextProviderId === this.draftProviderId) return
+    this.draftProviderId = nextProviderId
     this.render()
   }
 
@@ -381,6 +391,13 @@ export class TlApp extends HTMLElement {
 
 function activeViewName(page: PageHostInfo | null): string | null {
   return page?.source.type === 'view' ? page.source.name : null
+}
+
+function fallbackDraftProviderId(providers: ProviderState | null, currentId: string): string | null {
+  if (!providers || providers.providerList.length === 0) return null
+  if (providers.providerList.some((provider) => provider.id === currentId)) return currentId
+  const defaultProvider = providers.providerList.find((provider) => provider.id === providers.defaultProviderId)
+  return defaultProvider?.id ?? providers.providerList[0]?.id ?? null
 }
 
 function activeViewParams(page: PageHostInfo): Record<string, string> {

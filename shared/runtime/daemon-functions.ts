@@ -52,6 +52,8 @@ export const DAEMON_BUILT_IN_FUNCTIONS = [
   'getAvailableFunctions',
   'getAvailableProviders',
   'requestInstallPlugin',
+  'requestInstallPluginFromBytes',
+  'requestInstallPluginFromUrl',
   'requestTogglePlugin',
   'requestUninstallPlugin',
 ] as const

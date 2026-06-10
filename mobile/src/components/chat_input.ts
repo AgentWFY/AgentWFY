@@ -168,6 +168,12 @@ export class TlChatInput extends HTMLElement {
     if (isDraft && this.providers?.providerList.length === 0) {
       return 'No providers are configured on this daemon.'
     }
+    if (isDraft) {
+      const providerId = this.getAttribute('provider-id')
+      if (providerId && !this.providers?.providerList.some((provider) => provider.id === providerId)) {
+        return 'Selected provider is no longer available.'
+      }
+    }
     return null
   }
 }

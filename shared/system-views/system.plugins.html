@@ -179,6 +179,7 @@
   .plugin-count { font-size: 12px; color: var(--color-text1); margin-bottom: 12px; }
   .loading { text-align: center; padding: 40px 20px; color: var(--color-text2); font-size: 13px; }
   .error-msg { text-align: center; padding: 40px 20px; color: var(--color-red-fg, #f85149); font-size: 13px; }
+  .action-error { margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--color-red-fg, #f85149); border-radius: var(--radius-md); color: var(--color-red-fg, #f85149); background: var(--color-red-bg, rgba(248, 81, 73, 0.12)); font-size: 13px; line-height: 1.4; }
   .badge-tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--color-bg3); color: var(--color-text2); }
   .tag-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
   .tag-filter-chip { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text2); cursor: pointer; transition: all var(--transition-fast); }
@@ -292,8 +293,10 @@
   let registryPluginsError = null;
   let registryPluginsLoading = false;
   let installingPlugins = new Set();
+  let pluginActionError = null;
   let detailView = null;
   const registryDetailCache = new Map();
+  let availableFunctionNames = null;
 
   let activeTagFilter = null;
 
@@ -312,6 +315,22 @@
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     await window.agentwfy.write({ path: destPath, base64: btoa(binary) });
+  }
+
+  function errorMessage(err) {
+    return err && err.message ? err.message : String(err);
+  }
+
+  async function supportsRuntimeFunction(name) {
+    if (!availableFunctionNames) {
+      try {
+        const rows = await window.agentwfy.getAvailableFunctions({});
+        availableFunctionNames = new Set((rows || []).map(f => f && f.name).filter(Boolean));
+      } catch {
+        availableFunctionNames = new Set();
+      }
+    }
+    return availableFunctionNames.has(name);
   }
 
   async function loadPlugins() {
@@ -348,11 +367,24 @@
 
   async function installPluginFromRegistry(pluginId, downloadUrl) {
     if (installingPlugins.has(pluginId)) return;
-    installingPlugins.add(pluginId); render();
-    const tmpPath = '.tmp/registry-plugin-' + pluginId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.plugins.awfy';
-    try { await downloadPackage(downloadUrl, tmpPath); const result = await window.agentwfy.requestInstallPlugin({ packagePath: tmpPath }); if (result.installed && result.installed.length > 0) await loadPlugins(); }
-    catch (err) { console.error('Install failed:', err); alert('Install failed: ' + err.message); }
-    finally { installingPlugins.delete(pluginId); window.agentwfy.remove({ path: tmpPath }).catch(() => {}); render(); }
+    installingPlugins.add(pluginId); pluginActionError = null; render();
+    let tmpPath = null;
+    try {
+      let result;
+      if (await supportsRuntimeFunction('requestInstallPluginFromUrl')) {
+        result = await window.agentwfy.requestInstallPluginFromUrl({
+          downloadUrl,
+          fileName: pluginId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.plugins.awfy',
+        });
+      } else {
+        tmpPath = '.tmp/registry-plugin-' + pluginId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.plugins.awfy';
+        await downloadPackage(downloadUrl, tmpPath);
+        result = await window.agentwfy.requestInstallPlugin({ packagePath: tmpPath });
+      }
+      if (result.installed && result.installed.length > 0) await loadPlugins();
+    }
+    catch (err) { console.error('Install failed:', err); pluginActionError = 'Install failed: ' + errorMessage(err); }
+    finally { installingPlugins.delete(pluginId); if (tmpPath) window.agentwfy.remove({ path: tmpPath }).catch(() => {}); render(); }
   }
 
   async function loadInstalledPluginDetail(pluginName) {
@@ -488,6 +520,7 @@
       for (const tag of allTags) h += '<span class="tag-filter-chip' + (activeTagFilter === tag ? ' active' : '') + '" data-action="filter-tag" data-tag="' + esc(tag) + '">' + esc(tag) + '</span>';
       h += '</div>';
     }
+    if (pluginActionError) h += '<div class="action-error">' + esc(pluginActionError) + '</div>';
     if (filtered.length === 0) { h += '<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><div>No plugins match your search</div></div>'; container.innerHTML = h; return; }
     h += '<div class="plugin-count">' + filtered.length + ' plugin' + (filtered.length !== 1 ? 's' : '') + ' in registry</div><div class="plugin-list">';
     for (const p of filtered) {

@@ -41,6 +41,7 @@ class BackendSession {
   private providers: ProviderState | null = null
   private pageController: MobilePageController | null = null
   private pageUnsubscribe: (() => void) | null = null
+  private providerRefreshTimer: ReturnType<typeof setTimeout> | null = null
   private connectGeneration = 0
   private readonly rememberedSessionIds = new Map<string, string>()
 
@@ -127,10 +128,12 @@ class BackendSession {
         clientPages: pageController.pageTools,
         onLocalDbChange: (change) => {
           if (!isCurrent()) return
+          this.maybeScheduleProviderRefresh(change.table)
           dispatch('db-change', { change })
         },
         onSnapshotApplied: () => {
           if (!isCurrent()) return
+          this.scheduleProviderRefresh()
           dispatch('snapshot-applied')
         },
         onStatus: (status) => {
@@ -193,6 +196,7 @@ class BackendSession {
 
   async disconnect(): Promise<void> {
     this.connectGeneration += 1
+    this.clearProviderRefreshTimer()
     const oldSession = this.session
     const oldPageController = this.pageController
     this.pageUnsubscribe?.()
@@ -267,7 +271,14 @@ class BackendSession {
       return state ?? null
     } catch (err) {
       if (gen !== this.connectGeneration) return null
-      dispatch('error', { message: `Loading session failed: ${messageFromUnknown(err)}` })
+      const message = messageFromUnknown(err)
+      if (isSessionNotFound(message, sessionId)) {
+        this.forgetSession(sessionId)
+        dispatch('session-removed', { sessionId })
+        dispatch('error', { message: null })
+        return null
+      }
+      dispatch('error', { message: `Loading session failed: ${message}` })
       return null
     }
   }
@@ -429,6 +440,28 @@ class BackendSession {
     dispatch('status-changed', { status })
   }
 
+  private maybeScheduleProviderRefresh(table: string): void {
+    if (table !== 'plugins' && table !== 'config') return
+    this.scheduleProviderRefresh()
+  }
+
+  private scheduleProviderRefresh(delayMs = 150): void {
+    if (!this.session) return
+    this.clearProviderRefreshTimer()
+    const gen = this.connectGeneration
+    this.providerRefreshTimer = setTimeout(() => {
+      this.providerRefreshTimer = null
+      if (gen !== this.connectGeneration) return
+      void this.refreshProviders()
+    }, delayMs)
+  }
+
+  private clearProviderRefreshTimer(): void {
+    if (!this.providerRefreshTimer) return
+    clearTimeout(this.providerRefreshTimer)
+    this.providerRefreshTimer = null
+  }
+
   private async loadInitialBackendState(
     isCurrent: () => boolean,
     preferredSessionId: string | null,
@@ -486,6 +519,10 @@ class BackendSession {
 
 export function sortSessions(sessions: SessionSummary[]): SessionSummary[] {
   return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+function isSessionNotFound(message: string, sessionId: string): boolean {
+  return message.includes(`Session '${sessionId}' not found`)
 }
 
 export const backendSession = new BackendSession()

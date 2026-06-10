@@ -9,6 +9,13 @@ import { backendSession } from './services/backend-session.js'
 
 const AGENT_VIEW_CALL_CHANNEL = 'agentwfy:view-call'
 const AGENT_VIEW_RESULT_CHANNEL = 'agentwfy:view-result'
+const PROVIDER_REFRESH_FUNCTIONS = new Set([
+  'requestInstallPlugin',
+  'requestInstallPluginFromBytes',
+  'requestInstallPluginFromUrl',
+  'requestTogglePlugin',
+  'requestUninstallPlugin',
+])
 
 interface AgentViewCallMessage {
   channel: typeof AGENT_VIEW_CALL_CHANNEL
@@ -57,6 +64,11 @@ async function handleAgentViewCall(
       name: message.name,
       params: message.params,
     })
+    if (PROVIDER_REFRESH_FUNCTIONS.has(message.name)) {
+      await backendSession.refreshProviders().catch((err) => {
+        console.warn('[mobile-view] provider refresh failed after plugin change:', err)
+      })
+    }
     postAgentViewResult(frame, origin, message.id, { ok: true, value })
   } catch (err) {
     postAgentViewResult(frame, origin, message.id, {
