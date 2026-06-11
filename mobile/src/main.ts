@@ -18,6 +18,7 @@ import { TlLiveStatus } from './components/live_status.js'
 import { TlMainHeader } from './components/main_header.js'
 import { TlProviderGrid } from './components/provider_grid.js'
 import { TlSessionList } from './components/session_list.js'
+import { TlTaskList } from './components/task_list.js'
 import { TlViewFrame } from './components/view_frame.js'
 import { TlViewList } from './components/view_list.js'
 
@@ -37,6 +38,7 @@ async function init() {
   defineElement('awfy-main-header', TlMainHeader)
   defineElement('awfy-provider-grid', TlProviderGrid)
   defineElement('awfy-session-list', TlSessionList)
+  defineElement('awfy-task-list', TlTaskList)
   defineElement('awfy-view-frame', TlViewFrame)
   defineElement('awfy-view-list', TlViewList)
   defineElement('awfy-app', TlApp)

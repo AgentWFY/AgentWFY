@@ -526,7 +526,13 @@ class BackendSession {
         void this.refreshSessions()
         return
       case 'task:started':
+        dispatch('task-run-started', { payload: event.payload })
+        return
+      case 'task:log':
+        dispatch('task-run-log', { payload: event.payload })
+        return
       case 'task:finished':
+        dispatch('task-run-finished', { payload: event.payload })
         return
     }
   }

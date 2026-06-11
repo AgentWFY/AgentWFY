@@ -6,7 +6,7 @@
 // For everything in one shot, use `scripts/build`.
 
 import { execSync } from 'child_process'
-import { cpSync, mkdirSync, rmSync } from 'fs'
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { ensureVendor } from './lib/ensure-vendor.mjs'
@@ -24,6 +24,7 @@ const shared = join(root, 'shared')
 const dist = join(root, 'dist')
 const distMobile = join(dist, 'mobile')
 const distShared = join(dist, 'shared')
+const iosBindingsDir = join(mobile, 'src-tauri', 'gen', 'apple', 'Sources', 'agentwfy-mobile', 'bindings')
 
 rmSync(distMobile, { recursive: true, force: true })
 
@@ -32,6 +33,19 @@ rmSync(distMobile, { recursive: true, force: true })
 mkdirSync(join(distMobile, 'src'), { recursive: true })
 cpSync(join(mobile, 'index.html'), join(distMobile, 'index.html'))
 cpSync(join(mobile, 'src', 'styles.css'), join(distMobile, 'src', 'styles.css'))
+
+// Tauri's iOS scaffold expects this generated Rust->Obj-C FFI header during
+// xcodebuild. It is gitignored with the rest of the generated bindings dir,
+// so restore the tiny template header before preview/build commands run.
+mkdirSync(iosBindingsDir, { recursive: true })
+writeFileSync(join(iosBindingsDir, 'bindings.h'), `#pragma once
+
+namespace ffi {
+    extern "C" {
+        void start_app();
+    }
+}
+`)
 
 // Codegen the typed constants from system-config.json. Idempotent; safe to
 // run from desktop and mobile builds independently.

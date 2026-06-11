@@ -23,9 +23,14 @@ import type {
 } from '#shared/backend/interface.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { PageHostInfo } from '#shared/page/types.js'
+import type {
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunStartedPayload,
+} from '#shared/task-runner/task_runner.js'
 import type { InstalledAgent, AgentMeta } from './agent-meta.js'
 
-export type Screen = 'add-agent' | 'chat' | 'views'
+export type Screen = 'add-agent' | 'chat' | 'views' | 'tasks'
 
 export interface MobileEventMap {
   // ─── Intents ────────────────────────────────────────────────────────────
@@ -61,6 +66,9 @@ export interface MobileEventMap {
   'session-removed': { sessionId: string }
   'sessions-listed': { sessions: SessionSummary[] }
   'providers-changed': { providers: ProviderState | null }
+  'task-run-started': { payload: TaskRunStartedPayload }
+  'task-run-log': { payload: TaskRunLogPayload }
+  'task-run-finished': { payload: TaskRunFinishedPayload }
   'error': { message: string | null }
 }
 

@@ -1,5 +1,5 @@
 // Router-shell. Owns four pieces of UI state locally:
-//   screen           — 'add-agent' | 'chat' | 'views'
+//   screen           — 'add-agent' | 'chat' | 'tasks' | 'views'
 //   activeSessionId  — non-null while a session is loaded
 //   draftProviderId  — non-null while composing a new session
 //   activePage       — non-null while a mobile page is open
@@ -21,12 +21,13 @@ import type { AgentDbChange } from '#shared/db/sqlite.js'
 import type { ProviderState } from '#shared/backend/interface.js'
 import type { PageHostInfo } from '#shared/page/types.js'
 
-type BodyKind = 'session-list' | 'agent-chat' | 'draft-compose' | 'view-list' | 'view-frame'
+type BodyKind = 'session-list' | 'agent-chat' | 'draft-compose' | 'task-list' | 'view-list' | 'view-frame'
 
 const BODY_TAG: Record<BodyKind, string> = {
   'session-list': 'awfy-session-list',
   'agent-chat': 'awfy-agent-chat',
   'draft-compose': 'awfy-draft-compose',
+  'task-list': 'awfy-task-list',
   'view-list': 'awfy-view-list',
   'view-frame': 'awfy-view-frame',
 }
@@ -383,6 +384,7 @@ export class TlApp extends HTMLElement {
     if (this.screen === 'views') {
       return this.activePage ? 'view-frame' : 'view-list'
     }
+    if (this.screen === 'tasks') return 'task-list'
     if (this.activeSessionId) return 'agent-chat'
     if (this.draftProviderId !== null) return 'draft-compose'
     return 'session-list'
