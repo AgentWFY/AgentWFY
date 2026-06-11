@@ -6,8 +6,8 @@
 import { backendSession } from '../services/backend-session.js'
 import { dispatch, listen } from '../events.js'
 import { bridge } from '../tauri-bridge.js'
-import type { BackendStatusSnapshot, SessionSummary } from '#shared/backend/interface.js'
-import { ICON_BACK, ICON_KEBAB, ICON_REFRESH, ICON_TRASH } from './icons.js'
+import type { BackendStatusSnapshot, ProviderState, SessionSummary } from '#shared/backend/interface.js'
+import { ICON_BACK, ICON_KEBAB, ICON_REFRESH, ICON_SETTINGS, ICON_TRASH } from './icons.js'
 import { escapeHtml, requestConfirmation } from './util.js'
 
 type HeaderKind = 'picker' | 'session' | 'draft' | 'view'
@@ -21,10 +21,13 @@ export class TlMainHeader extends HTMLElement {
   private titleEl: HTMLHeadingElement | null = null
   private statusDotEl: HTMLSpanElement | null = null
   private menuListEl: HTMLDivElement | null = null
+  private providerSettingsItemEl: HTMLButtonElement | null = null
   private unsubs: Array<() => void> = []
+  private providers: ProviderState | null = backendSession.getProviders()
   /** Cached so we can resolve a session title without an extra await when
    *  the kind flips to 'session' for a session we just opened. */
   private knownSessionTitles = new Map<string, string>()
+  private knownSessionProviderIds = new Map<string, string>()
   /** Cached so we can resolve a view title. Populated from db-change
    *  events targeting the views table, plus an initial query on mount. */
   private knownViewTitles = new Map<string, string>()
@@ -33,9 +36,19 @@ export class TlMainHeader extends HTMLElement {
     this.className = 'main-header-host'
     this.unsubs.push(
       listen('status-changed', () => this.patchStatusDot()),
-      listen('session-state', ({ sessionId, title }) => {
+      listen('session-state', ({ sessionId, title, providerId }) => {
         if (title !== undefined && title !== null) this.knownSessionTitles.set(sessionId, title)
+        if (typeof providerId === 'string' && providerId.length > 0) {
+          this.knownSessionProviderIds.set(sessionId, providerId)
+        } else if (providerId === null) {
+          this.knownSessionProviderIds.delete(sessionId)
+        }
         this.patchTitle()
+        this.patchProviderSettingsMenu()
+      }),
+      listen('providers-changed', ({ providers }) => {
+        this.providers = providers
+        this.patchProviderSettingsMenu()
       }),
       listen('sessions-listed', ({ sessions }) => {
         this.indexSessions(sessions)
@@ -51,7 +64,10 @@ export class TlMainHeader extends HTMLElement {
       }),
       listen('agent-switched', () => {
         this.knownSessionTitles.clear()
+        this.knownSessionProviderIds.clear()
         this.knownViewTitles.clear()
+        this.providers = backendSession.getProviders()
+        this.patchProviderSettingsMenu()
         void this.refreshViewTitles().then(() => this.patchTitle())
       }),
     )
@@ -73,7 +89,10 @@ export class TlMainHeader extends HTMLElement {
   attributeChangedCallback(name: string) {
     if (!this.isConnected) return
     if (name === 'kind') this.render()
-    else this.patchTitle()
+    else {
+      this.patchTitle()
+      this.patchProviderSettingsMenu()
+    }
   }
 
   private onDocumentClick = (evt: Event) => {
@@ -97,6 +116,7 @@ export class TlMainHeader extends HTMLElement {
     if (this.currentKind === kind) {
       this.patchTitle()
       this.patchStatusDot()
+      this.patchProviderSettingsMenu()
       return
     }
     this.currentKind = kind
@@ -104,6 +124,7 @@ export class TlMainHeader extends HTMLElement {
     this.titleEl = this.querySelector<HTMLHeadingElement>('[data-role="title"]')
     this.statusDotEl = this.querySelector<HTMLSpanElement>('[data-role="status-dot"]')
     this.menuListEl = this.querySelector<HTMLDivElement>('[data-role="menu"]')
+    this.providerSettingsItemEl = this.querySelector<HTMLButtonElement>('[data-role="provider-settings"]')
 
     this.querySelector<HTMLButtonElement>('[data-role="back"]')?.addEventListener('click', () => {
       if (this.getAttribute('session-id')) dispatch('close-session')
@@ -136,7 +157,14 @@ export class TlMainHeader extends HTMLElement {
       void this.confirmRemoveSession(sessionId, title)
     })
 
+    this.providerSettingsItemEl?.addEventListener('click', () => {
+      this.menuListEl?.classList.add('hidden')
+      const viewName = this.currentProviderSettingsView()
+      if (viewName) dispatch('open-view', { name: viewName })
+    })
+
     this.patchTitle()
+    this.patchProviderSettingsMenu()
   }
 
   private async confirmRemoveAgent(agentId: string): Promise<void> {
@@ -180,6 +208,23 @@ export class TlMainHeader extends HTMLElement {
     const status = this.getStatus()
     this.statusDotEl.dataset.state = status.state
     this.statusDotEl.title = formatStatus(status)
+  }
+
+  private patchProviderSettingsMenu() {
+    if (!this.providerSettingsItemEl) return
+    const viewName = this.currentProviderSettingsView()
+    this.providerSettingsItemEl.hidden = !viewName
+    this.providerSettingsItemEl.disabled = !viewName
+  }
+
+  private currentProviderSettingsView(): string | null {
+    if (this.kind !== 'session') return null
+    const sessionId = this.getAttribute('session-id')
+    if (!sessionId) return null
+    const providerId = this.knownSessionProviderIds.get(sessionId)
+    if (!providerId) return null
+    const provider = this.providers?.providerList.find((item) => item.id === providerId)
+    return provider?.settingsView ?? null
   }
 
   private getStatus(): BackendStatusSnapshot { return backendSession.getStatus() }
@@ -249,6 +294,7 @@ function headerHtml(kind: HeaderKind, status: BackendStatusSnapshot): string {
             <span class="status-dot" data-role="status-dot" ${statusAttrs}></span>
             <button type="button" class="icon-btn" data-role="menu-btn" aria-label="Menu" title="Menu">${ICON_KEBAB}</button>
             <div class="menu hidden" data-role="menu">
+              <button type="button" class="menu-item" data-role="provider-settings" hidden>${ICON_SETTINGS}<span>Provider settings</span></button>
               <button type="button" class="menu-item danger" data-role="remove-session">${ICON_TRASH}<span>Remove session</span></button>
             </div>
           </div>

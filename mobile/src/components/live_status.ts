@@ -4,9 +4,7 @@
 //     current SessionLivePatch — empty for drafts
 //   • status-changed events (disconnected/error overrides)
 //   • providers-changed events (provider-specific status line for the
-//     current draft, looked up from a draft-provider-id attribute set by
-//     awfy-draft-compose via awfy-chat-input ancestry — but we accept it
-//     simpler: just read the same providers map and try to find a hint)
+//     current draft or loaded session)
 //
 // Pure presentation; no actions.
 
@@ -17,7 +15,7 @@ import type { RetryState } from '#shared/agent/types.js'
 import { formatDuration } from './util.js'
 
 export class TlLiveStatus extends HTMLElement {
-  static get observedAttributes() { return ['live', 'draft-provider-id'] }
+  static get observedAttributes() { return ['live', 'draft-provider-id', 'provider-id'] }
 
   private status: BackendStatusSnapshot = backendSession.getStatus()
   private providers: ProviderState | null = backendSession.getProviders()
@@ -59,7 +57,7 @@ export class TlLiveStatus extends HTMLElement {
       return
     }
     delete this.dataset.tone
-    if (live?.statusLine) {
+    if (live?.statusLine && live.isStreaming) {
       this.textContent = live.statusLine
       return
     }
@@ -67,10 +65,14 @@ export class TlLiveStatus extends HTMLElement {
       this.textContent = 'Streaming response…'
       return
     }
-    const draftProviderId = this.getAttribute('draft-provider-id')
-    if (draftProviderId) {
+    const providerId = this.getAttribute('draft-provider-id') || this.getAttribute('provider-id')
+    if (providerId) {
       const lines = new Map(this.providers?.providerStatusLines ?? [])
-      this.textContent = lines.get(draftProviderId) || ''
+      this.textContent = lines.get(providerId) || live?.statusLine || ''
+      return
+    }
+    if (live?.statusLine) {
+      this.textContent = live.statusLine
       return
     }
     this.textContent = 'Ready'

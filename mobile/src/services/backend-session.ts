@@ -257,6 +257,7 @@ class BackendSession {
         this.rememberSession(state.sessionId)
         dispatch('session-state', {
           sessionId: state.sessionId,
+          providerId: state.providerId,
           title: state.title ?? null,
           messages: state.messages,
           live: state.live,
@@ -409,6 +410,31 @@ class BackendSession {
       if (gen !== this.connectGeneration) return null
       console.warn('[backend-session] providers.getState failed:', err)
       return null
+    }
+  }
+
+  async setDefaultProvider(providerId: string): Promise<boolean> {
+    const session = this.session
+    if (!session) {
+      dispatch('error', { message: 'Remote agent is not connected.' })
+      return false
+    }
+    if (!this.isConnected()) {
+      dispatch('error', { message: 'Remote agent is disconnected. Reconnect before changing providers.' })
+      return false
+    }
+    const gen = this.connectGeneration
+    try {
+      const providers = await session.backend.providers.setDefault(providerId)
+      if (gen !== this.connectGeneration) return false
+      this.providers = providers
+      dispatch('providers-changed', { providers })
+      dispatch('error', { message: null })
+      return true
+    } catch (err) {
+      if (gen !== this.connectGeneration) return false
+      dispatch('error', { message: `Changing default provider failed: ${messageFromUnknown(err)}` })
+      return false
     }
   }
 

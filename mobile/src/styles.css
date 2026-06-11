@@ -993,10 +993,23 @@ awfy-live-status {
 }
 
 .provider-card:active { background: var(--surface-3, var(--surface-2)); }
+.provider-card:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 
 .provider-card.selected {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.provider-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
 }
 
 .provider-card-name {
@@ -1013,10 +1026,48 @@ awfy-live-status {
   max-width: 100%;
 }
 
+.provider-card-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.provider-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.provider-card-action:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.provider-card-action:disabled {
+  opacity: 0.55;
+}
+
+.provider-card-action svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 .provider-card-badge {
-  position: absolute;
-  top: 10px;
-  right: 12px;
+  margin-left: auto;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.4px;
@@ -1320,6 +1371,7 @@ awfy-live-status {
 }
 
 .menu-item:hover { background: var(--surface-2); }
+.menu-item[hidden] { display: none; }
 .menu-item.danger { color: var(--danger); }
 .menu-item.danger:hover { background: var(--danger-soft); }
 .menu-item svg { width: 14px; height: 14px; color: var(--text-muted); }

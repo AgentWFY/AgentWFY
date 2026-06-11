@@ -18,6 +18,7 @@ export class TlAgentChat extends HTMLElement {
   private composerEl!: HTMLElement
   private statusEl!: HTMLElement
   private currentSessionId: string | null = null
+  private currentProviderId: string | null = null
   private messages: DisplayMessage[] = []
   private live: SessionLivePatch | null = null
   private unsubs: Array<() => void> = []
@@ -33,11 +34,13 @@ export class TlAgentChat extends HTMLElement {
     this.statusEl = this.querySelector<HTMLElement>('awfy-live-status')!
 
     this.unsubs.push(
-      listen('session-state', ({ sessionId, messages, live }) => {
+      listen('session-state', ({ sessionId, providerId, messages, live }) => {
         if (sessionId !== this.currentSessionId) return
+        if (providerId !== undefined) this.currentProviderId = providerId
         if (messages !== undefined) this.messages = messages
         if (live !== undefined) this.live = live
         this.statusEl.setAttribute('live', JSON.stringify(this.live ?? {}))
+        this.syncStatusProvider()
         this.renderMessages()
       }),
       listen('agent-switched', () => {
@@ -46,6 +49,9 @@ export class TlAgentChat extends HTMLElement {
         // content.
         this.messages = []
         this.live = null
+        this.currentProviderId = null
+        this.statusEl.setAttribute('live', '{}')
+        this.statusEl.removeAttribute('provider-id')
         this.renderMessages()
       }),
     )
@@ -66,6 +72,7 @@ export class TlAgentChat extends HTMLElement {
     const sid = this.getAttribute('session-id')
     if (sid === this.currentSessionId) return
     this.currentSessionId = sid
+    this.currentProviderId = null
     this.messages = []
     this.live = null
 
@@ -76,12 +83,19 @@ export class TlAgentChat extends HTMLElement {
       this.composerEl.removeAttribute('session-id')
     }
 
+    this.statusEl.setAttribute('live', '{}')
+    this.statusEl.removeAttribute('provider-id')
     this.renderMessages()
     if (sid) {
       // backend-session.loadSession() will dispatch session-state which the
       // listener above will pick up — no need to update local state here.
       void backendSession.loadSession(sid)
     }
+  }
+
+  private syncStatusProvider() {
+    if (this.currentProviderId) this.statusEl.setAttribute('provider-id', this.currentProviderId)
+    else this.statusEl.removeAttribute('provider-id')
   }
 
   private renderMessages() {

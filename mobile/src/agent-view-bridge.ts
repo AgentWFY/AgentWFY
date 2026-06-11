@@ -64,9 +64,9 @@ async function handleAgentViewCall(
       name: message.name,
       params: message.params,
     })
-    if (PROVIDER_REFRESH_FUNCTIONS.has(message.name)) {
+    if (shouldRefreshProvidersAfterFunction(message.name, message.params)) {
       await backendSession.refreshProviders().catch((err) => {
-        console.warn('[mobile-view] provider refresh failed after plugin change:', err)
+        console.warn('[mobile-view] provider refresh failed after provider-affecting change:', err)
       })
     }
     postAgentViewResult(frame, origin, message.id, { ok: true, value })
@@ -90,6 +90,15 @@ function parseAgentViewCall(data: unknown): AgentViewCallMessage | null {
     name: raw.name.trim(),
     params: raw.params,
   }
+}
+
+function shouldRefreshProvidersAfterFunction(name: string, params: unknown): boolean {
+  if (PROVIDER_REFRESH_FUNCTIONS.has(name)) return true
+  if (name !== 'runSql' || !params || typeof params !== 'object') return false
+  const sql = (params as { sql?: unknown }).sql
+  if (typeof sql !== 'string') return false
+  return /\b(insert|update|delete|replace|alter|drop)\b/i.test(sql)
+    && /\b(config|plugins)\b/i.test(sql)
 }
 
 function findAgentViewFrameForSource(source: MessageEventSource | null): HTMLIFrameElement | null {

@@ -7,6 +7,7 @@ import { backendSession } from '../services/backend-session.js'
 import { dispatch, listen } from '../events.js'
 import type { ProviderState } from '#shared/backend/interface.js'
 import { escapeHtml } from './util.js'
+import { ICON_SETTINGS } from './icons.js'
 
 export class TlProviderGrid extends HTMLElement {
   static get observedAttributes() { return ['selected-id'] }
@@ -46,22 +47,71 @@ export class TlProviderGrid extends HTMLElement {
       const isSelected = p.id === selectedId
       const isDefault = p.id === providers.defaultProviderId
       const status = statusLines.get(p.id) || ''
+      const settingsButton = p.settingsView
+        ? `<button type="button"
+                   class="provider-card-action"
+                   data-action="settings"
+                   data-settings-view="${escapeHtml(p.settingsView)}"
+                   aria-label="Open ${escapeHtml(p.name)} settings"
+                   title="Settings">
+             ${ICON_SETTINGS}<span>Settings</span>
+           </button>`
+        : ''
+      const defaultControl = isDefault
+        ? `<span class="provider-card-badge">default</span>`
+        : `<button type="button"
+                   class="provider-card-action"
+                   data-action="set-default"
+                   data-provider-id="${escapeHtml(p.id)}">
+             Set default
+           </button>`
       return `
-        <button type="button"
-                class="provider-card${isSelected ? ' selected' : ''}"
-                data-provider-id="${escapeHtml(p.id)}">
-          <span class="provider-card-name">${escapeHtml(p.name)}</span>
-          <span class="provider-card-status">${escapeHtml(status)}</span>
-          ${isDefault ? `<span class="provider-card-badge">default</span>` : ''}
-        </button>
+        <div class="provider-card${isSelected ? ' selected' : ''}"
+             data-provider-id="${escapeHtml(p.id)}"
+             role="button"
+             tabindex="0">
+          <div class="provider-card-main">
+            <span class="provider-card-name">${escapeHtml(p.name)}</span>
+            <span class="provider-card-status">${escapeHtml(status)}</span>
+          </div>
+          <div class="provider-card-actions">
+            ${settingsButton}
+            ${defaultControl}
+          </div>
+        </div>
       `
     }).join('')
 
-    this.querySelectorAll<HTMLButtonElement>('.provider-card[data-provider-id]').forEach((card) => {
+    this.querySelectorAll<HTMLElement>('.provider-card[data-provider-id]').forEach((card) => {
       card.addEventListener('click', () => {
         const id = card.dataset.providerId
         if (!id || id === selectedId) return
         dispatch('start-draft', { providerId: id })
+      })
+      card.addEventListener('keydown', (evt) => {
+        if (evt.key !== 'Enter' && evt.key !== ' ') return
+        evt.preventDefault()
+        const id = card.dataset.providerId
+        if (!id || id === selectedId) return
+        dispatch('start-draft', { providerId: id })
+      })
+    })
+
+    this.querySelectorAll<HTMLButtonElement>('[data-action="settings"][data-settings-view]').forEach((btn) => {
+      btn.addEventListener('click', (evt) => {
+        evt.stopPropagation()
+        const view = btn.dataset.settingsView
+        if (view) dispatch('open-view', { name: view })
+      })
+    })
+
+    this.querySelectorAll<HTMLButtonElement>('[data-action="set-default"][data-provider-id]').forEach((btn) => {
+      btn.addEventListener('click', (evt) => {
+        evt.stopPropagation()
+        const id = btn.dataset.providerId
+        if (!id) return
+        btn.disabled = true
+        void backendSession.setDefaultProvider(id).finally(() => { btn.disabled = false })
       })
     })
   }

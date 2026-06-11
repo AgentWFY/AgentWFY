@@ -52,6 +52,7 @@ export interface MobileEventMap {
   'page-changed': { page: PageHostInfo | null }
   'session-state': {
     sessionId: string
+    providerId?: string | null
     title?: string | null
     messages?: SessionState['messages']
     live?: SessionState['live']
