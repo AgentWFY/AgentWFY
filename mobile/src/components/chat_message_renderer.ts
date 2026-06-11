@@ -26,6 +26,7 @@ function renderMessageHtml(message: DisplayMessage): string {
 function renderBlockHtml(block: Block): string {
   switch (block.type) {
     case 'text':
+      if (!block.text.trim()) return ''
       return `<div class="message-text">${escapeHtml(block.text)}</div>`
     case 'thinking':
       return `<details class="thinking-block"><summary>Thinking</summary><div class="message-text">${escapeHtml(block.text)}</div></details>`
