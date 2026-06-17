@@ -126,6 +126,7 @@ export type BackendRpcMethod =
   | 'sessions.send'
   | 'sessions.abort'
   | 'sessions.remove'
+  | 'sessions.removeQueued'
   | 'functions.list'
   | 'functions.invoke'
   | 'providers.list'
@@ -278,6 +279,9 @@ export type SessionsAbortResponse = { ok: true }
 
 export interface SessionsRemoveRequest { sessionId: string }
 export type SessionsRemoveResponse = { ok: true }
+
+export interface SessionsRemoveQueuedRequest { sessionId: string; index: number }
+export type SessionsRemoveQueuedResponse = { ok: true }
 
 export type FunctionsListResponse = FunctionInfo[]
 export interface FunctionsInvokeRequest { name: string; params: unknown }

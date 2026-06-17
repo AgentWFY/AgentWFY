@@ -34,6 +34,7 @@ import {
   type SessionsGetRequest,
   type SessionsListRequest,
   type SessionsRemoveRequest,
+  type SessionsRemoveQueuedRequest,
   type SessionsSendRequest,
   type SessionsSpawnRequest,
   type TasksReadLogRequest,
@@ -139,6 +140,9 @@ async function dispatchBackendRpc(
       return { ok: true }
     case 'sessions.remove':
       await bundle.backend.sessions.remove(params as SessionsRemoveRequest)
+      return { ok: true }
+    case 'sessions.removeQueued':
+      await bundle.backend.sessions.removeQueued(params as SessionsRemoveQueuedRequest)
       return { ok: true }
     case 'functions.list':
       return bundle.backend.functions.list()

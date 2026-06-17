@@ -107,6 +107,7 @@ export class RemoteChatController implements AgentChatController {
       streamingSessionIds,
       retryState: live?.retryState ?? null,
       stalledSince: live?.stalledSince ?? null,
+      queuedMessages: live?.queuedMessages ?? [],
     }
   }
 
@@ -165,6 +166,13 @@ export class RemoteChatController implements AgentChatController {
 
   async setNotifyOnFinish(): Promise<void> {}
   async skipRetryDelay(): Promise<void> {}
+
+  async removeQueuedMessage(index: number): Promise<void> {
+    const current = this.displayedSessionId
+    if (!current) return
+    await this.backend.sessions.removeQueued({ sessionId: current, index })
+    this.notifyChange()
+  }
 
   subscribe(handler: () => void): ChatUnsubscribe {
     this.chatChangeHandlers.add(handler)
@@ -266,5 +274,6 @@ function emptySnapshot(statusLine?: string | undefined, streamingSessionIds: str
     streamingSessionIds,
     retryState: null,
     stalledSince: null,
+    queuedMessages: [],
   }
 }

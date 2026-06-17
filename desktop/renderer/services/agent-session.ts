@@ -1,5 +1,5 @@
 import type { DisplayMessage, ProviderInfo } from '#shared/agent/provider_types.js'
-import type { FileContent, RetryState } from '#shared/agent/types.js'
+import type { FileContent, QueuedMessage, RetryState } from '#shared/agent/types.js'
 import type {
   AgentSnapshot,
   ProviderState,
@@ -25,6 +25,7 @@ export interface AgentSessionState {
   streamingSessionIds: string[]
   retryState: RetryState | null
   stalledSince: number | null
+  queuedMessages: QueuedMessage[]
 
   openSessions: OpenSession[]
   providerList: ProviderInfo[]
@@ -49,6 +50,7 @@ function defaultState(): AgentSessionState {
     streamingSessionIds: [],
     retryState: null,
     stalledSince: null,
+    queuedMessages: [],
     openSessions: [],
     providerList: [],
     defaultProviderId: '',
@@ -167,6 +169,10 @@ class AgentSessionService {
     await window.ipc?.agent.retryNow()
   }
 
+  async removeQueuedMessage(index: number): Promise<void> {
+    await window.ipc?.agent.removeQueuedMessage(index)
+  }
+
   async setNotifyOnFinish(value: boolean): Promise<void> {
     await window.ipc?.agent.setNotifyOnFinish(value)
   }
@@ -257,6 +263,7 @@ class AgentSessionService {
       streamingSessionIds: snapshot.streamingSessionIds ?? [],
       retryState: snapshot.retryState ?? null,
       stalledSince: snapshot.stalledSince ?? null,
+      queuedMessages: snapshot.queuedMessages ?? [],
       ready: true,
     }
 

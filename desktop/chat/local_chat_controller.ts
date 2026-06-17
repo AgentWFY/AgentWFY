@@ -86,6 +86,10 @@ export class LocalChatController implements AgentChatController {
     this.sessionManager.skipRetryDelay()
   }
 
+  async removeQueuedMessage(index: number): Promise<void> {
+    this.sessionManager.removeQueuedMessage(index)
+  }
+
   subscribe(handler: () => void): ChatUnsubscribe {
     return this.sessionManager.subscribe(handler)
   }

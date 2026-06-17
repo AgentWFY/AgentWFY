@@ -69,6 +69,7 @@ export interface AgentApi {
   onStreaming(callback: (data: SessionLivePatch) => void): () => void
   unloadSession(sessionId: string): Promise<void>
   retryNow(): Promise<void>
+  removeQueuedMessage(index: number): Promise<void>
 }
 
 export interface ZenModeApi {

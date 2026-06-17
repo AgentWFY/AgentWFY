@@ -304,6 +304,9 @@ if (isApp) {
       retryNow(): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.retryNow);
       },
+      removeQueuedMessage(index: number): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.removeQueuedMessage, index);
+      },
     },
     traces: {
       list(sessionId: string): Promise<TraceEvent[]> {

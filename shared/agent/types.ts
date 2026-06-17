@@ -56,13 +56,25 @@ export interface AgentState {
   stalledSince?: number | null
 }
 
-/** Streaming-frequency fields shared by backend events and renderer IPC. */
+/** A follow-up message waiting in the queue while the agent is streaming. */
+export interface QueuedMessage {
+  text: string
+  /** Number of file attachments carried with this queued message. */
+  fileCount: number
+}
+
+/** Streaming-frequency fields shared by backend events and renderer IPC.
+ *  `queuedMessages` is optional: the per-session backend stream and
+ *  `sessions.get` always include it (it's how the queue reaches a remote
+ *  desktop), but the desktop's high-frequency `agent:streaming` patch omits
+ *  it — the queue changes rarely and rides on full snapshots instead. */
 export interface SessionLivePatch {
   isStreaming: boolean
   streamingMessage: DisplayMessage | null
   statusLine: string | undefined
   retryState: RetryState | null
   stalledSince: number | null
+  queuedMessages?: QueuedMessage[]
 }
 
 // Snapshot of the chat-UI-facing session manager state.
@@ -80,6 +92,8 @@ export interface AgentSnapshot {
   streamingSessionIds: string[]
   retryState: RetryState | null
   stalledSince: number | null
+  /** Follow-up messages queued behind the active turn (empty when none). */
+  queuedMessages: QueuedMessage[]
 }
 
 // ── Agent Events ──
@@ -94,3 +108,4 @@ export type AgentEvent =
   | { type: 'retry_scheduled'; attempt: number; maxAttempts: number; delayMs: number; error: string; category: string }
   | { type: 'retry_attempt'; attempt: number; maxAttempts: number }
   | { type: 'stalled'; elapsedMs: number }
+  | { type: 'queue_changed' }

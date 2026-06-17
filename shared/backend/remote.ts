@@ -61,6 +61,7 @@ import {
   type SessionsListRequest,
   type SessionsListResponse,
   type SessionsRemoveRequest,
+  type SessionsRemoveQueuedRequest,
   type SessionsSendRequest,
   type SessionsSpawnRequest,
   type SessionsSpawnResponse,
@@ -207,6 +208,9 @@ export class RemoteBackend implements AgentBackend {
     },
     remove: async (req): Promise<void> => {
       await this.ws.rpc<SessionsRemoveRequest, { ok: true }>('sessions.remove', req)
+    },
+    removeQueued: async (req): Promise<void> => {
+      await this.ws.rpc<SessionsRemoveQueuedRequest, { ok: true }>('sessions.removeQueued', req)
     },
   }
 

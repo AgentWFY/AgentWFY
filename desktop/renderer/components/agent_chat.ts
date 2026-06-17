@@ -8,7 +8,7 @@ import {
   parseToolResult,
   type ToolPair,
 } from './chat_message_renderer.js'
-import { parseTabLink, copyToButton, CLOSE_ICON_SVG } from './chat_utils.js'
+import { parseTabLink, copyToButton, CLOSE_ICON_SVG, escapeHtml } from './chat_utils.js'
 import { dispatch, listen, type DesktopEventMap } from '../events.js'
 import { agentSession, type AgentSessionState } from '../services/agent-session.js'
 import type { TlChatInput } from './chat_input.js'
@@ -19,6 +19,9 @@ const NOTIFY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const HISTORY_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>'
 const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 const TRACE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>'
+const QUEUE_CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
+const QUEUE_PAPERCLIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>'
+const QUEUE_CANCEL_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>'
 
 function makeIconBtn(title: string, html: string, onClick: () => void): HTMLButtonElement {
   const btn = document.createElement('button')
@@ -621,6 +624,106 @@ const STYLES = `
     flex-shrink: 0;
     position: relative;
   }
+  /* ── Queued follow-up messages ── */
+  .queue-stack {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 6px;
+    max-height: 168px;
+    overflow-y: auto;
+  }
+  .queue-stack.has-items { display: flex; }
+  .queue-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 2px 1px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text2);
+  }
+  .queue-header svg { width: 11px; height: 11px; display: block; flex-shrink: 0; }
+  .queue-header .queue-sub {
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-text2);
+    opacity: 0.85;
+  }
+  .queue-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 6px 6px 11px;
+    background: var(--color-bg2);
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    position: relative;
+    animation: queue-in 160ms ease-out;
+  }
+  .queue-item::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: var(--color-text2);
+    opacity: 0.4;
+  }
+  .queue-item-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-text3);
+    white-space: pre-wrap;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+  }
+  .queue-item-text .queue-placeholder {
+    font-style: italic;
+    opacity: 0.6;
+  }
+  .queue-item-files {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--color-text2);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .queue-item-files svg { width: 11px; height: 11px; display: block; }
+  .queue-item-cancel {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--color-text2);
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .queue-item-cancel:hover { background: var(--color-item-hover); color: var(--color-red-fg); }
+  .queue-item-cancel svg { width: 11px; height: 11px; display: block; }
+  @keyframes queue-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   .composer {
     background: var(--color-input-bg);
     border: 1px solid var(--color-border);
@@ -878,6 +981,8 @@ export class TlAgentChat extends HTMLElement {
   private _statusEl: HTMLElement | null = null
   private _statusProviderEl: HTMLElement | null = null
   private _statusStatsEl: HTMLElement | null = null
+  private _queueEl: HTMLElement | null = null
+  private _queueSig = ''
   private _providerGridEl: HTMLElement | null = null
   private _sessionTabsEl: HTMLElement | null = null
   private _chatInputEl: TlChatInput | null = null
@@ -1086,6 +1191,7 @@ export class TlAgentChat extends HTMLElement {
 
       if (has('retryState')) this.updateRetryBanner()
       if (has('notifyOnFinish')) this.updateNotifyBtn()
+      if (has('queuedMessages')) this.updateQueue()
 
       const providerKeys: Array<keyof AgentSessionState> = [
         'messages',
@@ -1393,6 +1499,8 @@ export class TlAgentChat extends HTMLElement {
     this._statusEl = null
     this._statusProviderEl = null
     this._statusStatsEl = null
+    this._queueEl = null
+    this._queueSig = ''
     this._providerGridEl = null
     this._sessionTabsEl = null
     this._chatInputEl = null
@@ -1505,6 +1613,19 @@ export class TlAgentChat extends HTMLElement {
 
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
+
+    // Queued follow-up messages (shown above the composer while streaming).
+    this._queueEl = document.createElement('div')
+    this._queueEl.className = 'queue-stack'
+    this._queueEl.addEventListener('mousedown', (e) => {
+      const btn = (e.target as HTMLElement).closest('.queue-item-cancel') as HTMLElement | null
+      if (!btn) return
+      e.preventDefault()
+      e.stopPropagation()
+      const idx = parseInt(btn.dataset.cancelIdx ?? '-1', 10)
+      if (idx >= 0) void agentSession.removeQueuedMessage(idx)
+    })
+    inputArea.appendChild(this._queueEl)
 
     const composer = document.createElement('div')
     composer.className = 'composer'
@@ -1747,6 +1868,7 @@ export class TlAgentChat extends HTMLElement {
     this.updateStopBtn()
     this.updateTraceBtn()
     this.updateStatus()
+    this.updateQueue()
   }
 
   /** Update the messages area only (hot path during streaming). */
@@ -1828,6 +1950,42 @@ export class TlAgentChat extends HTMLElement {
     if (!this._stopBtn) return
     const s = agentSession.state
     this._stopBtn.style.display = s.isStreaming ? '' : 'none'
+  }
+
+  /** Render the pending follow-up queue above the composer. Rebuilds only when
+   *  the set of queued messages actually changes (the snapshot hands us a fresh
+   *  array reference on every streaming tick). */
+  private updateQueue() {
+    if (!this._queueEl) return
+    const queue = agentSession.state.queuedMessages
+    const sig = queue.length + ':' + queue.map(m => `${m.text.length},${m.fileCount}`).join('|')
+    if (sig === this._queueSig) return
+    this._queueSig = sig
+
+    if (queue.length === 0) {
+      this._queueEl.classList.remove('has-items')
+      this._queueEl.innerHTML = ''
+      return
+    }
+
+    const count = queue.length
+    const itemsHtml = queue.map((m, i) => {
+      const trimmed = m.text.trim()
+      const textHtml = trimmed
+        ? escapeHtml(trimmed)
+        : '<span class="queue-placeholder">Attachment only</span>'
+      const filesHtml = m.fileCount > 0
+        ? `<span class="queue-item-files" title="${m.fileCount} attachment${m.fileCount !== 1 ? 's' : ''}">${QUEUE_PAPERCLIP_SVG}${m.fileCount}</span>`
+        : ''
+      return `<div class="queue-item">
+        <div class="queue-item-text" title="${escapeHtml(trimmed)}">${textHtml}</div>
+        ${filesHtml}
+        <button class="queue-item-cancel" data-cancel-idx="${i}" title="Remove from queue" aria-label="Remove from queue">${QUEUE_CANCEL_SVG}</button>
+      </div>`
+    }).join('')
+
+    this._queueEl.innerHTML = `<div class="queue-header">${QUEUE_CLOCK_SVG}<span>Queued</span><span class="queue-sub">${count} message${count !== 1 ? 's' : ''} · sends after this response</span></div>${itemsHtml}`
+    this._queueEl.classList.add('has-items')
   }
 
   private updateTraceBtn() {

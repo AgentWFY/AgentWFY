@@ -251,6 +251,14 @@ export class AgentWFYAgent {
     return this.agent.state
   }
 
+  get queuedMessages() {
+    return this.agent.queuedMessages
+  }
+
+  removeQueuedMessage(index: number): void {
+    this.agent.removeFollowUp(index)
+  }
+
   async prompt(text: string, options: AgentWFYAgentPromptOptions = {}): Promise<void> {
     const hasText = !!(text && text.trim())
     const hasFiles = !!(options.files && options.files.length > 0)

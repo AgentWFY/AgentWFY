@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   AgentState,
   FileContent,
+  QueuedMessage,
   TextContent,
 } from './types.js'
 import type {
@@ -61,6 +62,14 @@ export class Agent {
     return this._state
   }
 
+  /** Serializable view of the pending follow-up queue (for snapshots/UI). */
+  get queuedMessages(): QueuedMessage[] {
+    return this.followUpQueue.map((item) => ({
+      text: item.text,
+      fileCount: item.files?.length ?? 0,
+    }))
+  }
+
   subscribe(fn: (e: AgentEvent) => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
@@ -98,6 +107,15 @@ export class Agent {
     const hasFiles = !!(files && files.length > 0)
     if (!hasText && !hasFiles) return
     this.followUpQueue.push({ text, files })
+    this.emit({ type: 'queue_changed' })
+  }
+
+  /** Remove a not-yet-started follow-up by its index in the queue. No-op if
+   *  the index is out of range (e.g. it already started processing). */
+  removeFollowUp(index: number): void {
+    if (index < 0 || index >= this.followUpQueue.length) return
+    this.followUpQueue.splice(index, 1)
+    this.emit({ type: 'queue_changed' })
   }
 
   abort(): void {
@@ -364,6 +382,7 @@ export class Agent {
         // Check for queued follow-up messages
         const nextFollowUp = this.followUpQueue.shift()
         if (!nextFollowUp) break
+        this.emit({ type: 'queue_changed' })
         currentText = nextFollowUp.text
         currentFiles = nextFollowUp.files
       }

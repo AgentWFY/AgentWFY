@@ -70,6 +70,7 @@ export const Channels = {
     streaming: 'agent:streaming',
     unloadSession: 'agent:unloadSession',
     retryNow: 'agent:retryNow',
+    removeQueuedMessage: 'agent:removeQueuedMessage',
   },
   agents: {
     requestInstall: 'agents:requestInstall',

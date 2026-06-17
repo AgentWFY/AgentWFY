@@ -73,6 +73,11 @@ export function registerAgentSessionHandlers(
   ipcMain.handle(Channels.agent.retryNow, async (event) => {
     await getChat(event).skipRetryDelay()
   })
+
+  ipcMain.handle(Channels.agent.removeQueuedMessage, async (event, index: number) => {
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return
+    await getChat(event).removeQueuedMessage(index)
+  })
 }
 
 export interface AgentChatPump {
@@ -111,6 +116,7 @@ export function setupAgentChatPump(
   let prevIsStreaming = false
   let prevMessages: unknown = null
   let prevNotifyOnFinish = false
+  let prevQueueSig = ''
   let latestStreamingUpdate: SessionLivePatch | null = null
   let stopped = false
 
@@ -118,11 +124,20 @@ export function setupAgentChatPump(
     if (!wc.isDestroyed()) wc.send(channel, data)
   }
 
+  // Cheap signature of the queue. Follow-ups only push/shift/remove, so a
+  // change always changes the count or per-item shape — no need to hash text.
+  const queueSig = (queue: AgentSnapshot['queuedMessages']): string => {
+    let sig = String(queue.length)
+    for (const item of queue) sig += `|${item.text.length},${item.fileCount}`
+    return sig
+  }
+
   const pushFullSnapshot = (snapshot: AgentSnapshot) => {
     send(Channels.agent.snapshot, snapshot)
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
+    prevQueueSig = queueSig(snapshot.queuedMessages)
   }
 
   const streamingUpdateFromSnapshot = (snapshot: AgentSnapshot): SessionLivePatch => ({
@@ -184,8 +199,15 @@ export function setupAgentChatPump(
           send(Channels.agent.streaming, latestStreamingUpdate)
         }, 16)
       }
-      // Send a full snapshot on transitions to-streaming and on message changes mid-stream.
-      if (!prevIsStreaming || snapshot.messages !== prevMessages || snapshot.notifyOnFinish !== prevNotifyOnFinish) {
+      // Send a full snapshot on transitions to-streaming and on message changes
+      // mid-stream. The follow-up queue rides on the snapshot (not the
+      // lightweight streaming patch), so a queue change also forces one.
+      if (
+        !prevIsStreaming ||
+        snapshot.messages !== prevMessages ||
+        snapshot.notifyOnFinish !== prevNotifyOnFinish ||
+        queueSig(snapshot.queuedMessages) !== prevQueueSig
+      ) {
         pushFullSnapshot(snapshot)
       }
     } else {

@@ -91,6 +91,8 @@ export interface SessionsApi {
   send(req: { sessionId: string; text: string; files?: FileContent[] }): Promise<void>
   abort(req: { sessionId: string }): Promise<void>
   remove(req: { sessionId: string }): Promise<void>
+  /** Drop a not-yet-started queued follow-up from a session by its index. */
+  removeQueued(req: { sessionId: string; index: number }): Promise<void>
 }
 
 // ── Runtime functions (the FunctionRegistry surface) ─────────────────────

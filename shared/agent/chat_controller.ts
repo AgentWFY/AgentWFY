@@ -38,6 +38,8 @@ export interface AgentChatController {
 
   setNotifyOnFinish(value: boolean): Promise<void>
   skipRetryDelay(): Promise<void>
+  /** Remove a queued (not-yet-started) follow-up message by index. */
+  removeQueuedMessage(index: number): Promise<void>
 
   subscribe(handler: () => void): ChatUnsubscribe
 }

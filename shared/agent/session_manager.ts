@@ -1,6 +1,6 @@
 import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
-import type { FileContent } from './types.js'
+import type { FileContent, QueuedMessage } from './types.js'
 import type { AgentSnapshot, AgentState } from './types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
 import type { ProviderRegistry } from '../providers/registry.js'
@@ -537,7 +537,24 @@ export class AgentSessionManager {
       streamingSessionIds,
       retryState: agent?.state.retryState ?? null,
       stalledSince: agent?.state.stalledSince ?? null,
+      queuedMessages: agent?.queuedMessages ?? [],
     }
+  }
+
+  /** Remove a queued follow-up message from the active session by index. */
+  removeQueuedMessage(index: number): void {
+    this.activeAgent?.removeQueuedMessage(index)
+  }
+
+  /** Remove a queued follow-up from a specific session (used by the backend
+   *  RPC surface, where the target is addressed by id rather than "active"). */
+  removeQueuedMessageForSession(sessionId: string, index: number): void {
+    this.findSessionEntry(sessionId)?.agent.removeQueuedMessage(index)
+  }
+
+  /** Serializable follow-up queue for a specific session (empty if unknown). */
+  getSessionQueuedMessages(sessionId: string): QueuedMessage[] {
+    return this.findSessionEntry(sessionId)?.agent.queuedMessages ?? []
   }
 
   private async readDefaultProviderId(): Promise<string> {

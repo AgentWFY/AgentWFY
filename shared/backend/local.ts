@@ -7,7 +7,7 @@
 // This file may freely import Electron-touching code — it is the bridge
 // between Electron-bound AgentContext and the environment-neutral interface.
 
-import type { AgentState } from '../agent/types.js'
+import type { AgentState, QueuedMessage } from '../agent/types.js'
 import type { DisplayMessage } from '../agent/provider_types.js'
 import type { AgentSessionManager } from '../agent/session_manager.js'
 import { sanitizeStreamingMessage } from '../agent/session_manager.js'
@@ -65,13 +65,14 @@ import {
   type Unsubscribe,
 } from './interface.js'
 
-function liveStateFromAgentState(state: AgentState): SessionLivePatch {
+function liveStateFromAgentState(state: AgentState, queuedMessages: QueuedMessage[]): SessionLivePatch {
   return {
     isStreaming: state.isStreaming,
     streamingMessage: sanitizeStreamingMessage(state.streamingMessage),
     statusLine: state.statusLine,
     retryState: state.retryState ?? null,
     stalledSince: state.stalledSince ?? null,
+    queuedMessages,
   }
 }
 
@@ -128,7 +129,7 @@ export class LocalBackend implements AgentBackend {
         this.emit({
           kind: 'session:state',
           sessionId,
-          live: liveStateFromAgentState(state),
+          live: liveStateFromAgentState(state, this.ctx.sessionManager.getSessionQueuedMessages(sessionId)),
           ...(messagesChanged ? { messages: stripBlockBinaries(state.messages) } : {}),
           ...(titleChanged ? { title } : {}),
         })
@@ -184,7 +185,9 @@ export class LocalBackend implements AgentBackend {
         providerId: result.providerId,
         updatedAt: result.updatedAt,
         messages: result.messages,
-        live: result.state ? liveStateFromAgentState(result.state) : null,
+        live: result.state
+          ? liveStateFromAgentState(result.state, this.ctx.sessionManager.getSessionQueuedMessages(result.sessionId))
+          : null,
       }
     },
 
@@ -230,6 +233,10 @@ export class LocalBackend implements AgentBackend {
 
     remove: async ({ sessionId }) => {
       await this.ctx.sessionManager.removeSession(sessionId)
+    },
+
+    removeQueued: async ({ sessionId, index }) => {
+      this.ctx.sessionManager.removeQueuedMessageForSession(sessionId, index)
     },
   }
 
