@@ -120,15 +120,12 @@ export function isReplicatedTable(table: string): boolean {
   return CHANGE_TRACKED_TABLE_SET.has(table);
 }
 
-// Change-tracking table + triggers. On Node these are TEMP (invisible to the
-// binary `.sqlite` snapshot the desktop mirror downloads). A host whose SQLite
-// engine forbids TEMP objects can make them persistent instead; that's harmless
-// as long as its snapshot ships the replicated *tables* only, so `_changes` and
-// these triggers are never replicated regardless.
-function makeChangeTrackingSql(temp: boolean): string {
-  const TEMP = temp ? 'TEMP ' : '';
+// Change-tracking table + triggers. These are TEMP, so they stay out of the
+// binary `.sqlite` snapshot the desktop mirror downloads (`_changes` and these
+// triggers are never replicated).
+function makeChangeTrackingSql(): string {
   return `
-CREATE ${TEMP}TABLE IF NOT EXISTS _changes (
+CREATE TEMP TABLE IF NOT EXISTS _changes (
   table_name TEXT NOT NULL,
   row_id NOT NULL,
   previous_row_id,
@@ -136,38 +133,36 @@ CREATE ${TEMP}TABLE IF NOT EXISTS _changes (
 );
 
 ${CHANGE_TRACKED_TABLES.map(t => `
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${t}_insert AFTER INSERT ON ${t} BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_insert AFTER INSERT ON ${t} BEGIN
   INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', NEW.name, NULL, 'insert');
 END;
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${t}_update AFTER UPDATE ON ${t} BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_update AFTER UPDATE ON ${t} BEGIN
   INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', NEW.name, OLD.name, 'update');
 END;
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${t}_delete AFTER DELETE ON ${t} BEGIN
+CREATE TEMP TRIGGER IF NOT EXISTS _${t}_delete AFTER DELETE ON ${t} BEGIN
   INSERT INTO _changes (table_name, row_id, previous_row_id, op) VALUES ('${t}', OLD.name, OLD.name, 'delete');
 END;`).join('\n')}
 `;
 }
 
-// Block agent from writing to system.* and plugin.* rows. On Node these are
-// TEMP (so they don't interfere with our own upserts on next launch); on the
-// DO they are persistent (TEMP forbidden) and re-created idempotently.
-function makeNamespaceGuardSql(table: string, temp: boolean): string {
-  const TEMP = temp ? 'TEMP ' : '';
+// Block agent from writing to system.* and plugin.* rows. These are TEMP so they
+// don't interfere with our own upserts on next launch.
+function makeNamespaceGuardSql(table: string): string {
   return `
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${table}_system_guard_insert BEFORE INSERT ON ${table}
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_insert BEFORE INSERT ON ${table}
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
 END;
 
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${table}_system_guard_update BEFORE UPDATE ON ${table}
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_update BEFORE UPDATE ON ${table}
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR OLD.name = 'system' OR OLD.name LIKE 'system.%'
   OR NEW.name LIKE 'plugin.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
 END;
 
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${table}_system_guard_delete BEFORE DELETE ON ${table}
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_system_guard_delete BEFORE DELETE ON ${table}
 WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* and plugin.* ${table} are read-only');
@@ -177,16 +172,15 @@ END;
 
 const NAMESPACE_GUARDED_TABLES = ['docs', 'views', 'modules', 'tasks', 'triggers'];
 
-function makeNameFormatSql(table: string, glob: string, message: string, temp: boolean): string {
-  const TEMP = temp ? 'TEMP ' : '';
+function makeNameFormatSql(table: string, glob: string, message: string): string {
   return `
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${table}_name_format_insert BEFORE INSERT ON ${table}
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_name_format_insert BEFORE INSERT ON ${table}
 WHEN NEW.name GLOB '${glob}' OR NEW.name NOT GLOB '[a-z0-9]*'
 BEGIN
   SELECT RAISE(ABORT, '${message}');
 END;
 
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _${table}_name_format_update BEFORE UPDATE OF name ON ${table}
+CREATE TEMP TRIGGER IF NOT EXISTS _${table}_name_format_update BEFORE UPDATE OF name ON ${table}
 WHEN NEW.name GLOB '${glob}' OR NEW.name NOT GLOB '[a-z0-9]*'
 BEGIN
   SELECT RAISE(ABORT, '${message}');
@@ -197,16 +191,15 @@ END;
 const NAME_FORMAT_TABLES = ['views', 'docs', 'modules', 'config', 'tasks', 'triggers'];
 
 // Block agent from inserting/deleting system.* and plugin.* config, but allow UPDATE
-function makeSystemConfigGuardSql(temp: boolean): string {
-  const TEMP = temp ? 'TEMP ' : '';
+function makeSystemConfigGuardSql(): string {
   return `
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _config_system_guard_insert BEFORE INSERT ON config
+CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_insert BEFORE INSERT ON config
 WHEN NEW.name = 'system' OR NEW.name LIKE 'system.%' OR NEW.name LIKE 'plugin.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* and plugin.* config cannot be inserted');
 END;
 
-CREATE ${TEMP}TRIGGER IF NOT EXISTS _config_system_guard_delete BEFORE DELETE ON config
+CREATE TEMP TRIGGER IF NOT EXISTS _config_system_guard_delete BEFORE DELETE ON config
 WHEN OLD.name = 'system' OR OLD.name LIKE 'system.%' OR OLD.name LIKE 'plugin.%'
 BEGIN
   SELECT RAISE(ABORT, 'system.* and plugin.* config cannot be deleted');
@@ -214,17 +207,15 @@ END;
 `;
 }
 
-// Build the full guard SQL set for a given trigger storage. `temp=true` (Node)
-// keeps the triggers out of the binary snapshot; `temp=false` makes them
-// persistent. The DROP set below is storage-agnostic (DROP TRIGGER works
-// regardless of TEMP).
-function makeAllGuardSql(temp: boolean): string[] {
+// Build the full guard SQL set. The triggers are TEMP (kept out of the binary
+// snapshot). The DROP set below works regardless.
+function makeAllGuardSql(): string[] {
   return [
-    ...NAMESPACE_GUARDED_TABLES.map(t => makeNamespaceGuardSql(t, temp)),
-    makeSystemConfigGuardSql(temp),
-    ...NAME_FORMAT_TABLES.map(t => makeNameFormatSql(t, '*[^a-z0-9._-]*', `${t.replace(/s$/, '')} name must contain only lowercase letters, digits, dots, hyphens, and underscores`, temp)),
+    ...NAMESPACE_GUARDED_TABLES.map(t => makeNamespaceGuardSql(t)),
+    makeSystemConfigGuardSql(),
+    ...NAME_FORMAT_TABLES.map(t => makeNameFormatSql(t, '*[^a-z0-9._-]*', `${t.replace(/s$/, '')} name must contain only lowercase letters, digits, dots, hyphens, and underscores`)),
     // Plugin names: no dots (dots are namespace separators in plugin.* prefixes)
-    makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens', temp),
+    makeNameFormatSql('plugins', '*[^a-z0-9-]*', 'plugin name must contain only lowercase letters, digits, and hyphens'),
   ];
 }
 
@@ -258,8 +249,7 @@ export class AgentDb {
   // memory only — on process restart it resets, and clients detect this by
   // the WS connection dropping (they fetch a fresh snapshot on reconnect).
   private versionCounter = 0;
-  // Change-tracking + guard SQL, built once for this DB's trigger storage
-  // ('temp' on Node; 'persistent' where the SQLite engine forbids TEMP).
+  // Change-tracking + guard SQL, built once (the triggers are TEMP).
   private readonly changeTrackingSql: string;
   private readonly allGuardSql: string[];
 
@@ -268,17 +258,10 @@ export class AgentDb {
     /** Parsed system docs/views/config to bootstrap. `null` skips the sync
      *  entirely (used by remote mirrors that replicate system rows). */
     systemData: SystemData | null;
-    /** Where the change-tracking + guard triggers live. `'temp'` (default,
-     *  Node) keeps them out of the binary snapshot automatically; a host whose
-     *  SQLite engine forbids TEMP objects can use `'persistent'`. Harmless there
-     *  as long as its snapshot only ships the replicated *tables*, never
-     *  `_changes` or these triggers. */
-    triggerStorage?: 'temp' | 'persistent';
   }) {
     this.sql = opts.sql;
-    const temp = (opts.triggerStorage ?? 'temp') === 'temp';
-    this.changeTrackingSql = makeChangeTrackingSql(temp);
-    this.allGuardSql = makeAllGuardSql(temp);
+    this.changeTrackingSql = makeChangeTrackingSql();
+    this.allGuardSql = makeAllGuardSql();
     this.init(opts.systemData);
   }
 
@@ -617,78 +600,21 @@ export class AgentDb {
     return { version };
   }
 
-  /**
-   * Row-dump snapshot for hosts that can't export a binary `.sqlite` file
-   * (a backend whose SQLite has no export-to-bytes primitive).
-   * Returns every replicated table's rows
-   * plus the change-log version they reflect, captured BEFORE reading for the
-   * same reason as `writeSnapshotFile`: concurrent commits get version >
-   * `version` and are re-applied incrementally by mirrors (UPSERT-idempotent).
-   * The desktop mirror branches on backend kind and bulk-applies these rows
-   * instead of swapping a snapshot file.
-   */
-  dumpReplicatedRows(): { version: number; tables: Record<string, Record<string, unknown>[]> } {
-    const version = this.versionCounter;
-    const tables: Record<string, Record<string, unknown>[]> = {};
-    for (const table of CHANGE_TRACKED_TABLES) {
-      // Table names come from the hard-coded replicated set, so interpolation
-      // is safe; SELECT is allowed under the agent guard.
-      tables[table] = normalizeSqlRows(this.sql.query(`SELECT * FROM ${table}`)) as Record<string, unknown>[];
-    }
-    return { version, tables };
-  }
-
-  /**
-   * Apply a row-dump snapshot (from {@link dumpReplicatedRows}) wholesale to a
-   * mirror DB. This is the desktop-mirror counterpart of swapping a binary
-   * `.sqlite` snapshot file for hosts that can't export bytes (e.g. a Durable
-   * Object). Each replicated table is
-   * cleared and re-filled from the dump under a single shielded transaction, so
-   * (a) `system.*`/`plugin.*` rows land past the guards, and (b) rows deleted on
-   * the source since the last sync are removed — matching the "replace the whole
-   * file" semantics of the binary path. Like {@link applyMirrorChange}, it does
-   * NOT emit through the change listener; the caller resyncs UI state itself.
-   */
-  applyRowDumpSnapshot(tables: Record<string, Record<string, unknown>[]>): void {
-    this.shieldedWrite(() => {
-      this.sql.transactionSync(() => {
-        for (const table of CHANGE_TRACKED_TABLES) {
-          this.sql.run(`DELETE FROM ${table}`);
-          const rows = tables[table];
-          if (!rows) continue;
-          for (const row of rows) {
-            const cols = Object.keys(row);
-            if (cols.length === 0) continue;
-            // Cleared above, so a plain INSERT (no conflict) suffices; columns
-            // come from the dump, which mirrors the table's own `SELECT *`.
-            const placeholders = cols.map(() => '?').join(', ');
-            const sql = `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`;
-            const values = cols.map((c) => row[c] as SqlParam);
-            this.sql.run(sql, values);
-          }
-        }
-      });
-    }, { drain: false });
-  }
-
   close(): void {
     this.sql.close();
   }
 }
 
 /** Build an `AgentDb` over an injected `SqlDriver`. Host-neutral entry point:
- *  the Node registry passes a `NodeSqlDriver`; an alternate backend passes its
- *  own driver (with `triggerStorage: 'persistent'` if its engine forbids TEMP).
- *  `systemData` is `null` for remote mirrors. */
+ *  the Node registry passes a `NodeSqlDriver`. `systemData` is `null` for
+ *  remote mirrors. */
 export function createAgentDb(opts: {
   sql: SqlDriver;
   systemData: SystemData | null;
-  triggerStorage?: 'temp' | 'persistent';
 }): AgentDb {
   return new AgentDb({
     sql: opts.sql,
     systemData: opts.systemData,
-    ...(opts.triggerStorage ? { triggerStorage: opts.triggerStorage } : {}),
   });
 }
 

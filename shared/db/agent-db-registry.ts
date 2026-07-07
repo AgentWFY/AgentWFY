@@ -76,10 +76,3 @@ export function getAgentDbCurrentVersion(dataDir: string): number {
 export function applyAgentDbMirrorChange(dataDir: string, change: AgentDbChange): void {
   getOrCreateAgentDb(dataDir).applyMirrorChange(change);
 }
-
-export function applyAgentDbRowDumpSnapshot(
-  dataDir: string,
-  tables: Record<string, Record<string, unknown>[]>,
-): void {
-  getOrCreateAgentDb(dataDir).applyRowDumpSnapshot(tables);
-}

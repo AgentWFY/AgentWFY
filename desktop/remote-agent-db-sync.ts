@@ -7,7 +7,6 @@ import { pipeline } from 'stream/promises';
 import type { RemoteBackend } from '#shared/backend/remote.js';
 import {
   applyAgentDbMirrorChange,
-  applyAgentDbRowDumpSnapshot,
   configureAgentDb,
   getAgentDbPath,
   getOrCreateAgentDb,
@@ -306,20 +305,12 @@ export class RemoteAgentDbSync {
       // The WS bounced (or we stopped) while this snapshot was downloading.
       // Drop it on the floor; the post-reconnect requestSnapshot will pull
       // a fresh one keyed to the new epoch.
-      if (snapshot.kind === 'file') fs.rmSync(snapshot.snapshotPath, { force: true });
+      fs.rmSync(snapshot.snapshotPath, { force: true });
       return;
     }
-    if (snapshot.kind === 'file') {
-      // Binary `.sqlite` from the Node daemon — swap the whole mirror file.
-      replaceAgentDbSnapshotFile(this.cacheRoot, snapshot.snapshotPath);
-      this.openLocalDb();
-    } else {
-      // Row-dump from a backend that can't export binary bytes. Open the mirror
-      // DB (creating the schema if needed) and bulk-replace the replicated
-      // tables in place.
-      this.openLocalDb();
-      applyAgentDbRowDumpSnapshot(this.cacheRoot, snapshot.tables);
-    }
+    // Binary `.sqlite` from the Node daemon — swap the whole mirror file.
+    replaceAgentDbSnapshotFile(this.cacheRoot, snapshot.snapshotPath);
+    this.openLocalDb();
     this.localVersion = snapshot.version;
     this.initialized = true;
 
@@ -356,10 +347,8 @@ export class RemoteAgentDbSync {
   }
 
   /**
-   * Fetch one snapshot and shape it per backend. The Node daemon serves a
-   * binary `application/vnd.sqlite3` body (streamed to a temp file); a backend
-   * that can't export bytes serves an `application/json` `{ version, tables }`
-   * row-dump instead. Both carry the reflected version in the same header.
+   * Fetch one snapshot from the Node daemon: a binary `application/vnd.sqlite3`
+   * body streamed to a temp file, carrying the reflected version in a header.
    */
   private async fetchSnapshot(): Promise<SnapshotPayload> {
     const { url, headers, versionHeader } = this.remoteBackend.getAgentDbSnapshotRequest();
@@ -373,15 +362,8 @@ export class RemoteAgentDbSync {
     }
 
     const version = parseSnapshotVersion(response.headers.get(versionHeader), versionHeader);
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (contentType.includes('application/json')) {
-      const tables = parseRowDumpTables(await response.json());
-      return { kind: 'rows', tables, version };
-    }
-
     const snapshotPath = await this.streamSnapshotToTempFile(response.body);
-    return { kind: 'file', snapshotPath, version };
+    return { snapshotPath, version };
   }
 
   private async streamSnapshotToTempFile(body: ReadableStream<Uint8Array>): Promise<string> {
@@ -429,11 +411,8 @@ export class RemoteAgentDbSync {
   }
 }
 
-/** A fetched snapshot, shaped per backend: a binary `.sqlite` temp file (Node
- *  daemon) or an in-memory row-dump of the replicated tables. */
-type SnapshotPayload =
-  | { kind: 'file'; snapshotPath: string; version: number }
-  | { kind: 'rows'; tables: Record<string, Record<string, unknown>[]>; version: number };
+/** A fetched snapshot: a binary `.sqlite` temp file streamed from the Node daemon. */
+type SnapshotPayload = { snapshotPath: string; version: number };
 
 function parseSnapshotVersion(raw: string | null, versionHeader: string): number {
   const version = raw === null ? 0 : Number(raw);
@@ -441,17 +420,6 @@ function parseSnapshotVersion(raw: string | null, versionHeader: string): number
     throw new Error(`snapshot download failed: invalid ${versionHeader} header: ${raw}`);
   }
   return version;
-}
-
-function parseRowDumpTables(body: unknown): Record<string, Record<string, unknown>[]> {
-  if (!body || typeof body !== 'object') {
-    throw new Error('row-dump snapshot failed: response is not an object');
-  }
-  const { tables } = body as { tables?: unknown };
-  if (!tables || typeof tables !== 'object') {
-    throw new Error('row-dump snapshot failed: response missing tables');
-  }
-  return tables as Record<string, Record<string, unknown>[]>;
 }
 
 function parseRuntimeRunSqlRequest(payload: unknown): RunSqlRequest {

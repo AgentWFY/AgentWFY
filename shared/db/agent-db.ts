@@ -25,7 +25,6 @@ export {
   closeAgentDb,
   getAgentDbCurrentVersion,
   applyAgentDbMirrorChange,
-  applyAgentDbRowDumpSnapshot,
 } from './agent-db-registry.js';
 
 /** Read the bundled system docs/views/config JSON shipped alongside `dist/shared`. */
