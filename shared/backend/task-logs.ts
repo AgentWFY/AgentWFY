@@ -1,17 +1,18 @@
-// Filesystem helpers for task log persistence. Used by LocalBackend (both
-// in-process on the desktop and inside the daemon) so the same on-disk layout
-// applies regardless of where the agent runs.
+// FileStore helpers for task log persistence. Used by LocalBackend (both
+// in-process on the desktop and inside the daemon) so the same layout applies
+// regardless of where the agent runs.
 //
-// On-disk layout: `<runtimeRoot>/.agentwfy/task_logs/<name>.json`.
+// Layout: `<root>/.agentwfy/task_logs/<name>.json` (a private subtree, so all
+// access passes `{ allowPrivate: true }`).
 
-import fs from 'fs/promises'
-import path from 'path'
-import { assertPathAllowed } from '../security/path-policy.js'
+import type { FileStore } from '../storage/file-store.js'
 import type { TaskLogHistoryItem } from './interface.js'
 
 export const TASK_LOGS_RELATIVE_DIR = '.agentwfy/task_logs'
 const TASK_LOG_HISTORY_LIMIT = 50
 export const TASK_LOG_FILE_NAME_RE = /^[A-Za-z0-9._-]+\.json$/
+
+const PRIVATE = { allowPrivate: true } as const
 
 function normalizeTaskLogFileName(value: unknown): string {
   if (typeof value !== 'string') {
@@ -24,45 +25,23 @@ function normalizeTaskLogFileName(value: unknown): string {
   return normalized
 }
 
-export async function listAgentTaskLogHistory(runtimeRoot: string): Promise<TaskLogHistoryItem[]> {
-  const taskLogsDir = path.join(runtimeRoot, TASK_LOGS_RELATIVE_DIR)
+export async function listAgentTaskLogHistory(store: FileStore): Promise<TaskLogHistoryItem[]> {
+  const entries = await store.list(TASK_LOGS_RELATIVE_DIR, PRIVATE)
 
-  let entries
-  try {
-    entries = await fs.readdir(taskLogsDir, { withFileTypes: true })
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return []
-    throw err
-  }
-
-  // Stat-first pass: cheap mtime read for every candidate, then pick the
-  // newest N and only open those for content. Bounds the work to
+  // Stat-first pass: the listing already carries mtime for every candidate, so
+  // pick the newest N and only open those for content. Bounds the work to
   // TASK_LOG_HISTORY_LIMIT regardless of how many old logs accumulate.
-  const candidates = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && TASK_LOG_FILE_NAME_RE.test(entry.name))
-      .map(async (entry) => {
-        const filePath = path.join(taskLogsDir, entry.name)
-        try {
-          const stats = await fs.stat(filePath)
-          return { file: entry.name, filePath, mtimeMs: stats.mtimeMs }
-        } catch {
-          return null
-        }
-      }),
-  )
-
-  const topCandidates = candidates
-    .filter((c): c is NonNullable<typeof c> => c !== null)
+  const topCandidates = entries
+    .filter((entry) => !entry.isDirectory && TASK_LOG_FILE_NAME_RE.test(entry.name))
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
     .slice(0, TASK_LOG_HISTORY_LIMIT)
 
   const items = await Promise.all(topCandidates.map(async (c): Promise<TaskLogHistoryItem | null> => {
     try {
-      const raw = await fs.readFile(c.filePath, 'utf-8')
+      const raw = await store.readText(`${TASK_LOGS_RELATIVE_DIR}/${c.name}`, PRIVATE)
       const parsed = JSON.parse(raw)
       return {
-        file: c.file,
+        file: c.name,
         updatedAt: typeof parsed.finishedAt === 'number' ? parsed.finishedAt : Math.floor(c.mtimeMs),
         taskName: typeof parsed.taskTitle === 'string' ? parsed.taskTitle : typeof parsed.taskName === 'string' ? parsed.taskName : 'Unknown',
         status: typeof parsed.status === 'string' ? parsed.status : 'unknown',
@@ -78,12 +57,7 @@ export async function listAgentTaskLogHistory(runtimeRoot: string): Promise<Task
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export async function readAgentTaskLog(runtimeRoot: string, logFileName: string): Promise<string> {
+export async function readAgentTaskLog(store: FileStore, logFileName: string): Promise<string> {
   const normalized = normalizeTaskLogFileName(logFileName)
-  const logPath = await assertPathAllowed(
-    runtimeRoot,
-    `${TASK_LOGS_RELATIVE_DIR}/${normalized}`,
-    { allowAgentPrivate: true },
-  )
-  return fs.readFile(logPath, 'utf-8')
+  return store.readText(`${TASK_LOGS_RELATIVE_DIR}/${normalized}`, PRIVATE)
 }

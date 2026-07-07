@@ -6,6 +6,7 @@ import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { ExternalLauncher, RendererPush } from '../hosts.js'
 import type { PageApi } from '../../page/types.js'
+import type { FileStore } from '../../storage/file-store.js'
 import { runAgentDbSql } from '../../db/sqlite.js'
 import { registerFileOps } from './file_ops.js'
 import { registerSql } from './sql.js'
@@ -18,6 +19,8 @@ import { registerOpenExternal } from './open_external.js'
 
 interface BuiltInFunctionDeps {
   runtimeRoot: string
+  /** Agent file tree access; node:fs on the desktop/daemon, R2 on Cloudflare. */
+  store: FileStore
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
   eventBus: EventBus
@@ -60,7 +63,7 @@ async function findDocsReferencingFunctions(
 }
 
 export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: BuiltInFunctionDeps): void {
-  registerFileOps(registry, { runtimeRoot: deps.runtimeRoot })
+  registerFileOps(registry, { runtimeRoot: deps.runtimeRoot, store: deps.store })
   registerSql(registry, { runtimeRoot: deps.runtimeRoot })
   if (deps.pageTools) {
     registerPages(registry, { pageTools: deps.pageTools, runtimeRoot: deps.runtimeRoot })

@@ -13,10 +13,9 @@ import {
   ensureSessionsDir,
 } from './session_persistence.js'
 import type { ProviderSession, DisplayMessage } from './provider_types.js'
+import type { FileStore } from '../storage/file-store.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
-
-export const DEFAULT_SESSION_DIR = '.agentwfy/sessions'
 
 const FALLBACK_SYSTEM_PROMPT = 'You are the AgentWFY desktop AI agent. Your docs failed to load from the database — check the docs table in agent.db.'
 
@@ -36,6 +35,7 @@ export interface AgentWFYAgentOptions {
   storedSession?: StoredSession
   persistSessions?: boolean
   runtimeRoot: string
+  store: FileStore
   getJsRuntime: () => JsRuntime
 }
 
@@ -119,7 +119,7 @@ export class AgentWFYAgent {
 
   private readonly listeners = new Set<AgentWFYAgentEventListener>()
   private readonly unsubscribeFromAgent: () => void
-  private readonly sessionsDir: string
+  private readonly store: FileStore
   private readonly persistSessionsToDisk: boolean
   readonly providerId: string
 
@@ -131,14 +131,14 @@ export class AgentWFYAgent {
 
   private constructor(
     agent: Agent,
-    sessionsDir: string,
+    store: FileStore,
     sessionFile: string | undefined,
     sessionId: string,
     persistSessions: boolean,
     providerId: string,
   ) {
     this.agent = agent
-    this.sessionsDir = sessionsDir
+    this.store = store
     this.persistSessionsToDisk = persistSessions
     this._sessionFile = sessionFile
     this._sessionId = sessionId
@@ -157,11 +157,11 @@ export class AgentWFYAgent {
 
   static async create(options: AgentWFYAgentOptions): Promise<AgentWFYAgent> {
     const runtimeRoot = options.runtimeRoot
-    const sessionsDir = `${runtimeRoot}/${DEFAULT_SESSION_DIR}`
+    const store = options.store
     const persistSessions = options.persistSessions ?? true
 
     if (persistSessions) {
-      await ensureSessionsDir(sessionsDir)
+      await ensureSessionsDir(store)
     }
 
     const freshSessionId = createSessionId()
@@ -180,7 +180,7 @@ export class AgentWFYAgent {
 
     if (options.sessionFile) {
       const stored = options.storedSession
-        ?? parseStoredSession(await readSessionFile(sessionsDir, normalizeSessionFileName(options.sessionFile)), options.sessionFile)
+        ?? parseStoredSession(await readSessionFile(store, normalizeSessionFileName(options.sessionFile)), options.sessionFile)
       sessionId = stored.sessionId || freshSessionId
       sessionIdRef.current = sessionId
 
@@ -210,7 +210,7 @@ export class AgentWFYAgent {
 
     const instance = new AgentWFYAgent(
       agent,
-      sessionsDir,
+      store,
       sessionFile,
       sessionId,
       persistSessions,
@@ -342,7 +342,7 @@ export class AgentWFYAgent {
           updatedAt: Date.now(),
         }
 
-        await writeSessionFile(this.sessionsDir, this._sessionFile, JSON.stringify(stored, null, 2))
+        await writeSessionFile(this.store, this._sessionFile, JSON.stringify(stored, null, 2))
 
         this.emit({
           type: 'session_saved',

@@ -1,16 +1,8 @@
-import fs from 'fs/promises'
 import { isValidTraceSessionId, type TraceEvent } from '../runtime/trace_types.js'
-import { getTraceFilePath } from '../runtime/trace_paths.js'
+import { TRACES_RELATIVE_DIR } from '../runtime/trace_paths.js'
+import type { FileStore } from '../storage/file-store.js'
 
-export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {
-  let raw: string
-  try {
-    raw = await fs.readFile(filePath, 'utf-8')
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw err
-  }
-
+function parseTraceEvents(raw: string): TraceEvent[] {
   const events: TraceEvent[] = []
   for (const rawLine of raw.split('\n')) {
     const line = rawLine.trim()
@@ -27,8 +19,14 @@ export async function readTraceEvents(filePath: string): Promise<TraceEvent[]> {
   return events
 }
 
-export async function listAgentTraces(runtimeRoot: string, sessionId: string): Promise<TraceEvent[]> {
+export async function listAgentTraces(store: FileStore, sessionId: string): Promise<TraceEvent[]> {
   if (!isValidTraceSessionId(sessionId)) return []
-  const filePath = getTraceFilePath(runtimeRoot, sessionId)
-  return filePath ? readTraceEvents(filePath) : []
+  let raw: string
+  try {
+    raw = await store.readText(`${TRACES_RELATIVE_DIR}/${sessionId}.jsonl`, { allowPrivate: true })
+  } catch {
+    // Missing or unreadable trace file — nothing to show.
+    return []
+  }
+  return parseTraceEvents(raw)
 }

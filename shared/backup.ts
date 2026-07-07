@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import { DatabaseSync } from 'node:sqlite';
+import { NodeSqlDriver } from './db/node-sql-driver.js';
 import { getConfigValue } from './settings/config.js';
 import { resolveAgentDbPath } from './db/paths.js';
 import { closeAgentDb } from './db/agent-db.js';
@@ -230,8 +230,8 @@ export async function restoreFromBackup(runtimeRoot: string, version: number): P
   try {
     await backupAgentDb(runtimeRoot);
 
-    const testDb = new DatabaseSync(backupPath);
-    try { testDb.exec('SELECT 1'); } finally { testDb.close(); }
+    const testDb = new NodeSqlDriver(backupPath);
+    try { testDb.execBatch('SELECT 1'); } finally { testDb.close(); }
 
     // Close the live connection before overwriting the file. SQLite would
     // otherwise keep serving cached pages from the pre-restore DB until the

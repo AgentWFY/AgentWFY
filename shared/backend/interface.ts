@@ -18,7 +18,7 @@ import type {
   TaskRunLogPayload,
   TaskRunRead,
   TaskRunStartedPayload,
-} from '../task-runner/task_runner.js'
+} from '../task-runner/task_types.js'
 import type {
   BackupCreateResult,
   BackupRestoreResult,

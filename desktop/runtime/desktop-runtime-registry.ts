@@ -1,6 +1,6 @@
 import { JsRuntime, type JsRuntimeDeps } from '#shared/runtime/js_runtime.js'
 import { TraceWriter } from '#shared/runtime/trace_writer.js'
-import { getTraceDir } from '#shared/runtime/trace_paths.js'
+import { NodeFileStore } from '#shared/storage/node-file-store.js'
 
 const runtimes = new Map<string, JsRuntime>()
 const traceWriters = new Map<string, TraceWriter>()
@@ -8,7 +8,7 @@ const traceWriters = new Map<string, TraceWriter>()
 export function getOrCreateDesktopTraceWriter(runtimeRoot: string): TraceWriter {
   let writer = traceWriters.get(runtimeRoot)
   if (writer) return writer
-  writer = new TraceWriter(getTraceDir(runtimeRoot))
+  writer = new TraceWriter(new NodeFileStore(runtimeRoot))
   traceWriters.set(runtimeRoot, writer)
   return writer
 }

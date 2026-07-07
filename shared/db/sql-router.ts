@@ -1,5 +1,4 @@
-import { runAgentDbSql, runSqliteFileSql, type SqlExecutionRequest } from './sqlite.js';
-import { resolveSqliteFilePath } from './paths.js';
+import { runAgentDbSql, type SqlExecutionRequest } from './sqlite.js';
 
 export type SqlTarget = 'agent' | 'sqlite-file';
 
@@ -7,6 +6,17 @@ export interface RunSqlRequest extends SqlExecutionRequest {
   target: SqlTarget;
   path?: string;
   description?: string;
+}
+
+// Host-injected handler for the Node-only `sqlite-file` target. `sqlite-file.ts`
+// installs it on Node; the DO leaves it unset (no arbitrary on-disk .sqlite
+// files), so that target throws there. Keeps this router node-free.
+export type SqliteFileSqlHandler = (dataDir: string, request: RunSqlRequest) => Promise<unknown[]>;
+
+let sqliteFileSqlHandler: SqliteFileSqlHandler | null = null;
+
+export function configureSqliteFileSql(handler: SqliteFileSqlHandler): void {
+  sqliteFileSqlHandler = handler;
 }
 
 function isSqlTarget(value: unknown): value is SqlTarget {
@@ -53,6 +63,8 @@ export async function routeSqlRequest(dataDir: string, request: RunSqlRequest): 
     return runAgentDbSql(dataDir, request);
   }
 
-  const sqlitePath = await resolveSqliteFilePath(dataDir, request.path || '');
-  return runSqliteFileSql(sqlitePath, request);
+  if (!sqliteFileSqlHandler) {
+    throw new Error('runSql target "sqlite-file" is not supported on this host');
+  }
+  return sqliteFileSqlHandler(dataDir, request);
 }

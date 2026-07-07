@@ -1,57 +1,32 @@
-import fs from 'fs/promises'
-import path from 'path'
 import crypto from 'crypto'
 import type { ExecJsLogEntry, ExecJsDetails } from '../runtime/types.js'
 import type { JsRuntime } from '../runtime/js_runtime.js'
+import type { FileStore } from '../storage/file-store.js'
 import { parseRunSqlRequest, routeSqlRequest } from '../db/sql-router.js'
 import { escapeRegex, makeSnippet } from '../runtime/functions/text_utils.js'
 import { TASK_LOGS_RELATIVE_DIR, TASK_LOG_FILE_NAME_RE } from '../backend/task-logs.js'
 
-export type TaskOrigin =
-  | { type: 'command-palette' }
-  | { type: 'task-panel' }
-  | { type: 'agent' }
-  | { type: 'trigger'; triggerName: string; triggerType: 'schedule' | 'http' | 'event'; triggerConfig?: string }
-  | { type: 'view' }
-  | { type: 'shortcut' }
+// Public task types live in the node-free ./task_types.ts so type-only
+// consumers don't have to resolve this node-bound module. Re-exported here so
+// existing `from './task_runner.js'` importers are unaffected.
+export type {
+  TaskOrigin,
+  TaskRunStatus,
+  TaskRunStartedPayload,
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunRead,
+} from './task_types.js'
+import type {
+  TaskOrigin,
+  TaskRunStatus,
+  TaskRunStartedPayload,
+  TaskRunFinishedPayload,
+  TaskRunLogPayload,
+  TaskRunRead,
+} from './task_types.js'
 
-// Lifecycle payloads emitted by TaskRunner — defined here (not in ipc/schema.ts)
-// so portable runtime code can reference them without dragging in IPC concerns.
-export interface TaskRunStartedPayload {
-  runId: string
-  taskName: string
-  title: string
-  status: string
-  origin: TaskOrigin
-  startedAt: number
-}
-
-export interface TaskRunFinishedPayload {
-  runId: string
-  taskName: string
-  title: string
-  status: string
-  origin: TaskOrigin
-  startedAt: number
-  finishedAt: number | undefined
-  result: unknown
-  error: string | undefined
-  logs: ExecJsLogEntry[]
-  logFile: string | null
-}
-
-export type TaskRunStatus = 'running' | 'completed' | 'failed'
-
-export interface TaskRunLogPayload {
-  runId: string
-  taskName: string
-  title: string
-  status: TaskRunStatus
-  origin: TaskOrigin
-  startedAt: number
-  log: ExecJsLogEntry
-  logIndex: number
-}
+const PRIVATE = { allowPrivate: true } as const
 
 interface TaskRun {
   runId: string
@@ -75,20 +50,6 @@ export interface TaskRunSummary {
   origin: TaskOrigin
   startedAt: number
   finishedAt?: number
-}
-
-export interface TaskRunRead {
-  runId: string
-  taskName: string
-  title: string
-  status: TaskRunStatus
-  origin: TaskOrigin
-  input: unknown
-  startedAt: number
-  finishedAt: number | null
-  result: unknown
-  error: string | null
-  logs: ExecJsLogEntry[]
 }
 
 export interface TaskRunMatchEntry {
@@ -149,6 +110,7 @@ function createLogFileName(): string {
 
 interface TaskRunnerDeps {
   runtimeRoot: string
+  store: FileStore
   getJsRuntime: () => JsRuntime
   busPublish: (topic: string, data: unknown) => void
 }
@@ -299,12 +261,11 @@ export class TaskRunner {
 
     let persisted: TaskRunSummary[] = []
     if (status !== 'running') {
-      const taskLogsDir = path.join(this.deps.runtimeRoot, TASK_LOGS_RELATIVE_DIR)
-      const files = (await listTaskLogFiles(taskLogsDir)).filter(f => inTimeWindow(f.mtimeMs))
+      const files = (await listTaskLogFiles(this.deps.store)).filter(f => inTimeWindow(f.mtimeMs))
       // mtime ordering closely matches finishedAt — parse only enough to fill
       // the requested page (plus a buffer for running-run interleaving).
       const candidates = files.slice(0, offset + limit + running.length)
-      const parsed = await Promise.all(candidates.map(f => readParsedLog(taskLogsDir, f.name)))
+      const parsed = await Promise.all(candidates.map(f => readParsedLog(this.deps.store, f.name)))
       for (const p of parsed) {
         if (!p) continue
         if (status && p.status !== status) continue
@@ -364,14 +325,13 @@ export class TaskRunner {
       }
     }
 
-    const taskLogsDir = path.join(this.deps.runtimeRoot, TASK_LOGS_RELATIVE_DIR)
-    const files = (await listTaskLogFiles(taskLogsDir)).filter(f => {
+    const files = (await listTaskLogFiles(this.deps.store)).filter(f => {
       if (request.since !== undefined && f.mtimeMs < request.since) return false
       if (request.until !== undefined && f.mtimeMs > request.until) return false
       return true
     })
 
-    const parsedLogs = await Promise.all(files.map(f => readParsedLog(taskLogsDir, f.name)))
+    const parsedLogs = await Promise.all(files.map(f => readParsedLog(this.deps.store, f.name)))
     const persistedMatches: TaskRunMatch[] = []
     for (const parsed of parsedLogs) {
       if (!parsed) continue
@@ -413,9 +373,8 @@ export class TaskRunner {
       }
     }
 
-    const taskLogsDir = path.join(this.deps.runtimeRoot, TASK_LOGS_RELATIVE_DIR)
-    const files = await listTaskLogFiles(taskLogsDir)
-    const parsedLogs = await Promise.all(files.map(f => readParsedLog(taskLogsDir, f.name)))
+    const files = await listTaskLogFiles(this.deps.store)
+    const parsedLogs = await Promise.all(files.map(f => readParsedLog(this.deps.store, f.name)))
     const match = parsedLogs.find((p): p is ParsedTaskLog => p !== null && p.runId === runId)
     if (match) {
       return {
@@ -501,9 +460,6 @@ export class TaskRunner {
 
   private async persistLog(run: TaskRun): Promise<string | null> {
     try {
-      const taskLogsDir = path.join(this.deps.runtimeRoot, TASK_LOGS_RELATIVE_DIR)
-      await fs.mkdir(taskLogsDir, { recursive: true })
-
       const logFileName = createLogFileName()
       const logData = {
         runId: run.runId,
@@ -519,8 +475,7 @@ export class TaskRunner {
         logs: run.logs,
       }
 
-      const logPath = path.join(taskLogsDir, logFileName)
-      await fs.writeFile(logPath, JSON.stringify(logData, null, 2), 'utf-8')
+      await this.deps.store.writeText(`${TASK_LOGS_RELATIVE_DIR}/${logFileName}`, JSON.stringify(logData, null, 2), PRIVATE)
       return logFileName
     } catch (err) {
       console.error('[TaskRunner] failed to persist log', err)
@@ -529,25 +484,11 @@ export class TaskRunner {
   }
 }
 
-async function listTaskLogFiles(taskLogsDir: string): Promise<Array<{ name: string; mtimeMs: number }>> {
-  let entries
-  try {
-    entries = await fs.readdir(taskLogsDir, { withFileTypes: true })
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return []
-    throw err
-  }
-  const files = entries.filter(e => e.isFile() && TASK_LOG_FILE_NAME_RE.test(e.name))
-  const stats = await Promise.all(files.map(async (entry) => {
-    try {
-      const s = await fs.stat(path.join(taskLogsDir, entry.name))
-      return { name: entry.name, mtimeMs: s.mtimeMs }
-    } catch {
-      return null
-    }
-  }))
-  return stats
-    .filter((s): s is { name: string; mtimeMs: number } => s !== null)
+async function listTaskLogFiles(store: FileStore): Promise<Array<{ name: string; mtimeMs: number }>> {
+  const entries = await store.list(TASK_LOGS_RELATIVE_DIR, PRIVATE)
+  return entries
+    .filter(e => !e.isDirectory && TASK_LOG_FILE_NAME_RE.test(e.name))
+    .map(e => ({ name: e.name, mtimeMs: e.mtimeMs }))
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
 }
 
@@ -555,9 +496,9 @@ function coerceStatus(value: unknown): TaskRunStatus {
   return value === 'running' || value === 'completed' || value === 'failed' ? value : 'failed'
 }
 
-async function readParsedLog(taskLogsDir: string, file: string): Promise<ParsedTaskLog | null> {
+async function readParsedLog(store: FileStore, file: string): Promise<ParsedTaskLog | null> {
   try {
-    const raw = await fs.readFile(path.join(taskLogsDir, file), 'utf-8')
+    const raw = await store.readText(`${TASK_LOGS_RELATIVE_DIR}/${file}`, PRIVATE)
     const parsed = JSON.parse(raw)
     if (typeof parsed.runId !== 'string' || parsed.runId.length === 0) return null
     return {

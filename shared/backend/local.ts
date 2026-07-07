@@ -16,17 +16,11 @@ import type { FunctionRegistry } from '../runtime/function_registry.js'
 import type { ProviderRegistry } from '../providers/registry.js'
 import type { TaskRunner } from '../task-runner/task_runner.js'
 import type { TraceWriter } from '../runtime/trace_writer.js'
+import type { FileStore } from '../storage/file-store.js'
 import { getConfigValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '../settings/config.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
-import { readAgentFile, statAgentFile } from './files.js'
 import { listAgentTaskLogHistory, readAgentTaskLog } from './task-logs.js'
 import { listAgentTraces } from './traces.js'
-import {
-  backupAgentDb,
-  getBackupStatus,
-  listAllBackups,
-  restoreFromBackup,
-} from '../backup.js'
 
 /** Minimal slice of per-agent runtime that LocalBackend actually uses.
  *  Importing this (vs. the full AgentContext) keeps LocalBackend free of
@@ -36,11 +30,22 @@ export interface LocalBackendContext {
   agentId: string
   /** Filesystem root where the live runtime owns on-disk data. */
   runtimeRoot: string
+  /** Agent file tree access (traces, task logs, …); node:fs or R2. */
+  store: FileStore
   sessionManager: AgentSessionManager
   functionRegistry: FunctionRegistry
   providerRegistry: ProviderRegistry
   taskRunner: TaskRunner
   traceWriter: TraceWriter
+  /** Bytes-level agent file access (files.read/stat). Node builds this from
+   *  `shared/backend/files.ts` (`fs/promises` + `assertPathAllowed`); the DO
+   *  injects an R2-backed impl, keeping LocalBackend off `node:fs` (symmetric
+   *  with `backup`). */
+  files: FilesApi
+  /** Per-agent DB backup API. Node builds this from `shared/backup.ts` (fs);
+   *  the DO injects an R2-backed (or stub) impl, keeping LocalBackend off
+   *  `node:fs`. */
+  backup: BackupApi
 }
 import {
   type AgentBackend,
@@ -92,6 +97,8 @@ export class LocalBackend implements AgentBackend {
   constructor(ctx: LocalBackendContext) {
     this.ctx = ctx
     this.id = ctx.agentId
+    this.files = ctx.files
+    this.backup = ctx.backup
   }
 
   async start(): Promise<void> {
@@ -309,35 +316,23 @@ export class LocalBackend implements AgentBackend {
       return this.ctx.taskRunner.readTaskRun(runId)
     },
     listLogHistory: async () => {
-      return listAgentTaskLogHistory(this.ctx.runtimeRoot)
+      return listAgentTaskLogHistory(this.ctx.store)
     },
     readLog: async ({ logFileName }) => {
-      return readAgentTaskLog(this.ctx.runtimeRoot, logFileName)
+      return readAgentTaskLog(this.ctx.store, logFileName)
     },
   }
 
-  readonly files: FilesApi = {
-    read: async ({ path, offset, limit }) => {
-      return readAgentFile(this.ctx.runtimeRoot, path, { offset, limit })
-    },
-    stat: async ({ path }) => {
-      return statAgentFile(this.ctx.runtimeRoot, path)
-    },
-  }
+  readonly files: FilesApi
 
   readonly traces: TracesApi = {
     list: async ({ sessionId }) => {
       await this.ctx.traceWriter.flush(sessionId)
-      return listAgentTraces(this.ctx.runtimeRoot, sessionId)
+      return listAgentTraces(this.ctx.store, sessionId)
     },
   }
 
-  readonly backup: BackupApi = {
-    create: async () => backupAgentDb(this.ctx.runtimeRoot),
-    restore: async ({ version }) => restoreFromBackup(this.ctx.runtimeRoot, version),
-    list: async () => listAllBackups(this.ctx.runtimeRoot),
-    status: async () => getBackupStatus(this.ctx.runtimeRoot),
-  }
+  readonly backup: BackupApi
 
   // ── events ─────────────────────────────────────────────────────────────
 

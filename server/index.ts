@@ -21,29 +21,13 @@ import {
   encodeWsMessage,
   errorFromUnknown,
   type BackendRpcMethod,
-  type BackupRestoreRequest,
-  type ConfigClearRequest,
-  type ConfigRemoveRequest,
-  type ConfigSetRequest,
-  type FilesReadRequest,
-  type FilesStatRequest,
-  type FunctionsInvokeRequest,
-  type ProvidersGetStatusLineRequest,
-  type ProvidersSetDefaultRequest,
-  type SessionsAbortRequest,
-  type SessionsGetRequest,
-  type SessionsListRequest,
-  type SessionsRemoveRequest,
-  type SessionsRemoveQueuedRequest,
-  type SessionsSendRequest,
-  type SessionsSpawnRequest,
-  type TasksReadLogRequest,
-  type TasksReadRunRequest,
-  type TasksStartRequest,
-  type TasksStopRequest,
-  type TracesListRequest,
   type WsRpcRequest,
 } from '#shared/backend/protocol.js'
+import {
+  attachBackendStreams,
+  buildHelloMessage,
+  dispatchBackendRpc,
+} from '#shared/backend/rpc-host.js'
 import type { RuntimeBundle } from './runtime-bootstrap.js'
 import { acceptWebSocket, isWebSocketUpgrade, type WsConnection } from './ws.js'
 import { ConnectedClientBridge } from './client-bridge.js'
@@ -113,153 +97,6 @@ function checkAuth(req: IncomingMessage, expected: string | null): boolean {
   return presented === expected || req.headers[AUTH_HEADER] === formatAuthHeader(expected)
 }
 
-async function dispatchBackendRpc(
-  method: BackendRpcMethod,
-  params: unknown,
-  bundle: RuntimeBundle,
-): Promise<unknown> {
-  switch (method) {
-    case 'health':
-      return { ok: true, protocolVersion: PROTOCOL_VERSION }
-    case 'whoami':
-      return {
-        agentId: bundle.backend.id,
-        protocolVersion: PROTOCOL_VERSION,
-      }
-    case 'sessions.list':
-      return bundle.backend.sessions.list(params as SessionsListRequest)
-    case 'sessions.get':
-      return bundle.backend.sessions.get(params as SessionsGetRequest)
-    case 'sessions.spawn':
-      return bundle.backend.sessions.spawn(params as SessionsSpawnRequest)
-    case 'sessions.send':
-      await bundle.backend.sessions.send(params as SessionsSendRequest)
-      return { ok: true }
-    case 'sessions.abort':
-      await bundle.backend.sessions.abort(params as SessionsAbortRequest)
-      return { ok: true }
-    case 'sessions.remove':
-      await bundle.backend.sessions.remove(params as SessionsRemoveRequest)
-      return { ok: true }
-    case 'sessions.removeQueued':
-      await bundle.backend.sessions.removeQueued(params as SessionsRemoveQueuedRequest)
-      return { ok: true }
-    case 'functions.list':
-      return bundle.backend.functions.list()
-    case 'functions.invoke': {
-      const req = params as FunctionsInvokeRequest
-      const value = await bundle.backend.functions.invoke(req)
-      return { value, dbVersion: bundle.getDbVersion() }
-    }
-    case 'providers.list':
-      return bundle.backend.providers.list()
-    case 'providers.getState':
-      return bundle.backend.providers.getState()
-    case 'providers.getStatusLine': {
-      const req = params as ProvidersGetStatusLineRequest
-      const statusLine = await bundle.backend.providers.getStatusLine(req.providerId)
-      return { statusLine }
-    }
-    case 'providers.setDefault': {
-      const req = params as ProvidersSetDefaultRequest
-      return bundle.backend.providers.setDefault(req.providerId)
-    }
-    case 'config.set': {
-      const req = params as ConfigSetRequest
-      await bundle.backend.config.set(req.name, req.value)
-      return { ok: true }
-    }
-    case 'config.clear': {
-      const req = params as ConfigClearRequest
-      await bundle.backend.config.clear(req.name)
-      return { ok: true }
-    }
-    case 'config.remove': {
-      const req = params as ConfigRemoveRequest
-      await bundle.backend.config.remove(req.name)
-      return { ok: true }
-    }
-    case 'tasks.start': {
-      const req = params as TasksStartRequest
-      return bundle.backend.tasks.start(req)
-    }
-    case 'tasks.stop': {
-      const req = params as TasksStopRequest
-      await bundle.backend.tasks.stop(req)
-      return { ok: true }
-    }
-    case 'tasks.listRunning':
-      return bundle.backend.tasks.listRunning()
-    case 'tasks.readRun':
-      return bundle.backend.tasks.readRun(params as TasksReadRunRequest)
-    case 'tasks.listLogHistory':
-      return bundle.backend.tasks.listLogHistory()
-    case 'tasks.readLog': {
-      const req = params as TasksReadLogRequest
-      const content = await bundle.backend.tasks.readLog(req)
-      return { content }
-    }
-    case 'traces.list':
-      return bundle.backend.traces.list(params as TracesListRequest)
-    case 'files.read': {
-      const result = await bundle.backend.files.read(params as FilesReadRequest)
-      // Wire is JSON; base64-encode bytes at the WS boundary only.
-      return {
-        size: result.size,
-        offset: result.offset,
-        mimeType: result.mimeType,
-        contentBase64: Buffer.from(result.content).toString('base64'),
-      }
-    }
-    case 'files.stat':
-      return bundle.backend.files.stat(params as FilesStatRequest)
-    case 'backup.create':
-      return bundle.backend.backup.create()
-    case 'backup.restore': {
-      const result = await bundle.backend.backup.restore(params as BackupRestoreRequest)
-      // The DB file was replaced — every connected mirror is now stale and
-      // must re-snapshot. Per-row replication can't describe a wholesale
-      // file swap, so emit the dedicated db:reset signal.
-      if (result.success) bundle.dbResets.emit()
-      return result
-    }
-    case 'backup.list':
-      return bundle.backend.backup.list()
-    case 'backup.status':
-      return bundle.backend.backup.status()
-    default:
-      throw new Error(`Unknown RPC method: ${method}`)
-  }
-}
-
-function attachBackendEvents(bundle: RuntimeBundle, connection: WsConnection): () => void {
-  let nextEventId = 1
-  return bundle.backend.events.subscribe((event) => {
-    connection.send(encodeWsMessage({
-      type: 'event',
-      id: nextEventId++,
-      event,
-    }))
-  })
-}
-
-function attachDbChanges(bundle: RuntimeBundle, connection: WsConnection): () => void {
-  let nextEventId = 1
-  return bundle.dbChanges.subscribe((change) => {
-    connection.send(encodeWsMessage({
-      type: 'db:changed',
-      id: nextEventId++,
-      change,
-    }))
-  })
-}
-
-function attachDbResets(bundle: RuntimeBundle, connection: WsConnection): () => void {
-  return bundle.dbResets.subscribe(() => {
-    connection.send(encodeWsMessage({ type: 'db:reset' }))
-  })
-}
-
 function handleWebSocket(
   req: IncomingMessage,
   socket: Socket,
@@ -278,9 +115,7 @@ function handleWebSocket(
     return
   }
 
-  let unsubscribeEvents: (() => void) | null = null
-  let unsubscribeDbChanges: (() => void) | null = null
-  let unsubscribeDbResets: (() => void) | null = null
+  let detachStreams: (() => void) | null = null
   const connection: WsConnection = acceptWebSocket(req, socket, head, {
     onMessage: (raw) => {
       let message
@@ -312,12 +147,8 @@ function handleWebSocket(
         })
     },
     onClose: () => {
-      unsubscribeEvents?.()
-      unsubscribeDbChanges?.()
-      unsubscribeDbResets?.()
-      unsubscribeEvents = null
-      unsubscribeDbChanges = null
-      unsubscribeDbResets = null
+      detachStreams?.()
+      detachStreams = null
       clientBridge.detach(undefined, connection)
       console.log('agentwfy-server: client disconnected')
     },
@@ -327,15 +158,8 @@ function handleWebSocket(
   })
 
   clientBridge.attach(connection)
-  unsubscribeEvents = attachBackendEvents(bundle, connection)
-  unsubscribeDbChanges = attachDbChanges(bundle, connection)
-  unsubscribeDbResets = attachDbResets(bundle, connection)
-  connection.send(encodeWsMessage({
-    type: 'hello',
-    protocolVersion: PROTOCOL_VERSION,
-    agentId: bundle.backend.id,
-    dbVersion: bundle.getDbVersion(),
-  }))
+  detachStreams = attachBackendStreams(bundle, (message) => connection.send(encodeWsMessage(message)))
+  connection.send(encodeWsMessage(buildHelloMessage(bundle)))
   console.log('agentwfy-server: client connected')
 }
 

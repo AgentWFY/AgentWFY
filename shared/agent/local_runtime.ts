@@ -1,21 +1,22 @@
-// Shared bootstrap for a local-in-process agent runtime. Used by both the
-// Electron desktop (via AgentContextFactory.createLocal) and the
-// server daemon (via createAgentRuntime). The shared body
-// wires up DB, plugins, providers, functions, sessions, tasks, triggers,
-// and the LocalBackend. Callers provide host bundles for environment-bound
-// surfaces (tabs, palette, notifications, renderer push, external launcher)
-// and a DB-change listener.
+// Node bootstrap for a local-in-process agent runtime. Used by both the Electron
+// desktop (via AgentContextFactory.createLocal) and the server daemon (via
+// createAgentRuntime). The shared construction — providers, functions, sessions,
+// tasks, the LocalBackend — lives in the host-neutral `createAgentRuntime`
+// factory (./agent_runtime.ts); this file supplies the Node-specific resources
+// (fs DB + file store, `child_process` JsRuntime, fs files/backup, plugins) and
+// wires the Node TriggerEngine + teardown around the returned core. Callers
+// provide host bundles for environment-bound surfaces (tabs, palette,
+// notifications, renderer push, external launcher) and a DB-change listener.
 
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { LocalBackend } from '../backend/local.js'
-import { AgentSessionManager } from './session_manager.js'
-import { EventBus } from '../event-bus.js'
-import { FunctionRegistry } from '../runtime/function_registry.js'
+import { createAgentRuntime } from './agent_runtime.js'
+import type { LocalBackend } from '../backend/local.js'
+import type { AgentSessionManager } from './session_manager.js'
+import type { EventBus } from '../event-bus.js'
+import type { FunctionRegistry } from '../runtime/function_registry.js'
 import { JsRuntime } from '../runtime/js_runtime.js'
-import { TraceWriter } from '../runtime/trace_writer.js'
-import { getTraceDir } from '../runtime/trace_paths.js'
-import { registerAllBuiltInFunctions } from '../runtime/functions/index.js'
+import type { TraceWriter } from '../runtime/trace_writer.js'
 import type {
   ExternalLauncher,
   NotificationHost,
@@ -23,19 +24,29 @@ import type {
   RendererPush,
 } from '../runtime/hosts.js'
 import type { PageApi } from '../page/types.js'
-import { ProviderRegistry } from '../providers/registry.js'
-import { createOpenAICompatibleFactory } from '../providers/openai_compatible.js'
-import { TaskRunner } from '../task-runner/task_runner.js'
+import type { ProviderRegistry } from '../providers/registry.js'
+import type { TaskRunner } from '../task-runner/task_runner.js'
 import { TriggerEngine } from '../triggers/engine.js'
 import { loadPlugins } from '../plugins/loader.js'
 import type { PluginRegistry } from '../plugins/registry.js'
 import { closeAgentDb, getOrCreateAgentDb } from '../db/agent-db.js'
+import '../db/sqlite-file.js' // side effect: installs the Node `sqlite-file` runSql handler
+import { NodeFileStore } from '../storage/node-file-store.js'
+import type { FileStore } from '../storage/file-store.js'
 import type { AgentDbChange } from '../db/sqlite.js'
 import { ensureViewsSchema } from '../db/views.js'
-import { getConfigValue, setAgentConfig } from '../settings/config.js'
+import { getConfigValue, configureGlobalConfigProvider } from '../settings/config.js'
+import { globalConfigExists, globalConfigGet } from '../settings/global-config.js'
+import { backupAgentDb, getBackupStatus, listAllBackups, restoreFromBackup } from '../backup.js'
+import { readAgentFile, statAgentFile } from '../backend/files.js'
 import { SystemConfigKeys } from '../system-config/keys.js'
 
 const AGENT_DIR_NAME = '.agentwfy'
+
+// Node host wiring for the node-free config/SQL seams: resolve the user-wide
+// `~/.agentwfy.json` global config from the fs-bound `global-config.ts`. The DO
+// host skips this (no home dir), resolving config purely from the agent DB.
+configureGlobalConfigProvider({ exists: globalConfigExists, get: globalConfigGet })
 
 export interface LocalRuntimeHosts {
   notificationHost?: NotificationHost
@@ -52,8 +63,9 @@ export interface CreateLocalAgentRuntimeOptions {
    *  a per-agent TraceWriter. The desktop overrides this to thread the
    *  runtime through its lifecycle-managed registry. */
   createJsRuntime?: (functionRegistry: FunctionRegistry, traceWriter: TraceWriter) => JsRuntime
-  /** Build the TraceWriter for this agent. Defaults to `getTraceDir(runtimeRoot)`. */
-  createTraceWriter?: (runtimeRoot: string) => TraceWriter
+  /** Build the TraceWriter for this agent. Defaults to one backed by the
+   *  agent's FileStore. */
+  createTraceWriter?: (store: FileStore) => TraceWriter
   /** Single agent-DB change listener — only one can be registered on the DB
    *  itself, so callers fan out from here if they need multiple subscribers. */
   onDbChange?: (change: AgentDbChange) => void
@@ -87,42 +99,41 @@ export async function createLocalAgentRuntime(
   const db = getOrCreateAgentDb(runtimeRoot)
   if (opts.onDbChange) db.setChangeListener(opts.onDbChange)
 
-  const providerRegistry = new ProviderRegistry()
-  providerRegistry.register(createOpenAICompatibleFactory({
-    getConfig: (key, fallback) => getConfigValue(runtimeRoot, key, fallback),
-    setConfig: (key, value) => setAgentConfig(runtimeRoot, key, value),
-  }))
+  const fileStore = new NodeFileStore(runtimeRoot)
 
-  const functionRegistry = new FunctionRegistry()
-  const eventBus = new EventBus()
-  const busPublish = (topic: string, data: unknown) => eventBus.publish(topic, data)
+  // Captured from the plugin-loader hook, which runs inside `createAgentRuntime`
+  // (synchronously, before built-ins register) so plugin providers/functions
+  // slot in ahead of the built-ins — exactly as before the extraction.
+  let pluginRegistry: PluginRegistry | null = null
 
-  const pluginRegistry = loadPlugins(runtimeRoot, busPublish, providerRegistry, functionRegistry)
-
-  const traceWriter = opts.createTraceWriter
-    ? opts.createTraceWriter(runtimeRoot)
-    : new TraceWriter(getTraceDir(runtimeRoot))
-
-  const jsRuntime = opts.createJsRuntime
-    ? opts.createJsRuntime(functionRegistry, traceWriter)
-    : new JsRuntime({
-        functionRegistry,
-        traceWriter,
-      })
-
-  const sessionManager = new AgentSessionManager({
+  const core = await createAgentRuntime({
+    agentId: runtimeRoot,
     runtimeRoot,
-    providerRegistry,
-    getJsRuntime: () => jsRuntime,
-    busPublish,
+    store: fileStore,
+    files: {
+      read: ({ path, offset, limit }) => readAgentFile(runtimeRoot, path, { offset, limit }),
+      stat: ({ path }) => statAgentFile(runtimeRoot, path),
+    },
+    backup: {
+      create: () => backupAgentDb(runtimeRoot),
+      restore: ({ version }) => restoreFromBackup(runtimeRoot, version),
+      list: () => listAllBackups(runtimeRoot),
+      status: () => getBackupStatus(runtimeRoot),
+    },
+    createJsRuntime: opts.createJsRuntime
+      ?? ((functionRegistry, traceWriter) => new JsRuntime({ functionRegistry, traceWriter })),
+    ...(opts.createTraceWriter ? { createTraceWriter: opts.createTraceWriter } : {}),
+    loadExtras: ({ runtimeRoot: root, busPublish, providerRegistry, functionRegistry }) => {
+      pluginRegistry = loadPlugins(root, busPublish, providerRegistry, functionRegistry)
+    },
     ...(hosts?.notificationHost ? { notificationHost: hosts.notificationHost } : {}),
+    ...(hosts?.pageTools ? { pageTools: hosts.pageTools } : {}),
+    ...(hosts?.getCommandPalette ? { getCommandPalette: hosts.getCommandPalette } : {}),
+    ...(hosts?.rendererPush ? { rendererPush: hosts.rendererPush } : {}),
+    ...(hosts?.externalLauncher ? { externalLauncher: hosts.externalLauncher } : {}),
   })
 
-  const taskRunner = new TaskRunner({
-    runtimeRoot,
-    getJsRuntime: () => jsRuntime,
-    busPublish,
-  })
+  const { backend, eventBus, providerRegistry, functionRegistry, sessionManager, taskRunner, jsRuntime, traceWriter } = core
 
   const triggerEngine = new TriggerEngine({
     getRuntimeRoot: () => runtimeRoot,
@@ -137,31 +148,8 @@ export async function createLocalAgentRuntime(
     },
     waitFor: (topic, timeoutMs) => eventBus.waitFor(topic, timeoutMs),
     busSubscribe: (topic, fn) => eventBus.subscribe(topic, fn),
-    busPublish,
+    busPublish: core.busPublish,
   })
-
-  registerAllBuiltInFunctions(functionRegistry, {
-    runtimeRoot,
-    getSessionManager: () => sessionManager,
-    getTaskRunner: () => taskRunner,
-    eventBus,
-    providerRegistry,
-    ...(hosts?.pageTools ? { pageTools: hosts.pageTools } : {}),
-    ...(hosts?.getCommandPalette ? { getCommandPalette: hosts.getCommandPalette } : {}),
-    ...(hosts?.rendererPush ? { rendererPush: hosts.rendererPush } : {}),
-    ...(hosts?.externalLauncher ? { externalLauncher: hosts.externalLauncher } : {}),
-  })
-
-  const backend = new LocalBackend({
-    agentId: runtimeRoot,
-    runtimeRoot: runtimeRoot,
-    sessionManager,
-    functionRegistry,
-    providerRegistry,
-    taskRunner,
-    traceWriter,
-  })
-  await backend.start()
 
   const dispose = async (): Promise<void> => {
     await backend.stop().catch((err) => console.warn('[local-runtime] backend.stop:', err))

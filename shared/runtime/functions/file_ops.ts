@@ -1,6 +1,5 @@
 import path from 'path'
-import fs from 'fs/promises'
-import { assertPathAllowed, isAgentPrivatePath } from '../../security/path-policy.js'
+import type { FileStore } from '../../storage/file-store.js'
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
 import { parseDbPath, dbRead, dbWrite, dbEdit, dbLs, dbFind, dbGrep, dbRemove, dbRename } from './db_content.js'
@@ -9,30 +8,8 @@ import { mimeFromPath } from '../mime.js'
 
 const MAX_READ_BINARY_BYTES = 20 * 1024 * 1024
 
-async function walkDir(dir: string, root: string): Promise<string[]> {
-  const results: string[] = []
-  let entries
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch {
-    return results
-  }
-  for (const entry of entries) {
-    const full = path.join(dir, entry.name)
-    if (isAgentPrivatePath(root, full)) continue
-    const rel = path.relative(root, full)
-    if (entry.isDirectory()) {
-      results.push(rel + '/')
-      results.push(...await walkDir(full, root))
-    } else {
-      results.push(rel)
-    }
-  }
-  return results
-}
-
-export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot: string }): void {
-  const { runtimeRoot } = deps
+export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot: string; store: FileStore }): void {
+  const { runtimeRoot, store } = deps
 
   registry.register('read', async (params) => {
     const request = params as WorkerHostMethodMap['read']['params']
@@ -61,25 +38,23 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       ref: request.path,
     })
 
-    const filePath = await assertPathAllowed(runtimeRoot, request.path)
-
     // Auto-detect binary files by MIME type
-    const mime = mimeFromPath(filePath)
+    const mime = mimeFromPath(request.path)
     if (mime !== 'application/octet-stream' && !mime.startsWith('text/')) {
-      const stat = await fs.stat(filePath)
-      if (stat.size > MAX_READ_BINARY_BYTES) {
+      const stat = await store.stat(request.path)
+      if (stat && stat.size > MAX_READ_BINARY_BYTES) {
         throw new Error(`File too large (${stat.size} bytes). Max binary read size is ${MAX_READ_BINARY_BYTES} bytes.`)
       }
-      const buffer = await fs.readFile(filePath)
+      const buffer = await store.readBytes(request.path)
       return {
-        base64: buffer.toString('base64'),
+        base64: Buffer.from(buffer).toString('base64'),
         mimeType: mime,
         size: buffer.length,
       }
     }
 
     // Text file
-    const raw = await fs.readFile(filePath, 'utf-8')
+    const raw = await store.readText(request.path)
     return paginateText(raw, {
       offset: request.offset,
       limit: request.limit,
@@ -124,9 +99,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       buffer = Buffer.from(request.content as string, 'utf-8')
     }
 
-    const filePath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
-    await fs.mkdir(path.dirname(filePath), { recursive: true })
-    await fs.writeFile(filePath, buffer)
+    await store.writeBytes(request.path, buffer)
     return `Successfully wrote ${buffer.length} bytes to ${request.path}`
   })
 
@@ -148,8 +121,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
     const dbPath = parseDbPath(request.path)
     if (dbPath) return dbEdit(runtimeRoot, dbPath, request.edits)
 
-    const filePath = await assertPathAllowed(runtimeRoot, request.path)
-    const rawContent = await fs.readFile(filePath, 'utf-8')
+    const rawContent = await store.readText(request.path)
 
     // Strip BOM
     const bom = rawContent.startsWith('\uFEFF') ? '\uFEFF' : ''
@@ -169,7 +141,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
     if (originalEnding === '\r\n') {
       result = result.replace(/\n/g, '\r\n')
     }
-    await fs.writeFile(filePath, bom + result, 'utf-8')
+    await store.writeText(request.path, bom + result)
     return `Successfully replaced ${request.edits.length} block(s) in ${request.path}`
   })
 
@@ -187,20 +159,14 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       if (dbPath) return dbLs(runtimeRoot, dbPath, request.limit)
     }
 
-    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
-    const dirPath = await assertPathAllowed(runtimeRoot, request.path || '.')
     const effectiveLimit = request.limit ?? DEFAULT_LS_LIMIT
-
-    const entries = await fs.readdir(dirPath, { withFileTypes: true })
+    const entries = await store.list(request.path || '.')
     entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
 
     const results: string[] = []
-
     for (const entry of entries) {
-      const entryPath = path.join(dirPath, entry.name)
-      if (isAgentPrivatePath(root, entryPath)) continue
       if (results.length >= effectiveLimit) break
-      results.push(entry.isDirectory() ? entry.name + '/' : entry.name)
+      results.push(entry.isDirectory ? entry.name + '/' : entry.name)
     }
 
     return results
@@ -219,8 +185,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       throw new Error('mkdir is not applicable for DB content')
     }
 
-    const dirPath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
-    await fs.mkdir(dirPath, { recursive: request.recursive ?? true })
+    await store.mkdir(request.path, { recursive: request.recursive ?? true })
     return undefined
   })
 
@@ -239,8 +204,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       return undefined
     }
 
-    const targetPath = await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true })
-    await fs.rm(targetPath, { recursive: request.recursive ?? false, force: false })
+    await store.remove(request.path, { recursive: request.recursive ?? false, allowMissing: true })
     return undefined
   })
 
@@ -262,10 +226,7 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       return dbRename(runtimeRoot, oldDbPath, newDbPath)
     }
 
-    const srcPath = await assertPathAllowed(runtimeRoot, request.oldPath)
-    const destPath = await assertPathAllowed(runtimeRoot, request.newPath, { allowMissing: true })
-    await fs.mkdir(path.dirname(destPath), { recursive: true })
-    await fs.rename(srcPath, destPath)
+    await store.rename(request.oldPath, request.newPath)
     return `Renamed ${request.oldPath} → ${request.newPath}`
   })
 
@@ -286,15 +247,11 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       if (dbPath) return dbFind(runtimeRoot, dbPath, request.pattern, request.limit)
     }
 
-    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
-    const searchDir = request.path ? await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true }) : root
     const effectiveLimit = request.limit ?? DEFAULT_FIND_LIMIT
-
-    const all = await walkDir(searchDir, root)
-    const matched = all.filter((p) => {
-      const name = p.endsWith('/') ? p.slice(0, -1) : p
-      return matchesGlob(name, request.pattern) || matchesGlob(path.basename(name), request.pattern)
-    })
+    const entries = await store.walk(request.path || '.')
+    const matched = entries
+      .filter((e) => matchesGlob(e.path, request.pattern) || matchesGlob(path.posix.basename(e.path), request.pattern))
+      .map((e) => (e.isDirectory ? e.path + '/' : e.path))
 
     if (matched.length === 0) return ''
 
@@ -325,8 +282,6 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
       if (dbPath) return dbGrep(runtimeRoot, dbPath, request.pattern, request.options)
     }
 
-    const root = await assertPathAllowed(runtimeRoot, '.', { allowMissing: true, allowAgentPrivate: true })
-    const searchPath = request.path ? await assertPathAllowed(runtimeRoot, request.path, { allowMissing: true }) : root
     const ignoreCase = request.options?.ignoreCase ?? false
     const literal = request.options?.literal ?? false
     const contextLines = request.options?.context ?? 0
@@ -334,15 +289,15 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
 
     const globPattern = request.options?.glob
     const globRegex = globPattern ? compileGlob(globPattern) : null
-    const globBaseRegex = globPattern ? compileGlob(path.basename(globPattern)) : null
+    const globBaseRegex = globPattern ? compileGlob(path.posix.basename(globPattern)) : null
     const filesOnly = request.options?.filesOnly ?? false
 
     let files: string[]
-    const searchStat = await fs.stat(searchPath)
-    if (searchStat.isFile()) {
-      files = [path.relative(root, searchPath)]
+    const searchStat = await store.stat(request.path || '.')
+    if (searchStat && !searchStat.isDirectory) {
+      files = [(request.path as string).replace(/^\.\//, '')]
     } else {
-      files = await walkDir(searchPath, root)
+      files = (await store.walk(request.path || '.')).filter((e) => !e.isDirectory).map((e) => e.path)
     }
     const flags = ignoreCase ? 'i' : ''
     const escapedPattern = literal ? request.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : request.pattern
@@ -353,19 +308,17 @@ export function registerFileOps(registry: FunctionRegistry, deps: { runtimeRoot:
     let limitReached = false
 
     for (const rel of files) {
-      if (rel.endsWith('/')) continue
       if (limitReached) break
-      if (globRegex && !globRegex.test(rel) && (!globBaseRegex || !globBaseRegex.test(path.basename(rel)))) continue
-      const abs = path.join(root, rel)
+      if (globRegex && !globRegex.test(rel) && (!globBaseRegex || !globBaseRegex.test(path.posix.basename(rel)))) continue
 
-      let buf: Buffer
+      let buf: Uint8Array
       try {
-        buf = await fs.readFile(abs)
+        buf = await store.readBytes(rel)
       } catch {
         continue
       }
       if (buf.includes(0)) continue
-      const content = buf.toString('utf-8')
+      const content = Buffer.from(buf).toString('utf-8')
 
       if (filesOnly) {
         if (regex.test(content)) {

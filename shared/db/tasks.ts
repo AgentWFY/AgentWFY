@@ -1,5 +1,5 @@
 import { runAgentDbSql } from './sqlite.js';
-import { getOrCreateAgentDb } from './agent-db.js';
+import { getOrCreateAgentDb } from './agent-db-registry.js';
 
 interface TaskCatalogRecord {
   name: string;

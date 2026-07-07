@@ -1,5 +1,5 @@
-import fs from 'fs/promises'
-import path from 'path'
+import type { FileStore } from '../storage/file-store.js'
+import { TRACES_RELATIVE_DIR } from './trace_paths.js'
 import { isValidTraceSessionId, type TraceEvent } from './trace_types.js'
 
 function safeSessionFileName(sessionId: string): string | null {
@@ -7,12 +7,11 @@ function safeSessionFileName(sessionId: string): string | null {
 }
 
 export class TraceWriter {
-  private readonly tracesDir: string
+  private readonly store: FileStore
   private readonly queues = new Map<string, Promise<void>>()
-  private dirReady: Promise<void> | null = null
 
-  constructor(tracesDir: string) {
-    this.tracesDir = tracesDir
+  constructor(store: FileStore) {
+    this.store = store
   }
 
   append(event: TraceEvent): void {
@@ -21,13 +20,11 @@ export class TraceWriter {
     if (!safeName) return
 
     const line = JSON.stringify(event) + '\n'
-    const fileName = safeName + '.jsonl'
-    const filePath = path.join(this.tracesDir, fileName)
+    const key = `${TRACES_RELATIVE_DIR}/${safeName}.jsonl`
 
     const prev = this.queues.get(sessionId) ?? Promise.resolve()
     const next = prev
-      .then(() => this.ensureDir())
-      .then(() => fs.appendFile(filePath, line, 'utf-8'))
+      .then(() => this.store.appendText(key, line, { allowPrivate: true }))
       .catch((err) => {
         console.error('[trace] append failed:', err)
       })
@@ -43,21 +40,5 @@ export class TraceWriter {
     }
     const all = Array.from(this.queues.values())
     await Promise.allSettled(all)
-  }
-
-  getTracesDir(): string {
-    return this.tracesDir
-  }
-
-  filePathFor(sessionId: string): string | null {
-    const safe = safeSessionFileName(sessionId)
-    return safe ? path.join(this.tracesDir, safe + '.jsonl') : null
-  }
-
-  private ensureDir(): Promise<void> {
-    if (!this.dirReady) {
-      this.dirReady = fs.mkdir(this.tracesDir, { recursive: true }).then(() => undefined)
-    }
-    return this.dirReady
   }
 }

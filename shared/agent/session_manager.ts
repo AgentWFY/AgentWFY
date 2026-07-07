@@ -1,5 +1,6 @@
-import { AgentWFYAgent, DEFAULT_SESSION_DIR } from './create_agent.js'
+import { AgentWFYAgent } from './create_agent.js'
 import type { DisplayMessage } from './provider_types.js'
+import type { FileStore } from '../storage/file-store.js'
 import type { FileContent, QueuedMessage } from './types.js'
 import type { AgentSnapshot, AgentState } from './types.js'
 import { EXECJS_TOOL_DEFINITION } from './provider_types.js'
@@ -148,6 +149,7 @@ export interface SearchSessionsRequest {
 
 interface AgentSessionManagerDeps {
   runtimeRoot: string
+  store: FileStore
   providerRegistry: ProviderRegistry
   getJsRuntime: () => JsRuntime
   busPublish: (topic: string, data: unknown) => void
@@ -161,7 +163,7 @@ export class AgentSessionManager {
   private agentEventListeners = new Set<AgentEventListener>()
   private sessionLifecycleListeners = new Set<SessionLifecycleHandlers>()
   private readonly deps: AgentSessionManagerDeps
-  private readonly sessionsDir: string
+  private readonly store: FileStore
 
   // Cached state for the active (displayed) session
   private _activeSessionId: string | null = null
@@ -172,7 +174,7 @@ export class AgentSessionManager {
 
   constructor(deps: AgentSessionManagerDeps) {
     this.deps = deps
-    this.sessionsDir = `${deps.runtimeRoot}/${DEFAULT_SESSION_DIR}`
+    this.store = deps.store
   }
 
   get activeAgent(): AgentWFYAgent | null {
@@ -290,8 +292,7 @@ export class AgentSessionManager {
   }
 
   private async loadSessionFromFile(file: string): Promise<void> {
-    const sessionsDir = this.sessionsDir
-    const raw = await readSessionFile(sessionsDir, file)
+    const raw = await readSessionFile(this.store, file)
     const stored = parseStoredSession(raw, file)
 
     const providerId = stored.providerId || await this.readDefaultProviderId()
@@ -375,7 +376,7 @@ export class AgentSessionManager {
       await this.disposeSession(sessionId)
     }
     if (sessionFile) {
-      await deleteSessionFile(this.sessionsDir, sessionFile)
+      await deleteSessionFile(this.store, sessionFile)
     }
     if (this._activeSessionId === sessionId) {
       this.resetActive()
@@ -570,7 +571,7 @@ export class AgentSessionManager {
     let storedSession: ReturnType<typeof parseStoredSession> | undefined
     if (opts.sessionFile) {
       try {
-        const raw = await readSessionFile(this.sessionsDir, opts.sessionFile)
+        const raw = await readSessionFile(this.store, opts.sessionFile)
         storedSession = parseStoredSession(raw, opts.sessionFile)
         if (storedSession.providerId && providerRegistry.get(storedSession.providerId)) {
           providerId = storedSession.providerId
@@ -592,6 +593,7 @@ export class AgentSessionManager {
       },
       providerId,
       runtimeRoot,
+      store: this.store,
       getJsRuntime,
       ...(opts.sessionFile ? { sessionFile: opts.sessionFile, storedSession } : {}),
     })
@@ -721,7 +723,7 @@ export class AgentSessionManager {
     if (!Number.isFinite(limit) || limit < 1) throw new Error('listSessions limit must be >= 1')
     if (!Number.isFinite(offset) || offset < 0) throw new Error('listSessions offset must be >= 0')
 
-    const all = await listSessionFiles(this.sessionsDir)
+    const all = await listSessionFiles(this.store)
     const filtered = (request.since === undefined && request.until === undefined)
       ? all
       : all.filter((s) =>
@@ -730,7 +732,7 @@ export class AgentSessionManager {
     const page = filtered.slice(offset, offset + limit)
 
     return Promise.all(page.map(async (session) => {
-      const meta = await readSessionMeta(this.sessionsDir, session.name)
+      const meta = await readSessionMeta(this.store, session.name)
       return {
         sessionId: meta.sessionId || session.name,
         title: meta.title,
@@ -757,7 +759,7 @@ export class AgentSessionManager {
       throw new Error(`Invalid regex: ${msg}`)
     }
 
-    const all = await listSessionFiles(this.sessionsDir)
+    const all = await listSessionFiles(this.store)
     const results: SessionMatch[] = []
 
     for (const session of all) {
@@ -779,7 +781,7 @@ export class AgentSessionManager {
   ): Promise<SessionMatch | null> {
     let stored: StoredSession
     try {
-      const raw = await readSessionFile(this.sessionsDir, file)
+      const raw = await readSessionFile(this.store, file)
       stored = parseStoredSession(raw, file)
     } catch (err) {
       console.warn('[AgentSessionManager] searchSessions: skipping', file, err)
@@ -808,7 +810,7 @@ export class AgentSessionManager {
   async readSession(sessionId: string): Promise<SessionRead> {
     const sessionFile = await this.findSessionFileById(sessionId)
     if (!sessionFile) throw new Error(`Session '${sessionId}' not found`)
-    const raw = await readSessionFile(this.sessionsDir, sessionFile)
+    const raw = await readSessionFile(this.store, sessionFile)
     const stored = parseStoredSession(raw, sessionFile)
     const providerId = stored.providerId || await this.readDefaultProviderId()
     return {
@@ -897,15 +899,13 @@ export class AgentSessionManager {
   }
 
   private async listSessionHistory(): Promise<SessionHistoryItem[]> {
-    const sessionsDir = this.sessionsDir
-
     try {
-      const sessions = await listSessionFiles(sessionsDir)
+      const sessions = await listSessionFiles(this.store)
       if (sessions.length === 0) return []
 
       const results = await Promise.all(sessions.map(async (session) => {
         if (!session.name.endsWith('.json')) return null
-        const meta = await readSessionMeta(sessionsDir, session.name)
+        const meta = await readSessionMeta(this.store, session.name)
         if (!meta.sessionId || !meta.title) return null
         return {
           sessionId: meta.sessionId,
@@ -926,9 +926,9 @@ export class AgentSessionManager {
     const active = this.sessions.get(sessionId)
     if (active?.agent.sessionFile) return active.agent.sessionFile
 
-    const sessions = await listSessionFiles(this.sessionsDir)
+    const sessions = await listSessionFiles(this.store)
     for (const session of sessions) {
-      const meta = await readSessionMeta(this.sessionsDir, session.name)
+      const meta = await readSessionMeta(this.store, session.name)
       if (meta.sessionId === sessionId) return session.name
     }
     return null

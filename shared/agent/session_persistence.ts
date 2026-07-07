@@ -1,9 +1,16 @@
-import fs from 'fs/promises'
-import path from 'path'
 import crypto from 'crypto'
+import type { FileStore } from '../storage/file-store.js'
 import type { DisplayMessage, Block } from './provider_types.js'
 import type { TextContent } from './types.js'
 export const SESSION_VERSION = 1
+
+/** Where session JSON lives under the agent root. The store enforces the
+ *  private-subtree policy, so callers pass `{ allowPrivate: true }`. */
+export const SESSIONS_RELATIVE_DIR = '.agentwfy/sessions'
+
+function sessionKey(fileName: string): string {
+  return `${SESSIONS_RELATIVE_DIR}/${normalizeSessionFileName(fileName)}`
+}
 
 export interface StoredSession {
   version: number
@@ -65,38 +72,26 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
   }
 }
 
-export async function readSessionFile(sessionsDir: string, fileName: string): Promise<string> {
-  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
-  return fs.readFile(filePath, 'utf-8')
+export async function readSessionFile(store: FileStore, fileName: string): Promise<string> {
+  return store.readText(sessionKey(fileName), { allowPrivate: true })
 }
 
-export async function deleteSessionFile(sessionsDir: string, fileName: string): Promise<void> {
-  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
-  try {
-    await fs.unlink(filePath)
-  } catch (err) {
-    // ENOENT is fine — caller may be retrying after a partial delete.
-    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err
-  }
+export async function deleteSessionFile(store: FileStore, fileName: string): Promise<void> {
+  // missingOk: caller may be retrying after a partial delete.
+  await store.remove(sessionKey(fileName), { allowPrivate: true, missingOk: true })
 }
 
-export async function readSessionId(sessionsDir: string, fileName: string, byteCount = 2048): Promise<string> {
-  const head = await readSessionHead(sessionsDir, fileName, byteCount)
+export async function readSessionId(store: FileStore, fileName: string, byteCount = 2048): Promise<string> {
+  const head = await readSessionHead(store, fileName, byteCount)
   return head ? extractStringFromHead(head, 'sessionId') : ''
 }
 
-async function readSessionHead(sessionsDir: string, fileName: string, byteCount: number): Promise<string> {
-  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
-  let handle: fs.FileHandle | null = null
+async function readSessionHead(store: FileStore, fileName: string, byteCount: number): Promise<string> {
   try {
-    handle = await fs.open(filePath, 'r')
-    const buffer = Buffer.alloc(byteCount)
-    const { bytesRead } = await handle.read(buffer, 0, byteCount, 0)
-    return buffer.subarray(0, bytesRead).toString('utf-8')
+    return await store.readHead(sessionKey(fileName), byteCount, { allowPrivate: true })
   } catch {
+    // Invalid file name (normalizeSessionFileName threw) — treat as unreadable.
     return ''
-  } finally {
-    if (handle) await handle.close().catch(() => {})
   }
 }
 
@@ -130,13 +125,12 @@ function extractStringFromHead(head: string, key: string): string {
   return ''
 }
 
-export async function ensureSessionsDir(sessionsDir: string): Promise<void> {
-  await fs.mkdir(sessionsDir, { recursive: true })
+export async function ensureSessionsDir(store: FileStore): Promise<void> {
+  await store.mkdir(SESSIONS_RELATIVE_DIR, { allowPrivate: true })
 }
 
-export async function writeSessionFile(sessionsDir: string, fileName: string, content: string): Promise<void> {
-  const filePath = path.join(sessionsDir, normalizeSessionFileName(fileName))
-  await fs.writeFile(filePath, content, 'utf-8')
+export async function writeSessionFile(store: FileStore, fileName: string, content: string): Promise<void> {
+  await store.writeText(sessionKey(fileName), content, { allowPrivate: true })
 }
 
 export interface SessionMeta {
@@ -145,8 +139,8 @@ export interface SessionMeta {
   title: string
 }
 
-export async function readSessionMeta(sessionsDir: string, fileName: string, byteCount = 8192): Promise<SessionMeta> {
-  const head = await readSessionHead(sessionsDir, fileName, byteCount)
+export async function readSessionMeta(store: FileStore, fileName: string, byteCount = 8192): Promise<SessionMeta> {
+  const head = await readSessionHead(store, fileName, byteCount)
   if (!head) return { sessionId: '', providerId: '', title: '' }
   return {
     sessionId: extractStringFromHead(head, 'sessionId'),
@@ -223,28 +217,11 @@ function blocksToSearchText(blocks: Block[]): string {
   return parts.join('\n')
 }
 
-export async function listSessionFiles(sessionsDir: string): Promise<Array<{ name: string; updatedAt: number }>> {
-  try {
-    await fs.mkdir(sessionsDir, { recursive: true })
-  } catch {
-    return []
-  }
-
-  try {
-    const entries = await fs.readdir(sessionsDir, { withFileTypes: true })
-    const jsonEntries = entries.filter((e) => e.isFile() && e.name.endsWith('.json'))
-    const stats = await Promise.all(jsonEntries.map(async (entry) => {
-      try {
-        const s = await fs.stat(path.join(sessionsDir, entry.name))
-        return { name: entry.name, updatedAt: Math.floor(s.mtimeMs) }
-      } catch {
-        return null
-      }
-    }))
-    const sessions = stats.filter((s): s is { name: string; updatedAt: number } => s !== null)
-    sessions.sort((a, b) => b.updatedAt - a.updatedAt)
-    return sessions
-  } catch {
-    return []
-  }
+export async function listSessionFiles(store: FileStore): Promise<Array<{ name: string; updatedAt: number }>> {
+  const entries = await store.list(SESSIONS_RELATIVE_DIR, { allowPrivate: true })
+  const sessions = entries
+    .filter((e) => !e.isDirectory && e.name.endsWith('.json'))
+    .map((e) => ({ name: e.name, updatedAt: Math.floor(e.mtimeMs) }))
+  sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+  return sessions
 }

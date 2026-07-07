@@ -1,5 +1,5 @@
 import type { DisplayMessage } from '../agent/provider_types.js'
-import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_runner.js'
+import type { TaskOrigin, TaskRunStatus } from '../task-runner/task_types.js'
 import type {
   PageCdpBufferedEvent,
   PageCloseAfterIdleMs,

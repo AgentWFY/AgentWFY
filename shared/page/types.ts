@@ -32,6 +32,7 @@ export type PageHostKind =
   | 'mobile'
   | 'daemon-headless'
   | 'remote-client'
+  | 'browser-binding'
 
 export interface PageHostInfo {
   pageId: string

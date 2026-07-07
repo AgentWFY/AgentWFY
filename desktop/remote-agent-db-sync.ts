@@ -7,6 +7,7 @@ import { pipeline } from 'stream/promises';
 import type { RemoteBackend } from '#shared/backend/remote.js';
 import {
   applyAgentDbMirrorChange,
+  applyAgentDbRowDumpSnapshot,
   configureAgentDb,
   getAgentDbPath,
   getOrCreateAgentDb,
@@ -300,17 +301,26 @@ export class RemoteAgentDbSync {
 
   private async pullSnapshot(): Promise<void> {
     const epochAtStart = this.connectionEpoch;
-    const { snapshotPath, version } = await this.downloadSnapshotToTempFile();
+    const snapshot = await this.fetchSnapshot();
     if (this.stopped || this.connectionEpoch !== epochAtStart) {
       // The WS bounced (or we stopped) while this snapshot was downloading.
       // Drop it on the floor; the post-reconnect requestSnapshot will pull
       // a fresh one keyed to the new epoch.
-      fs.rmSync(snapshotPath, { force: true });
+      if (snapshot.kind === 'file') fs.rmSync(snapshot.snapshotPath, { force: true });
       return;
     }
-    replaceAgentDbSnapshotFile(this.cacheRoot, snapshotPath);
-    this.openLocalDb();
-    this.localVersion = version;
+    if (snapshot.kind === 'file') {
+      // Binary `.sqlite` from the Node daemon — swap the whole mirror file.
+      replaceAgentDbSnapshotFile(this.cacheRoot, snapshot.snapshotPath);
+      this.openLocalDb();
+    } else {
+      // Row-dump from a Cloudflare DO (no binary export — decision B). Open the
+      // mirror DB (creating the schema if needed) and bulk-replace the
+      // replicated tables in place.
+      this.openLocalDb();
+      applyAgentDbRowDumpSnapshot(this.cacheRoot, snapshot.tables);
+    }
+    this.localVersion = snapshot.version;
     this.initialized = true;
 
     // Drain buffered changes. Daemon emits sequentially over a single WS
@@ -345,11 +355,15 @@ export class RemoteAgentDbSync {
     this.onSnapshotApplied?.();
   }
 
-  private async downloadSnapshotToTempFile(): Promise<{ snapshotPath: string; version: number }> {
+  /**
+   * Fetch one snapshot and shape it per backend. The Node daemon serves a
+   * binary `application/vnd.sqlite3` body (streamed to a temp file); a
+   * Cloudflare DO serves a `application/json` `{ version, tables }` row-dump
+   * (decision B — DO SQLite can't export bytes). Both carry the reflected
+   * version in the same header.
+   */
+  private async fetchSnapshot(): Promise<SnapshotPayload> {
     const { url, headers, versionHeader } = this.remoteBackend.getAgentDbSnapshotRequest();
-    const agentDir = path.dirname(getAgentDbPath(this.cacheRoot));
-    await mkdir(agentDir, { recursive: true });
-    const tmpPath = path.join(agentDir, `agent.db.snapshot.${crypto.randomUUID()}.tmp`);
 
     const response = await fetch(url, { headers });
     if (!response.ok) {
@@ -359,18 +373,28 @@ export class RemoteAgentDbSync {
       throw new Error('snapshot download failed: empty response body');
     }
 
-    const rawVersion = response.headers.get(versionHeader);
-    const version = rawVersion === null ? 0 : Number(rawVersion);
-    if (!Number.isFinite(version) || version < 0) {
-      throw new Error(`snapshot download failed: invalid ${versionHeader} header: ${rawVersion}`);
+    const version = parseSnapshotVersion(response.headers.get(versionHeader), versionHeader);
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (contentType.includes('application/json')) {
+      const tables = parseRowDumpTables(await response.json());
+      return { kind: 'rows', tables, version };
     }
 
+    const snapshotPath = await this.streamSnapshotToTempFile(response.body);
+    return { kind: 'file', snapshotPath, version };
+  }
+
+  private async streamSnapshotToTempFile(body: ReadableStream<Uint8Array>): Promise<string> {
+    const agentDir = path.dirname(getAgentDbPath(this.cacheRoot));
+    await mkdir(agentDir, { recursive: true });
+    const tmpPath = path.join(agentDir, `agent.db.snapshot.${crypto.randomUUID()}.tmp`);
     try {
       await pipeline(
-        Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+        Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]),
         createWriteStream(tmpPath),
       );
-      return { snapshotPath: tmpPath, version };
+      return tmpPath;
     } catch (err) {
       fs.rmSync(tmpPath, { force: true });
       throw err;
@@ -404,6 +428,31 @@ export class RemoteAgentDbSync {
     }
     this.versionWaiters = remaining;
   }
+}
+
+/** A fetched snapshot, shaped per backend: a binary `.sqlite` temp file (Node
+ *  daemon) or an in-memory row-dump of the replicated tables (Cloudflare DO). */
+type SnapshotPayload =
+  | { kind: 'file'; snapshotPath: string; version: number }
+  | { kind: 'rows'; tables: Record<string, Record<string, unknown>[]>; version: number };
+
+function parseSnapshotVersion(raw: string | null, versionHeader: string): number {
+  const version = raw === null ? 0 : Number(raw);
+  if (!Number.isFinite(version) || version < 0) {
+    throw new Error(`snapshot download failed: invalid ${versionHeader} header: ${raw}`);
+  }
+  return version;
+}
+
+function parseRowDumpTables(body: unknown): Record<string, Record<string, unknown>[]> {
+  if (!body || typeof body !== 'object') {
+    throw new Error('row-dump snapshot failed: response is not an object');
+  }
+  const { tables } = body as { tables?: unknown };
+  if (!tables || typeof tables !== 'object') {
+    throw new Error('row-dump snapshot failed: response missing tables');
+  }
+  return tables as Record<string, Record<string, unknown>[]>;
 }
 
 function parseRuntimeRunSqlRequest(payload: unknown): RunSqlRequest {

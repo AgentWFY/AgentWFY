@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import { NodeSqlDriver } from '../db/node-sql-driver.js'
 import path from 'path'
 import os from 'node:os'
 import fs from 'fs'
@@ -50,46 +50,46 @@ export interface PackageData {
 }
 
 function readPackage(packagePath: string): PackageData {
-  const db = new DatabaseSync(packagePath, { readOnly: true })
+  const db = new NodeSqlDriver(packagePath, { readOnly: true })
   try {
     let plugins: PackagePlugin[]
     try {
-      plugins = db.prepare('SELECT name, title, description, version, code, author, repository, license FROM plugins').all() as unknown as PackagePlugin[]
+      plugins = db.query('SELECT name, title, description, version, code, author, repository, license FROM plugins') as unknown as PackagePlugin[]
     } catch {
       // Fallback for packages without the newer columns
       try {
-        const rows = db.prepare('SELECT name, description, version, code, author, repository, license FROM plugins').all() as unknown as Array<Omit<PackagePlugin, 'title'>>
+        const rows = db.query('SELECT name, description, version, code, author, repository, license FROM plugins') as unknown as Array<Omit<PackagePlugin, 'title'>>
         plugins = rows.map(p => ({ ...p, title: '' }))
       } catch {
-        const basic = db.prepare('SELECT name, description, version, code FROM plugins').all() as unknown as Array<{ name: string; description: string; version: string; code: string }>
+        const basic = db.query('SELECT name, description, version, code FROM plugins') as unknown as Array<{ name: string; description: string; version: string; code: string }>
         plugins = basic.map(p => ({ ...p, title: '', author: null, repository: null, license: null }))
       }
     }
 
     let docs: PackageDoc[] = []
     try {
-      docs = db.prepare('SELECT name, content FROM docs').all() as unknown as PackageDoc[]
+      docs = db.query('SELECT name, content FROM docs') as unknown as PackageDoc[]
     } catch {
       // docs table is optional
     }
 
     let views: PackageView[] = []
     try {
-      views = db.prepare('SELECT name, title, content FROM views').all() as unknown as PackageView[]
+      views = db.query('SELECT name, title, content FROM views') as unknown as PackageView[]
     } catch {
       // views table is optional
     }
 
     let config: PackageConfig[] = []
     try {
-      config = db.prepare('SELECT name, value, description FROM config').all() as unknown as PackageConfig[]
+      config = db.query('SELECT name, value, description FROM config') as unknown as PackageConfig[]
     } catch {
       // config table is optional
     }
 
     let assets: PackageAsset[] = []
     try {
-      assets = db.prepare('SELECT name, data FROM assets').all() as unknown as PackageAsset[]
+      assets = db.query('SELECT name, data FROM assets') as unknown as PackageAsset[]
     } catch {
       // assets table is optional
     }

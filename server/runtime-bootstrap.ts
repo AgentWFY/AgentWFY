@@ -6,6 +6,7 @@ import { PageManager } from '#shared/page/page-manager.js'
 import { RemoteClientPageHost, type ClientPageRpcInvoker } from '#shared/page/remote-client-page-host.js'
 import type { PageHost } from '#shared/page/page-host.js'
 import { getAgentDbCurrentVersion, getOrCreateAgentDb } from '#shared/db/agent-db.js'
+import { NodeFileStore } from '#shared/storage/node-file-store.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import {
   installPackageData,
@@ -133,7 +134,7 @@ export async function createAgentRuntime(
     console.error('[backup] Schedule failed:', err)
   })
 
-  runCleanup(runtimeRoot).catch(err => {
+  runCleanup(runtimeRoot, new NodeFileStore(runtimeRoot)).catch(err => {
     console.error('[cleanup] failed:', err)
   })
 

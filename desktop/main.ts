@@ -171,10 +171,12 @@ const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
   await ctx.sessionManager.disposeAll();
   // Create new session manager.
   const { AgentSessionManager } = await import('#shared/agent/session_manager.js');
+  const { NodeFileStore } = await import('#shared/storage/node-file-store.js');
   const { getElectronNotificationHost } = await import('./runtime/hosts-electron.js');
   const agentIdForReconnect = ctx.agentId;
   const newMgr = new AgentSessionManager({
     runtimeRoot: ctx.runtimeRoot,
+    store: new NodeFileStore(ctx.runtimeRoot),
     providerRegistry: ctx.providerRegistry,
     getJsRuntime: () => ctx.jsRuntime,
     busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
