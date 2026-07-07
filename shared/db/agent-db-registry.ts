@@ -6,10 +6,10 @@
 // - Node (`agent-db.ts`) installs a factory that builds an AgentDb over a
 //   `NodeSqlDriver` (+ fs mkdir + bundled system JSON) and a `path.resolve`
 //   normalizer, at module load.
-// - The Cloudflare DO pre-`registerAgentDb`s its single `DoSqlDriver`-backed
-//   AgentDb, so `getOrCreateAgentDb` returns it without ever calling a factory.
+// - A host with a single, eagerly-built connection can `registerAgentDb` it
+//   directly, so `getOrCreateAgentDb` returns it without ever calling a factory.
 //
-// This file is node-free so the DO build can import the consumers
+// This file is node-free so a non-Node build can import the consumers
 // (`sqlite.ts`, `settings/config.ts`, `db/tasks.ts`, the runtime functions)
 // without dragging in `node:sqlite` / `node:fs`.
 
@@ -25,8 +25,8 @@ let normalizeKey: AgentDbKeyNormalizer = (dataDir) => dataDir;
 const connections = new Map<string, AgentDb>();
 
 /** Install the host's AgentDb factory + key-normalizer. Called once at module
- *  load by the host registry (Node) or skipped entirely by the DO (which
- *  pre-registers its connection). */
+ *  load by the host registry (Node), or skipped by a host that pre-registers
+ *  its connection. */
 export function configureAgentDbRegistry(opts: {
   factory: AgentDbFactory;
   normalizeKey?: AgentDbKeyNormalizer;
@@ -50,8 +50,8 @@ export function getOrCreateAgentDb(dataDir: string): AgentDb {
   return conn;
 }
 
-/** Pre-register an already-built AgentDb (used by the DO, which builds its one
- *  connection eagerly over `DoSqlDriver`). */
+/** Pre-register an already-built AgentDb (for a host that builds its one
+ *  connection eagerly). */
 export function registerAgentDb(dataDir: string, db: AgentDb): void {
   connections.set(normalizeKey(dataDir), db);
 }

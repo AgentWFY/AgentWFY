@@ -1,10 +1,10 @@
 // Host-neutral AgentDb core. The `AgentDb` class wires the agent schema,
 // change-tracking, and namespace/format guards onto an injected `SqlDriver`,
 // and bootstraps system docs/views/config from already-parsed data. It has no
-// Node imports (no `fs`, no `node:sqlite`) so the Cloudflare DO host can build
-// the same `AgentDb` over `DoSqlDriver(ctx.storage.sql)` that the Node daemon
-// and desktop build over `NodeSqlDriver`. The Node connection registry,
-// system-JSON reading, and snapshot-file I/O live in `agent-db.ts`.
+// Node imports (no `fs`, no `node:sqlite`), so an alternate backend can build
+// the same `AgentDb` over a different `SqlDriver` that the Node daemon and
+// desktop build over `NodeSqlDriver`. The Node connection registry, system-JSON
+// reading, and snapshot-file I/O live in `agent-db.ts`.
 
 import { isPotentiallyMutatingSql } from './sql-introspect.js';
 import { normalizeSqlRows, normalizeParams } from './sql-types.js';
@@ -16,8 +16,8 @@ import type { SqlDriver, SqlGuard, SqlParam } from './sql-driver.js';
 const AGENT_SQL_GUARD: SqlGuard = { denyDdl: true, readonlyTables: ['plugins'] };
 
 /** Parsed system docs/views/config used to bootstrap a fresh agent DB. The
- *  Node registry reads these from the bundled JSON files; the DO host bundles
- *  them as modules. `null` disables the sync entirely (remote mirrors). */
+ *  Node registry reads these from the bundled JSON files. `null` disables the
+ *  sync entirely (remote mirrors). */
 export interface SystemData {
   docs: Array<{ name: string; content: string }>;
   views: Array<{ name: string; title: string; content: string }>;
@@ -121,10 +121,10 @@ export function isReplicatedTable(table: string): boolean {
 }
 
 // Change-tracking table + triggers. On Node these are TEMP (invisible to the
-// binary `.sqlite` snapshot the desktop mirror downloads); on the DO they must
-// be persistent (DO SQLite forbids TEMP objects — Spike A), which is harmless
-// because the DO ships a row-dump snapshot of the replicated *tables* only, so
-// `_changes` and these triggers are never replicated regardless.
+// binary `.sqlite` snapshot the desktop mirror downloads). A host whose SQLite
+// engine forbids TEMP objects can make them persistent instead; that's harmless
+// as long as its snapshot ships the replicated *tables* only, so `_changes` and
+// these triggers are never replicated regardless.
 function makeChangeTrackingSql(temp: boolean): string {
   const TEMP = temp ? 'TEMP ' : '';
   return `
@@ -214,9 +214,10 @@ END;
 `;
 }
 
-// Build the full guard SQL set for a given trigger storage. `temp=false` is the
-// DO (persistent triggers); `temp=true` is Node. The DROP set below is
-// storage-agnostic (DROP TRIGGER works regardless of TEMP).
+// Build the full guard SQL set for a given trigger storage. `temp=true` (Node)
+// keeps the triggers out of the binary snapshot; `temp=false` makes them
+// persistent. The DROP set below is storage-agnostic (DROP TRIGGER works
+// regardless of TEMP).
 function makeAllGuardSql(temp: boolean): string[] {
   return [
     ...NAMESPACE_GUARDED_TABLES.map(t => makeNamespaceGuardSql(t, temp)),
@@ -258,7 +259,7 @@ export class AgentDb {
   // the WS connection dropping (they fetch a fresh snapshot on reconnect).
   private versionCounter = 0;
   // Change-tracking + guard SQL, built once for this DB's trigger storage
-  // ('temp' on Node, 'persistent' on the DO where TEMP is forbidden).
+  // ('temp' on Node; 'persistent' where the SQLite engine forbids TEMP).
   private readonly changeTrackingSql: string;
   private readonly allGuardSql: string[];
 
@@ -268,10 +269,10 @@ export class AgentDb {
      *  entirely (used by remote mirrors that replicate system rows). */
     systemData: SystemData | null;
     /** Where the change-tracking + guard triggers live. `'temp'` (default,
-     *  Node) keeps them out of the binary snapshot automatically; the
-     *  Cloudflare DO must use `'persistent'` because DO SQLite forbids TEMP
-     *  objects (Spike A). Harmless on the DO since its row-dump snapshot only
-     *  ships the replicated *tables*, never `_changes` or these triggers. */
+     *  Node) keeps them out of the binary snapshot automatically; a host whose
+     *  SQLite engine forbids TEMP objects can use `'persistent'`. Harmless there
+     *  as long as its snapshot only ships the replicated *tables*, never
+     *  `_changes` or these triggers. */
     triggerStorage?: 'temp' | 'persistent';
   }) {
     this.sql = opts.sql;
@@ -320,12 +321,12 @@ export class AgentDb {
     // Seed/refresh the system.* docs/views/config. This writes system.* rows,
     // which the namespace guard triggers (RAISE(ABORT)) would otherwise reject,
     // so it runs through `shieldedWrite` (guards lifted, then restored). This
-    // matters most on a persistent-trigger DB (the Cloudflare DO): the guard
-    // triggers survive across DO incarnations, so re-seeding changed system rows
-    // on a redeploy would abort without this. `drain: false` discards the
-    // trigger-generated `_changes` so the seed never fabricates change events —
-    // mirrors receive system rows via the snapshot. On Node (TEMP triggers) the
-    // outcome is identical to the old "seed before the triggers exist" ordering.
+    // matters most on a persistent-trigger DB, where the guard triggers survive
+    // across restarts, so re-seeding changed system rows would abort without
+    // this. `drain: false` discards the trigger-generated `_changes` so the seed
+    // never fabricates change events — mirrors receive system rows via the
+    // snapshot. On Node (TEMP triggers) the outcome is identical to the old
+    // "seed before the triggers exist" ordering.
     this.shieldedWrite(() => {
       this.syncSystemData<{ name: string; content: string }>({
         items: systemData.docs,
@@ -618,7 +619,7 @@ export class AgentDb {
 
   /**
    * Row-dump snapshot for hosts that can't export a binary `.sqlite` file
-   * (e.g. a Durable Object whose SQLite has no export-to-bytes primitive).
+   * (a backend whose SQLite has no export-to-bytes primitive).
    * Returns every replicated table's rows
    * plus the change-log version they reflect, captured BEFORE reading for the
    * same reason as `writeSnapshotFile`: concurrent commits get version >
@@ -676,9 +677,9 @@ export class AgentDb {
 }
 
 /** Build an `AgentDb` over an injected `SqlDriver`. Host-neutral entry point:
- *  the Node registry passes a `NodeSqlDriver`; the Cloudflare DO host passes a
- *  `DoSqlDriver(ctx.storage.sql)` + `triggerStorage: 'persistent'`. `systemData`
- *  is `null` for remote mirrors. */
+ *  the Node registry passes a `NodeSqlDriver`; an alternate backend passes its
+ *  own driver (with `triggerStorage: 'persistent'` if its engine forbids TEMP).
+ *  `systemData` is `null` for remote mirrors. */
 export function createAgentDb(opts: {
   sql: SqlDriver;
   systemData: SystemData | null;

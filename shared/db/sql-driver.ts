@@ -1,14 +1,12 @@
-// Host-neutral SQL driver seam. The agent DB is identical on every host
-// (Node daemon, Electron desktop, Cloudflare Durable Object); only the
-// underlying SQLite engine differs. `AgentDb` talks to this interface so the
-// Cloudflare port can swap node:sqlite's `DatabaseSync` for a DO
-// `ctx.storage.sql` implementation without touching `agent-db.ts`.
+// Host-neutral SQL driver seam. The agent DB is identical on every host; only
+// the underlying SQLite engine differs. `AgentDb` talks to this interface so an
+// alternate backend can swap node:sqlite's `DatabaseSync` for a different SQLite
+// implementation without touching `agent-db.ts`.
 //
-// The shape deliberately mirrors what both engines offer:
-//   - node:sqlite -> DatabaseSync.prepare(sql).all/.run, exec(), BEGIN/COMMIT
-//   - DO SQLite   -> ctx.storage.sql.exec(sql, ...params), storage.transactionSync
-// DO cannot run BEGIN/COMMIT or TEMP objects, so transactions go through
-// `transactionSync` and (in Phase 2) guards/change-tracking become persistent.
+// The interface stays to the common subset both kinds of engine offer: a
+// prepare/exec surface for statements and an atomic `transactionSync` (rather
+// than raw BEGIN/COMMIT, which not every engine exposes). Some engines also
+// forbid TEMP objects, so guards/change-tracking can be made persistent.
 
 export type SqlParam = null | number | bigint | string | Uint8Array;
 
@@ -40,8 +38,8 @@ export interface SqlDriver {
   /** Run a single statement with positional bindings for its side effects. */
   run(sql: string, params?: SqlParam[]): SqlRunResult;
 
-  /** Run `fn` atomically. Node wraps BEGIN/COMMIT (ROLLBACK on throw); DO uses
-   *  storage.transactionSync. Not nestable. */
+  /** Run `fn` atomically (the Node driver wraps BEGIN/COMMIT, ROLLBACK on throw).
+   *  Not nestable. */
   transactionSync<T>(fn: () => T): T;
 
   /** Install (or clear, with null) the agent guard. Best-effort: hosts without

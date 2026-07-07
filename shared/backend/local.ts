@@ -30,7 +30,7 @@ export interface LocalBackendContext {
   agentId: string
   /** Filesystem root where the live runtime owns on-disk data. */
   runtimeRoot: string
-  /** Agent file tree access (traces, task logs, …); node:fs or R2. */
+  /** Agent file tree access (traces, task logs, …). */
   store: FileStore
   sessionManager: AgentSessionManager
   functionRegistry: FunctionRegistry
@@ -38,13 +38,12 @@ export interface LocalBackendContext {
   taskRunner: TaskRunner
   traceWriter: TraceWriter
   /** Bytes-level agent file access (files.read/stat). Node builds this from
-   *  `shared/backend/files.ts` (`fs/promises` + `assertPathAllowed`); the DO
-   *  injects an R2-backed impl, keeping LocalBackend off `node:fs` (symmetric
-   *  with `backup`). */
+   *  `shared/backend/files.ts` (`fs/promises` + `assertPathAllowed`); injecting
+   *  it (rather than importing `node:fs` here) keeps LocalBackend host-neutral
+   *  (symmetric with `backup`). */
   files: FilesApi
   /** Per-agent DB backup API. Node builds this from `shared/backup.ts` (fs);
-   *  the DO injects an R2-backed (or stub) impl, keeping LocalBackend off
-   *  `node:fs`. */
+   *  injecting it keeps LocalBackend off `node:fs`. */
   backup: BackupApi
 }
 import {

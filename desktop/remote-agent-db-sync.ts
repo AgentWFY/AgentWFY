@@ -58,8 +58,8 @@ export interface RemoteAgentDbSyncOptions {
  *
  * The interface is transport-agnostic: it asks `remoteBackend` for an
  * HTTP snapshot URL, a WS `db:changed` subscription, and an RPC that
- * returns `{value, dbVersion}`. A Cloudflare Durable Object backend
- * can implement the same surface.
+ * returns `{value, dbVersion}`. Any remote backend can implement the
+ * same surface.
  */
 export class RemoteAgentDbSync {
   private readonly cacheRoot: string;
@@ -314,9 +314,9 @@ export class RemoteAgentDbSync {
       replaceAgentDbSnapshotFile(this.cacheRoot, snapshot.snapshotPath);
       this.openLocalDb();
     } else {
-      // Row-dump from a Cloudflare DO (no binary export — decision B). Open the
-      // mirror DB (creating the schema if needed) and bulk-replace the
-      // replicated tables in place.
+      // Row-dump from a backend that can't export binary bytes. Open the mirror
+      // DB (creating the schema if needed) and bulk-replace the replicated
+      // tables in place.
       this.openLocalDb();
       applyAgentDbRowDumpSnapshot(this.cacheRoot, snapshot.tables);
     }
@@ -357,10 +357,9 @@ export class RemoteAgentDbSync {
 
   /**
    * Fetch one snapshot and shape it per backend. The Node daemon serves a
-   * binary `application/vnd.sqlite3` body (streamed to a temp file); a
-   * Cloudflare DO serves a `application/json` `{ version, tables }` row-dump
-   * (decision B — DO SQLite can't export bytes). Both carry the reflected
-   * version in the same header.
+   * binary `application/vnd.sqlite3` body (streamed to a temp file); a backend
+   * that can't export bytes serves an `application/json` `{ version, tables }`
+   * row-dump instead. Both carry the reflected version in the same header.
    */
   private async fetchSnapshot(): Promise<SnapshotPayload> {
     const { url, headers, versionHeader } = this.remoteBackend.getAgentDbSnapshotRequest();
@@ -431,7 +430,7 @@ export class RemoteAgentDbSync {
 }
 
 /** A fetched snapshot, shaped per backend: a binary `.sqlite` temp file (Node
- *  daemon) or an in-memory row-dump of the replicated tables (Cloudflare DO). */
+ *  daemon) or an in-memory row-dump of the replicated tables. */
 type SnapshotPayload =
   | { kind: 'file'; snapshotPath: string; version: number }
   | { kind: 'rows'; tables: Record<string, Record<string, unknown>[]>; version: number };

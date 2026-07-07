@@ -1,6 +1,6 @@
 // Host-neutral SQL value/row types and normalization helpers. Pure data
-// shaping — no Node imports, no SQLite imports — so the AgentDb core and the
-// Cloudflare DO host can share them with the Node daemon and desktop.
+// shaping — no Node imports, no SQLite imports — so the AgentDb core can share
+// them across hosts (the Node daemon, the desktop, and any alternate backend).
 
 export interface SqlExecutionRequest {
   sql: string;

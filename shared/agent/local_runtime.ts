@@ -44,8 +44,8 @@ import { SystemConfigKeys } from '../system-config/keys.js'
 const AGENT_DIR_NAME = '.agentwfy'
 
 // Node host wiring for the node-free config/SQL seams: resolve the user-wide
-// `~/.agentwfy.json` global config from the fs-bound `global-config.ts`. The DO
-// host skips this (no home dir), resolving config purely from the agent DB.
+// `~/.agentwfy.json` global config from the fs-bound `global-config.ts`. A host
+// without a home dir skips this, resolving config purely from the agent DB.
 configureGlobalConfigProvider({ exists: globalConfigExists, get: globalConfigGet })
 
 export interface LocalRuntimeHosts {

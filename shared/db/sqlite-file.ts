@@ -2,8 +2,8 @@
 // (the `sqlite-file` runSql target). This is the one SQL path that opens a
 // driver by filesystem path, so it stays out of the node-free `sqlite.ts`.
 // Importing this module installs the `sqlite-file` handler into the node-free
-// `sql-router.ts` as a side effect (the DO never imports it, so that target
-// is simply unsupported there).
+// `sql-router.ts` as a side effect (a host that never imports it simply leaves
+// that target unsupported).
 
 import { NodeSqlDriver } from './node-sql-driver.js';
 import type { SqlParam } from './sql-driver.js';

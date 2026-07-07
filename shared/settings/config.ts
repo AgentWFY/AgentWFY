@@ -2,8 +2,8 @@ import { getOrCreateAgentDb } from '../db/agent-db-registry.js';
 
 // Host-injected reader for the user-wide `~/.agentwfy.json` global config.
 // Node installs it from the fs-bound `global-config.ts` (see node host wiring
-// in `local_runtime.ts`); the Cloudflare DO leaves it unset, so config there
-// resolves purely from the agent DB (no `~/.agentwfy.json`, no `node:fs`).
+// in `local_runtime.ts`); a host without a filesystem can leave it unset, so
+// config there resolves purely from the agent DB (no `~/.agentwfy.json`).
 interface GlobalConfigProvider {
   exists(): boolean;
   get(key: string): unknown;

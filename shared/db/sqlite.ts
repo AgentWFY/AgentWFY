@@ -1,6 +1,6 @@
 // Node-free entry point for agent-DB SQL. `runAgentDbSql` runs a request
 // against the agent's own DB via the host-neutral registry; the actual driver
-// (NodeSqlDriver or DoSqlDriver) is whatever the host installed. SQL against an
+// (e.g. NodeSqlDriver) is whatever the host installed. SQL against an
 // arbitrary on-disk `.sqlite` *file* (the `sqlite-file` runSql target) is
 // Node-only and lives in `sqlite-file.ts` so it doesn't leak `node:sqlite`
 // into this module's importers (the runtime functions, config, views, …).

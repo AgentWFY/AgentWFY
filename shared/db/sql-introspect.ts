@@ -21,14 +21,14 @@ const DDL_LEADING_RE = /^(?:CREATE|DROP|ALTER|ATTACH|DETACH)\b/i;
 
 /**
  * Software enforcement of a `SqlGuard` by static analysis, for hosts without a
- * settable SQLite authorizer (the Cloudflare DO). Returns a human-readable
- * reason if `sql` violates the guard, or `null` if it is allowed. Node uses
- * node:sqlite's authorizer instead (see node-sql-driver.ts); this is the
- * DO-side equivalent.
+ * settable SQLite authorizer. Returns a human-readable reason if `sql` violates
+ * the guard, or `null` if it is allowed. Node uses node:sqlite's authorizer
+ * instead (see node-sql-driver.ts); this is the fallback for engines that lack
+ * one.
  *
- * Unlike node:sqlite's `prepare()` (which compiles only the first statement),
- * the DO's `sql.exec()` runs *every* statement in a multi-statement string, so
- * this scans the whole string — DDL is checked per `;`-delimited statement,
+ * For an engine that runs *every* statement in a multi-statement string (unlike
+ * node:sqlite's `prepare()`, which compiles only the first), this scans the
+ * whole string — DDL is checked per `;`-delimited statement,
  * read-only-table writes are matched anywhere (to also catch CTE-prefixed
  * writes like `WITH … INSERT INTO plugins …`).
  *

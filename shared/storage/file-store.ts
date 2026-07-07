@@ -1,14 +1,14 @@
 // Host-neutral file storage seam. The agent owns a tree of files identical on
-// every host (Node daemon, Electron desktop, Cloudflare Durable Object); only
-// the underlying store differs. All file IO in `shared/` goes through this
-// interface so the Cloudflare port can swap node:fs (rooted at `runtimeRoot`)
-// for an R2 bucket (per-agent key prefix) without touching the consumers.
+// every host; only the underlying store differs. All file IO in `shared/` goes
+// through this interface so an alternate backend can swap node:fs (rooted at
+// `runtimeRoot`) for a different store (e.g. an object store keyed per agent)
+// without touching the consumers.
 //
 // Paths are POSIX-style, relative to the agent root (e.g. `notes/todo.md`,
 // `.agentwfy/sessions/123.json`). The store — not the caller — enforces the
 // agent path policy: traversal outside the root is rejected, and the private
 // `.agentwfy/` subtree is hidden unless `allowPrivate` is set. The Node impl
-// resolves symlinks; key stores do prefix validation.
+// resolves symlinks; a key/prefix store does prefix validation.
 
 export interface FileStat {
   /** Size in bytes (0 for directories). */

@@ -7,8 +7,8 @@
 // are unchanged. Importing this module (which every Node host does) installs
 // the factory as a side effect.
 //
-// The Cloudflare DO host skips this file entirely and `registerAgentDb`s its
-// own `DoSqlDriver`-backed AgentDb on the registry.
+// A non-Node host skips this file entirely and `registerAgentDb`s its own
+// driver-backed AgentDb on the registry.
 
 import path from 'path';
 import fs from 'fs';

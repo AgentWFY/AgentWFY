@@ -9,8 +9,8 @@ export interface RunSqlRequest extends SqlExecutionRequest {
 }
 
 // Host-injected handler for the Node-only `sqlite-file` target. `sqlite-file.ts`
-// installs it on Node; the DO leaves it unset (no arbitrary on-disk .sqlite
-// files), so that target throws there. Keeps this router node-free.
+// installs it on Node; a host without arbitrary on-disk .sqlite files leaves it
+// unset, so that target throws there. Keeps this router node-free.
 export type SqliteFileSqlHandler = (dataDir: string, request: RunSqlRequest) => Promise<unknown[]>;
 
 let sqliteFileSqlHandler: SqliteFileSqlHandler | null = null;

@@ -19,9 +19,9 @@ export interface NodeSqlDriverOptions {
  */
 export class NodeSqlDriver implements SqlDriver {
   private db: DatabaseSync;
-  // Cache prepared statements by SQL text, mirroring DO SQLite (which caches
-  // internally). Keeps hot paths — change drains, row fetches, upsert loops —
-  // from re-parsing on every call. node:sqlite's authorizer runs at compile
+  // Cache prepared statements by SQL text. Keeps hot paths — change drains, row
+  // fetches, upsert loops — from re-parsing on every call. node:sqlite's
+  // authorizer runs at compile
   // time, so the cache is cleared whenever the guard changes (see setGuard) to
   // avoid reusing a statement compiled under a different guard.
   private statements = new Map<string, StatementSync>();

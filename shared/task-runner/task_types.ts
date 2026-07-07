@@ -2,8 +2,8 @@
 // TaskRunner. Split out of task_runner.ts so type-only consumers (e.g.
 // runtime/types.ts, backend/interface.ts) can reference them without
 // type-resolving task_runner.ts itself, which imports node:crypto + the
-// node-bound JsRuntime. Keeping these here lets the Cloudflare host (no node
-// types) type-check the runtime path. The TaskRunner re-exports them.
+// node-bound JsRuntime. Keeping these here lets a non-Node host (no node types)
+// type-check the runtime path. The TaskRunner re-exports them.
 
 import type { ExecJsLogEntry } from '../runtime/types.js'
 

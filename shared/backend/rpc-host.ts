@@ -1,13 +1,12 @@
 // Host-neutral backend RPC dispatch + event-stream wiring. Every transport
-// that fronts an `AgentBackend` over the WS protocol shares this: the Node
-// daemon (`server/index.ts`) and the Cloudflare Durable Object both map a
-// `BackendRpcMethod` + params to a result, and both fan backend events, DB
-// changes, and DB-reset signals onto their connection's send path.
+// that fronts an `AgentBackend` over the WS protocol shares this: it maps a
+// `BackendRpcMethod` + params to a result, and fans backend events, DB changes,
+// and DB-reset signals onto the connection's send path. The Node daemon
+// (`server/index.ts`) is the current caller.
 //
 // Free of node:* / Electron / DOM imports — only the wire protocol +
 // `AgentBackend`. The one transport concern handled here is base64-encoding
-// `files.read` bytes at the JSON-over-WS boundary (`Buffer` is a global on
-// both Node and Workers-with-nodejs_compat).
+// `files.read` bytes at the JSON-over-WS boundary (`Buffer` is a global).
 
 import {
   PROTOCOL_VERSION,
@@ -42,8 +41,8 @@ import type { AgentDbChange } from '../db/sql-types.js'
 /**
  * The state a transport needs to serve backend RPC and live streams: the
  * `AgentBackend` itself plus its DB change-log. The Node daemon's
- * `RuntimeBundle` and the DO both satisfy this shape (the daemon's extra
- * `dispose` is structurally compatible).
+ * `RuntimeBundle` satisfies this shape (its extra `dispose` is structurally
+ * compatible).
  */
 export interface BackendHost {
   backend: AgentBackend

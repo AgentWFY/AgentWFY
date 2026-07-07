@@ -19,7 +19,7 @@ import { registerOpenExternal } from './open_external.js'
 
 interface BuiltInFunctionDeps {
   runtimeRoot: string
-  /** Agent file tree access; node:fs on the desktop/daemon, R2 on Cloudflare. */
+  /** Agent file tree access (node:fs on the desktop/daemon). */
   store: FileStore
   getSessionManager: () => AgentSessionManager
   getTaskRunner: () => TaskRunner
