@@ -28,6 +28,7 @@ import {
 } from './agent-manager.js';
 import { windowManager, getPersistedAgentIds } from './window-manager.js';
 import { stopBackupScheduler } from '#shared/backup-scheduler.js';
+import { stopCleanupScheduler } from '#shared/cleanup-scheduler.js';
 import { startAutoUpdater, stopAutoUpdater, checkForUpdates } from './auto-updater.js';
 import { startGlobalConfigWatcher, stopGlobalConfigWatcher, onGlobalConfigChange } from '#shared/settings/global-config.js';
 import { SystemConfigKeys } from '#shared/system-config/keys.js';
@@ -473,6 +474,7 @@ function doQuitCleanup() {
   stopFileWatcher();
   stopGlobalConfigWatcher();
   stopBackupScheduler();
+  stopCleanupScheduler();
   stopAutoUpdater();
   windowManager.destroyAll();
 }

@@ -9,7 +9,7 @@ import { storeSet } from './ipc/store.js';
 import { getAgentMeta, getRemoteAgentCacheRoot, removeAgentMeta } from './agent-meta.js';
 import { isDefaultAgentPath } from './agent-manager.js';
 import { scheduleBackup, rescheduleBackupForAgent } from '#shared/backup-scheduler.js';
-import { runCleanup } from '#shared/cleanup.js';
+import { scheduleCleanup, rescheduleCleanupForAgent } from '#shared/cleanup-scheduler.js';
 import { NodeFileStore } from '#shared/storage/node-file-store.js';
 import { getConfigValue } from '#shared/settings/config.js';
 import { getViewByName } from '#shared/db/views.js';
@@ -96,7 +96,7 @@ export class AgentOrchestrator {
       this.deps.dispatchRendererEvent('agentwfy:backup-changed');
     }).catch((err) => console.error('[backup] Schedule failed:', err));
 
-    runCleanup(agentId, new NodeFileStore(agentId)).catch((err) => console.error('[cleanup] failed:', err));
+    scheduleCleanup(agentId, new NodeFileStore(agentId)).catch((err) => console.error('[cleanup] failed:', err));
 
     return agentCtx;
   }
@@ -560,6 +560,7 @@ export class AgentOrchestrator {
       }
       if (isLocalAgentContext(agentCtx)) {
         rescheduleBackupForAgent(agentId);
+        rescheduleCleanupForAgent(agentId);
       }
     }
 

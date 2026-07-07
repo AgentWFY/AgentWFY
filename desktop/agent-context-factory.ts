@@ -22,6 +22,7 @@ import type { PageApi } from '#shared/page/types.js';
 import { PageManager } from '#shared/page/page-manager.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import { stopBackupSchedulerForAgent } from '#shared/backup-scheduler.js';
+import { stopCleanupSchedulerForAgent } from '#shared/cleanup-scheduler.js';
 import type { AgentDbChange } from '#shared/db/sqlite.js';
 import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
 import type { SendToRenderer } from './ipc/schema.js';
@@ -256,6 +257,7 @@ export class AgentContextFactory {
     this.deps.actionRegistry.clearAgent(agentId);
 
     stopBackupSchedulerForAgent(agentId);
+    stopCleanupSchedulerForAgent(agentId);
     disposeDesktopRuntime(agentId);
     closeAgentDb(agentId);
 

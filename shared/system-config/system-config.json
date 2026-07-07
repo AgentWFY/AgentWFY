@@ -24,8 +24,16 @@
     "description": "Delete task logs older than this many days, 0 = keep forever (default: 30)"
   },
   {
+    "name": "system.cleanup.task-log-max-count",
+    "description": "Keep at most this many newest task logs regardless of age, 0 = unlimited (default: 2000)"
+  },
+  {
     "name": "system.cleanup.trace-retention-days",
     "description": "Delete agent traces older than this many days, 0 = keep forever (default: same as session retention)"
+  },
+  {
+    "name": "system.cleanup.interval-hours",
+    "description": "How often to run the cleanup sweep while the app stays open, in hours (default: 6)"
   },
   {
     "name": "system.http-api.port",

@@ -28,6 +28,12 @@ import type {
 
 const PRIVATE = { allowPrivate: true } as const
 
+// Persisted task logs are scanned by reading + JSON-parsing whole files. A
+// high-frequency HTTP-trigger task can leave thousands of large logs on disk,
+// so reads happen in bounded batches (peak memory ≈ batch × file size) with
+// early exit rather than loading every file at once.
+const TASK_LOG_SCAN_BATCH = 32
+
 interface TaskRun {
   runId: string
   taskName: string
@@ -331,25 +337,31 @@ export class TaskRunner {
       return true
     })
 
-    const parsedLogs = await Promise.all(files.map(f => readParsedLog(this.deps.store, f.name)))
+    // Read + parse in bounded batches, stopping once `limit` matches are found,
+    // so searching a large log directory stays within a fixed memory budget.
     const persistedMatches: TaskRunMatch[] = []
-    for (const parsed of parsedLogs) {
-      if (!parsed) continue
+    for (let i = 0; i < files.length; i += TASK_LOG_SCAN_BATCH) {
       if (runningMatches.length + persistedMatches.length >= limit) break
-      const matches = matchRunFields({
-        input: parsed.input,
-        result: parsed.result,
-        error: parsed.error,
-        logs: parsed.logs,
-      }, regex, matchesPerRun)
-      if (matches.length === 0) continue
-      persistedMatches.push({
-        runId: parsed.runId,
-        taskName: parsed.taskName,
-        status: parsed.status,
-        startedAt: parsed.startedAt,
-        matches,
-      })
+      const batch = files.slice(i, i + TASK_LOG_SCAN_BATCH)
+      const parsedLogs = await Promise.all(batch.map(f => readParsedLog(this.deps.store, f.name)))
+      for (const parsed of parsedLogs) {
+        if (!parsed) continue
+        if (runningMatches.length + persistedMatches.length >= limit) break
+        const matches = matchRunFields({
+          input: parsed.input,
+          result: parsed.result,
+          error: parsed.error,
+          logs: parsed.logs,
+        }, regex, matchesPerRun)
+        if (matches.length === 0) continue
+        persistedMatches.push({
+          runId: parsed.runId,
+          taskName: parsed.taskName,
+          status: parsed.status,
+          startedAt: parsed.startedAt,
+          matches,
+        })
+      }
     }
 
     return [...runningMatches, ...persistedMatches].slice(0, limit)
@@ -373,22 +385,27 @@ export class TaskRunner {
       }
     }
 
+    // Files are mtime-sorted (newest first); scan in bounded batches and stop
+    // at the first match so a huge log directory can't blow up the heap.
     const files = await listTaskLogFiles(this.deps.store)
-    const parsedLogs = await Promise.all(files.map(f => readParsedLog(this.deps.store, f.name)))
-    const match = parsedLogs.find((p): p is ParsedTaskLog => p !== null && p.runId === runId)
-    if (match) {
-      return {
-        runId: match.runId,
-        taskName: match.taskName,
-        title: match.title,
-        status: match.status,
-        origin: match.origin,
-        input: match.input,
-        startedAt: match.startedAt,
-        finishedAt: match.finishedAt,
-        result: match.result,
-        error: match.error,
-        logs: match.logs,
+    for (let i = 0; i < files.length; i += TASK_LOG_SCAN_BATCH) {
+      const batch = files.slice(i, i + TASK_LOG_SCAN_BATCH)
+      const parsed = await Promise.all(batch.map(f => readParsedLog(this.deps.store, f.name)))
+      const match = parsed.find((p): p is ParsedTaskLog => p !== null && p.runId === runId)
+      if (match) {
+        return {
+          runId: match.runId,
+          taskName: match.taskName,
+          title: match.title,
+          status: match.status,
+          origin: match.origin,
+          input: match.input,
+          startedAt: match.startedAt,
+          finishedAt: match.finishedAt,
+          result: match.result,
+          error: match.error,
+          logs: match.logs,
+        }
       }
     }
     throw new Error(`Task run '${runId}' not found`)

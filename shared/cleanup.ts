@@ -31,6 +31,29 @@ async function deleteOldFiles(store: FileStore, dir: string, retentionDays: numb
   return results.filter((r) => r.status === 'fulfilled').length;
 }
 
+/** Keep only the newest `maxCount` `<ts>-<rand>.json` files in `dir`, deleting
+ *  the rest by the timestamp encoded in the file name. `maxCount <= 0` disables
+ *  the cap. Guards against a high-frequency task filling the directory faster
+ *  than the age-based sweep can retire files. Returns the count removed. */
+async function deleteExcessFiles(store: FileStore, dir: string, maxCount: number): Promise<number> {
+  if (maxCount <= 0) return 0;
+
+  const entries = await store.list(dir, PRIVATE);
+  const timestamped: Array<{ key: string; ts: number }> = [];
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const match = entry.name.match(TIMESTAMPED_JSON_RE);
+    if (!match) continue;
+    timestamped.push({ key: `${dir}/${entry.name}`, ts: parseInt(match[1], 10) });
+  }
+
+  if (timestamped.length <= maxCount) return 0;
+  timestamped.sort((a, b) => b.ts - a.ts);
+  const toDelete = timestamped.slice(maxCount).map((f) => f.key);
+  const results = await Promise.allSettled(toDelete.map((key) => store.remove(key, REMOVE)));
+  return results.filter((r) => r.status === 'fulfilled').length;
+}
+
 async function deleteOldSessionsAndTraces(store: FileStore, retentionDays: number): Promise<number> {
   if (retentionDays <= 0) return 0;
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
@@ -88,15 +111,20 @@ async function deleteOldTracesByMtime(store: FileStore, retentionDays: number): 
 export async function runCleanup(runtimeRoot: string, store: FileStore): Promise<void> {
   const sessionDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupSessionRetentionDays, '30'));
   const taskLogDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTaskLogRetentionDays, '30'));
+  const taskLogMaxCount = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTaskLogMaxCount, '2000'));
   const traceDays = Number(getConfigValue(runtimeRoot, SystemConfigKeys.cleanupTraceRetentionDays, String(sessionDays)));
 
   // Session sweep removes paired traces first; then a traces sweep by mtime
   // catches anything left behind — task-run traces (no session file at all) and
   // orphans where the session file was removed outside cleanup.
-  const [sessionCount, taskLogCount] = await Promise.all([
+  const [sessionCount, taskLogAgeCount] = await Promise.all([
     deleteOldSessionsAndTraces(store, sessionDays),
     deleteOldFiles(store, TASK_LOGS_RELATIVE_DIR, taskLogDays),
   ]);
+  // Age retention can't bound a task that writes logs faster than the window;
+  // the count cap keeps the newest N regardless of age.
+  const taskLogExcessCount = await deleteExcessFiles(store, TASK_LOGS_RELATIVE_DIR, taskLogMaxCount);
+  const taskLogCount = taskLogAgeCount + taskLogExcessCount;
   const traceCount = await deleteOldTracesByMtime(store, traceDays);
 
   if (sessionCount > 0 || taskLogCount > 0 || traceCount > 0) {
