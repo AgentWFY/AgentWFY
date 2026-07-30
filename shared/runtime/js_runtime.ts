@@ -346,7 +346,6 @@ export class JsRuntime {
     const traceStartedAt = Date.now()
     try {
       const value = await this.deps.functionRegistry.call(message.method, message.params)
-      this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
       this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
@@ -354,8 +353,10 @@ export class JsRuntime {
         ok: true,
         value,
       } satisfies HostToWorkerMessage)
+      // Tracing serializes params and result in full; keep it off the call's
+      // critical path so the worker isn't blocked behind it.
+      this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
     } catch (error) {
-      this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
       this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
@@ -363,6 +364,7 @@ export class JsRuntime {
         ok: false,
         error: serializeError(error),
       } satisfies HostToWorkerMessage)
+      this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
     }
   }
 

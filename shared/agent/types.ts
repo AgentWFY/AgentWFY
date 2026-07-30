@@ -94,6 +94,11 @@ export interface AgentSnapshot {
   stalledSince: number | null
   /** Follow-up messages queued behind the active turn (empty when none). */
   queuedMessages: QueuedMessage[]
+  /** Bumped by the IPC pump whenever `messages` becomes a different transcript.
+   *  Structured-clone hands the renderer a fresh array on every push, so
+   *  reference identity can't tell "same transcript" from "new transcript" —
+   *  this can. Absent on snapshots that didn't come through the pump. */
+  messagesVersion?: number
 }
 
 // ── Agent Events ──

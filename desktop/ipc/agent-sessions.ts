@@ -114,11 +114,22 @@ export function setupAgentChatPump(
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let heartbeatDirty = false
   let prevIsStreaming = false
-  let prevMessages: unknown = null
+  let prevMessages: AgentSnapshot['messages'] | null = null
   let prevNotifyOnFinish = false
   let prevQueueSig = ''
   let latestStreamingUpdate: SessionLivePatch | null = null
   let stopped = false
+
+  // Identity of the displayed transcript, and a counter the renderer uses to
+  // skip rebuilding every message block when the transcript hasn't changed.
+  let messagesRef: AgentSnapshot['messages'] | null = null
+  let messagesVersion = 0
+
+  // Last snapshot handed to pushFullSnapshot, for the idle-path redundancy
+  // check. Sessions other than the displayed one wake the pump on every token
+  // they stream; without this, each of those wakeups re-sent the whole
+  // transcript even though nothing the renderer shows had changed.
+  let lastPushed: AgentSnapshot | null = null
 
   const send = <C extends keyof PushMap>(channel: C, data: PushMap[C]) => {
     if (!wc.isDestroyed()) wc.send(channel, data)
@@ -132,12 +143,41 @@ export function setupAgentChatPump(
     return sig
   }
 
+  // Two transcripts are the same if they're the same array, or if both are
+  // empty — a controller with no displayed session rebuilds `[]` on every
+  // getSnapshot(), and that must not read as a change.
+  const sameMessages = (a: AgentSnapshot['messages'], b: AgentSnapshot['messages']): boolean =>
+    a === b || (a.length === 0 && b.length === 0)
+
+  const sameIds = (a: string[], b: string[]): boolean =>
+    a.length === b.length && a.every((id, i) => id === b[i])
+
+  /** True when `next` would render identically to `prev`. Only consulted on the
+   *  idle path, where `streamingMessage` is null — a live streaming message
+   *  mutates in place, so its reference can't be trusted for equality. */
+  const rendersIdentically = (prev: AgentSnapshot, next: AgentSnapshot): boolean =>
+    prev.streamingMessage === null
+    && next.streamingMessage === null
+    && sameMessages(prev.messages, next.messages)
+    && prev.isStreaming === next.isStreaming
+    && prev.label === next.label
+    && prev.streamingSessionsCount === next.streamingSessionsCount
+    && prev.notifyOnFinish === next.notifyOnFinish
+    && prev.statusLine === next.statusLine
+    && prev.providerId === next.providerId
+    && prev.activeSessionId === next.activeSessionId
+    && prev.retryState === next.retryState
+    && prev.stalledSince === next.stalledSince
+    && sameIds(prev.streamingSessionIds, next.streamingSessionIds)
+    && queueSig(prev.queuedMessages) === queueSig(next.queuedMessages)
+
   const pushFullSnapshot = (snapshot: AgentSnapshot) => {
-    send(Channels.agent.snapshot, snapshot)
+    send(Channels.agent.snapshot, { ...snapshot, messagesVersion })
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
     prevQueueSig = queueSig(snapshot.queuedMessages)
+    lastPushed = snapshot
   }
 
   const streamingUpdateFromSnapshot = (snapshot: AgentSnapshot): SessionLivePatch => ({
@@ -176,6 +216,11 @@ export function setupAgentChatPump(
     if (stopped || wc.isDestroyed()) return
     heartbeatDirty = true
 
+    if (messagesRef === null || !sameMessages(snapshot.messages, messagesRef)) {
+      messagesRef = snapshot.messages
+      messagesVersion++
+    }
+
     // Manage heartbeat lifecycle around streaming state.
     if ((snapshot.isStreaming || snapshot.streamingSessionsCount > 0) && !heartbeat) {
       heartbeat = setInterval(() => { void tickHeartbeat() }, 5_000)
@@ -212,6 +257,7 @@ export function setupAgentChatPump(
       }
     } else {
       latestStreamingUpdate = null
+      if (lastPushed && rendersIdentically(lastPushed, snapshot)) return
       pushFullSnapshot(snapshot)
     }
   }
@@ -233,7 +279,14 @@ export function setupAgentChatPump(
       }
     },
     refresh() {
-      void handleChange()
+      // Clear the change-detection state so the push happens unconditionally —
+      // the renderer resets to `ready: false` on agent switch and needs a
+      // snapshot back regardless of whether this agent's state moved.
+      prevIsStreaming = false
+      prevMessages = null
+      prevQueueSig = ''
+      lastPushed = null
+      handleChange()
     },
   }
 }

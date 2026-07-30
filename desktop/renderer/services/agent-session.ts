@@ -70,6 +70,8 @@ class AgentSessionService {
   private _currentAgentId: string | null = null
   private _unsubs: Array<() => void> = []
   private _generation = 0
+  /** messagesVersion of the last applied snapshot — see applySnapshot. */
+  private _messagesVersion: number | null = null
 
   get state(): Readonly<AgentSessionState> {
     return this._state
@@ -230,6 +232,9 @@ class AgentSessionService {
 
     this._currentAgentId = newAgentId
     this._generation += 1
+    // Versions are per-agent — the incoming agent's counter is unrelated to the
+    // one we were tracking, so the next snapshot must be adopted as-is.
+    this._messagesVersion = null
     this.emitChangedState(previousState, this._state)
   }
 
@@ -250,8 +255,17 @@ class AgentSessionService {
 
   private applySnapshot(snapshot: AgentSnapshot): void {
     const providerChanged = snapshot.providerId && snapshot.providerId !== this._state.providerId
+
+    // The transcript arrives as a freshly deserialized array on every push, so
+    // adopting it blindly makes `messages` look changed every time and rebuilds
+    // every message block. When the pump says it's the same transcript, keep
+    // the array we already have.
+    const sameTranscript = snapshot.messagesVersion !== undefined
+      && snapshot.messagesVersion === this._messagesVersion
+    this._messagesVersion = snapshot.messagesVersion ?? null
+
     const patch: Partial<AgentSessionState> = {
-      messages: snapshot.messages,
+      messages: sameTranscript ? this._state.messages : snapshot.messages,
       isStreaming: snapshot.isStreaming,
       streamingMessage: snapshot.streamingMessage,
       label: snapshot.label,
