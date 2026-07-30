@@ -17,7 +17,7 @@ import {
   TRACE_CODE_CAP,
   TRACE_PARAMS_CAP,
   TRACE_RESULT_CAP,
-  stringifySafe,
+  stringifyCapped,
   truncateWithFlag,
   toTraceError,
 } from './trace_types.js'
@@ -447,7 +447,7 @@ export class JsRuntime {
     let resultPreview: string | null = null
     let resultTruncated = false
     if (details.ok && 'value' in details) {
-      const preview = truncateWithFlag(stringifySafe((details as { value: unknown }).value), TRACE_RESULT_CAP)
+      const preview = stringifyCapped((details as { value: unknown }).value, TRACE_RESULT_CAP)
       resultPreview = preview.text
       resultTruncated = preview.truncated
     }
@@ -481,12 +481,12 @@ export class JsRuntime {
     if (!writer) return
 
     const durationMs = Date.now() - startedAt
-    const params = truncateWithFlag(stringifySafe(message.params), TRACE_PARAMS_CAP)
+    const params = stringifyCapped(message.params, TRACE_PARAMS_CAP)
     const ok = error === null
     let resultPreview: string | null = null
     let resultTruncated = false
     if (ok && value !== undefined) {
-      const preview = truncateWithFlag(stringifySafe(value), TRACE_RESULT_CAP)
+      const preview = stringifyCapped(value, TRACE_RESULT_CAP)
       resultPreview = preview.text
       resultTruncated = preview.truncated
     }
