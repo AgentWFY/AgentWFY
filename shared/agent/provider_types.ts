@@ -12,7 +12,7 @@ export interface DisplayMessage {
 export type Block =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
-  | { type: 'file'; mimeType: string; data: string }
+  | { type: 'file'; mimeType: string; data: string; url?: string }
   | { type: 'attachment'; label: string; size: number; content: string }
   | { type: 'exec_js'; id: string; description: string; code: string }
   | { type: 'exec_js_result'; id: string; content: (TextContent | FileContent)[]; isError: boolean }

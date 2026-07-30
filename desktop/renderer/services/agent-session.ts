@@ -1,9 +1,10 @@
 import type { DisplayMessage, ProviderInfo } from '#shared/agent/provider_types.js'
 import type { FileContent, QueuedMessage, RetryState } from '#shared/agent/types.js'
+import { applyStreamOps } from '#shared/agent/stream_delta.js'
 import type {
   AgentSnapshot,
+  ChatStreamingPatch,
   ProviderState,
-  SessionLivePatch,
 } from '../ipc-types/index.js'
 import { dispatch, listen } from '../events.js'
 
@@ -72,6 +73,9 @@ class AgentSessionService {
   private _generation = 0
   /** messagesVersion of the last applied snapshot — see applySnapshot. */
   private _messagesVersion: number | null = null
+  /** streamSeq of the streaming message we hold; deltas quote the sequence
+   *  they build on, so this says which ones are applicable. */
+  private _streamSeq: number | null = null
 
   get state(): Readonly<AgentSessionState> {
     return this._state
@@ -235,6 +239,7 @@ class AgentSessionService {
     // Versions are per-agent — the incoming agent's counter is unrelated to the
     // one we were tracking, so the next snapshot must be adopted as-is.
     this._messagesVersion = null
+    this._streamSeq = null
     this.emitChangedState(previousState, this._state)
   }
 
@@ -263,6 +268,7 @@ class AgentSessionService {
     const sameTranscript = snapshot.messagesVersion !== undefined
       && snapshot.messagesVersion === this._messagesVersion
     this._messagesVersion = snapshot.messagesVersion ?? null
+    this._streamSeq = snapshot.streamSeq ?? null
 
     const patch: Partial<AgentSessionState> = {
       messages: sameTranscript ? this._state.messages : snapshot.messages,
@@ -301,8 +307,23 @@ class AgentSessionService {
     this.setState(patch)
   }
 
-  private applyStreamingPatch(patch: SessionLivePatch): void {
-    const partial: Partial<AgentSessionState> = { streamingMessage: patch.streamingMessage }
+  private applyStreamingPatch(patch: ChatStreamingPatch): void {
+    const partial: Partial<AgentSessionState> = {}
+    if (patch.streamingDelta) {
+      const delta = patch.streamingDelta
+      // A delta we can't place means a frame went missing; drop it and let the
+      // pump's next whole message (heartbeat at worst) resynchronise us.
+      if (this._streamSeq === delta.base) {
+        const next = applyStreamOps(this._state.streamingMessage, delta.ops)
+        if (next) {
+          partial.streamingMessage = next
+          this._streamSeq = delta.seq
+        }
+      }
+    } else if ('streamingMessage' in patch) {
+      partial.streamingMessage = patch.streamingMessage ?? null
+      this._streamSeq = patch.streamSeq ?? null
+    }
     if (patch.statusLine !== undefined) partial.statusLine = patch.statusLine
     if (patch.isStreaming !== undefined) partial.isStreaming = patch.isStreaming
     if (patch.retryState !== undefined) partial.retryState = patch.retryState
