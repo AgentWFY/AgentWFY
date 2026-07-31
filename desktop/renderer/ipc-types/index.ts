@@ -18,6 +18,7 @@ import type { TracesApi } from './traces.js'
 import type { FileContent } from '#shared/agent/types.js'
 import type {
   AgentSnapshot,
+  ChatStreamingPatch,
   InstalledAgent,
   ProviderState,
   SessionLivePatch,
@@ -32,6 +33,7 @@ import type {
 export type {
   ProviderState,
   AgentSnapshot,
+  ChatStreamingPatch,
   SessionLivePatch,
   InstalledAgent,
   SettingChangedPayload,
@@ -66,7 +68,7 @@ export interface AgentApi {
   reconnect(): Promise<void>
   getSnapshot(): Promise<AgentSnapshot>
   onSnapshot(callback: (snapshot: AgentSnapshot) => void): () => void
-  onStreaming(callback: (data: SessionLivePatch) => void): () => void
+  onStreaming(callback: (data: ChatStreamingPatch) => void): () => void
   unloadSession(sessionId: string): Promise<void>
   retryNow(): Promise<void>
   removeQueuedMessage(index: number): Promise<void>

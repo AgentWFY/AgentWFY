@@ -2,7 +2,9 @@ import { ipcMain, type WebContents, type IpcMainInvokeEvent } from 'electron'
 import type { AgentSessionManager } from '#shared/agent/session_manager.js'
 import type { AgentBackend } from '#shared/backend/interface.js'
 import type { AgentChatController } from '#shared/agent/chat_controller.js'
-import type { AgentSnapshot, FileContent, SessionLivePatch } from '#shared/agent/types.js'
+import type { AgentSnapshot, ChatStreamingPatch, FileContent } from '#shared/agent/types.js'
+import { diffStreamBlocks, mirrorOf, type StreamMirror } from '#shared/agent/stream_delta.js'
+import { externalizeBlock, externalizeMessage, externalizeMessages } from '../chat/message-blobs.js'
 import { Channels } from './channels.cjs'
 import type { PushMap } from './schema.js'
 
@@ -10,6 +12,7 @@ export function registerAgentSessionHandlers(
   onReconnect: (e: IpcMainInvokeEvent) => Promise<AgentSessionManager>,
   getBackend: (e: IpcMainInvokeEvent) => AgentBackend,
   getChat: (e: IpcMainInvokeEvent) => AgentChatController,
+  getPump: (e: IpcMainInvokeEvent) => AgentChatPump | null,
 ): void {
   ipcMain.handle(Channels.agent.createSession, async (event, opts?: { label?: string; prompt?: string; providerId?: string; providerOptions?: Record<string, unknown>; files?: FileContent[] }) => {
     return getChat(event).createSession({
@@ -62,7 +65,12 @@ export function registerAgentSessionHandlers(
   })
 
   ipcMain.handle(Channels.agent.getSnapshot, async (event) => {
-    return getChat(event).getSnapshot()
+    // Go through the pump when there is one: it stamps the snapshot with the
+    // transcript version and stream sequence the pushed ones carry, so a
+    // renderer that pulls (on load, after a reload) lands in the same
+    // bookkeeping the pushes assume. Falls back to the raw snapshot when the
+    // pump hasn't been built yet.
+    return getPump(event)?.snapshotForRenderer() ?? getChat(event).getSnapshot()
   })
 
   ipcMain.handle(Channels.agent.unloadSession, async (event, sessionId: string) => {
@@ -86,6 +94,9 @@ export interface AgentChatPump {
   /** Force an immediate snapshot push (used when the renderer switches to
    *  this agent and the existing chat state should be re-sent). */
   refresh(): void
+  /** Snapshot for a renderer that asked for one, stamped and recorded exactly
+   *  as a pushed snapshot would be. */
+  snapshotForRenderer(): AgentSnapshot
 }
 
 /**
@@ -114,11 +125,30 @@ export function setupAgentChatPump(
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let heartbeatDirty = false
   let prevIsStreaming = false
-  let prevMessages: unknown = null
+  let prevMessages: AgentSnapshot['messages'] | null = null
   let prevNotifyOnFinish = false
   let prevQueueSig = ''
-  let latestStreamingUpdate: SessionLivePatch | null = null
   let stopped = false
+
+  // Streaming-message bookkeeping. `streamSeq` stamps every payload that
+  // carries a whole message; deltas quote the sequence they build on so the
+  // renderer can tell a usable delta from one it can't apply. `sentStream`
+  // mirrors what the renderer holds, and is only ever advanced at send time —
+  // a wakeup whose payload gets debounced away must not move it.
+  let streamSeq = 0
+  let sentStream: StreamMirror | null = null
+  let latestStreamingSnapshot: AgentSnapshot | null = null
+
+  // Identity of the displayed transcript, and a counter the renderer uses to
+  // skip rebuilding every message block when the transcript hasn't changed.
+  let messagesRef: AgentSnapshot['messages'] | null = null
+  let messagesVersion = 0
+
+  // Last snapshot handed to pushFullSnapshot, for the idle-path redundancy
+  // check. Sessions other than the displayed one wake the pump on every token
+  // they stream; without this, each of those wakeups re-sent the whole
+  // transcript even though nothing the renderer shows had changed.
+  let lastPushed: AgentSnapshot | null = null
 
   const send = <C extends keyof PushMap>(channel: C, data: PushMap[C]) => {
     if (!wc.isDestroyed()) wc.send(channel, data)
@@ -132,21 +162,85 @@ export function setupAgentChatPump(
     return sig
   }
 
-  const pushFullSnapshot = (snapshot: AgentSnapshot) => {
-    send(Channels.agent.snapshot, snapshot)
+  // Two transcripts are the same if they're the same array, or if both are
+  // empty — a controller with no displayed session rebuilds `[]` on every
+  // getSnapshot(), and that must not read as a change.
+  const sameMessages = (a: AgentSnapshot['messages'], b: AgentSnapshot['messages']): boolean =>
+    a === b || (a.length === 0 && b.length === 0)
+
+  const sameIds = (a: string[], b: string[]): boolean =>
+    a.length === b.length && a.every((id, i) => id === b[i])
+
+  /** True when `next` would render identically to `prev`. Only consulted on the
+   *  idle path, where `streamingMessage` is null — a live streaming message
+   *  mutates in place, so its reference can't be trusted for equality. */
+  const rendersIdentically = (prev: AgentSnapshot, next: AgentSnapshot): boolean =>
+    prev.streamingMessage === null
+    && next.streamingMessage === null
+    && sameMessages(prev.messages, next.messages)
+    && prev.isStreaming === next.isStreaming
+    && prev.label === next.label
+    && prev.streamingSessionsCount === next.streamingSessionsCount
+    && prev.notifyOnFinish === next.notifyOnFinish
+    && prev.statusLine === next.statusLine
+    && prev.providerId === next.providerId
+    && prev.activeSessionId === next.activeSessionId
+    && prev.retryState === next.retryState
+    && prev.stalledSince === next.stalledSince
+    && sameIds(prev.streamingSessionIds, next.streamingSessionIds)
+    && queueSig(prev.queuedMessages) === queueSig(next.queuedMessages)
+
+  /** Snapshot as the renderer should see it: binaries out of band, stamped
+   *  with the transcript version and a fresh stream sequence. Records what was
+   *  handed over, so both the idle-path redundancy check and the streaming
+   *  differ stay in step with the renderer. */
+  const renderSnapshot = (snapshot: AgentSnapshot): AgentSnapshot => {
+    streamSeq++
+    sentStream = snapshot.streamingMessage ? mirrorOf(snapshot.streamingMessage) : null
     prevIsStreaming = snapshot.isStreaming
     prevMessages = snapshot.messages
     prevNotifyOnFinish = snapshot.notifyOnFinish
     prevQueueSig = queueSig(snapshot.queuedMessages)
+    lastPushed = snapshot
+    return {
+      ...snapshot,
+      messages: externalizeMessages(snapshot.messages),
+      streamingMessage: externalizeMessage(snapshot.streamingMessage),
+      messagesVersion,
+      streamSeq,
+    }
   }
 
-  const streamingUpdateFromSnapshot = (snapshot: AgentSnapshot): SessionLivePatch => ({
-    streamingMessage: snapshot.streamingMessage,
-    statusLine: snapshot.statusLine,
-    isStreaming: snapshot.isStreaming,
-    retryState: snapshot.retryState,
-    stalledSince: snapshot.stalledSince,
-  })
+  const pushFullSnapshot = (snapshot: AgentSnapshot) => {
+    send(Channels.agent.snapshot, renderSnapshot(snapshot))
+  }
+
+  /** Builds the `agent:streaming` payload at send time (not at wakeup time),
+   *  because computing it advances `sentStream`. */
+  const streamingPatch = (snapshot: AgentSnapshot): ChatStreamingPatch => {
+    const patch: ChatStreamingPatch = {
+      statusLine: snapshot.statusLine,
+      isStreaming: snapshot.isStreaming,
+      retryState: snapshot.retryState,
+      stalledSince: snapshot.stalledSince,
+    }
+    const msg = snapshot.streamingMessage
+    if (!msg || !sentStream || sentStream.ref !== msg) {
+      // No message, or a message the renderer has never seen — send it whole.
+      streamSeq++
+      sentStream = msg ? mirrorOf(msg) : null
+      patch.streamingMessage = externalizeMessage(msg)
+      patch.streamSeq = streamSeq
+      return patch
+    }
+    const ops = diffStreamBlocks(sentStream, msg.blocks, externalizeBlock)
+    // Nothing about the message moved: omit both forms so the renderer keeps
+    // the object it has and skips a re-render.
+    if (ops.length === 0) return patch
+    patch.streamingDelta = { base: streamSeq, seq: ++streamSeq, ops }
+    sentStream = mirrorOf(msg)
+    return patch
+  }
 
   const tickHeartbeat = () => {
     if (stopped || wc.isDestroyed()) return
@@ -176,6 +270,11 @@ export function setupAgentChatPump(
     if (stopped || wc.isDestroyed()) return
     heartbeatDirty = true
 
+    if (messagesRef === null || !sameMessages(snapshot.messages, messagesRef)) {
+      messagesRef = snapshot.messages
+      messagesVersion++
+    }
+
     // Manage heartbeat lifecycle around streaming state.
     if ((snapshot.isStreaming || snapshot.streamingSessionsCount > 0) && !heartbeat) {
       heartbeat = setInterval(() => { void tickHeartbeat() }, 5_000)
@@ -188,15 +287,15 @@ export function setupAgentChatPump(
     if (isActive && !isActive()) return
 
     if (snapshot.isStreaming) {
-      latestStreamingUpdate = streamingUpdateFromSnapshot(snapshot)
+      latestStreamingSnapshot = snapshot
       // Lightweight streaming payload — debounced to ~60fps.
       if (!streamingDebounce) {
         streamingDebounce = setTimeout(() => {
           streamingDebounce = null
           if (stopped || wc.isDestroyed()) return
           if (isActive && !isActive()) return
-          if (!latestStreamingUpdate) return
-          send(Channels.agent.streaming, latestStreamingUpdate)
+          if (!latestStreamingSnapshot) return
+          send(Channels.agent.streaming, streamingPatch(latestStreamingSnapshot))
         }, 16)
       }
       // Send a full snapshot on transitions to-streaming and on message changes
@@ -211,7 +310,8 @@ export function setupAgentChatPump(
         pushFullSnapshot(snapshot)
       }
     } else {
-      latestStreamingUpdate = null
+      latestStreamingSnapshot = null
+      if (lastPushed && rendersIdentically(lastPushed, snapshot)) return
       pushFullSnapshot(snapshot)
     }
   }
@@ -233,7 +333,22 @@ export function setupAgentChatPump(
       }
     },
     refresh() {
-      void handleChange()
+      // Clear the change-detection state so the push happens unconditionally —
+      // the renderer resets to `ready: false` on agent switch and needs a
+      // snapshot back regardless of whether this agent's state moved.
+      prevIsStreaming = false
+      prevMessages = null
+      prevQueueSig = ''
+      lastPushed = null
+      handleChange()
+    },
+    snapshotForRenderer() {
+      const snapshot = chat.getSnapshot()
+      if (messagesRef === null || !sameMessages(snapshot.messages, messagesRef)) {
+        messagesRef = snapshot.messages
+        messagesVersion++
+      }
+      return renderSnapshot(snapshot)
     },
   }
 }

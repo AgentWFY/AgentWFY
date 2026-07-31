@@ -1,6 +1,6 @@
 import { renderMarkdown } from '../markdown.js'
 import type { DisplayMessage, Block } from '#shared/agent/provider_types.js'
-import { escapeHtml, imageDataUrl } from './chat_utils.js'
+import { escapeHtml, fileSrc } from './chat_utils.js'
 
 export interface ToolPair {
   id: string
@@ -10,9 +10,10 @@ export interface ToolPair {
   isError: boolean
 }
 
-interface RenderFile {
+export interface RenderFile {
   mimeType: string
   data: string
+  url?: string
 }
 
 interface RenderBlock {
@@ -37,8 +38,8 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
       const files: RenderFile[] = msg.blocks
         .filter(b => b.type === 'file')
         .map(b => {
-          const f = b as { type: 'file'; mimeType: string; data: string }
-          return { mimeType: f.mimeType, data: f.data }
+          const f = b as { type: 'file'; mimeType: string; data: string; url?: string }
+          return { mimeType: f.mimeType, data: f.data, url: f.url }
         })
       blocks.push({ type: 'user', text, thinking: '', error: '', tools: [], files, ref: msg })
     } else if (msg.role === 'assistant') {
@@ -98,13 +99,13 @@ export function buildRenderBlocks(msgs: DisplayMessage[]): RenderBlock[] {
   return blocks
 }
 
-function extractFilesFromResult(result: unknown): { files: Array<{ data: string; mimeType: string }>; filteredResult: unknown } {
-  const files: Array<{ data: string; mimeType: string }> = []
+function extractFilesFromResult(result: unknown): { files: RenderFile[]; filteredResult: unknown } {
+  const files: RenderFile[] = []
   if (!Array.isArray(result)) return { files, filteredResult: result }
 
   const filtered = result.filter((item: Record<string, unknown>) => {
     if (item?.type === 'file' && typeof item.data === 'string' && typeof item.mimeType === 'string') {
-      files.push({ data: item.data, mimeType: item.mimeType })
+      files.push({ data: item.data, mimeType: item.mimeType, url: typeof item.url === 'string' ? item.url : undefined })
       return false
     }
     return true
@@ -117,7 +118,7 @@ export interface ParsedResult {
   value?: string
   error?: { name: string; message: string }
   logs: Array<{ level: string; message: string }>
-  files: Array<{ data: string; mimeType: string }>
+  files: RenderFile[]
 }
 
 export function parseToolResult(result: unknown): ParsedResult {
@@ -292,7 +293,7 @@ export function renderToolDetailsHtml(tool: ToolPair, parsed?: ParsedResult): st
   if (imageFiles.length > 0) {
     const items = imageFiles.map(f => {
       const ext = f.mimeType.split('/')[1]?.toUpperCase() || 'IMG'
-      return `<figure class="tp-img-wrap"><img src="${imageDataUrl(f.mimeType, f.data)}"><figcaption class="tp-img-meta"><span class="tp-img-pill">${escapeHtml(ext)}</span></figcaption></figure>`
+      return `<figure class="tp-img-wrap"><img src="${fileSrc(f)}"><figcaption class="tp-img-meta"><span class="tp-img-pill">${escapeHtml(ext)}</span></figcaption></figure>`
     }).join('')
     const label = imageFiles.length === 1 ? 'Image' : 'Images'
     parts.push(tpSection({
@@ -365,7 +366,7 @@ function renderUserFilesHtml(files: RenderFile[]): string {
   if (files.length === 0) return ''
   const parts = files.map(f => {
     if (f.mimeType.startsWith('image/')) {
-      return `<img class="user-file-image" src="${imageDataUrl(f.mimeType, f.data)}" alt="attachment">`
+      return `<img class="user-file-image" src="${fileSrc(f)}" alt="attachment">`
     }
     return `<span class="file-badge">${escapeHtml(f.mimeType)}</span>`
   })

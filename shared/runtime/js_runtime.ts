@@ -17,12 +17,31 @@ import {
   TRACE_CODE_CAP,
   TRACE_PARAMS_CAP,
   TRACE_RESULT_CAP,
-  stringifySafe,
+  stringifyCapped,
   truncateWithFlag,
   toTraceError,
 } from './trace_types.js'
 
 const DEFAULT_EXEC_TIMEOUT_MS = 10000
+
+/**
+ * How long a session's worker may sit unused before it is killed.
+ *
+ * A worker is an Electron-as-Node subprocess costing ~50 MB resident and no
+ * measurable CPU while idle, and one is pre-warmed for every session the user
+ * opens — including sessions that never run any code. Nothing reclaimed them
+ * short of closing the session, so a dozen open sessions held ~600 MB doing
+ * nothing.
+ *
+ * Eviction is safe because execJs is documented as stateless — "Each execJs
+ * call is self-contained — no state persists between calls", and `globalThis`
+ * is `undefined` inside the worker, so an agent cannot carry state across
+ * calls even by accident. Re-forking costs ~70 ms on the next execJs (vs
+ * ~0.2 ms warm), which is invisible next to an LLM turn.
+ */
+const DEFAULT_IDLE_EVICT_MS = 5 * 60 * 1000
+const MAX_SWEEP_INTERVAL_MS = 60 * 1000
+const MIN_SWEEP_INTERVAL_MS = 250
 
 type PendingExecution = {
   requestId: string
@@ -46,11 +65,15 @@ type ChildEntry = {
   onError: (error: Error) => void
   lastCrashError?: string
   stderrChunks: string[]
+  /** Last time this worker was sent an exec or said anything back. */
+  lastActivityAt: number
 }
 
 export interface JsRuntimeDeps {
   functionRegistry: FunctionRegistry
   traceWriter?: TraceWriter
+  /** Override the idle-eviction window. 0 or negative disables eviction. */
+  idleEvictMs?: number
 }
 
 function createId(prefix: string): string {
@@ -82,9 +105,19 @@ function normalizeSessionId(sessionId: string): string {
 export class JsRuntime {
   private readonly workers = new Map<string, ChildEntry>()
   private readonly deps: JsRuntimeDeps
+  private readonly idleEvictMs: number
+  private readonly sweepIntervalMs: number
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(deps: JsRuntimeDeps) {
     this.deps = deps
+    this.idleEvictMs = deps.idleEvictMs ?? DEFAULT_IDLE_EVICT_MS
+    // Check often enough that the window means something, without waking up
+    // pointlessly on the 5-minute default.
+    this.sweepIntervalMs = Math.max(
+      MIN_SWEEP_INTERVAL_MS,
+      Math.min(Math.floor(this.idleEvictMs / 4), MAX_SWEEP_INTERVAL_MS),
+    )
   }
 
   ensureWorker(sessionId: string): void {
@@ -132,6 +165,7 @@ export class JsRuntime {
       onExit: () => {},
       onError: () => {},
       stderrChunks: [],
+      lastActivityAt: Date.now(),
     }
 
     if (child.stderr) {
@@ -177,6 +211,7 @@ export class JsRuntime {
     child.on('error', entry.onError)
 
     this.workers.set(normalizedSessionId, entry)
+    this.startSweep()
   }
 
   terminateWorker(sessionId: string): void {
@@ -205,6 +240,7 @@ export class JsRuntime {
     if (!entry) {
       throw new Error(`Failed to create session worker for ${normalizedSessionId}`)
     }
+    entry.lastActivityAt = Date.now()
 
     // null = caller explicitly opts out of any timeout (long-running tasks
     // like a Telegram poller). The worker treats timeoutMs <= 0 as "no timer".
@@ -283,12 +319,51 @@ export class JsRuntime {
     for (const entry of this.workers.values()) {
       this.disposeEntry(entry, new Error(`Session worker disposed for ${entry.sessionId}`))
     }
+    this.stopSweep()
+  }
+
+  private startSweep(): void {
+    if (this.sweepTimer !== null || this.idleEvictMs <= 0) return
+    const timer = setInterval(() => this.sweepIdleWorkers(), this.sweepIntervalMs)
+    // Never hold a shutting-down process open just to reap workers.
+    ;(timer as { unref?: () => void }).unref?.()
+    this.sweepTimer = timer
+  }
+
+  private stopSweep(): void {
+    if (this.sweepTimer === null) return
+    clearInterval(this.sweepTimer)
+    this.sweepTimer = null
+  }
+
+  private sweepIdleWorkers(): void {
+    const now = Date.now()
+    for (const entry of [...this.workers.values()]) {
+      // An execution in flight means the worker is in use, however long it
+      // runs. This is what exempts the long-running task sessions that opt out
+      // of timeouts (`timeoutMs === null`) — they hold a pending execution for
+      // their whole life, so they are never candidates.
+      if (entry.pendingExecutions.size > 0) continue
+      if (now - entry.lastActivityAt < this.idleEvictMs) continue
+
+      const idleSec = Math.round((now - entry.lastActivityAt) / 1000)
+      // No pending executions, so nothing observes this error — disposeEntry
+      // only surfaces it by rejecting them. Eviction is silent by construction.
+      this.disposeEntry(
+        entry,
+        new Error(`Session worker evicted after ${idleSec}s idle for ${entry.sessionId}`),
+      )
+    }
   }
 
   private handleWorkerMessage(entry: ChildEntry, message: WorkerToHostMessage): void {
     if (!message || typeof message !== 'object' || typeof (message as unknown as Record<string, unknown>).type !== 'string') {
       return
     }
+
+    // Anything the worker says counts as activity — host calls and log lines
+    // included, so a long exec that calls back keeps its own worker alive.
+    entry.lastActivityAt = Date.now()
 
     switch (message.type) {
       case 'exec:result': {
@@ -346,7 +421,6 @@ export class JsRuntime {
     const traceStartedAt = Date.now()
     try {
       const value = await this.deps.functionRegistry.call(message.method, message.params)
-      this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
       this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
@@ -354,8 +428,10 @@ export class JsRuntime {
         ok: true,
         value,
       } satisfies HostToWorkerMessage)
+      // Tracing serializes params and result in full; keep it off the call's
+      // critical path so the worker isn't blocked behind it.
+      this.safeEmitCallTrace(entry, message, traceStartedAt, value, null)
     } catch (error) {
-      this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
       this.sendToWorker(entry, {
         type: 'host:result',
         requestId: message.requestId,
@@ -363,6 +439,7 @@ export class JsRuntime {
         ok: false,
         error: serializeError(error),
       } satisfies HostToWorkerMessage)
+      this.safeEmitCallTrace(entry, message, traceStartedAt, undefined, error)
     }
   }
 
@@ -445,7 +522,7 @@ export class JsRuntime {
     let resultPreview: string | null = null
     let resultTruncated = false
     if (details.ok && 'value' in details) {
-      const preview = truncateWithFlag(stringifySafe((details as { value: unknown }).value), TRACE_RESULT_CAP)
+      const preview = stringifyCapped((details as { value: unknown }).value, TRACE_RESULT_CAP)
       resultPreview = preview.text
       resultTruncated = preview.truncated
     }
@@ -479,12 +556,12 @@ export class JsRuntime {
     if (!writer) return
 
     const durationMs = Date.now() - startedAt
-    const params = truncateWithFlag(stringifySafe(message.params), TRACE_PARAMS_CAP)
+    const params = stringifyCapped(message.params, TRACE_PARAMS_CAP)
     const ok = error === null
     let resultPreview: string | null = null
     let resultTruncated = false
     if (ok && value !== undefined) {
-      const preview = truncateWithFlag(stringifySafe(value), TRACE_RESULT_CAP)
+      const preview = stringifyCapped(value, TRACE_RESULT_CAP)
       resultPreview = preview.text
       resultTruncated = preview.truncated
     }
@@ -508,7 +585,10 @@ export class JsRuntime {
   }
 
   private disposeEntry(entry: ChildEntry, error: Error): void {
-    if (!this.workers.has(entry.sessionId)) {
+    // Identity, not presence: a session's worker is now routinely replaced
+    // (evict, then respawn on the next execJs), so a stale entry must never
+    // take its successor's slot with it. Matches sendToWorker's guard.
+    if (this.workers.get(entry.sessionId) !== entry) {
       return
     }
 
@@ -541,5 +621,7 @@ export class JsRuntime {
     entry.pendingExecutions.clear()
 
     entry.child.kill()
+
+    if (this.workers.size === 0) this.stopSweep()
   }
 }

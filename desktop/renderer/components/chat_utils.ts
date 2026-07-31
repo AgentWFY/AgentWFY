@@ -61,6 +61,12 @@ export function imageDataUrl(mimeType: string, base64Data: string): string {
   return `data:${escapeHtml(mimeType)};base64,${base64Data}`
 }
 
+/** `src` for a file block. Large binaries arrive as an `app://blob/…` URL
+ *  rather than inline base64 — see desktop/chat/message-blobs.ts. */
+export function fileSrc(file: { mimeType: string; data: string; url?: string }): string {
+  return file.url ? escapeHtml(file.url) : imageDataUrl(file.mimeType, file.data)
+}
+
 export const CLOSE_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
 export const BACK_ICON_SVG = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M10 4L6 8l4 4V4z"/></svg>'
 

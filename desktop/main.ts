@@ -15,6 +15,7 @@ import { registerConfirmationHandlers } from './confirmation/ipc.js';
 import { registerProviderHandlers } from './ipc/providers.js';
 import { registerRuntimeFunctionHandlers } from './ipc/runtime-functions.js';
 import { registerAgentSessionHandlers, setupAgentChatPump } from './ipc/agent-sessions.js';
+import { BLOB_HOST, readBlob } from './chat/message-blobs.js';
 import { registerTraceHandlers } from './ipc/traces.js';
 import { registerZenModeHandlers } from './ipc/zen-mode.js';
 import { registerPreviewCursorHandlers } from './ipc/preview-cursor.js';
@@ -114,6 +115,56 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+// `app://blob/<id>` — binaries lifted out of chat messages so they don't ride
+// on every snapshot and streaming frame. See desktop/chat/message-blobs.ts.
+const SAFE_MIME_TYPE = /^[\w.+-]+\/[\w.+-]+$/;
+
+function serveBlob(url: URL): Response {
+  const id = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+  const blob = readBlob(id);
+  if (!blob) return new Response(null, { status: 404 });
+  return new Response(Buffer.from(blob.data, 'base64'), {
+    headers: {
+      // Agent-supplied, so don't hand it to the renderer unvalidated.
+      'content-type': SAFE_MIME_TYPE.test(blob.mimeType) ? blob.mimeType : 'application/octet-stream',
+      // Ids are content hashes — the bytes behind a URL never change.
+      'cache-control': 'public, max-age=31536000, immutable',
+      // These bytes are agent-authored and this is the `app:` scheme, where the
+      // preload exposes window.ipc on protocol alone. Blobs are only ever
+      // loaded as subresources (<img src>), never as documents — so refuse to
+      // be sniffed into one, and neuter the document if something does load it.
+      // Top-level navigation here is separately blocked in window-manager.ts.
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "sandbox; default-src 'none'",
+    },
+  });
+}
+
+function isBlobUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'app:' && parsed.hostname === BLOB_HOST;
+  } catch {
+    return false;
+  }
+}
+
+// Blobs are agent-authored bytes and must stay subresources (an `<img src>` in
+// the chat). Loaded as a *document* one becomes an `app:` page, and preload.cts
+// gates `window.ipc` on protocol alone — so an agent that wrote a link to its
+// own blob into a chat message would hand its own HTML the full IPC surface.
+// Every webContents in the app shares that preload, so the guard is global
+// rather than per-window. Nothing links here legitimately; refusing the
+// navigation outright is correct, not merely defensive.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (event, url) => {
+    if (isBlobUrl(url)) event.preventDefault();
+  });
+  contents.on('will-frame-navigate', (event) => {
+    if (isBlobUrl(event.url)) event.preventDefault();
+  });
+});
+
 const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 
 // --- IPC registration (global, routes via windowManager) ---
@@ -203,6 +254,7 @@ registerAgentSessionHandlers(
   reconnectSessionManager,
   (e) => windowManager.getBackendForSender(e.sender.id),
   (e) => windowManager.getContextForSender(e.sender.id).chat,
+  (e) => windowManager.getContextForSender(e.sender.id).chatPump,
 );
 registerTraceHandlers((e) => windowManager.getBackendForSender(e.sender.id));
 
@@ -447,6 +499,8 @@ app.on('ready', async () => {
 
   protocol.handle('app', (request) => {
     const url = new URL(request.url);
+    if (url.hostname === BLOB_HOST) return serveBlob(url);
+
     const p = decodeURIComponent(url.pathname);
 
     const clientDir = path.dirname(clientPath);
