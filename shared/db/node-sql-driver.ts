@@ -13,6 +13,11 @@ export interface NodeSqlDriverOptions {
   readOnly?: boolean;
 }
 
+/** Prepared statements kept per connection. Comfortably covers the repeated
+ *  queries the caches exist for; the tail is one-off SQL that would never be
+ *  reused anyway. */
+const MAX_CACHED_STATEMENTS = 128;
+
 /**
  * `SqlDriver` backed by node:sqlite's `DatabaseSync`. Used by the Node daemon
  * and the Electron desktop host.
@@ -24,6 +29,7 @@ export class NodeSqlDriver implements SqlDriver {
   // authorizer runs at compile
   // time, so the cache is cleared whenever the guard changes (see setGuard) to
   // avoid reusing a statement compiled under a different guard.
+  // Insertion-ordered, so the first key is the least recently used.
   private statements = new Map<string, StatementSync>();
 
   constructor(dbPath: string, opts: NodeSqlDriverOptions = {}) {
@@ -33,11 +39,27 @@ export class NodeSqlDriver implements SqlDriver {
   }
 
   private prepare(sql: string): StatementSync {
-    let stmt = this.statements.get(sql);
-    if (!stmt) {
-      stmt = this.db.prepare(sql);
-      this.statements.set(sql, stmt);
+    const cached = this.statements.get(sql);
+    if (cached) {
+      // Re-insert to mark as most recently used.
+      this.statements.delete(sql);
+      this.statements.set(sql, cached);
+      return cached;
     }
+
+    const stmt = this.db.prepare(sql);
+    this.statements.set(sql, stmt);
+
+    // Bounded because callers generate one-off SQL: an agent scanning candle
+    // history emits a fresh 250-term OR predicate per call, and the connection
+    // now outlives the query, so an unbounded map would retain every statement
+    // it ever compiled.
+    while (this.statements.size > MAX_CACHED_STATEMENTS) {
+      const oldest = this.statements.keys().next();
+      if (oldest.done) break;
+      this.statements.delete(oldest.value);
+    }
+
     return stmt;
   }
 
