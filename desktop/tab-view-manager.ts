@@ -29,6 +29,7 @@ import {
 } from '#shared/page/page-input.js';
 import { buildInspectElementCode } from '#shared/page/element-inspection.js';
 import {
+  CAPTURE_OFFSCREEN_OFFSET,
   FALLBACK_VIEW_HEIGHT,
   FALLBACK_VIEW_WIDTH,
   DesktopPageLayout,
@@ -748,78 +749,97 @@ export class TabViewManager {
     const state = await this.resolveReadyTabViewState(request.tabId);
     const wc = state.view.webContents;
     const originalBounds = state.view.getBounds();
-    // capturePage needs a real compositor surface. Non-selected client pages
-    // are normally parked at 0x0, and headless desktop pages live at a
-    // far-negative origin; both can produce empty images or no surface. Put
-    // them at the selected tab bounds for the duration, then keep/promote the
-    // selected tab above them so the user-facing pixels do not change.
+    // capturePage needs a real compositor surface, which a view parked at 0x0
+    // does not have. Non-selected client pages sit at 0x0 whenever the
+    // renderer reports them not-visible, so give them the selected tab's size
+    // for the duration of the capture — but off-screen, at the same
+    // far-negative origin headless pages use. Placing a capture target inside
+    // the visible content area makes it flash over the UI (nothing occludes it
+    // in zen mode, where every tab is collapsed to 0x0), and sized headless
+    // pages already have a surface, so they are captured exactly where they
+    // are, at the viewport the caller asked for.
     const isSelected = request.tabId === this.presenter.getSelectedTabId();
-    const needsRebounds = !isSelected && (
-      originalBounds.width === 0
-      || originalBounds.height === 0
-      || originalBounds.x < 0
-      || originalBounds.y < 0
-    );
-    const selectedBounds = this.layout.getSelectedBounds();
-    const captureSize = selectedBounds && selectedBounds.width > 0 && selectedBounds.height > 0
-      ? { width: selectedBounds.width, height: selectedBounds.height }
-      : { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
+    const needsRebounds = !isSelected
+      && (originalBounds.width === 0 || originalBounds.height === 0);
     if (needsRebounds) {
+      const selectedBounds = this.layout.getSelectedBounds();
+      const captureSize = selectedBounds && selectedBounds.width > 0 && selectedBounds.height > 0
+        ? { width: selectedBounds.width, height: selectedBounds.height }
+        : { width: FALLBACK_VIEW_WIDTH, height: FALLBACK_VIEW_HEIGHT };
       state.view.setBounds({
-        x: selectedBounds?.x ?? 0,
-        y: selectedBounds?.y ?? 0,
+        x: CAPTURE_OFFSCREEN_OFFSET,
+        y: CAPTURE_OFFSCREEN_OFFSET,
         width: captureSize.width,
         height: captureSize.height,
       });
       state.view.setVisible(true);
-      this.layout.promoteSelectedToFront();
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
     }
     try {
-      // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
-      // frame sink not registered yet) and "Current display surface not
-      // available" (RWHV null). Retry on a short budget.
-      const deadline = Date.now() + 3000;
-      let lastCaptureError: unknown = null;
-      while (true) {
+      // Only the on-screen tab has a compositor display surface, so capturePage
+      // is the cheap path there and Page.captureScreenshot the backstop. Every
+      // other page is off-screen: capturePage fails on it with "Current display
+      // surface not available" until something forces a surface into existence,
+      // and retrying that for the full budget just stalls the caller. CDP
+      // renders off-screen content directly, so it leads for those.
+      const attempts: Array<{ label: string; run: () => Promise<{ base64: string; mimeType: 'image/png' }> }> = isSelected
+        ? [
+          { label: 'capturePage', run: () => this.captureTabByCapturePage(wc) },
+          { label: 'Page.captureScreenshot', run: () => this.captureTabByCdp(request.tabId) },
+        ]
+        : [
+          { label: 'Page.captureScreenshot', run: () => this.captureTabByCdp(request.tabId) },
+          { label: 'capturePage', run: () => this.captureTabByCapturePage(wc) },
+        ];
+
+      const failures: string[] = [];
+      for (const attempt of attempts) {
         try {
-          const image = await withTimeout(
-            wc.capturePage(undefined, { stayHidden: true }),
-            CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
-            'capturePage',
-          );
-          const png = image.toPNG();
-          if (png.byteLength === 0) {
-            throw new Error('capturePage returned an empty image');
-          }
-          return {
-            base64: png.toString('base64'),
-            mimeType: 'image/png',
-          };
+          return await attempt.run();
         } catch (err) {
-          lastCaptureError = err;
-          const msg = String(err);
-          const retriable = msg.includes('UnknownVizError')
-            || msg.includes('display surface')
-            || msg.includes('empty image')
-            || msg.includes('timed out');
-          if (!retriable || Date.now() >= deadline || wc.isDestroyed()) {
-            break;
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 50));
+          failures.push(`${attempt.label} failed (${errorMessage(err)})`);
         }
       }
-
-      try {
-        return await this.captureTabByCdp(request.tabId);
-      } catch (fallbackError) {
-        throw new Error(
-          `capturePage failed (${errorMessage(lastCaptureError)}); CDP screenshot fallback failed (${errorMessage(fallbackError)})`,
-        );
-      }
+      throw new Error(failures.join('; '));
     } finally {
       if (needsRebounds && !wc.isDestroyed()) {
         state.view.setBounds(originalBounds);
+      }
+    }
+  }
+
+  private async captureTabByCapturePage(wc: WebContents): Promise<{ base64: string; mimeType: 'image/png' }> {
+    // Transient Chromium errors from capturePage: "UnknownVizError" (Viz
+    // frame sink not registered yet) and "Current display surface not
+    // available" (RWHV null). Retry on a short budget.
+    const deadline = Date.now() + 3000;
+    let lastCaptureError: unknown = null;
+    while (true) {
+      try {
+        const image = await withTimeout(
+          wc.capturePage(undefined, { stayHidden: true }),
+          CAPTURE_PAGE_ATTEMPT_TIMEOUT_MS,
+          'capturePage',
+        );
+        const png = image.toPNG();
+        if (png.byteLength === 0) {
+          throw new Error('capturePage returned an empty image');
+        }
+        return {
+          base64: png.toString('base64'),
+          mimeType: 'image/png',
+        };
+      } catch (err) {
+        lastCaptureError = err;
+        const msg = String(err);
+        const retriable = msg.includes('UnknownVizError')
+          || msg.includes('display surface')
+          || msg.includes('empty image')
+          || msg.includes('timed out');
+        if (!retriable || Date.now() >= deadline || wc.isDestroyed()) {
+          throw lastCaptureError;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
       }
     }
   }

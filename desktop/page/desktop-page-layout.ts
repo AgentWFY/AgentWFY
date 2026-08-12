@@ -1,3 +1,4 @@
+import { webContents } from 'electron';
 import type { BaseWindow, Rectangle, View, WebContentsView } from 'electron';
 import type { TabData, TabViewState } from './desktop-page-types.js';
 
@@ -9,6 +10,11 @@ export const ZERO_BOUNDS: Rectangle = { x: 0, y: 0, width: 0, height: 0 };
 // window fits inside a 30k pixel half-plane around the origin, so painting
 // at this coordinate is guaranteed off-screen.
 export const CAPTURE_OFFSCREEN_OFFSET = -30000;
+
+// How long after attaching a page view we keep handing focus back to whoever
+// held it. Chromium's focus steal lands within a few milliseconds; anything
+// later is a real user interaction and is left alone.
+const ATTACH_FOCUS_GRACE_MS = 250;
 
 interface DesktopPageLayoutDeps {
   getMainWindow: () => BaseWindow | null;
@@ -117,7 +123,7 @@ export class DesktopPageLayout {
       if (changed) {
         this.selectedBounds = bounds;
         for (const other of this.deps.listTabViewStates()) {
-          if (other !== state) other.view.setBounds(bounds);
+          if (other !== state) other.view.setBounds(this.parkedBounds(other, bounds));
         }
       }
       this.bringToFront(state);
@@ -128,7 +134,7 @@ export class DesktopPageLayout {
       if (state.tabId === this.deps.getSelectedTabId()) {
         for (const other of this.deps.listTabViewStates()) {
           if (other !== state) {
-            other.view.setBounds(ZERO_BOUNDS);
+            other.view.setBounds(this.parkedBounds(other, ZERO_BOUNDS));
           }
         }
       } else {
@@ -165,12 +171,7 @@ export class DesktopPageLayout {
       this.zeroAllViewBounds();
     } else if (this.isActive && this.selectedBounds) {
       for (const state of this.deps.listTabViewStates()) {
-        const tab = this.deps.getTabById(state.tabId);
-        if (tab?.headless) {
-          state.view.setBounds(this.headlessBounds(tab));
-        } else {
-          state.view.setBounds(this.selectedBounds);
-        }
+        state.view.setBounds(this.parkedBounds(state, this.selectedBounds));
       }
       this.promoteSelectedToFront();
     }
@@ -178,9 +179,18 @@ export class DesktopPageLayout {
 
   zeroAllViewBounds(): void {
     for (const state of this.deps.listTabViewStates()) {
-      const tab = this.deps.getTabById(state.tabId);
-      state.view.setBounds(tab?.headless ? this.headlessBounds(tab) : ZERO_BOUNDS);
+      state.view.setBounds(this.parkedBounds(state, ZERO_BOUNDS));
     }
+  }
+
+  // Where a view sits when it is not the one being shown. Headless pages are
+  // never part of the visible stack: they keep their own off-screen viewport,
+  // because handing them the tab area's rect both reflows a page the caller
+  // asked for at a specific size and parks it inside the visible region,
+  // where it shows through whenever nothing is stacked on top.
+  private parkedBounds(state: TabViewState, fallback: Rectangle): Rectangle {
+    const tab = this.deps.getTabById(state.tabId);
+    return tab?.headless ? this.headlessBounds(tab) : fallback;
   }
 
   private attachTabViewToWindow(state: TabViewState): void {
@@ -193,11 +203,39 @@ export class DesktopPageLayout {
       return;
     }
 
+    // Attaching a freshly created WebContentsView makes Chromium hand it
+    // native focus, which pulls the caret out of whatever the user was typing
+    // in — the chat input goes dead every time a background session opens a
+    // page. The steal lands a few milliseconds *after* addChildView returns, so
+    // a synchronous re-focus can't beat it: watch for the new view taking focus
+    // and hand it straight back. The listener is armed only briefly, so a real
+    // click into the page — the one legitimate way a brand-new page takes
+    // focus — still wins.
+    const previouslyFocused = webContents.getFocusedWebContents();
+    const newContents = state.view.webContents;
+
     try {
       mainWindow.contentView.addChildView(state.view);
     } catch {
       // defensive: Electron may still consider it a child
     }
+
+    if (!previouslyFocused || previouslyFocused === newContents) {
+      return;
+    }
+
+    const restoreFocus = () => {
+      clearTimeout(disarm);
+      if (previouslyFocused.isDestroyed()) return;
+      if (webContents.getFocusedWebContents() !== newContents) return;
+      previouslyFocused.focus();
+    };
+    const disarm = setTimeout(() => {
+      if (!newContents.isDestroyed()) {
+        newContents.removeListener('focus', restoreFocus);
+      }
+    }, ATTACH_FOCUS_GRACE_MS);
+    newContents.once('focus', restoreFocus);
   }
 
   private bringToFront(state: TabViewState): void {
