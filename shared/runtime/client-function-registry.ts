@@ -30,7 +30,7 @@ export function createClientFunctionRegistry(opts: ClientFunctionRegistryOptions
   const registry = new FunctionRegistry()
 
   if (opts.getPaletteHost) {
-    registerPickFromPalette(registry, opts.getPaletteHost)
+    registerPickFromPalette(registry, opts.getPaletteHost, opts.notificationHost)
   }
 
   const getPluginConfirmationHost = opts.getPluginConfirmationHost ?? opts.getPaletteHost
@@ -52,11 +52,15 @@ export function createClientFunctionRegistry(opts: ClientFunctionRegistryOptions
 function registerPickFromPalette(
   registry: FunctionRegistry,
   getPaletteHost: () => PaletteHost | null | undefined,
+  notificationHost?: NotificationHost,
 ): void {
   registry.register('pickFromPalette', async (params) => {
     const host = getPaletteHost()
     if (!host) throw new Error('Command palette is not available')
-    return host.pickFromPalette(params as WorkerHostMethodMap['pickFromPalette']['params'])
+    return host.pickFromPalette(
+      params as WorkerHostMethodMap['pickFromPalette']['params'],
+      notificationHost,
+    )
   })
 }
 

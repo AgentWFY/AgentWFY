@@ -6,6 +6,8 @@ export class PaletteController {
   private readonly stack: PaletteScreen[] = []
   private readonly bridge: CommandPaletteBridge
   private readonly searchInput: HTMLInputElement
+  private readonly searchWrap: HTMLElement
+  private readonly promptEl: HTMLElement
   private readonly resultsEl: HTMLElement
   private readonly breadcrumbEl: HTMLElement
   private readonly hintBar: HTMLElement
@@ -21,6 +23,8 @@ export class PaletteController {
     bridge: CommandPaletteBridge,
     elements: {
       searchInput: HTMLInputElement
+      searchWrap: HTMLElement
+      promptEl: HTMLElement
       resultsEl: HTMLElement
       breadcrumbEl: HTMLElement
       hintBar: HTMLElement
@@ -28,6 +32,8 @@ export class PaletteController {
   ) {
     this.bridge = bridge
     this.searchInput = elements.searchInput
+    this.searchWrap = elements.searchWrap
+    this.promptEl = elements.promptEl
     this.resultsEl = elements.resultsEl
     this.breadcrumbEl = elements.breadcrumbEl
     this.hintBar = elements.hintBar
@@ -92,6 +98,14 @@ export class PaletteController {
 
     screen.onActivate?.()
 
+    // Screens style themselves through this, rather than the controller
+    // knowing about any particular screen's layout.
+    document.body.dataset.screen = screen.id
+
+    // Prompt heading — a question that would not fit in the search placeholder
+    this.promptEl.textContent = screen.prompt ?? ''
+    this.promptEl.className = screen.prompt ? 'prompt visible' : 'prompt'
+
     // Update breadcrumb
     if (screen.breadcrumb) {
       this.breadcrumbEl.className = 'breadcrumb visible'
@@ -126,6 +140,8 @@ export class PaletteController {
       .join('')
 
     // Update search
+    const searchHidden = screen.hideSearch === true
+    this.searchWrap.classList.toggle('hidden', searchHidden)
     this.searchInput.placeholder = screen.placeholder
     this.searchInput.value = ''
     if (screen.initialSearchValue !== undefined) {
@@ -136,7 +152,13 @@ export class PaletteController {
 
     await this.loadAndRenderItems()
 
-    this.searchInput.focus()
+    // A hidden field cannot take focus, and an unfocused document would send
+    // arrow keys nowhere — park focus on the list instead.
+    if (searchHidden) {
+      this.resultsEl.focus()
+    } else {
+      this.searchInput.focus()
+    }
   }
 
   private async loadAndRenderItems(): Promise<void> {
@@ -189,6 +211,7 @@ export class PaletteController {
     if (screen.renderContent && this.filtered.length === 0) {
       screen.renderContent(this.resultsEl)
       this.bindActionButtons()
+      screen.afterRender?.(this.resultsEl)
       return
     }
 
@@ -198,6 +221,7 @@ export class PaletteController {
       emptyEl.className = 'empty'
       emptyEl.textContent = screen.emptyText
       this.resultsEl.appendChild(emptyEl)
+      screen.afterRender?.(this.resultsEl)
       return
     }
 
@@ -302,6 +326,8 @@ export class PaletteController {
       screen.renderContent(this.resultsEl)
       this.bindActionButtons()
     }
+
+    screen.afterRender?.(this.resultsEl)
   }
 
   private bindActionButtons(): void {
@@ -428,6 +454,12 @@ export class PaletteController {
 
   private async handleKeyDown(event: KeyboardEvent): Promise<void> {
     if (event.defaultPrevented) return
+
+    const screenResult = await this.currentScreen?.onKeyDown?.(event)
+    if (screenResult) {
+      await this.handleResult(screenResult)
+      return
+    }
 
     if (event.key === 'Escape') {
       event.preventDefault()

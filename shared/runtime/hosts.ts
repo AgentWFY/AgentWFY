@@ -19,8 +19,15 @@ export interface NotificationHost {
     /** Invoked when the user clicks the notification banner. */
     onClick?: () => void
   }): void
-  /** Bounce the dock icon (macOS); no-op elsewhere. */
-  bounce?(): void
+  /**
+   * Bounce the dock icon (macOS); no-op elsewhere. `critical` keeps bouncing
+   * until the user activates the app — use it only for something that is
+   * actually blocking on an answer. Returns the bounce id when the platform
+   * supplies one, so a caller that stops waiting can cancel it.
+   */
+  bounce?(type?: 'informational' | 'critical'): number | null
+  /** Stop a `critical` bounce started earlier; no-op elsewhere. */
+  cancelBounce?(id: number): void
 }
 
 export interface RendererPush {
@@ -52,10 +59,20 @@ export interface PaletteHost {
   ) => Promise<boolean>
   confirmPluginToggle?: (plugin: Record<string, unknown> & { currentEnabled: boolean }) => Promise<boolean>
   confirmPluginUninstall?: (plugin: Record<string, unknown>) => Promise<boolean>
-  pickFromPalette: (options: {
-    items: Array<{ title: string; subtitle?: string; value: unknown }>
-    title?: string
-    placeholder?: string
-    timeoutMs?: number
-  }) => Promise<unknown | null>
+  pickFromPalette: (
+    options: {
+      items: Array<{ title: string; subtitle?: string; value: unknown }>
+      title?: string
+      question?: string
+      placeholder?: string
+      timeoutMs?: number
+    },
+    /**
+     * Used to alert the user when the picker opens while the app is in the
+     * background — otherwise a pick raised by a trigger or background task
+     * waits unseen. Per-agent, so clicking the banner switches to the agent
+     * that asked.
+     */
+    notificationHost?: NotificationHost,
+  ) => Promise<unknown | null>
 }

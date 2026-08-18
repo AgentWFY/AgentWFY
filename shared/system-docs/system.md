@@ -80,7 +80,7 @@ For displaying views and interacting with web pages in a browser context. Prefer
 
 - Tasks & Triggers: `startTask({ taskName, input? })`, `stopTask({ runId })`. See `@docs/system.tasks` and `@docs/system.triggers`.
 - EventBus: `publish({ topic, data })`, `waitFor({ topic, timeoutMs? })`. See `@docs/system.eventbus`.
-- `pickFromPalette({ items, title?, placeholder?, timeoutMs? })` — show the command palette with `items: [{ title, subtitle?, value }]` for the user to pick from. Returns the chosen item's `value`, or `null` if dismissed/timed out. Use to ask the user to choose between options.
+- `pickFromPalette({ items, title?, placeholder?, timeoutMs? })` — ask the user to choose. `title` is the question, shown as a heading above `items: [{ title, subtitle?, value }]`. Returns the chosen item's `value`, or `null` if cancelled/timed out. Notifies the user when the app is in the background.
 - Sessions: `spawnSession({ prompt, providerId? })`, `sendToSession({ sessionId, message })`. See `@docs/system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
 - `notify({ title, body?, silent?, bounce? })` — show a system notification. Clicking it focuses the app on this agent. Desktop only; unavailable when the user is on mobile. Max 5 per 10s — batch instead of notifying per item.

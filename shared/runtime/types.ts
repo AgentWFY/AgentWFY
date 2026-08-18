@@ -452,6 +452,8 @@ export interface WorkerHostMethodMap {
     params: {
       items: Array<{ title: string; subtitle?: string; value: unknown }>
       title?: string
+      /** Undocumented alias for `title` — agents reach for it. */
+      question?: string
       placeholder?: string
       timeoutMs?: number
     }

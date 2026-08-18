@@ -27,6 +27,7 @@ import type { ConfirmationManager } from '../confirmation/manager.js';
 import type { AgentChatController } from '#shared/agent/chat_controller.js';
 import type { AgentBackend } from '#shared/backend/interface.js';
 import type { InstalledAgent } from '../ipc/schema.js';
+import type { NotificationHost } from '#shared/runtime/hosts.js';
 import { COMMAND_PALETTE_CHANNEL } from './types.js';
 import type { CommandPaletteAction, CommandPaletteItem, PickFromPaletteOptions, PickItemInput, SettingsListResponse } from './types.js';
 
@@ -63,10 +64,22 @@ export interface CommandPaletteManagerDeps {
 /** Extra padding around the palette content for the CSS drop-shadow to render. */
 const VIEW_PADDING = 40;
 
+function firstNonEmpty(...values: Array<string | undefined>): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return null;
+}
+
 interface PendingPick {
   items: PickItemInput[];
   resolve: (value: unknown | null) => void;
   timer: NodeJS.Timeout | null;
+  /** Set when the picker opened in the background and started a dock bounce
+   *  that runs until the app is activated — cancelled if the pick ends first. */
+  bounce: { host: NotificationHost; id: number } | null;
+  /** Detaches the "give the picker focus when the user comes back" listener. */
+  releaseFocusHook: (() => void) | null;
 }
 
 export class CommandPaletteManager {
@@ -160,11 +173,25 @@ export class CommandPaletteManager {
     const pending = this.pendingPick;
     if (!pending) return;
     this.pendingPick = null;
-    if (pending.timer) clearTimeout(pending.timer);
+    this.settlePending(pending);
     pending.resolve(null);
   }
 
-  pickFromPalette(options: PickFromPaletteOptions): Promise<unknown | null> {
+  /** Release everything the pending pick holds: its timeout and, on macOS, the
+   *  dock bounce (which otherwise keeps going until the app is activated). */
+  private settlePending(pending: PendingPick): void {
+    if (pending.timer) clearTimeout(pending.timer);
+    if (pending.bounce) {
+      try { pending.bounce.host.cancelBounce?.(pending.bounce.id); } catch {}
+      pending.bounce = null;
+    }
+    if (pending.releaseFocusHook) {
+      pending.releaseFocusHook();
+      pending.releaseFocusHook = null;
+    }
+  }
+
+  pickFromPalette(options: PickFromPaletteOptions, notificationHost?: NotificationHost): Promise<unknown | null> {
     if (!options || !Array.isArray(options.items) || options.items.length === 0) {
       return Promise.reject(new Error('pickFromPalette requires a non-empty items array'));
     }
@@ -176,11 +203,24 @@ export class CommandPaletteManager {
 
     this.cancelPendingPick();
 
+    const heading = firstNonEmpty(options.title, options.question);
+    // Before the picker had a heading of its own, the filter placeholder was
+    // the only place a question could go — keep honouring that so existing
+    // agent code still asks something the user can actually read.
+    const question = heading ?? firstNonEmpty(options.placeholder);
+    // Read focus before showing: focusing the palette's WebContents can pull
+    // the window forward on some platforms, which would mask the very state
+    // we need to decide whether the user can see the picker at all.
+    const mainWindow = this.deps.getMainWindow();
+    const appWasFocused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused();
+
     return new Promise<unknown | null>((resolve) => {
       const pending: PendingPick = {
         items: options.items,
         resolve,
         timer: null,
+        bounce: null,
+        releaseFocusHook: null,
       };
       this.pendingPick = pending;
 
@@ -188,6 +228,7 @@ export class CommandPaletteManager {
         pending.timer = setTimeout(() => {
           if (this.pendingPick !== pending) return;
           this.pendingPick = null;
+          this.settlePending(pending);
           this.hide({ focusMain: true });
           resolve(null);
         }, options.timeoutMs);
@@ -196,11 +237,66 @@ export class CommandPaletteManager {
       this.show({
         screen: 'pick',
         params: {
-          title: options.title ?? 'Pick',
-          placeholder: options.placeholder ?? 'Filter…',
+          question: question ?? '',
+          placeholder: heading ? (options.placeholder ?? '') : '',
+          count: options.items.length,
         },
       });
+
+      if (!appWasFocused) {
+        if (notificationHost) {
+          this.alertInBackground(pending, notificationHost, question, options.items.length);
+        }
+        this.focusPickerWhenAppReturns(pending);
+      }
     });
+  }
+
+  /** A picker raised while the app is in the background blocks the agent until
+   *  the user answers, and nothing on screen says so. Banner plus a dock bounce
+   *  that keeps going until the app is activated. */
+  private alertInBackground(
+    pending: PendingPick,
+    host: NotificationHost,
+    question: string | null,
+    count: number,
+  ): void {
+    try {
+      host.show({
+        title: 'Agent needs your answer',
+        body: question ?? `Choose one of ${count} option${count === 1 ? '' : 's'}.`,
+      });
+      const id = host.bounce?.('critical');
+      if (typeof id === 'number' && this.pendingPick === pending) {
+        pending.bounce = { host, id };
+      }
+    } catch (error) {
+      console.warn('[command-palette] background pick alert failed:', error);
+    }
+  }
+
+  /** The user coming back to the app is them coming to answer, so hand the
+   *  picker the keyboard rather than making them click it first. */
+  private focusPickerWhenAppReturns(pending: PendingPick): void {
+    const mainWindow = this.deps.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    const onFocus = () => {
+      // Whatever brought the window forward (a notification click, the dock)
+      // focuses the renderer as it goes; take the focus back on the next tick.
+      setTimeout(() => {
+        if (this.pendingPick !== pending) return;
+        const view = this.getView();
+        if (!view || !view.getVisible()) return;
+        view.webContents.focus();
+      }, 0);
+    };
+
+    mainWindow.once('focus', onFocus);
+    pending.releaseFocusHook = () => {
+      if (mainWindow.isDestroyed()) return;
+      mainWindow.removeListener('focus', onFocus);
+    };
   }
 
   getPickItems(): CommandPaletteItem[] {
@@ -219,7 +315,7 @@ export class CommandPaletteManager {
     if (!pending) return;
     const item = pending.items[index];
     this.pendingPick = null;
-    if (pending.timer) clearTimeout(pending.timer);
+    this.settlePending(pending);
     this.hide({ focusMain: true });
     pending.resolve(item ? item.value : null);
   }
@@ -275,6 +371,10 @@ export class CommandPaletteManager {
       setTimeout(() => {
         if (!this.view || this.view.webContents.isDestroyed()) return;
         if (!this.view.getVisible()) return;
+        // A pending pick is a question the agent is blocked on. Dismissing it
+        // because the user clicked somewhere else loses their answer silently,
+        // so it stays up until they pick or press Esc.
+        if (this.pendingPick) return;
         const mainWindow = this.deps.getMainWindow();
         if (!mainWindow || mainWindow.isDestroyed()) return;
         if (this.view.webContents.isFocused()) return;

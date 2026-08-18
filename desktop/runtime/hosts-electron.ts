@@ -50,10 +50,15 @@ function showElectronNotification(opts: {
   }
 }
 
-function bounceDock(): void {
-  if (process.platform === 'darwin') {
-    app.dock?.bounce('informational')
-  }
+function bounceDock(type: 'informational' | 'critical' = 'informational'): number | null {
+  if (process.platform !== 'darwin') return null
+  const id = app.dock?.bounce(type)
+  return typeof id === 'number' ? id : null
+}
+
+function cancelDockBounce(id: number): void {
+  if (process.platform !== 'darwin') return
+  app.dock?.cancelBounce(id)
 }
 
 /**
@@ -66,6 +71,7 @@ export function createAgentNotificationHost(onActivate: () => void): Notificatio
   return {
     show: (opts) => showElectronNotification({ ...opts, onClick: opts.onClick ?? onActivate }),
     bounce: bounceDock,
+    cancelBounce: cancelDockBounce,
   }
 }
 

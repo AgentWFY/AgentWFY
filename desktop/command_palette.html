@@ -19,6 +19,8 @@
       --item-hover: rgba(0, 0, 0, 0.05);
       --kbd-bg: rgba(0, 0, 0, 0.06);
       --kbd-border: rgba(0, 0, 0, 0.1);
+      --accent-soft: rgba(26, 111, 181, 0.09);
+      --accent-ring: rgba(26, 111, 181, 0.35);
       --error: #e55;
     }
 
@@ -36,6 +38,8 @@
         --item-hover: rgba(255, 255, 255, 0.04);
         --kbd-bg: rgba(255, 255, 255, 0.06);
         --kbd-border: rgba(255, 255, 255, 0.08);
+        --accent-soft: rgba(70, 150, 220, 0.16);
+        --accent-ring: rgba(70, 150, 220, 0.45);
         --error: #e55;
       }
     }
@@ -86,6 +90,23 @@
     .bc-segment.current { color: var(--text-strong); font-weight: 500; }
     .bc-sep { color: var(--muted); padding: 0 6px; font-size: 10px; opacity: 0.5; }
 
+    /* ── Prompt heading ── */
+    .prompt {
+      display: none;
+      flex-shrink: 0;
+      padding: 14px 16px 10px;
+      background: var(--bg);
+      font-size: 14px; font-weight: 500;
+      line-height: 1.45;
+      color: var(--text-strong);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      max-height: 190px; overflow-y: auto;
+    }
+    .prompt.visible { display: block; }
+    .prompt::-webkit-scrollbar { width: 3px; }
+    .prompt::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.15); border-radius: 3px; }
+
     /* ── Search ── */
     .search-wrap {
       display: flex; align-items: center; gap: 8px;
@@ -104,12 +125,14 @@
       font-family: inherit;
     }
     .search::placeholder { color: var(--placeholder); }
+    .search-wrap.hidden { display: none; }
 
     /* ── Results ── */
     .results {
       flex: 1; overflow: auto; padding: 2px;
       border-top: 1px solid var(--border);
     }
+    .results:focus { outline: none; }
     /* When settings/custom form uses results, switch to flex column layout */
     .results:has(.set-list),
     .results:has(.set-footer) {
@@ -469,19 +492,109 @@
 
     /* ── Hidden hint bar ── */
     .hint { display: none; }
+    .hint-item { white-space: nowrap; }
+    .hint-key {
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 9.5px;
+      background: var(--kbd-bg); border: 1px solid var(--kbd-border);
+      border-radius: 3px; padding: 1px 4px; margin-right: 4px;
+    }
+
+    /* ── Ask mode: the agent asking the user a question ──────────────────
+       A question needs room to be read, so it gets a heading of its own
+       instead of the search placeholder, and the options are rows the eye
+       can scan rather than a dense command list. */
+    body[data-screen="pick"] .prompt::before {
+      content: 'Agent asks';
+      display: block;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 7px;
+    }
+
+    body[data-screen="pick"] .results { padding: 6px; }
+
+    body[data-screen="pick"] .item,
+    body[data-screen="pick"] .item.has-desc {
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 7px;
+    }
+    body[data-screen="pick"] .item + .item { margin-top: 2px; }
+    body[data-screen="pick"] .item-title {
+      white-space: normal; overflow: visible;
+      line-height: 1.35;
+    }
+    body[data-screen="pick"] .item-subtitle {
+      white-space: normal; overflow: hidden;
+      margin-top: 3px; line-height: 1.35;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    }
+
+    /* Selected row: tinted rather than filled, so a long option stays as
+       readable selected as it is unselected. */
+    body[data-screen="pick"] .item.active {
+      background: var(--accent-soft);
+      color: var(--text-strong);
+      box-shadow: inset 0 0 0 1px var(--accent-ring);
+    }
+    body[data-screen="pick"] .item.active .item-subtitle { color: var(--muted); }
+
+    /* The row Enter would take. */
+    body[data-screen="pick"] .item::after {
+      content: ''; flex: none;
+      width: 12px; text-align: center;
+      font-size: 12px; line-height: 1.35;
+      color: var(--accent);
+    }
+    body[data-screen="pick"] .item.active::after { content: '\21B5'; }
+
+    /* Digit badges only where the digit shortcut exists — with the filter
+       field up, a number is the user typing, not a shortcut. */
+    body[data-screen="pick"] .palette:has(.search-wrap.hidden) .results {
+      counter-reset: pickopt;
+    }
+    body[data-screen="pick"] .palette:has(.search-wrap.hidden) .item::before {
+      counter-increment: pickopt;
+      content: counter(pickopt);
+      flex: none;
+      width: 18px; height: 18px; margin-top: 1px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 5px;
+      background: var(--kbd-bg);
+      border: 1px solid var(--kbd-border);
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 10px; color: var(--muted);
+    }
+    body[data-screen="pick"] .palette:has(.search-wrap.hidden) .item.active::before {
+      background: var(--accent); border-color: transparent;
+      color: var(--accent-text);
+    }
+
+    body[data-screen="pick"] .hint {
+      display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0;
+      padding: 7px 14px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      font-size: 10.5px; color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <div class="palette">
     <div id="breadcrumb" class="breadcrumb"></div>
-    <div class="search-wrap">
+    <div id="prompt" class="prompt"></div>
+    <div id="searchWrap" class="search-wrap">
       <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
       <input id="searchInput" class="search" type="text" placeholder="Type a command…" autocomplete="off" spellcheck="false">
     </div>
-    <div id="results" class="results"></div>
+    <div id="results" class="results" tabindex="-1"></div>
     <div id="hintBar" class="hint"></div>
   </div>
   <script src="command-palette/ui/index.js" type="module"></script>

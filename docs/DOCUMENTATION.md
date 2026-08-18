@@ -1050,6 +1050,8 @@ The global config file is a plain JSON file that can be edited by hand. If `~/.a
 - **Settings**: View and modify configuration
 - **Backups**: List and restore database backups
 
+Agents can also open the palette to ask a question — `pickFromPalette({ items, title })` renders the title as a heading with the options below it. That picker stays up until the user answers or presses `Esc` (clicking elsewhere does not dismiss it), and if the app is in the background when it opens, the user gets a notification and a dock bounce.
+
 ---
 
 ## Keyboard Shortcuts

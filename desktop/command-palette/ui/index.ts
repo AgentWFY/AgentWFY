@@ -36,12 +36,16 @@ const screenRegistry: Record<string, (bridge: CommandPaletteBridge, params?: Rec
 function init(): void {
   const bridge = window.commandPaletteBridge
   const searchInput = document.getElementById('searchInput') as HTMLInputElement
+  const searchWrap = document.getElementById('searchWrap')!
+  const promptEl = document.getElementById('prompt')!
   const resultsEl = document.getElementById('results')!
   const breadcrumbEl = document.getElementById('breadcrumb')!
   const hintBar = document.getElementById('hintBar')!
 
   const controller = new PaletteController(bridge, {
     searchInput,
+    searchWrap,
+    promptEl,
     resultsEl,
     breadcrumbEl,
     hintBar,

@@ -78,7 +78,10 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   })
   registerTasks(registry, { getTaskRunner: deps.getTaskRunner })
   if (deps.getCommandPalette) {
-    registerPalette(registry, { getCommandPalette: deps.getCommandPalette })
+    registerPalette(registry, {
+      getCommandPalette: deps.getCommandPalette,
+      ...(deps.notificationHost ? { notificationHost: deps.notificationHost } : {}),
+    })
   }
 
   registry.register('getAvailableFunctions', async () => {

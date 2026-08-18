@@ -1,6 +1,6 @@
 import type { FunctionRegistry } from '../function_registry.js'
 import type { WorkerHostMethodMap } from '../types.js'
-import type { PaletteHost } from '../hosts.js'
+import type { NotificationHost, PaletteHost } from '../hosts.js'
 
 const DOCS_HINT = 'Read `@docs/system.plugins.guide` for the full function reference.'
 
@@ -8,6 +8,8 @@ export function registerPalette(
   registry: FunctionRegistry,
   deps: {
     getCommandPalette: () => PaletteHost
+    /** Alerts the user when a picker opens while the app is in the background. */
+    notificationHost?: NotificationHost
   },
 ): void {
   const { getCommandPalette } = deps
@@ -37,6 +39,9 @@ export function registerPalette(
   })
 
   registry.register('pickFromPalette', async (params) => {
-    return getCommandPalette().pickFromPalette(params as WorkerHostMethodMap['pickFromPalette']['params'])
+    return getCommandPalette().pickFromPalette(
+      params as WorkerHostMethodMap['pickFromPalette']['params'],
+      deps.notificationHost,
+    )
   })
 }

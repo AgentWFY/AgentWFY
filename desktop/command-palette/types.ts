@@ -153,7 +153,10 @@ export interface PickItemInput {
 
 export interface PickFromPaletteOptions {
   items: PickItemInput[]
+  /** The question put to the user; rendered as the picker's heading. */
   title?: string
+  /** Undocumented alias for `title` — agents reach for it. */
+  question?: string
   placeholder?: string
   timeoutMs?: number
 }
