@@ -96,6 +96,7 @@ class WindowManager {
       getCommandPalette: () => this.commandPalette!,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
       getActiveAgentId: () => this.orchestrator.getActiveAgentId(),
+      switchAgent: (id) => this.orchestrator.switchAgent(id),
       registerTabSender: (id, root) => this.orchestrator.registerTabSender(id, root),
       unregisterTabSender: (id) => this.orchestrator.unregisterTabSender(id),
       onRuntimeDbChange: (root, change) => this.orchestrator.onRuntimeDbChange(root, change),
@@ -528,6 +529,10 @@ class WindowManager {
   addPersistedAgent(agentId: string) { this.orchestrator.addPersistedAgent(agentId); }
   addAgent(agentId: string) { return this.orchestrator.addAgent(agentId); }
   switchAgent(agentId: string) { return this.orchestrator.switchAgent(agentId); }
+
+  /** Notification host bound to one agent — banners it raises focus the window
+   *  and switch to that agent when clicked. */
+  createNotificationHost(agentId: string) { return this.factory.createNotificationHost(agentId); }
   removeAgent(agentId: string) { return this.orchestrator.removeAgent(agentId); }
   stopAgent(agentId: string) { return this.orchestrator.stopAgent(agentId); }
   reorderAgents(fromIndex: number, toIndex: number) { this.orchestrator.reorderAgents(fromIndex, toIndex); }

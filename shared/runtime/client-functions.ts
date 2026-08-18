@@ -10,6 +10,7 @@ export const CLIENT_RUNTIME_FUNCTIONS = [
   'requestUninstallPlugin',
   'pickFromPalette',
   'openExternal',
+  'notify',
 ] as const
 
 const CLIENT_RUNTIME_FUNCTION_SET = new Set<string>(CLIENT_RUNTIME_FUNCTIONS)

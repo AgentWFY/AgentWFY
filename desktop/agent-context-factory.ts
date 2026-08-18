@@ -3,9 +3,9 @@ import type { BaseWindow, WebContentsView } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import {
+  createAgentNotificationHost,
   createElectronRendererPush,
   getElectronExternalLauncher,
-  getElectronNotificationHost,
 } from './runtime/hosts-electron.js';
 import { TabViewManager } from './tab-view-manager.js';
 import { DesktopPageHost } from './page/desktop-page-host.js';
@@ -44,6 +44,9 @@ export interface AgentContextFactoryDeps {
   getCommandPalette: () => CommandPaletteManager;
   handleShortcutAction: (action: string) => void;
   getActiveAgentId: () => string | null;
+  /** Bring the given agent to the foreground — used when the user clicks a
+   *  notification a background agent raised. */
+  switchAgent: (agentId: string) => void | Promise<void>;
   registerTabSender: (webContentsId: number, agentId: string) => void;
   unregisterTabSender: (webContentsId: number) => void;
   onRuntimeDbChange: (agentId: string, change: AgentDbChange) => void;
@@ -70,6 +73,23 @@ export class AgentContextFactory {
       return this.createRemote(agentId, meta.remoteConfig);
     }
     return this.createLocal(agentId);
+  }
+
+  /** Per-agent notification host: clicking a banner focuses the window and
+   *  switches to the agent that raised it. */
+  createNotificationHost(agentId: string) {
+    return createAgentNotificationHost(() => {
+      this.deps.focusMainRendererWindow();
+      // The agent may have been unloaded since the banner was raised; the
+      // window should still come forward either way.
+      try {
+        void Promise.resolve(this.deps.switchAgent(agentId)).catch((err) => {
+          console.warn('[agent-context-factory] notification switchAgent failed:', err);
+        });
+      } catch (err) {
+        console.warn('[agent-context-factory] notification switchAgent failed:', err);
+      }
+    });
   }
 
   private async createRemote(
@@ -101,6 +121,7 @@ export class AgentContextFactory {
       tabViewManager,
       pageTools,
       getCommandPalette: () => this.deps.getCommandPalette(),
+      notificationHost: this.createNotificationHost(agentId),
       onLocalDbChange: (change) => this.deps.onRuntimeDbChange(agentId, change),
       onSnapshotApplied: handleSnapshotApplied,
     });
@@ -148,7 +169,7 @@ export class AgentContextFactory {
     const runtime = await createLocalAgentRuntime({
       runtimeRoot: agentId,
       hosts: {
-        notificationHost: getElectronNotificationHost(),
+        notificationHost: this.createNotificationHost(agentId),
         pageTools,
         getCommandPalette: () => this.deps.getCommandPalette(),
         rendererPush: createElectronRendererPush(this.deps.getRendererWebContents()!),

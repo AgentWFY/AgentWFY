@@ -1,7 +1,8 @@
 import { FunctionRegistry } from './function_registry.js'
-import type { ExternalLauncher, PaletteHost } from './hosts.js'
+import type { ExternalLauncher, NotificationHost, PaletteHost } from './hosts.js'
 import type { WorkerHostMethodMap } from './types.js'
 import { registerOpenExternal } from './functions/open_external.js'
+import { registerNotify } from './functions/notify.js'
 
 export interface PluginConfirmationHost {
   confirmPluginInstall(
@@ -19,6 +20,10 @@ export interface ClientFunctionRegistryOptions {
    *  server-owned state. Desktop and mobile supply different UI hosts here. */
   getPluginConfirmationHost?: () => Partial<PluginConfirmationHost> | null | undefined
   externalLauncher?: ExternalLauncher
+  /** System notifications shown on the client. Absent hosts don't register
+   *  `notify`, so a remote agent calling it fails with "not registered"
+   *  rather than silently doing nothing. */
+  notificationHost?: NotificationHost
 }
 
 export function createClientFunctionRegistry(opts: ClientFunctionRegistryOptions): FunctionRegistry {
@@ -35,6 +40,10 @@ export function createClientFunctionRegistry(opts: ClientFunctionRegistryOptions
 
   if (opts.externalLauncher) {
     registerOpenExternal(registry, opts.externalLauncher)
+  }
+
+  if (opts.notificationHost) {
+    registerNotify(registry, opts.notificationHost)
   }
 
   return registry

@@ -132,6 +132,7 @@ export async function createAgentRuntime(res: AgentRuntimeResources): Promise<Ag
     ...(res.getCommandPalette ? { getCommandPalette: res.getCommandPalette } : {}),
     ...(res.rendererPush ? { rendererPush: res.rendererPush } : {}),
     ...(res.externalLauncher ? { externalLauncher: res.externalLauncher } : {}),
+    ...(res.notificationHost ? { notificationHost: res.notificationHost } : {}),
   })
 
   const backend = new LocalBackend({

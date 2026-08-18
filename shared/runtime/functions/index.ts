@@ -4,7 +4,7 @@ import type { PaletteHost } from '../hosts.js'
 import type { EventBus } from '../../event-bus.js'
 import type { ProviderRegistry } from '../../providers/registry.js'
 import type { FunctionRegistry } from '../function_registry.js'
-import type { ExternalLauncher, RendererPush } from '../hosts.js'
+import type { ExternalLauncher, NotificationHost, RendererPush } from '../hosts.js'
 import type { PageApi } from '../../page/types.js'
 import type { FileStore } from '../../storage/file-store.js'
 import { runAgentDbSql } from '../../db/sqlite.js'
@@ -16,6 +16,7 @@ import { registerAgent } from './agent.js'
 import { registerTasks } from './tasks.js'
 import { registerPalette } from './palette.js'
 import { registerOpenExternal } from './open_external.js'
+import { registerNotify } from './notify.js'
 
 interface BuiltInFunctionDeps {
   runtimeRoot: string
@@ -33,6 +34,8 @@ interface BuiltInFunctionDeps {
   rendererPush?: RendererPush
   /** Open URLs in the user's browser — when absent, openExternal is not registered. */
   externalLauncher?: ExternalLauncher
+  /** System notifications — when absent, notify is not registered. */
+  notificationHost?: NotificationHost
 }
 
 async function findDocsReferencingFunctions(
@@ -97,6 +100,11 @@ export function registerAllBuiltInFunctions(registry: FunctionRegistry, deps: Bu
   if (deps.externalLauncher) {
     registerOpenExternal(registry, deps.externalLauncher)
   }
+
+  if (deps.notificationHost) {
+    registerNotify(registry, deps.notificationHost)
+  }
 }
 
 export { registerOpenExternal } from './open_external.js'
+export { registerNotify } from './notify.js'

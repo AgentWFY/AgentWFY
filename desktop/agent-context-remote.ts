@@ -6,7 +6,7 @@ import type { RemoteAgentConfig } from './agent-meta.js'
 import { RemoteAgentDbSync } from './remote-agent-db-sync.js'
 import type { TabViewManager } from './tab-view-manager.js'
 import type { ShortcutManager } from './shortcuts/manager.js'
-import type { PaletteHost } from '#shared/runtime/hosts.js'
+import type { NotificationHost, PaletteHost } from '#shared/runtime/hosts.js'
 import type { PageApi } from '#shared/page/types.js'
 import type { AgentDbChange } from '#shared/db/sqlite.js'
 import { createClientFunctionRegistry } from '#shared/runtime/client-function-registry.js'
@@ -20,6 +20,7 @@ export async function createRemoteAgentContext(opts: {
   tabViewManager: TabViewManager
   pageTools: PageApi
   getCommandPalette?: () => PaletteHost
+  notificationHost?: NotificationHost
   onLocalDbChange?: (change: AgentDbChange) => void
   onSnapshotApplied?: () => void
 }): Promise<RemoteAgentContext> {
@@ -28,6 +29,7 @@ export async function createRemoteAgentContext(opts: {
   const clientFunctionRegistry = createClientFunctionRegistry({
     getPaletteHost: opts.getCommandPalette,
     externalLauncher: getElectronExternalLauncher(),
+    ...(opts.notificationHost ? { notificationHost: opts.notificationHost } : {}),
   })
 
   const remoteBackend = new RemoteBackend({

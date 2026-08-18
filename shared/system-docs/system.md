@@ -83,6 +83,7 @@ For displaying views and interacting with web pages in a browser context. Prefer
 - `pickFromPalette({ items, title?, placeholder?, timeoutMs? })` — show the command palette with `items: [{ title, subtitle?, value }]` for the user to pick from. Returns the chosen item's `value`, or `null` if dismissed/timed out. Use to ask the user to choose between options.
 - Sessions: `spawnSession({ prompt, providerId? })`, `sendToSession({ sessionId, message })`. See `@docs/system.sessions`.
 - `openExternal({ url })` — open a URL in the user's default browser.
+- `notify({ title, body?, silent?, bounce? })` — show a system notification. Clicking it focuses the app on this agent. Desktop only; unavailable when the user is on mobile. Max 5 per 10s — batch instead of notifying per item.
 
 ## Other docs
 

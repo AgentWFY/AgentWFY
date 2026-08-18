@@ -469,6 +469,10 @@ export interface WorkerHostMethodMap {
     params: { url: string }
     result: void
   }
+  notify: {
+    params: { title: string; body?: string; silent?: boolean; bounce?: boolean }
+    result: void
+  }
 }
 
 interface WorkerStartTaskRequest {

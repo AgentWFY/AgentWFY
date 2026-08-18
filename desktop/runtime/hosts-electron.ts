@@ -6,36 +6,67 @@ import { Notification, nativeImage, app, shell, type WebContents } from 'electro
 import path from 'path'
 import type { ExternalLauncher, NotificationHost, RendererPush } from '#shared/runtime/hosts.js'
 
-let cachedNotificationHost: NotificationHost | null = null
 let cachedExternalLauncher: ExternalLauncher | null = null
 
-export function getElectronNotificationHost(): NotificationHost {
-  if (cachedNotificationHost) return cachedNotificationHost
-  cachedNotificationHost = {
-    show: ({ title, body }) => {
+// A shown Notification is only reachable from native code, so nothing in JS
+// keeps it alive between `show()` and the user clicking it — a GC in that
+// window would drop the `click` listener. Hold a reference until the OS is
+// done with the banner.
+const liveNotifications = new Set<Notification>()
+
+function showElectronNotification(opts: {
+  title: string
+  body: string
+  silent?: boolean
+  onClick?: () => void
+}): void {
+  const { title, body, silent, onClick } = opts
+  try {
+    const icon = nativeImage.createFromPath(
+      path.join(import.meta.dirname, '..', '..', 'icons', 'icon.png'),
+    )
+    const notification = new Notification({ title, body, icon, silent: silent === true })
+    liveNotifications.add(notification)
+    const release = () => liveNotifications.delete(notification)
+    // macOS rejects notifications asynchronously (e.g. `UNErrorDomain
+    // error 1` when the app bundle isn't properly signed), so the failure
+    // never reaches the catch below.
+    notification.on('failed', (_event, error) => {
+      release()
+      console.warn('[hosts-electron] notification failed:', error)
+    })
+    notification.on('close', release)
+    notification.on('click', () => {
+      release()
       try {
-        const icon = nativeImage.createFromPath(
-          path.join(import.meta.dirname, '..', '..', 'icons', 'icon.png'),
-        )
-        const notification = new Notification({ title, body, icon })
-        // macOS rejects notifications asynchronously (e.g. `UNErrorDomain
-        // error 1` when the app bundle isn't properly signed), so the failure
-        // never reaches the catch below.
-        notification.on('failed', (_event, error) => {
-          console.warn('[hosts-electron] notification failed:', error)
-        })
-        notification.show()
+        onClick?.()
       } catch (err) {
-        console.warn('[hosts-electron] notification not supported:', err)
+        console.warn('[hosts-electron] notification click handler failed:', err)
       }
-    },
-    bounce: () => {
-      if (process.platform === 'darwin') {
-        app.dock?.bounce('informational')
-      }
-    },
+    })
+    notification.show()
+  } catch (err) {
+    console.warn('[hosts-electron] notification not supported:', err)
   }
-  return cachedNotificationHost
+}
+
+function bounceDock(): void {
+  if (process.platform === 'darwin') {
+    app.dock?.bounce('informational')
+  }
+}
+
+/**
+ * Notification host bound to one agent. Clicking a banner it shows runs
+ * `onActivate` — the desktop uses that to focus the window and switch to the
+ * agent that fired it, which matters because a background agent's
+ * notification is otherwise the only sign it wants attention.
+ */
+export function createAgentNotificationHost(onActivate: () => void): NotificationHost {
+  return {
+    show: (opts) => showElectronNotification({ ...opts, onClick: opts.onClick ?? onActivate }),
+    bounce: bounceDock,
+  }
 }
 
 export function getElectronExternalLauncher(): ExternalLauncher {

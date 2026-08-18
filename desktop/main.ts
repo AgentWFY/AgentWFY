@@ -224,7 +224,6 @@ const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
   // Create new session manager.
   const { AgentSessionManager } = await import('#shared/agent/session_manager.js');
   const { NodeFileStore } = await import('#shared/storage/node-file-store.js');
-  const { getElectronNotificationHost } = await import('./runtime/hosts-electron.js');
   const agentIdForReconnect = ctx.agentId;
   const newMgr = new AgentSessionManager({
     runtimeRoot: ctx.runtimeRoot,
@@ -232,7 +231,7 @@ const reconnectSessionManager = async (e: Electron.IpcMainInvokeEvent) => {
     providerRegistry: ctx.providerRegistry,
     getJsRuntime: () => ctx.jsRuntime,
     busPublish: (topic, data) => ctx.eventBus.publish(topic, data),
-    notificationHost: getElectronNotificationHost(),
+    notificationHost: windowManager.createNotificationHost(agentIdForReconnect),
   });
   ctx.sessionManager = newMgr;
   // Rebuild the chat pump so it subscribes to the new manager through

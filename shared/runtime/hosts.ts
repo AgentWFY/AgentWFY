@@ -6,8 +6,19 @@
 // Electron and DOM imports.
 
 export interface NotificationHost {
-  /** Show a system notification when a long-running agent completes. */
-  show(opts: { title: string; body: string }): void
+  /**
+   * Show a system notification. Fire-and-forget: platforms report delivery
+   * failures asynchronously (macOS rejects via the `failed` event), so there
+   * is nothing meaningful to return or await.
+   */
+  show(opts: {
+    title: string
+    body: string
+    /** Suppress the notification sound. */
+    silent?: boolean
+    /** Invoked when the user clicks the notification banner. */
+    onClick?: () => void
+  }): void
   /** Bounce the dock icon (macOS); no-op elsewhere. */
   bounce?(): void
 }

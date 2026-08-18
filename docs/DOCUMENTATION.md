@@ -429,6 +429,24 @@ List all registered functions with their sources.
 
 Open a URL in the user's default browser. Only `http://` and `https://`.
 
+#### `notify({ title, body?, silent?, bounce? })`
+
+Show an OS notification. `title` is required; `body` defaults to empty. `silent`
+suppresses the sound, `bounce` bounces the dock icon (macOS only). Clicking the
+banner focuses the app window and switches to the agent that raised it.
+
+Fire-and-forget — platforms report delivery failures asynchronously, so the call
+resolves before the banner is known to have appeared. Title and body are trimmed
+to 100 and 500 characters.
+
+Rate-limited to 5 calls per 10 seconds per agent; exceeding that throws rather
+than silently dropping, so an agent notifying inside a loop finds out.
+
+Registered only where a notification host exists — the Electron desktop. Agents
+running on the server daemon don't have it; a remote agent's call is routed to
+the connected desktop client, and fails if that client is mobile. Check
+`getAvailableFunctions()` rather than assuming it's present.
+
 ---
 
 ## Database System
