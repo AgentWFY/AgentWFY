@@ -14,6 +14,7 @@ import { dirname, join } from 'path'
 import { pipeline } from 'stream/promises'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
+import { adhocSign, isBundleSigned } from './lib/codesign-macos.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -49,6 +50,7 @@ async function setupElectron() {
 
   if (existsSync(versionFile) && readFileSync(versionFile, 'utf-8').trim() === ELECTRON_VERSION) {
     console.log(`[setup] electron ${ELECTRON_VERSION} already installed`)
+    signElectron(electronDir)
     return
   }
 
@@ -87,10 +89,27 @@ async function setupElectron() {
       execSync(`unzip -q -o "${zipPath}" -d "${electronDir}"`)
     }
 
+    signElectron(electronDir)
+
     writeFileSync(versionFile, ELECTRON_VERSION)
     console.log(`[setup] electron ${ELECTRON_VERSION} installed`)
   } finally {
     if (existsSync(zipPath)) rmSync(zipPath)
+  }
+}
+
+// Upstream macOS zips are linker-signed only, which leaves notifications
+// broken in dev (see scripts/lib/codesign-macos.mjs). Re-sign ad-hoc, and
+// repair vendor dirs installed before this step existed.
+function signElectron(electronDir) {
+  if (PLATFORM !== 'darwin' || process.platform !== 'darwin') return
+  const appBundle = join(electronDir, 'Electron.app')
+  if (!existsSync(appBundle) || isBundleSigned(appBundle)) return
+  console.log('[setup] ad-hoc signing Electron.app (required for macOS notifications)...')
+  try {
+    adhocSign(appBundle)
+  } catch (err) {
+    console.warn(`[setup] codesign failed — notifications may not work: ${err.message}`)
   }
 }
 

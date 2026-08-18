@@ -8,6 +8,7 @@ import { cpSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, ren
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
+import { adhocSign } from './lib/codesign-macos.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -122,6 +123,14 @@ function packageMacOS() {
       const newHelperDir = join(frameworks, `${helperName}.app`)
       renameSync(join(frameworks, helper), newHelperDir)
     }
+  }
+
+  // Must run last: rewriting Info.plist and renaming helpers invalidates any
+  // inherited signature, and macOS won't deliver notifications from a bundle
+  // whose signature doesn't seal Info.plist (see scripts/lib/codesign-macos.mjs).
+  if (process.platform === 'darwin') {
+    console.log('Ad-hoc signing app bundle...')
+    adhocSign(appBundle)
   }
 }
 

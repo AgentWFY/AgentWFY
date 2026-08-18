@@ -17,9 +17,16 @@ export function getElectronNotificationHost(): NotificationHost {
         const icon = nativeImage.createFromPath(
           path.join(import.meta.dirname, '..', '..', 'icons', 'icon.png'),
         )
-        new Notification({ title, body, icon }).show()
-      } catch {
-        // Notifications may not be supported
+        const notification = new Notification({ title, body, icon })
+        // macOS rejects notifications asynchronously (e.g. `UNErrorDomain
+        // error 1` when the app bundle isn't properly signed), so the failure
+        // never reaches the catch below.
+        notification.on('failed', (_event, error) => {
+          console.warn('[hosts-electron] notification failed:', error)
+        })
+        notification.show()
+      } catch (err) {
+        console.warn('[hosts-electron] notification not supported:', err)
       }
     },
     bounce: () => {
