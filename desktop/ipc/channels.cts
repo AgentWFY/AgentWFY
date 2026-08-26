@@ -77,6 +77,7 @@ export const Channels = {
   },
   views: {
     fetch: 'views:fetch',
+    setWsHeaders: 'views:setWsHeaders',
   },
   previewCursor: {
     setPos: 'previewCursor:setPos',

@@ -31,7 +31,7 @@ Each view (DB or file) gets a bootstrap injected by the app:
 - CSS design tokens with automatic light/dark switching via `color-scheme: light dark`
 - Base reset (box-sizing, font-family, margin:0, color: var(--color-text3), background: var(--color-bg1))
 - Initial guard that hides content until the view is ready (revealed on first animation frame or 5s timeout)
-- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs, plus `agentwfy.fetch` for HTTP requests that need restricted headers (see below)
+- Host APIs via `window.agentwfy.<method>(...)` — same APIs as in execJs, plus `agentwfy.fetch` for HTTP requests that need restricted headers and `agentwfy.setWsHeaders` for WebSocket handshake headers (see below)
 
 ## CSS Variables
 
@@ -67,6 +67,25 @@ const result = await window.agentwfy.fetch({
 })
 // result: { status: 200, body: '...' }
 ```
+
+## WebSocket
+
+`new WebSocket(url)` works directly in views — no task needed. The handshake's `Origin` (the view's internal host, which no service allowlists) is stripped, matching what Node sends from execJs. Servers that require an allowlisted `Origin`, rather than just rejecting unknown ones, need the explicit form below.
+
+To send a specific `Origin` or extra handshake headers, register them first. This is the only way to put `Authorization` or a custom `Cookie` on a handshake — the browser `WebSocket` API takes no headers.
+
+```js
+await window.agentwfy.setWsHeaders({
+  url: 'wss://api.example.com/stream',
+  origin: 'https://app.example.com',         // optional
+  headers: { Authorization: 'Bearer ...' },  // optional
+})
+const ws = new WebSocket('wss://api.example.com/stream')
+```
+
+The registration is consumed by the next handshake to that exact URL and expires after 30s. Handshake-critical headers (`Upgrade`, `Connection`, `Sec-WebSocket-*`) are rejected; pass subprotocols as the `WebSocket` constructor's second argument instead.
+
+Cookies from the agent's session are sent as usual, but only `SameSite=None` ones — a view is cross-site to any real target. Supply others explicitly via `headers.Cookie`.
 
 ## Modules
 

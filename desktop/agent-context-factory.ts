@@ -28,6 +28,7 @@ import { closeAgentDb, configureAgentDb } from '#shared/db/agent-db.js';
 import type { SendToRenderer } from './ipc/schema.js';
 import { createViewProtocolHandler } from './protocol/view-handler.js';
 import { agentHostname } from './protocol/agent-hostname.js';
+import { installViewWsHeaderHook, uninstallViewWsHeaderHook } from './protocol/view-ws-headers.js';
 import { LocalFileSource, RemoteFileSource, type FileSource } from './protocol/file-source.js';
 import type { AgentContext, LocalAgentContext, RemoteAgentContext } from './agent-context.js';
 import type { CommandPaletteManager } from './command-palette/manager.js';
@@ -285,6 +286,7 @@ export class AgentContextFactory {
     const agentSession = this.agentSessions.get(agentId);
     if (agentSession) {
       agentSession.protocol.unhandle('https');
+      uninstallViewWsHeaderHook(agentId);
       this.agentSessions.delete(agentId);
     }
   }
@@ -297,10 +299,11 @@ export class AgentContextFactory {
     return agentSession;
   }
 
-  // Idempotent: re-attaching for the same agentId replaces the previous handler.
+  // Idempotent: re-attaching for the same agentId replaces the previous handlers.
   // Intercepts https on the agent's session — requests whose hostname matches
   // the agent's pseudo-host get routed to the view handler; everything else
-  // falls through to the real network via net.fetch.
+  // falls through to the real network via net.fetch. Also installs the
+  // WebSocket handshake-header hook, which keys off that same hostname.
   private attachAgentViewHandler(agentId: string, cacheRoot: string, fileSource: FileSource): void {
     const agentSession = this.agentSessions.get(agentId);
     if (!agentSession) {
@@ -322,6 +325,7 @@ export class AgentContextFactory {
       }
       return net.fetch(request, { bypassCustomProtocolHandlers: true });
     });
+    installViewWsHeaderHook({ agentId, session: agentSession, viewHostname: ownHostname });
   }
 
   private createTabRuntime(

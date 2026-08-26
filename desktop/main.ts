@@ -171,7 +171,9 @@ const clientPath = path.join(import.meta.dirname, 'renderer', 'index.html');
 
 registerStoreHandlers();
 setFallbackStoreReader(storeGet);
-registerViewHandlers();
+registerViewHandlers(
+  (e) => windowManager.getContextForSender(e.sender.id).agentId,
+);
 registerDialogSubscribers();
 
 // Apply theme before window creation so titleBarOverlay picks up the right colors

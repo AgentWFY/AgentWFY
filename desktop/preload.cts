@@ -395,5 +395,10 @@ if (isAgentView) {
     fetch(params: { url: string; method?: string; headers?: Record<string, string>; body?: string }): Promise<{ status: number; body: string }> {
       return ipcRenderer.invoke(Channels.views.fetch, params);
     },
+    // Arms the next WebSocket handshake to `url`. Await before constructing the
+    // socket — the browser WebSocket API takes no headers of its own.
+    setWsHeaders(params: { url: string; origin?: string; headers?: Record<string, string> }): Promise<void> {
+      return ipcRenderer.invoke(Channels.views.setWsHeaders, params);
+    },
   });
 }
