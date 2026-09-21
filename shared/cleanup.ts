@@ -11,6 +11,44 @@ const TIMESTAMPED_JSON_RE = /^(\d+)-[A-Za-z0-9._-]+\.json$/;
 const PRIVATE = { allowPrivate: true } as const;
 const REMOVE = { allowPrivate: true, missingOk: true } as const;
 
+/** How many filesystem operations a sweep may have in flight at once.
+ *
+ *  These directories reach hundreds of thousands of entries, and every removal
+ *  costs three threadpool operations (the path policy's lstat + realpath, then
+ *  the unlink). Firing them all at once buries libuv's four-thread pool, and
+ *  unrelated work queues behind the whole sweep — a plain file read has been
+ *  measured stalling 7s behind a 150k-file sweep, which is long enough for a
+ *  chat message to look like it did nothing at all. A small window makes the
+ *  sweep take longer in wall-clock and keeps it off everything else's path. */
+const FS_CONCURRENCY = 24;
+
+/** `Promise.allSettled` with a bounded number of operations in flight. */
+async function settleWithLimit<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+  limit = FS_CONCURRENCY,
+): Promise<Array<PromiseSettledResult<R>>> {
+  const results = new Array<PromiseSettledResult<R>>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      try {
+        results[index] = { status: 'fulfilled', value: await fn(items[index]) };
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+function countFulfilled(results: Array<PromiseSettledResult<unknown>>): number {
+  return results.filter((r) => r.status === 'fulfilled').length;
+}
+
 /** Remove `<dir>/<ts>-<rand>.json` files older than the retention window,
  *  using the timestamp encoded in the file name. Returns the count removed. */
 async function deleteOldFiles(store: FileStore, dir: string, retentionDays: number): Promise<number> {
@@ -27,8 +65,7 @@ async function deleteOldFiles(store: FileStore, dir: string, retentionDays: numb
   }
 
   if (toDelete.length === 0) return 0;
-  const results = await Promise.allSettled(toDelete.map((key) => store.remove(key, REMOVE)));
-  return results.filter((r) => r.status === 'fulfilled').length;
+  return countFulfilled(await settleWithLimit(toDelete, (key) => store.remove(key, REMOVE)));
 }
 
 /** Keep only the newest `maxCount` `<ts>-<rand>.json` files in `dir`, deleting
@@ -50,8 +87,7 @@ async function deleteExcessFiles(store: FileStore, dir: string, maxCount: number
   if (timestamped.length <= maxCount) return 0;
   timestamped.sort((a, b) => b.ts - a.ts);
   const toDelete = timestamped.slice(maxCount).map((f) => f.key);
-  const results = await Promise.allSettled(toDelete.map((key) => store.remove(key, REMOVE)));
-  return results.filter((r) => r.status === 'fulfilled').length;
+  return countFulfilled(await settleWithLimit(toDelete, (key) => store.remove(key, REMOVE)));
 }
 
 async function deleteOldSessionsAndTraces(store: FileStore, retentionDays: number): Promise<number> {
@@ -71,25 +107,28 @@ async function deleteOldSessionsAndTraces(store: FileStore, retentionDays: numbe
 
   // Look up each session's sessionId before deleting, so we can pair-delete
   // the matching trace file from the agent trace directory.
-  const sessionIds = await Promise.all(
-    toDelete.map((name) => readSessionId(store, name).catch(() => '')),
+  const sessionIdResults = await settleWithLimit(
+    toDelete,
+    (name) => readSessionId(store, name).catch(() => ''),
   );
+  const sessionIds = sessionIdResults.map((r) => (r.status === 'fulfilled' ? r.value : ''));
 
-  const sessionResults = await Promise.allSettled(
-    toDelete.map((name) => store.remove(`${SESSIONS_RELATIVE_DIR}/${name}`, REMOVE)),
+  const sessionResults = await settleWithLimit(
+    toDelete,
+    (name) => store.remove(`${SESSIONS_RELATIVE_DIR}/${name}`, REMOVE),
   );
-  const deleted = sessionResults.filter((r) => r.status === 'fulfilled').length;
+  const deleted = countFulfilled(sessionResults);
 
-  const traceRemovals: Array<Promise<unknown>> = [];
+  const traceKeys: string[] = [];
   for (let i = 0; i < sessionResults.length; i++) {
     if (sessionResults[i].status !== 'fulfilled') continue;
     const sessionId = sessionIds[i];
     // Reject anything that doesn't match the canonical sessionId shape —
     // a crafted session file could otherwise escape the traces dir via `..`.
     if (!isValidTraceSessionId(sessionId)) continue;
-    traceRemovals.push(store.remove(`${TRACES_RELATIVE_DIR}/${sessionId}.jsonl`, REMOVE));
+    traceKeys.push(`${TRACES_RELATIVE_DIR}/${sessionId}.jsonl`);
   }
-  await Promise.allSettled(traceRemovals);
+  await settleWithLimit(traceKeys, (key) => store.remove(key, REMOVE));
 
   return deleted;
 }
@@ -104,8 +143,7 @@ async function deleteOldTracesByMtime(store: FileStore, retentionDays: number): 
     .map((entry) => `${TRACES_RELATIVE_DIR}/${entry.name}`);
 
   if (toDelete.length === 0) return 0;
-  const results = await Promise.allSettled(toDelete.map((key) => store.remove(key, REMOVE)));
-  return results.filter((r) => r.status === 'fulfilled').length;
+  return countFulfilled(await settleWithLimit(toDelete, (key) => store.remove(key, REMOVE)));
 }
 
 export async function runCleanup(runtimeRoot: string, store: FileStore): Promise<void> {
