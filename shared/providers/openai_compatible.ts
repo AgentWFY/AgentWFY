@@ -162,6 +162,13 @@ class OpenAICompatibleSession implements ProviderSession {
   private config: ProviderSessionConfig
   private providerConfig: ProviderConfigSnapshot
   private _partialDisplayMessage: DisplayMessage | null = null
+  /** How much of `messages` belongs to a completed round trip. Everything past
+   *  it is an assistant turn whose tool calls never got answered — a shape the
+   *  API rejects — so that is exactly what an interrupted stream discards. */
+  private _committedLength = 0
+  /** Survives across round trips, unlike `abortController` — each round builds
+   *  a fresh one, so a stop that lands between rounds would otherwise be lost. */
+  private _abortRequested = false
 
   constructor(
     config: ProviderSessionConfig,
@@ -179,19 +186,24 @@ class OpenAICompatibleSession implements ProviderSession {
     if (initialDisplayMessages) {
       this.displayMessages = initialDisplayMessages.slice()
     }
+    this._committedLength = this.messages.length
   }
 
   async *stream(input: UserInput, executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
+    this._abortRequested = false
     this.addUserMessage(input.text, input.files)
+    this._committedLength = this.messages.length
     yield* this.doStream(executeTool)
   }
 
   async *retry(executeTool: ToolExecutor): AsyncIterable<StreamEvent> {
+    this._abortRequested = false
     this.discardPartialResponse()
     yield* this.doStream(executeTool)
   }
 
   abort(): void {
+    this._abortRequested = true
     this.abortController?.abort()
   }
 
@@ -257,14 +269,12 @@ class OpenAICompatibleSession implements ProviderSession {
       if (idx !== -1) this.displayMessages.splice(idx, 1)
       this._partialDisplayMessage = null
     }
-    // Remove trailing assistant/tool messages that weren't committed
-    while (this.messages.length > 1) {
-      const last = this.messages[this.messages.length - 1]
-      if (last.role === 'assistant' || last.role === 'tool') {
-        this.messages.pop()
-      } else {
-        break
-      }
+    // Rewind to the last completed round trip. Tool calls that already ran keep
+    // their results, so resuming continues the turn rather than re-executing
+    // side effects — which also makes the automatic error retry cheaper.
+    const floor = Math.max(1, Math.min(this._committedLength, this.messages.length))
+    if (this.messages.length > floor) {
+      this.messages.length = floor
     }
   }
 
@@ -308,6 +318,7 @@ class OpenAICompatibleSession implements ProviderSession {
   }
 
   private async *doStream(executeTool: ToolExecutor): AsyncGenerator<StreamEvent> {
+    if (this._abortRequested) return
     this.abortController = new AbortController()
     const signal = this.abortController.signal
 
@@ -559,6 +570,7 @@ class OpenAICompatibleSession implements ProviderSession {
         this.addToolResult(pendingTools[i].id, results[i].content, results[i].isError)
       }
       this._partialDisplayMessage = null
+      this._committedLength = this.messages.length
 
       yield { type: 'state_changed' }
 
@@ -653,6 +665,7 @@ class OpenAICompatibleSession implements ProviderSession {
       { role: 'assistant', content: 'Understood, I have the context from the summary. Continuing.' },
       ...keptMessages,
     ]
+    this._committedLength = this.messages.length
     this.displayMessages.push({
       role: 'assistant',
       blocks: [{ type: 'text', text: compactionText }],

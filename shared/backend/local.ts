@@ -69,7 +69,11 @@ import {
   type Unsubscribe,
 } from './interface.js'
 
-function liveStateFromAgentState(state: AgentState, queuedMessages: QueuedMessage[]): SessionLivePatch {
+function liveStateFromAgentState(
+  state: AgentState,
+  queuedMessages: QueuedMessage[],
+  rewind: { canContinue: boolean; canRewind: boolean },
+): SessionLivePatch {
   return {
     isStreaming: state.isStreaming,
     streamingMessage: sanitizeStreamingMessage(state.streamingMessage),
@@ -77,6 +81,8 @@ function liveStateFromAgentState(state: AgentState, queuedMessages: QueuedMessag
     retryState: state.retryState ?? null,
     stalledSince: state.stalledSince ?? null,
     queuedMessages,
+    canContinue: rewind.canContinue,
+    canRewind: rewind.canRewind,
   }
 }
 
@@ -135,7 +141,11 @@ export class LocalBackend implements AgentBackend {
         this.emit({
           kind: 'session:state',
           sessionId,
-          live: liveStateFromAgentState(state, this.ctx.sessionManager.getSessionQueuedMessages(sessionId)),
+          live: liveStateFromAgentState(
+            state,
+            this.ctx.sessionManager.getSessionQueuedMessages(sessionId),
+            this.ctx.sessionManager.getSessionRewindFlags(sessionId),
+          ),
           ...(messagesChanged ? { messages: stripBlockBinaries(state.messages) } : {}),
           ...(titleChanged ? { title } : {}),
         })
@@ -191,8 +201,14 @@ export class LocalBackend implements AgentBackend {
         providerId: result.providerId,
         updatedAt: result.updatedAt,
         messages: result.messages,
+        canContinue: result.canContinue,
+        canRewind: result.canRewind,
         live: result.state
-          ? liveStateFromAgentState(result.state, this.ctx.sessionManager.getSessionQueuedMessages(result.sessionId))
+          ? liveStateFromAgentState(
+              result.state,
+              this.ctx.sessionManager.getSessionQueuedMessages(result.sessionId),
+              this.ctx.sessionManager.getSessionRewindFlags(result.sessionId),
+            )
           : null,
       }
     },
@@ -243,6 +259,14 @@ export class LocalBackend implements AgentBackend {
 
     removeQueued: async ({ sessionId, index }) => {
       this.ctx.sessionManager.removeQueuedMessageForSession(sessionId, index)
+    },
+
+    continueTurn: async ({ sessionId }) => {
+      await this.ctx.sessionManager.continueSession(sessionId)
+    },
+
+    rewindLast: async ({ sessionId, action, text, files }) => {
+      await this.ctx.sessionManager.rewindSessionLastMessage(sessionId, action, { text, files })
     },
   }
 

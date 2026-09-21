@@ -86,6 +86,22 @@ export function registerAgentSessionHandlers(
     if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return
     await getChat(event).removeQueuedMessage(index)
   })
+
+  ipcMain.handle(Channels.agent.continueTurn, async (event) => {
+    await getChat(event).continueTurn()
+  })
+
+  ipcMain.handle(Channels.agent.deleteLastMessage, async (event) => {
+    await getChat(event).deleteLastMessage()
+  })
+
+  ipcMain.handle(Channels.agent.resendLastMessage, async (event) => {
+    await getChat(event).resendLastMessage()
+  })
+
+  ipcMain.handle(Channels.agent.replaceLastMessage, async (event, text: string, addFiles?: FileContent[]) => {
+    await getChat(event).replaceLastMessage(typeof text === 'string' ? text : '', addFiles)
+  })
 }
 
 export interface AgentChatPump {
@@ -187,6 +203,8 @@ export function setupAgentChatPump(
     && prev.activeSessionId === next.activeSessionId
     && prev.retryState === next.retryState
     && prev.stalledSince === next.stalledSince
+    && prev.canContinue === next.canContinue
+    && prev.canRewind === next.canRewind
     && sameIds(prev.streamingSessionIds, next.streamingSessionIds)
     && queueSig(prev.queuedMessages) === queueSig(next.queuedMessages)
 

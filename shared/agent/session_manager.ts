@@ -124,6 +124,10 @@ export interface SessionRead {
   providerId: string
   updatedAt: number
   messages: DisplayMessage[]
+  /** See {@link AgentSnapshot.canContinue}. */
+  canContinue: boolean
+  /** See {@link AgentSnapshot.canRewind}. */
+  canRewind: boolean
 }
 
 export interface SessionStateRead extends SessionRead {
@@ -171,6 +175,10 @@ export class AgentSessionManager {
   private _activeLabel: string = ''
   private _activeNotifyOnFinish = false
   private _activeProviderId: string = ''
+  // Mirrors of the active agent's rewind flags for when it isn't in memory —
+  // read off the session file so the chat panel can still offer the actions.
+  private _activeCanContinue = false
+  private _activeCanRewind = false
 
   constructor(deps: AgentSessionManagerDeps) {
     this.deps = deps
@@ -238,6 +246,8 @@ export class AgentSessionManager {
     this._activeLabel = ''
     this._activeNotifyOnFinish = false
     this._activeProviderId = ''
+    this._activeCanContinue = false
+    this._activeCanRewind = false
     this.notify()
   }
 
@@ -250,7 +260,40 @@ export class AgentSessionManager {
       return
     }
 
-    // No agent in memory — create one on demand
+    const agent = await this.materializeActiveAgent()
+    await agent.prompt(text, { files: options?.files })
+  }
+
+  /** Continue the active session's unfinished turn without sending anything. */
+  async continueActive(): Promise<void> {
+    const agent = await this.materializeActiveAgent()
+    await agent.continueTurn()
+  }
+
+  /** Drop the active session's last user message and the reply to it. */
+  async deleteLastMessage(): Promise<void> {
+    const agent = await this.materializeActiveAgent()
+    await agent.deleteLastMessage()
+  }
+
+  /** Rewrite the active session's last user message and run it again. */
+  async replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void> {
+    const agent = await this.materializeActiveAgent()
+    await agent.replaceLastMessage(text, addFiles)
+  }
+
+  /** Send the active session's last user message again, unchanged. */
+  async resendLastMessage(): Promise<void> {
+    const agent = await this.materializeActiveAgent()
+    await agent.resendLastMessage()
+  }
+
+  /** The active session's agent, loading it from disk when it isn't in memory
+   *  (the chat panel can display a session whose agent was never woken). */
+  private async materializeActiveAgent(): Promise<AgentWFYAgent> {
+    const existing = this.activeAgent
+    if (existing) return existing
+
     if (!this._activeSessionId) {
       throw new Error('No active session')
     }
@@ -277,7 +320,7 @@ export class AgentSessionManager {
 
     this.notify()
 
-    await agent.prompt(text, { files: options?.files })
+    return agent
   }
 
   async abortActive(): Promise<void> {
@@ -303,6 +346,8 @@ export class AgentSessionManager {
     this._activeLabel = stored.title || 'Session'
     this._activeNotifyOnFinish = false
     this._activeProviderId = providerId
+    this._activeCanContinue = (stored.lastTurnInterrupted ?? false) && messages.length > 0
+    this._activeCanRewind = !!stored.rewind
 
     this.notify()
   }
@@ -450,6 +495,8 @@ export class AgentSessionManager {
     this._activeLabel = 'New session'
     this._activeNotifyOnFinish = false
     this._activeProviderId = pid
+    this._activeCanContinue = false
+    this._activeCanRewind = false
 
     this.notify()
     return sessionId
@@ -539,6 +586,8 @@ export class AgentSessionManager {
       retryState: agent?.state.retryState ?? null,
       stalledSince: agent?.state.stalledSince ?? null,
       queuedMessages: agent?.queuedMessages ?? [],
+      canContinue: agent ? agent.canContinue : this._activeCanContinue,
+      canRewind: agent ? agent.canRewind : this._activeCanRewind,
     }
   }
 
@@ -556,6 +605,54 @@ export class AgentSessionManager {
   /** Serializable follow-up queue for a specific session (empty if unknown). */
   getSessionQueuedMessages(sessionId: string): QueuedMessage[] {
     return this.findSessionEntry(sessionId)?.agent.queuedMessages ?? []
+  }
+
+  /** Rewind/continue availability for a specific session, for the per-session
+   *  backend stream. A session that isn't in memory reports neither. */
+  getSessionRewindFlags(sessionId: string): { canContinue: boolean; canRewind: boolean } {
+    const agent = this.findSessionEntry(sessionId)?.agent
+    return {
+      canContinue: agent?.canContinue ?? false,
+      canRewind: agent?.canRewind ?? false,
+    }
+  }
+
+  /** Continue a specific session's unfinished turn (backend RPC surface). */
+  async continueSession(sessionId: string): Promise<void> {
+    const agent = await this.materializeSessionAgent(sessionId)
+    await agent.continueTurn()
+  }
+
+  /** Rewind a specific session's last user message (backend RPC surface). */
+  async rewindSessionLastMessage(
+    sessionId: string,
+    action: 'delete' | 'resend' | 'replace',
+    opts: { text?: string; files?: FileContent[] } = {},
+  ): Promise<void> {
+    const agent = await this.materializeSessionAgent(sessionId)
+    if (action === 'delete') {
+      await agent.deleteLastMessage()
+      return
+    }
+    if (action === 'resend') {
+      await agent.resendLastMessage()
+      return
+    }
+    await agent.replaceLastMessage(opts.text ?? '', opts.files)
+  }
+
+  /** Load a specific session's agent into memory if it isn't already. */
+  private async materializeSessionAgent(sessionId: string): Promise<AgentWFYAgent> {
+    const existing = this.findSessionEntry(sessionId)?.agent
+    if (existing) return existing
+
+    const sessionFile = await this.findSessionFileById(sessionId)
+    if (!sessionFile) throw new Error(`Session '${sessionId}' not found`)
+    const agent = await this.createAgentInstance({ sessionFile })
+    this.deps.getJsRuntime().ensureWorker(agent.sessionId)
+    this.trackSession(agent.sessionId, agent, agent.agent.getProviderTitle() || 'Session')
+    this.notify()
+    return agent
   }
 
   private async readDefaultProviderId(): Promise<string> {
@@ -813,12 +910,15 @@ export class AgentSessionManager {
     const raw = await readSessionFile(this.store, sessionFile)
     const stored = parseStoredSession(raw, sessionFile)
     const providerId = stored.providerId || await this.readDefaultProviderId()
+    const messages = stripBlockBinaries(this.restoreMessages(stored, providerId))
     return {
       sessionId: stored.sessionId || sessionId,
       title: stored.title,
       providerId,
       updatedAt: stored.updatedAt,
-      messages: stripBlockBinaries(this.restoreMessages(stored, providerId)),
+      messages,
+      canContinue: (stored.lastTurnInterrupted ?? false) && messages.length > 0,
+      canRewind: !!stored.rewind,
     }
   }
 
@@ -855,6 +955,8 @@ export class AgentSessionManager {
       providerId: entry.agent.providerId,
       updatedAt: Date.now(),
       messages: agentState.messages,
+      canContinue: entry.agent.canContinue,
+      canRewind: entry.agent.canRewind,
       state: agentState,
     }
   }

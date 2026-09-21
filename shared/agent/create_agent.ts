@@ -1,5 +1,5 @@
 import { Agent } from './index.js'
-import type { AgentEvent, AgentState, FileContent } from './types.js'
+import type { AgentEvent, AgentState, FileContent, RewindPoint } from './types.js'
 import { createExecJsTool } from './exec_js.js'
 import {
   SESSION_VERSION,
@@ -122,6 +122,10 @@ export class AgentWFYAgent {
   private readonly store: FileStore
   private readonly persistSessionsToDisk: boolean
   readonly providerId: string
+  /** Kept past construction so a rewind can rebuild the provider session from
+   *  a snapshot — the same call a session reload makes. */
+  private readonly restoreProviderSession: ProviderSessionRestorer
+  private readonly systemPrompt: string
 
   private sessionWritePromise: Promise<void> = Promise.resolve()
   private disposed = false
@@ -136,6 +140,8 @@ export class AgentWFYAgent {
     sessionId: string,
     persistSessions: boolean,
     providerId: string,
+    restoreProviderSession: ProviderSessionRestorer,
+    systemPrompt: string,
   ) {
     this.agent = agent
     this.store = store
@@ -143,6 +149,8 @@ export class AgentWFYAgent {
     this._sessionFile = sessionFile
     this._sessionId = sessionId
     this.providerId = providerId
+    this.restoreProviderSession = restoreProviderSession
+    this.systemPrompt = systemPrompt
 
     this.agent.sessionId = this._sessionId
 
@@ -177,6 +185,8 @@ export class AgentWFYAgent {
     // Otherwise, create a fresh provider session.
     let providerSession: ProviderSession
     let initialMessages: DisplayMessage[] = []
+    let rewindPoint: RewindPoint | null = null
+    let lastTurnInterrupted = false
 
     if (options.sessionFile) {
       const stored = options.storedSession
@@ -191,6 +201,8 @@ export class AgentWFYAgent {
 
       // Provider is the source of truth for display messages
       initialMessages = providerSession.getDisplayMessages()
+      rewindPoint = stored.rewind ?? null
+      lastTurnInterrupted = stored.lastTurnInterrupted ?? false
     } else {
       providerSession = await options.createProviderSession({
         sessionId,
@@ -206,6 +218,8 @@ export class AgentWFYAgent {
       },
       providerSession,
       sessionId,
+      rewindPoint,
+      lastTurnInterrupted,
     })
 
     const instance = new AgentWFYAgent(
@@ -215,6 +229,8 @@ export class AgentWFYAgent {
       sessionId,
       persistSessions,
       options.providerId,
+      options.restoreProviderSession,
+      systemPrompt,
     )
 
     if (options.sessionFile) {
@@ -257,6 +273,75 @@ export class AgentWFYAgent {
 
   removeQueuedMessage(index: number): void {
     this.agent.removeFollowUp(index)
+  }
+
+  /** The last turn stopped short and can be picked up again. */
+  get canContinue(): boolean {
+    return this.agent.canContinue
+  }
+
+  /** The last user message can be edited, resent, or deleted. */
+  get canRewind(): boolean {
+    return this.agent.canRewind
+  }
+
+  /** Carry on from where the last turn stopped, sending no new message. */
+  async continueTurn(): Promise<void> {
+    await this.agent.continueTurn()
+    await this.persistSession()
+  }
+
+  /** Drop the last user message and everything the agent said in reply. */
+  async deleteLastMessage(): Promise<boolean> {
+    const point = await this.rewind()
+    if (!point) return false
+    await this.persistSession()
+    this.emit({ type: 'state_changed' })
+    return true
+  }
+
+  /** Replace the last user message with `text` and run the turn again.
+   *  Attachments that came with the original are kept; `addFiles` are added
+   *  on top of them. */
+  async replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void> {
+    const point = await this.rewind()
+    if (!point) {
+      throw new Error('There is no message to edit.')
+    }
+    this.emit({ type: 'state_changed' })
+    const files = [...(point.input.files ?? []), ...(addFiles ?? [])]
+    await this.prompt(text, files.length > 0 ? { files } : {})
+  }
+
+  /** Send the last user message again, unchanged. */
+  async resendLastMessage(): Promise<void> {
+    const point = await this.rewind()
+    if (!point) {
+      throw new Error('There is no message to resend.')
+    }
+    this.emit({ type: 'state_changed' })
+    const files = point.input.files
+    await this.prompt(point.input.text, files && files.length > 0 ? { files } : {})
+  }
+
+  /** Roll the provider back to the state it had before the last user message,
+   *  by rebuilding the session from the snapshot taken at the time. Returns
+   *  the input that was rolled back, or null when there is no snapshot. */
+  private async rewind(): Promise<RewindPoint | null> {
+    if (this.isStreaming) {
+      throw new Error('Stop the current response before changing the last message.')
+    }
+    const point = this.agent.rewindPoint
+    if (!point) return null
+
+    const restored = await this.restoreProviderSession(
+      { sessionId: this._sessionId, systemPrompt: this.systemPrompt },
+      point.providerState,
+    )
+    const previous = this.agent.providerSession
+    this.agent.adoptRewoundSession(restored)
+    previous.dispose()
+    return point
   }
 
   async prompt(text: string, options: AgentWFYAgentPromptOptions = {}): Promise<void> {
@@ -332,6 +417,19 @@ export class AgentWFYAgent {
 
         const providerState = this.agent.getProviderState()
         const title = this.agent.getProviderTitle()
+        // The rewind snapshot is a second copy of the transcript, so it only
+        // goes to disk for the case that outlives the app: a turn that was
+        // stopped or failed, which the user may want to edit after reopening.
+        //
+        // Only a persist that runs once the turn has settled can see that
+        // outcome — `lastTurnInterrupted` is set in the run loop's `finally`,
+        // so mid-turn saves would report the *previous* turn's verdict and
+        // attach a second copy of the history to every `state_changed`. On a
+        // multi-megabyte session that is megabytes re-serialized and rewritten
+        // per tool round, so those saves skip both fields.
+        const settled = !this.isStreaming
+        const interrupted = settled && this.agent.lastTurnInterrupted
+        const rewind = interrupted ? this.agent.rewindPoint : null
 
         const stored: StoredSession = {
           version: SESSION_VERSION,
@@ -340,6 +438,8 @@ export class AgentWFYAgent {
           title,
           providerState,
           updatedAt: Date.now(),
+          ...(interrupted ? { lastTurnInterrupted: true } : {}),
+          ...(rewind ? { rewind } : {}),
         }
 
         await writeSessionFile(this.store, this._sessionFile, JSON.stringify(stored, null, 2))

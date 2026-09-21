@@ -21,6 +21,10 @@ const GEAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const TRACE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>'
 const QUEUE_CLOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
 const QUEUE_PAPERCLIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66l-9.2 9.19a2 2 0 1 1-2.83-2.83l8.49-8.48"/></svg>'
+const CONTINUE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8z"/><path d="M19 4v16"/></svg>'
+const EDIT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.5 2.5 0 0 1 3.5 3.5L8 19l-5 2 2-5z"/></svg>'
+const RESEND_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>'
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"/><path d="M9 6V4h6v2"/><path d="M6 6l1 14h10l1-14"/></svg>'
 const QUEUE_CANCEL_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>'
 
 function makeIconBtn(title: string, html: string, onClick: () => void): HTMLButtonElement {
@@ -58,6 +62,7 @@ const STYLES = `
     min-height: 0;
     overflow-y: auto;
     overflow-anchor: none;
+    padding-top: 12px;
   }
   .messages * { overflow-anchor: none; }
   .messages #anchor { height: 1px; }
@@ -624,6 +629,88 @@ const STYLES = `
     flex-shrink: 0;
     position: relative;
   }
+  /* ── Hover actions on the last message you sent ──
+     Floats over the bubble's top edge and is invisible until that message is
+     hovered (or a button in it is focused), so the transcript stays clean. */
+  .messages > [data-msg-idx] { position: relative; }
+  /* The transcript's blocks use content-visibility for long histories, which
+     also clips anything drawn outside them. The one block holding the toolbar
+     opts out; it is the last message, so it is always on screen anyway. */
+  .messages > [data-msg-idx].has-msg-actions {
+    content-visibility: visible;
+    contain: none;
+    overflow: visible;
+  }
+  .msg-actions {
+    position: absolute;
+    top: -10px;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 2px;
+    background: var(--color-bg1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.16);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 90ms ease-out;
+    z-index: 5;
+  }
+  [data-msg-idx]:hover > .msg-actions,
+  .msg-actions:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .msg-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--color-text3);
+    cursor: pointer;
+  }
+  .msg-actions button:hover { background: var(--color-item-hover); color: var(--color-text4); }
+  .msg-actions button:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+  .msg-actions button[data-action="delete-last"]:hover { color: var(--color-red-fg); }
+  .msg-actions svg { width: 13px; height: 13px; display: block; }
+
+  /* ── "You stopped this response" ── shown only after an interrupted turn. */
+  .stopped-banner {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin: 6px 0 0;
+    background: var(--color-bg2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--color-text2);
+  }
+  .stopped-banner.visible { display: flex; }
+  .stopped-banner .stopped-text { flex: 1; min-width: 0; }
+  .stopped-banner button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg1);
+    color: var(--color-text3);
+  }
+  .stopped-banner button:hover { background: var(--color-item-hover); }
+  .stopped-banner svg { width: 11px; height: 11px; display: block; }
   /* ── Queued follow-up messages ── */
   .queue-stack {
     display: none;
@@ -983,6 +1070,9 @@ export class TlAgentChat extends HTMLElement {
   private _statusStatsEl: HTMLElement | null = null
   private _queueEl: HTMLElement | null = null
   private _queueSig = ''
+  private _msgActionsEl: HTMLElement | null = null
+  private _msgActionsHost: HTMLElement | null = null
+  private _stoppedBannerEl: HTMLElement | null = null
   private _providerGridEl: HTMLElement | null = null
   private _sessionTabsEl: HTMLElement | null = null
   private _chatInputEl: TlChatInput | null = null
@@ -1192,6 +1282,12 @@ export class TlAgentChat extends HTMLElement {
       if (has('retryState')) this.updateRetryBanner()
       if (has('notifyOnFinish')) this.updateNotifyBtn()
       if (has('queuedMessages')) this.updateQueue()
+      if (has('canContinue') || has('isStreaming') || has('retryState') || has('messages')) {
+        this.updateStoppedBanner()
+      }
+      // The toolbar rides on the transcript, so its refresh goes through the
+      // same render pass the messages do.
+      if (has('canRewind') || has('retryState')) this.scheduleUpdateMessages()
 
       const providerKeys: Array<keyof AgentSessionState> = [
         'messages',
@@ -1496,6 +1592,9 @@ export class TlAgentChat extends HTMLElement {
     this._notifyBtn = null
     this._settingsBtn = null
     this._stopBtn = null
+    this._msgActionsEl = null
+    this._msgActionsHost = null
+    this._stoppedBannerEl = null
     this._statusEl = null
     this._statusProviderEl = null
     this._statusStatsEl = null
@@ -1611,6 +1710,21 @@ export class TlAgentChat extends HTMLElement {
     this._retryBanner.style.display = 'none'
     container.appendChild(this._retryBanner)
 
+    // Stopped banner — the only chrome an interrupted turn adds, and it goes
+    // away as soon as the turn is continued or the message is changed.
+    this._stoppedBannerEl = document.createElement('div')
+    this._stoppedBannerEl.className = 'stopped-banner'
+    this._stoppedBannerEl.innerHTML =
+      `<span class="stopped-text"></span>`
+      + `<button data-action="continue" title="Carry on from where it stopped, without sending a message">${CONTINUE_SVG}<span class="stopped-btn-label"></span></button>`
+    this._stoppedBannerEl.addEventListener('mousedown', (e) => {
+      const btn = (e.target as HTMLElement).closest('button[data-action]') as HTMLElement | null
+      if (!btn) return
+      e.preventDefault()
+      void this.handleTurnAction(btn.dataset.action ?? '')
+    })
+    container.appendChild(this._stoppedBannerEl)
+
     const inputArea = document.createElement('div')
     inputArea.className = 'input-area'
 
@@ -1648,6 +1762,8 @@ export class TlAgentChat extends HTMLElement {
       this.error = (e as CustomEvent).detail.message
       this.updateErrorBanner()
     })
+    // The toolbar hides while the composer holds an edit of that same message.
+    this._chatInputEl.addEventListener('chat-edit-mode', () => this.updateMessageActions())
     composer.appendChild(this._chatInputEl)
 
     const bar = document.createElement('div')
@@ -1869,6 +1985,7 @@ export class TlAgentChat extends HTMLElement {
     this.updateTraceBtn()
     this.updateStatus()
     this.updateQueue()
+    this.updateStoppedBanner()
   }
 
   /** Update the messages area only (hot path during streaming). */
@@ -1882,7 +1999,10 @@ export class TlAgentChat extends HTMLElement {
       this.messagesEl.style.display = target
     }
 
-    if (!this.messagesEl || !hasMessages) return
+    if (!this.messagesEl || !hasMessages) {
+      this.updateMessageActions()
+      return
+    }
 
     const allMessages = s.isStreaming && s.streamingMessage
       ? [...s.messages, s.streamingMessage]
@@ -1903,6 +2023,8 @@ export class TlAgentChat extends HTMLElement {
     if (this._scrollToBottomBtn && this.messagesEl.childElementCount !== prevChildCount) {
       this.messagesEl.appendChild(this._scrollToBottomBtn)
     }
+
+    this.updateMessageActions()
 
     if (!this.userScrolledUp) {
       const gap = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
@@ -1944,6 +2066,115 @@ export class TlAgentChat extends HTMLElement {
     if (!this._notifyBtn) return
     const s = agentSession.state
     this._notifyBtn.classList.toggle('active', s.notifyOnFinish)
+  }
+
+  // ── Last-turn actions ──
+
+  /** Show the stopped banner only while the last turn is genuinely unfinished.
+   *  A turn ends unfinished two ways and they don't read the same, so the
+   *  wording follows whichever it was. */
+  private updateStoppedBanner() {
+    if (!this._stoppedBannerEl) return
+    const s = agentSession.state
+    const show = s.canContinue && !s.isStreaming && !s.retryState
+    this._stoppedBannerEl.classList.toggle('visible', show)
+    if (!show) return
+
+    const last = s.messages[s.messages.length - 1]
+    const failed = !!last && last.role === 'assistant' && last.blocks.some(b => b.type === 'error')
+    const textEl = this._stoppedBannerEl.querySelector('.stopped-text')
+    const labelEl = this._stoppedBannerEl.querySelector('.stopped-btn-label')
+    // The transcript already shows what went wrong, so the banner only needs
+    // to name the state and offer the way out of it.
+    const text = failed ? 'Response failed' : 'You stopped this response'
+    const label = failed ? 'Try again' : 'Continue'
+    if (textEl && textEl.textContent !== text) textEl.textContent = text
+    if (labelEl && labelEl.textContent !== label) labelEl.textContent = label
+  }
+
+  /** Park the hover toolbar on the last message the user sent, or take it out
+   *  of the DOM when there's nothing to act on. One element gets moved rather
+   *  than markup added per message, so the transcript's incremental renderer
+   *  and its block cache are left alone. */
+  private updateMessageActions() {
+    const s = agentSession.state
+    const editing = this._chatInputEl?.isEditing() ?? false
+    const show = s.canRewind && !s.isStreaming && !s.retryState && !editing
+
+    // The host is tracked rather than read back off the toolbar: a render pass
+    // can rewrite the block's innerHTML and drop the toolbar out of the DOM,
+    // which would otherwise strand the containment override on the old block.
+    const detach = () => {
+      this._msgActionsHost?.classList.remove('has-msg-actions')
+      this._msgActionsHost = null
+      this._msgActionsEl?.remove()
+    }
+
+    if (!show || !this.messagesEl) {
+      detach()
+      return
+    }
+
+    let host: HTMLElement | null = null
+    const wrappers = this.messagesEl.querySelectorAll<HTMLElement>(':scope > [data-msg-idx]')
+    for (let i = wrappers.length - 1; i >= 0; i--) {
+      if (wrappers[i].querySelector(':scope > .block-user')) { host = wrappers[i]; break }
+    }
+    if (!host) {
+      detach()
+      return
+    }
+
+    if (!this._msgActionsEl) {
+      const el = document.createElement('div')
+      el.className = 'msg-actions'
+      el.innerHTML =
+        `<button data-action="edit-last" title="Edit (\u2191)" aria-label="Edit message">${EDIT_SVG}</button>`
+        + `<button data-action="resend-last" title="Send again" aria-label="Send message again">${RESEND_SVG}</button>`
+        + `<button data-action="delete-last" title="Delete" aria-label="Delete message">${TRASH_SVG}</button>`
+      el.addEventListener('mousedown', (e) => {
+        const btn = (e.target as HTMLElement).closest('button[data-action]') as HTMLElement | null
+        if (!btn) return
+        e.preventDefault()
+        void this.handleTurnAction(btn.dataset.action ?? '')
+      })
+      this._msgActionsEl = el
+    }
+
+    // The block's innerHTML is rewritten whenever its content changes, so the
+    // toolbar has to be put back after every render pass.
+    if (this._msgActionsEl.parentElement !== host) {
+      if (this._msgActionsHost !== host) detach()
+      this._msgActionsHost = host
+      host.classList.add('has-msg-actions')
+      host.appendChild(this._msgActionsEl)
+    }
+  }
+
+  private async handleTurnAction(action: string) {
+    this.error = null
+    this.updateErrorBanner()
+    try {
+      switch (action) {
+        case 'continue':
+          this.userScrolledUp = false
+          await agentSession.continueTurn()
+          break
+        case 'edit-last':
+          this._chatInputEl?.beginEditLastMessage()
+          break
+        case 'resend-last':
+          this.userScrolledUp = false
+          await agentSession.resendLastMessage()
+          break
+        case 'delete-last':
+          await agentSession.deleteLastMessage()
+          break
+      }
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e)
+      this.updateErrorBanner()
+    }
   }
 
   private updateStopBtn() {

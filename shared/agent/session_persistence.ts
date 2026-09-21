@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import type { FileStore } from '../storage/file-store.js'
 import type { DisplayMessage, Block } from './provider_types.js'
-import type { TextContent } from './types.js'
+import type { RewindPoint, TextContent } from './types.js'
 export const SESSION_VERSION = 1
 
 /** Where session JSON lives under the agent root. The store enforces the
@@ -19,6 +19,13 @@ export interface StoredSession {
   title: string
   providerState: unknown
   updatedAt: number
+  /** The last turn stopped short, so reopening the session should still offer
+   *  "continue". Omitted (and read as false) for turns that ran to the end. */
+  lastTurnInterrupted?: boolean
+  /** Undo point for the last user message. Written only for an interrupted
+   *  turn — it roughly doubles the file, and that is the only case worth
+   *  paying for across a restart. See {@link RewindPoint}. */
+  rewind?: RewindPoint | null
 }
 
 export function createSessionId(): string {
@@ -68,7 +75,23 @@ export function parseStoredSession(raw: string, sessionFile: string): StoredSess
     providerId: typeof parsed.providerId === 'string' ? parsed.providerId : '',
     title: typeof parsed.title === 'string' ? parsed.title : '',
     providerState: parsed.providerState ?? null,
-    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
+    updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
+    lastTurnInterrupted: parsed.lastTurnInterrupted === true,
+    rewind: parseRewindPoint(parsed.rewind),
+  }
+}
+
+function parseRewindPoint(raw: unknown): RewindPoint | null {
+  if (!raw || typeof raw !== 'object') return null
+  const point = raw as Record<string, unknown>
+  const input = point.input
+  if (!input || typeof input !== 'object') return null
+  const text = (input as Record<string, unknown>).text
+  if (typeof text !== 'string') return null
+  const files = (input as Record<string, unknown>).files
+  return {
+    providerState: point.providerState ?? null,
+    input: { text, ...(Array.isArray(files) ? { files: files as RewindPoint['input']['files'] } : {}) },
   }
 }
 

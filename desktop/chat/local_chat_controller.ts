@@ -11,7 +11,7 @@ import type {
   ChatUnsubscribe,
   SessionListItem,
 } from '#shared/agent/chat_controller.js'
-import type { AgentSnapshot } from '#shared/agent/types.js'
+import type { AgentSnapshot, FileContent } from '#shared/agent/types.js'
 
 export class LocalChatController implements AgentChatController {
   constructor(private readonly getSessionManager: () => AgentSessionManager) {}
@@ -88,6 +88,22 @@ export class LocalChatController implements AgentChatController {
 
   async removeQueuedMessage(index: number): Promise<void> {
     this.sessionManager.removeQueuedMessage(index)
+  }
+
+  async continueTurn(): Promise<void> {
+    await this.sessionManager.continueActive()
+  }
+
+  async deleteLastMessage(): Promise<void> {
+    await this.sessionManager.deleteLastMessage()
+  }
+
+  async resendLastMessage(): Promise<void> {
+    await this.sessionManager.resendLastMessage()
+  }
+
+  async replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void> {
+    await this.sessionManager.replaceLastMessage(text, addFiles)
   }
 
   subscribe(handler: () => void): ChatUnsubscribe {

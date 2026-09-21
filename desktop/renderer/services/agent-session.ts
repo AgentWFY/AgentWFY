@@ -27,6 +27,10 @@ export interface AgentSessionState {
   retryState: RetryState | null
   stalledSince: number | null
   queuedMessages: QueuedMessage[]
+  /** The last turn stopped short and can be picked up again. */
+  canContinue: boolean
+  /** The last user message can be edited, resent, or deleted. */
+  canRewind: boolean
 
   openSessions: OpenSession[]
   providerList: ProviderInfo[]
@@ -52,6 +56,8 @@ function defaultState(): AgentSessionState {
     retryState: null,
     stalledSince: null,
     queuedMessages: [],
+    canContinue: false,
+    canRewind: false,
     openSessions: [],
     providerList: [],
     defaultProviderId: '',
@@ -179,6 +185,40 @@ class AgentSessionService {
     await window.ipc?.agent.removeQueuedMessage(index)
   }
 
+  /** Resume the unfinished last turn without sending a new message. */
+  async continueTurn(): Promise<void> {
+    await window.ipc?.agent.continueTurn()
+  }
+
+  /** Drop the last user message and the reply it produced. */
+  async deleteLastMessage(): Promise<void> {
+    await window.ipc?.agent.deleteLastMessage()
+  }
+
+  /** Send the last user message again, unchanged. */
+  async resendLastMessage(): Promise<void> {
+    await window.ipc?.agent.resendLastMessage()
+  }
+
+  /** Rewrite the last user message and run it again. Attachments the original
+   *  carried are kept by the main process; `addFiles` are added to them. */
+  async replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void> {
+    await window.ipc?.agent.replaceLastMessage(text, addFiles)
+  }
+
+  /** Plain text of the last user message, for prefilling the editor. */
+  lastUserMessageText(): string {
+    const messages = this._state.messages
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role !== 'user') continue
+      return messages[i].blocks
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { type: 'text'; text: string }).text)
+        .join('')
+    }
+    return ''
+  }
+
   async setNotifyOnFinish(value: boolean): Promise<void> {
     await window.ipc?.agent.setNotifyOnFinish(value)
   }
@@ -284,6 +324,8 @@ class AgentSessionService {
       retryState: snapshot.retryState ?? null,
       stalledSince: snapshot.stalledSince ?? null,
       queuedMessages: snapshot.queuedMessages ?? [],
+      canContinue: snapshot.canContinue ?? false,
+      canRewind: snapshot.canRewind ?? false,
       ready: true,
     }
 

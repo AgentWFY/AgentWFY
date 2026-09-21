@@ -41,6 +41,16 @@ export interface AgentChatController {
   /** Remove a queued (not-yet-started) follow-up message by index. */
   removeQueuedMessage(index: number): Promise<void>
 
+  /** Resume the unfinished last turn without sending a new message. */
+  continueTurn(): Promise<void>
+  /** Drop the last user message and the reply it produced. */
+  deleteLastMessage(): Promise<void>
+  /** Send the last user message again, unchanged. */
+  resendLastMessage(): Promise<void>
+  /** Rewrite the last user message and run it again. `addFiles` are added to
+   *  the attachments the original carried, which are always kept. */
+  replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void>
+
   subscribe(handler: () => void): ChatUnsubscribe
 }
 

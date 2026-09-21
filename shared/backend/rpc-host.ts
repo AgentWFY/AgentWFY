@@ -25,6 +25,8 @@ import {
   type SessionsListRequest,
   type SessionsRemoveRequest,
   type SessionsRemoveQueuedRequest,
+  type SessionsContinueRequest,
+  type SessionsRewindLastRequest,
   type SessionsSendRequest,
   type SessionsSpawnRequest,
   type TasksReadLogRequest,
@@ -92,6 +94,12 @@ export async function dispatchBackendRpc(
       return { ok: true }
     case 'sessions.removeQueued':
       await backend.sessions.removeQueued(params as SessionsRemoveQueuedRequest)
+      return { ok: true }
+    case 'sessions.continue':
+      await backend.sessions.continueTurn(params as SessionsContinueRequest)
+      return { ok: true }
+    case 'sessions.rewindLast':
+      await backend.sessions.rewindLast(params as SessionsRewindLastRequest)
       return { ok: true }
     case 'functions.list':
       return backend.functions.list()

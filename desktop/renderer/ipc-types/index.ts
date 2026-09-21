@@ -72,6 +72,10 @@ export interface AgentApi {
   unloadSession(sessionId: string): Promise<void>
   retryNow(): Promise<void>
   removeQueuedMessage(index: number): Promise<void>
+  continueTurn(): Promise<void>
+  deleteLastMessage(): Promise<void>
+  resendLastMessage(): Promise<void>
+  replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void>
 }
 
 export interface ZenModeApi {

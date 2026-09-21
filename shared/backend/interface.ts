@@ -69,6 +69,11 @@ export type { SessionLivePatch } from '../agent/types.js'
 
 export interface SessionState extends SessionSummary {
   messages: DisplayMessage[]
+  /** See `AgentSnapshot.canContinue`. Read from the stored session when the
+   *  agent isn't in memory, so the flags survive a reopen. */
+  canContinue?: boolean
+  /** See `AgentSnapshot.canRewind`. */
+  canRewind?: boolean
   live?: SessionLivePatch | null
 }
 
@@ -93,6 +98,17 @@ export interface SessionsApi {
   remove(req: { sessionId: string }): Promise<void>
   /** Drop a not-yet-started queued follow-up from a session by its index. */
   removeQueued(req: { sessionId: string; index: number }): Promise<void>
+  /** Resume an unfinished turn without adding a user message. */
+  continueTurn(req: { sessionId: string }): Promise<void>
+  /** Roll back to just before the last user message, then optionally send it
+   *  again — unchanged (`resend`) or rewritten (`replace`, with `text`, plus
+   *  any `files` to add to the ones the original carried). */
+  rewindLast(req: {
+    sessionId: string
+    action: 'delete' | 'resend' | 'replace'
+    text?: string
+    files?: FileContent[]
+  }): Promise<void>
 }
 
 // ── Runtime functions (the FunctionRegistry surface) ─────────────────────

@@ -21,7 +21,7 @@ import type {
   ChatUnsubscribe,
   SessionListItem,
 } from '#shared/agent/chat_controller.js'
-import type { AgentSnapshot } from '#shared/agent/types.js'
+import type { AgentSnapshot, FileContent } from '#shared/agent/types.js'
 
 export class RemoteChatController implements AgentChatController {
   private displayedSessionId: string | null = null
@@ -108,6 +108,10 @@ export class RemoteChatController implements AgentChatController {
       retryState: live?.retryState ?? null,
       stalledSince: live?.stalledSince ?? null,
       queuedMessages: live?.queuedMessages ?? [],
+      // The live patch is authoritative while the daemon holds the session in
+      // memory; the fetched state carries the stored flags when it doesn't.
+      canContinue: live?.canContinue ?? state.canContinue ?? false,
+      canRewind: live?.canRewind ?? state.canRewind ?? false,
     }
   }
 
@@ -172,6 +176,39 @@ export class RemoteChatController implements AgentChatController {
     if (!current) return
     await this.backend.sessions.removeQueued({ sessionId: current, index })
     this.notifyChange()
+  }
+
+  async continueTurn(): Promise<void> {
+    const current = this.displayedSessionId
+    if (!current) return
+    await this.backend.sessions.continueTurn({ sessionId: current })
+    this.notifyChange()
+  }
+
+  async deleteLastMessage(): Promise<void> {
+    await this.rewindLast('delete')
+  }
+
+  async resendLastMessage(): Promise<void> {
+    await this.rewindLast('resend')
+  }
+
+  async replaceLastMessage(text: string, addFiles?: FileContent[]): Promise<void> {
+    await this.rewindLast('replace', text, addFiles)
+  }
+
+  private async rewindLast(
+    action: 'delete' | 'resend' | 'replace',
+    text?: string,
+    files?: FileContent[],
+  ): Promise<void> {
+    const current = this.displayedSessionId
+    if (!current) return
+    await this.backend.sessions.rewindLast({ sessionId: current, action, text, files })
+    // The daemon's transcript changed under us; refetch rather than fold.
+    this.cachedState = null
+    this.cacheLoad = null
+    await this.setDisplayedSessionId(current)
   }
 
   subscribe(handler: () => void): ChatUnsubscribe {
@@ -275,5 +312,7 @@ function emptySnapshot(statusLine?: string | undefined, streamingSessionIds: str
     retryState: null,
     stalledSince: null,
     queuedMessages: [],
+    canContinue: false,
+    canRewind: false,
   }
 }

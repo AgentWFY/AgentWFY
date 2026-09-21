@@ -67,6 +67,19 @@ export interface QueuedMessage {
   fileCount: number
 }
 
+/** Everything needed to undo the most recent user turn.
+ *
+ *  `providerState` is the provider's own `getState()` captured just before the
+ *  message was handed to it, deep-copied through JSON — the same round trip
+ *  session files already go through, so any provider that can be reloaded from
+ *  disk can be rewound. Replaying it through the provider factory's
+ *  `restoreSession()` yields a session that never saw the turn, which is how
+ *  edit / resend / delete work without a new provider hook. */
+export interface RewindPoint {
+  providerState: unknown
+  input: { text: string; files?: FileContent[] }
+}
+
 /** Streaming-frequency fields shared by backend events and renderer IPC.
  *  `queuedMessages` is optional: the per-session backend stream and
  *  `sessions.get` always include it (it's how the queue reaches a remote
@@ -79,6 +92,11 @@ export interface SessionLivePatch {
   retryState: RetryState | null
   stalledSince: number | null
   queuedMessages?: QueuedMessage[]
+  /** Mirrors {@link AgentSnapshot.canContinue}. Optional for the same reason
+   *  `queuedMessages` is: it rides on full snapshots, not streaming frames. */
+  canContinue?: boolean
+  /** Mirrors {@link AgentSnapshot.canRewind}. */
+  canRewind?: boolean
 }
 
 /** One edit to the streaming message's block list. Only the trailing text block
@@ -135,6 +153,13 @@ export interface AgentSnapshot {
   stalledSince: number | null
   /** Follow-up messages queued behind the active turn (empty when none). */
   queuedMessages: QueuedMessage[]
+  /** The last turn stopped before it finished (user pressed stop, or it ended
+   *  on an error), so the provider can be asked to carry on from there without
+   *  a new user message. */
+  canContinue: boolean
+  /** The last user message can be edited, resent, or deleted — i.e. a rewind
+   *  point for it is available. */
+  canRewind: boolean
   /** Bumped by the IPC pump whenever `messages` becomes a different transcript.
    *  Structured-clone hands the renderer a fresh array on every push, so
    *  reference identity can't tell "same transcript" from "new transcript" —

@@ -89,6 +89,42 @@ const STYLES = `
     max-height: 150px;
     overflow-y: auto;
   }
+  .edit-banner {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 8px 0;
+    padding: 4px 8px;
+    background: var(--color-bg3);
+    border-left: 2px solid var(--color-accent);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--color-text2);
+    user-select: none;
+  }
+  .edit-banner.visible {
+    display: flex;
+  }
+  .edit-banner-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .edit-banner-cancel {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 2px;
+    color: var(--color-text2);
+    display: flex;
+    align-items: center;
+  }
+  .edit-banner-cancel:hover {
+    color: var(--color-red-fg);
+  }
   .attachment-strip {
     display: none;
     flex-wrap: wrap;
@@ -163,7 +199,15 @@ export class TlChatInput extends HTMLElement {
   private _pastePreviewEl: HTMLElement | null = null
   private _attachmentStripEl: HTMLElement | null = null
   private _fileInputEl: HTMLInputElement | null = null
+  private _editBannerEl: HTMLElement | null = null
+  private _editBannerLabelEl: HTMLElement | null = null
   private _unsubs: Array<() => void> = []
+  /** Editing the last user message rather than composing a new one. What the
+   *  composer holds replaces it; the message stays in the transcript until the
+   *  replacement is sent, so cancelling costs nothing. */
+  private _editingLastMessage = false
+  /** Composer contents set aside while editing, restored on cancel. */
+  private _draftBeforeEdit: { inputValue: string; attachments: PendingAttachment[] } | null = null
 
   // Per-agent state cache
   private _inputStateCache = new Map<string, InputStateCache>()
@@ -179,6 +223,12 @@ export class TlChatInput extends HTMLElement {
 
     this._unsubs.push(
       listen('agent-state-changed', ({ state, changedKeys }) => {
+        // Switching sessions, or losing the rewind point to something else,
+        // leaves an edit with nothing to apply to.
+        if (this._editingLastMessage
+          && (changedKeys.includes('activeSessionId') || (changedKeys.includes('canRewind') && !state.canRewind))) {
+          this.cancelEdit()
+        }
         if (!changedKeys.includes('isStreaming')) return
         if (this._textarea) {
           const p = state.isStreaming ? 'Send follow-up message...' : 'Type your message here...'
@@ -202,11 +252,77 @@ export class TlChatInput extends HTMLElement {
     this._fileInputEl?.click()
   }
 
+  /** Load the last user message into the composer for editing. The transcript
+   *  is left alone until the replacement is actually sent. */
+  beginEditLastMessage() {
+    const state = agentSession.state
+    if (state.isStreaming || !state.canRewind) return
+    if (!this._editingLastMessage) {
+      this._draftBeforeEdit = {
+        inputValue: this._inputValue,
+        attachments: [...this._pendingAttachments],
+      }
+    }
+    this._editingLastMessage = true
+    this._inputValue = agentSession.lastUserMessageText()
+    this._pendingAttachments = []
+    this._pastedText = null
+    this._pastedLineCount = 0
+    this._pasteExpanded = false
+    if (this._textarea) {
+      this._textarea.value = this._inputValue
+      this._textarea.style.height = 'auto'
+      this.autoResizeTextarea(this._textarea)
+    }
+    this.renderPasteAttachment()
+    this.renderAttachmentStrip()
+    this.renderEditBanner()
+    this._textarea?.focus()
+    this._textarea?.setSelectionRange(this._inputValue.length, this._inputValue.length)
+  }
+
+  /** Leave edit mode, putting back whatever was in the composer before. */
+  cancelEdit() {
+    if (!this._editingLastMessage) return
+    this._editingLastMessage = false
+    const draft = this._draftBeforeEdit
+    this._draftBeforeEdit = null
+    this._inputValue = draft?.inputValue ?? ''
+    this._pendingAttachments = draft ? [...draft.attachments] : []
+    if (this._textarea) {
+      this._textarea.value = this._inputValue
+      this._textarea.style.height = 'auto'
+      this.autoResizeTextarea(this._textarea)
+    }
+    this.renderAttachmentStrip()
+    this.renderEditBanner()
+    this._textarea?.focus()
+  }
+
+  isEditing(): boolean {
+    return this._editingLastMessage
+  }
+
+  private renderEditBanner() {
+    if (!this._editBannerEl || !this._editBannerLabelEl) return
+    this._editBannerEl.classList.toggle('visible', this._editingLastMessage)
+    // The chat sidebar is narrow; anything longer truncates. The cancel button
+    // next to it carries the Esc hint in its tooltip.
+    this._editBannerLabelEl.textContent = 'Editing last message'
+    this.dispatchEvent(new CustomEvent('chat-edit-mode', {
+      bubbles: true,
+      detail: { editing: this._editingLastMessage },
+    }))
+  }
+
   private _onAgentSwitched = (detail: DesktopEventMap['agent-switched']) => {
     const newAgentId = detail.agentId
     const agents = detail.agents
 
     if (newAgentId === this._currentAgentId) return
+
+    // Restores the pre-edit draft first, so that is what gets cached.
+    this.cancelEdit()
 
     if (this._currentAgentId) {
       this._inputStateCache.set(this._currentAgentId, {
@@ -279,6 +395,26 @@ export class TlChatInput extends HTMLElement {
       this._containerEl!.classList.remove('drag-over')
       void this.addImageFiles(e.dataTransfer.files)
     })
+
+    // "Editing last message" banner
+    this._editBannerEl = document.createElement('div')
+    this._editBannerEl.className = 'edit-banner'
+    const editIcon = document.createElement('span')
+    editIcon.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a1.6 1.6 0 0 1 2.3 2.3L5.5 13 2 14l1-3.5z"/></svg>'
+    this._editBannerEl.appendChild(editIcon)
+    this._editBannerLabelEl = document.createElement('span')
+    this._editBannerLabelEl.className = 'edit-banner-label'
+    this._editBannerEl.appendChild(this._editBannerLabelEl)
+    const editCancelBtn = document.createElement('button')
+    editCancelBtn.className = 'edit-banner-cancel'
+    editCancelBtn.title = 'Cancel edit (Esc)'
+    editCancelBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>'
+    editCancelBtn.addEventListener('mousedown', (ev) => {
+      ev.preventDefault()
+      this.cancelEdit()
+    })
+    this._editBannerEl.appendChild(editCancelBtn)
+    this._containerEl.appendChild(this._editBannerEl)
 
     // Attachment strip
     this._attachmentStripEl = document.createElement('div')
@@ -384,22 +520,31 @@ export class TlChatInput extends HTMLElement {
       ? attachments.map(({ type, data, mimeType }) => ({ type, data, mimeType }))
       : undefined
 
+    const editing = this._editingLastMessage
+
     this._inputValue = ''
     this._pastedText = null
     this._pastedLineCount = 0
     this._pasteExpanded = false
     this._pendingAttachments = []
+    this._editingLastMessage = false
+    this._draftBeforeEdit = null
     if (this._textarea) {
       this._textarea.value = ''
       this._textarea.style.height = 'auto'
     }
     this.renderPasteAttachment()
     this.renderAttachmentStrip()
+    this.renderEditBanner()
 
     this.dispatchEvent(new CustomEvent('chat-send', { bubbles: true }))
 
     try {
-      await agentSession.sendMessage(text, files)
+      if (editing) {
+        await agentSession.replaceLastMessage(text, files)
+      } else {
+        await agentSession.sendMessage(text, files)
+      }
     } catch (e) {
       this.dispatchEvent(new CustomEvent('chat-error', {
         bubbles: true,
@@ -409,6 +554,21 @@ export class TlChatInput extends HTMLElement {
   }
 
   private handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && this._editingLastMessage) {
+      e.preventDefault()
+      e.stopPropagation()
+      this.cancelEdit()
+      return
+    }
+    // Up arrow in an empty composer opens the last message for editing — the
+    // shortcut most chat apps use, and the fastest path to fixing a typo.
+    if (e.key === 'ArrowUp' && !this._editingLastMessage && this._inputValue.length === 0
+      && this._pendingAttachments.length === 0 && !this._pastedText
+      && !agentSession.state.isStreaming && agentSession.state.canRewind) {
+      e.preventDefault()
+      this.beginEditLastMessage()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       this.sendMessage()

@@ -127,6 +127,8 @@ export type BackendRpcMethod =
   | 'sessions.abort'
   | 'sessions.remove'
   | 'sessions.removeQueued'
+  | 'sessions.continue'
+  | 'sessions.rewindLast'
   | 'functions.list'
   | 'functions.invoke'
   | 'providers.list'
@@ -282,6 +284,17 @@ export type SessionsRemoveResponse = { ok: true }
 
 export interface SessionsRemoveQueuedRequest { sessionId: string; index: number }
 export type SessionsRemoveQueuedResponse = { ok: true }
+
+export interface SessionsContinueRequest { sessionId: string }
+export type SessionsContinueResponse = { ok: true }
+
+export interface SessionsRewindLastRequest {
+  sessionId: string
+  action: 'delete' | 'resend' | 'replace'
+  text?: string
+  files?: FileContent[]
+}
+export type SessionsRewindLastResponse = { ok: true }
 
 export type FunctionsListResponse = FunctionInfo[]
 export interface FunctionsInvokeRequest { name: string; params: unknown }

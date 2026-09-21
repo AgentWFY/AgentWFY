@@ -71,6 +71,10 @@ export const Channels = {
     unloadSession: 'agent:unloadSession',
     retryNow: 'agent:retryNow',
     removeQueuedMessage: 'agent:removeQueuedMessage',
+    continueTurn: 'agent:continueTurn',
+    deleteLastMessage: 'agent:deleteLastMessage',
+    resendLastMessage: 'agent:resendLastMessage',
+    replaceLastMessage: 'agent:replaceLastMessage',
   },
   agents: {
     requestInstall: 'agents:requestInstall',

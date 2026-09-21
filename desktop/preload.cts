@@ -307,6 +307,18 @@ if (isApp) {
       removeQueuedMessage(index: number): Promise<void> {
         return ipcRenderer.invoke(Channels.agent.removeQueuedMessage, index);
       },
+      continueTurn(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.continueTurn);
+      },
+      deleteLastMessage(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.deleteLastMessage);
+      },
+      resendLastMessage(): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.resendLastMessage);
+      },
+      replaceLastMessage(text: string, addFiles?: Array<{ type: 'file'; data: string; mimeType: string }>): Promise<void> {
+        return ipcRenderer.invoke(Channels.agent.replaceLastMessage, text, addFiles);
+      },
     },
     traces: {
       list(sessionId: string): Promise<TraceEvent[]> {

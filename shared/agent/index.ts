@@ -3,6 +3,7 @@ import type {
   AgentState,
   FileContent,
   QueuedMessage,
+  RewindPoint,
   TextContent,
 } from './types.js'
 import type {
@@ -12,6 +13,7 @@ import type {
   ToolResult,
   ToolCall,
   ErrorCategory,
+  UserInput,
 } from './provider_types.js'
 import { truncateHead, TOOL_RESULT_MAX_CHARS } from './truncate.js'
 
@@ -23,10 +25,24 @@ const RETRYABLE_CATEGORIES = new Set<ErrorCategory>(['network', 'rate_limit', 's
 const WATCHDOG_TIMEOUT_MS = 90_000
 const WATCHDOG_CHECK_INTERVAL_MS = 5_000
 
+/** Detach a provider state snapshot from the live session.
+ *
+ *  Providers mutate their own message objects in place (tool results are pushed
+ *  onto the assistant message they belong to), so the shallow copies `getState()`
+ *  usually returns would keep changing under us. JSON is the right depth here:
+ *  session files already store this value with `JSON.stringify`, so anything
+ *  that survives a reload survives this, and anything that doesn't was never
+ *  restorable anyway. */
+function snapshotProviderState(state: unknown): unknown {
+  return JSON.parse(JSON.stringify(state ?? null))
+}
+
 interface AgentOptions {
   initialState?: Partial<AgentState>
   providerSession: ProviderSession
   sessionId?: string
+  rewindPoint?: RewindPoint | null
+  lastTurnInterrupted?: boolean
 }
 
 export class Agent {
@@ -47,6 +63,8 @@ export class Agent {
   private retryAbortController: AbortController | null = null
   private toolAbortController: AbortController | null = null
   private userAbortRequested = false
+  private _rewindPoint: RewindPoint | null = null
+  private _lastTurnInterrupted = false
 
   sessionId?: string
 
@@ -56,6 +74,8 @@ export class Agent {
     }
     this.providerSession = opts.providerSession
     this.sessionId = opts.sessionId
+    this._rewindPoint = opts.rewindPoint ?? null
+    this._lastTurnInterrupted = opts.lastTurnInterrupted ?? false
   }
 
   get state(): AgentState {
@@ -70,6 +90,27 @@ export class Agent {
     }))
   }
 
+  /** The undo point for the most recent user turn, or null when there isn't
+   *  one (fresh session, provider state that wouldn't clone, already rewound). */
+  get rewindPoint(): RewindPoint | null {
+    return this._rewindPoint
+  }
+
+  /** The last turn stopped short — aborted by the user or ended on an error. */
+  get lastTurnInterrupted(): boolean {
+    return this._lastTurnInterrupted
+  }
+
+  /** Whether the last user message can be edited, resent, or deleted now. */
+  get canRewind(): boolean {
+    return !this._state.isStreaming && this._rewindPoint !== null
+  }
+
+  /** Whether the provider can be asked to pick up the unfinished last turn. */
+  get canContinue(): boolean {
+    return !this._state.isStreaming && this._lastTurnInterrupted && this._state.messages.length > 0
+  }
+
   subscribe(fn: (e: AgentEvent) => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
@@ -77,6 +118,20 @@ export class Agent {
 
   setProviderSession(session: ProviderSession): void {
     this.providerSession = session
+  }
+
+  /** Take over a provider session rebuilt from {@link rewindPoint}, dropping
+   *  everything that described the turn being undone. The caller disposes the
+   *  session this replaces. */
+  adoptRewoundSession(session: ProviderSession): void {
+    this.providerSession = session
+    this._state.messages = session.getDisplayMessages()
+    this._state.streamingMessage = null
+    this._state.error = undefined
+    this._state.retryState = null
+    this._state.stalledSince = null
+    this._rewindPoint = null
+    this._lastTurnInterrupted = false
   }
 
   getProviderTitle(): string {
@@ -144,16 +199,50 @@ export class Agent {
     this._state.retryState = null
     this._state.stalledSince = null
     this.followUpQueue = []
+    this._rewindPoint = null
+    this._lastTurnInterrupted = false
   }
 
   async prompt(text: string, options?: { files?: FileContent[]; providerOptions?: Record<string, unknown> }): Promise<void> {
     if (this._state.isStreaming) {
       throw new Error('Agent is already processing a prompt.')
     }
-    await this.runLoop(text, options)
+    await this.runLoop({ text, ...(options?.files ? { files: options.files } : {}) }, options?.providerOptions)
   }
 
-  private async runLoop(text: string, options?: { files?: FileContent[]; providerOptions?: Record<string, unknown> }): Promise<void> {
+  /** Resume the unfinished last turn without adding a user message.
+   *
+   *  This is `ProviderSession.retry()` — the same call the automatic
+   *  network-error retry makes — driven from the UI, so it needs nothing from a
+   *  provider that the retry path didn't already need. */
+  async continueTurn(options?: { providerOptions?: Record<string, unknown> }): Promise<void> {
+    if (this._state.isStreaming) {
+      throw new Error('Agent is already processing a prompt.')
+    }
+    if (this._state.messages.length === 0) {
+      throw new Error('Nothing to continue — this session has no messages yet.')
+    }
+    await this.runLoop(null, options?.providerOptions)
+  }
+
+  /** Remember where the turn about to start began, so it can be undone. A
+   *  provider whose state won't round-trip through JSON simply doesn't get the
+   *  feature — `canRewind` stays false and everything else works as before. */
+  private captureRewindPoint(session: ProviderSession, input: UserInput): void {
+    try {
+      this._rewindPoint = {
+        providerState: snapshotProviderState(session.getState()),
+        input: { text: input.text, ...(input.files ? { files: input.files } : {}) },
+      }
+    } catch (err) {
+      console.warn('[Agent] provider state did not snapshot; editing the last message is unavailable for this session:', err)
+      this._rewindPoint = null
+    }
+  }
+
+  /** `input` is null for a continue turn: no user message is added and the
+   *  first attempt resumes through `session.retry()`. */
+  private async runLoop(input: UserInput | null, providerOptions?: Record<string, unknown>): Promise<void> {
     this.runningPrompt = new Promise((resolve) => {
       this.resolveRunningPrompt = resolve
     })
@@ -217,23 +306,32 @@ export class Agent {
     }
 
     let streamingBlocks: Block[] = []
+    // Tracks the outcome of the turn in flight; whatever it holds when the loop
+    // leaves is what `canContinue` reports.
+    let turnCompleted = false
 
     try {
       this.emit({ type: 'agent_start' })
 
-      let currentText = text
-      let currentFiles = options?.files
-      const providerOptions = options?.providerOptions
+      let currentInput = input
 
       while (true) {
-        // Add user message to local display
-        const userBlocks: Block[] = [{ type: 'text', text: currentText }]
-        if (currentFiles) {
-          for (const f of currentFiles) {
-            userBlocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
+        turnCompleted = false
+
+        if (currentInput) {
+          // Snapshot before the provider sees the message, so a rewind lands on
+          // a session that never received it.
+          this.captureRewindPoint(session, currentInput)
+
+          // Add user message to local display
+          const userBlocks: Block[] = [{ type: 'text', text: currentInput.text }]
+          if (currentInput.files) {
+            for (const f of currentInput.files) {
+              userBlocks.push({ type: 'file', mimeType: f.mimeType, data: f.data })
+            }
           }
+          this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
         }
-        this._state.messages = [...this._state.messages, { role: 'user', blocks: userBlocks, timestamp: Date.now() }]
 
         // Retry loop
         for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
@@ -247,8 +345,8 @@ export class Agent {
           }, WATCHDOG_CHECK_INTERVAL_MS)
 
           try {
-            const iterable = attempt === 0
-              ? session.stream({ text: currentText, files: currentFiles }, executeTool, providerOptions)
+            const iterable = attempt === 0 && currentInput
+              ? session.stream(currentInput, executeTool, providerOptions)
               : session.retry(executeTool)
 
             streamingBlocks = []
@@ -311,6 +409,9 @@ export class Agent {
 
             // Provider is the source of truth for committed display messages
             this._state.messages = session.getDisplayMessages()
+            // Providers end an aborted stream by returning, not by throwing, so
+            // a clean iterator finish alone doesn't mean the turn ran to the end.
+            turnCompleted = !this.userAbortRequested
             this.emit({ type: 'agent_end' })
             break // exit retry loop
 
@@ -383,8 +484,10 @@ export class Agent {
         const nextFollowUp = this.followUpQueue.shift()
         if (!nextFollowUp) break
         this.emit({ type: 'queue_changed' })
-        currentText = nextFollowUp.text
-        currentFiles = nextFollowUp.files
+        currentInput = {
+          text: nextFollowUp.text,
+          ...(nextFollowUp.files ? { files: nextFollowUp.files } : {}),
+        }
       }
     } catch (err) {
       this._state.error = (err as Error)?.message || String(err)
@@ -394,6 +497,7 @@ export class Agent {
       this._state.streamingMessage = null
       this._state.retryState = null
       this._state.stalledSince = null
+      this._lastTurnInterrupted = !turnCompleted
       this.toolAbortController = null
       this.userAbortRequested = false
       this.emit({ type: 'agent_idle' })
