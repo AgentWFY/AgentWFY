@@ -66,21 +66,4 @@ The renderer is served via the `app://` protocol rooted at `dist/desktop/rendere
 
 **Plugins (`shared/plugins/`)**: Stored as code strings in the `plugins` table, executed via `new Function()` with full Node.js `require()` access. Each plugin gets a `PluginApi` for registering functions, providers, and pub/sub handlers. Plugin data is namespaced as `plugin.{name}.*` in docs/views/config and auto-cleaned on uninstall.
 
-**Runtime Functions (`shared/runtime/`)**: `FunctionRegistry` maps function names to handlers. Built-in functions: `runSql`, file ops (`read`, `write`, `ls`, `find`, `grep`, `mkdir`), page management, tasks, events, sub-agents, fetch. Plugins can register additional functions.
-
-**IPC (`desktop/ipc/`)**: Channels defined in `channels.ts`. Each domain (files, sql, tabs, sessions, bus, plugins, providers, agents) has its own handler module. All handlers are async.
-
-**Triggers (`shared/triggers/`)**: Three types: `schedule` (cron), `http` (REST endpoints), `event` (pub/sub). The `TriggerEngine` manages lifecycle and auto-reloads on DB changes.
-
-**HTTP API (`shared/http-api/`)**: Local HTTP server (default port 9877) for external integrations. Routes are dynamically built from HTTP triggers. Lockfile records the active port.
-
 **Window Manager (`desktop/window-manager.ts`)**: Single-window architecture — one `BrowserWindow` hosts multiple agent contexts. Shared components (RendererBridge, CommandPalette, ConfirmationManager) are created once. Per-agent components (TabViewManager, TriggerEngine, AgentSessionManager, TaskRunner, JsRuntime, FunctionRegistry, PluginRegistry) are isolated in `AgentContext` objects. Agent switching hides/shows tab views and pushes fresh state to the renderer. `getContextForSender()` returns an `AppWindowContext` Proxy that routes IPC calls to the correct agent — tab view senders map to their owning agent, all other senders map to the active agent.
-
-**Agent Sidebar (`desktop/renderer/components/agent_sidebar.ts`)**: Discord-style sidebar on the far left listing loaded agents. Users click to switch between agents within the single window. The `+` button opens an agent picker dialog. Agent list is managed via `agentSidebar` IPC channels.
-
-### Module Conventions
-
-- ESM throughout (`"type": "module"` in package.json), `.js` extensions in imports
-- Preload scripts use `.cts` extension (CommonJS required by Electron)
-- Electron nightly (`v42`) is downloaded as a binary to `vendor/electron/` by `scripts/setup`
-- TypeScript strict-ish config: `noImplicitAny` enabled, compiled by tsgo (native TypeScript compiler) in `vendor/tsgo/`
