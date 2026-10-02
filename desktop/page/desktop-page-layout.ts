@@ -1,5 +1,5 @@
 import { webContents } from 'electron';
-import type { BaseWindow, Rectangle, View, WebContentsView } from 'electron';
+import type { BaseWindow, Rectangle, View, WebContents, WebContentsView } from 'electron';
 import type { TabData, TabViewState } from './desktop-page-types.js';
 
 export const FALLBACK_VIEW_WIDTH = 1280;
@@ -36,6 +36,9 @@ export class DesktopPageLayout {
   // WebContentsViews share mainWindow.contentView.children, so inactive
   // managers keep client pages at 0x0 bounds.
   private isActive = false;
+  // Pages whose attach-time focus steal is still being undone. A focus event
+  // on one of these is Chromium's doing, not the user's.
+  private readonly attachFocusGuards = new WeakSet<WebContents>();
 
   constructor(deps: DesktopPageLayoutDeps) {
     this.deps = deps;
@@ -75,6 +78,16 @@ export class DesktopPageLayout {
 
   getSelectedBounds(): Rectangle | null {
     return this.selectedBounds;
+  }
+
+  /** Whether the selected page is drawn at all — false for an agent that is
+   *  not the one in the window, and while zen mode collapses every page. */
+  isShowingPages(): boolean {
+    return this.isActive && !this.collapsed;
+  }
+
+  isUndoingAttachFocus(contents: WebContents): boolean {
+    return this.attachFocusGuards.has(contents);
   }
 
   defaultContentBounds(): Rectangle {
@@ -226,16 +239,29 @@ export class DesktopPageLayout {
 
     const restoreFocus = () => {
       clearTimeout(disarm);
+      this.attachFocusGuards.delete(newContents);
       if (previouslyFocused.isDestroyed()) return;
       if (webContents.getFocusedWebContents() !== newContents) return;
+      // Focus was on the page this one just replaced on screen: it belongs
+      // here now, not on a page nobody can see.
+      if (state.tabId === this.deps.getSelectedTabId() && this.isOwnPage(previouslyFocused)) return;
       previouslyFocused.focus();
     };
     const disarm = setTimeout(() => {
+      this.attachFocusGuards.delete(newContents);
       if (!newContents.isDestroyed()) {
         newContents.removeListener('focus', restoreFocus);
       }
     }, ATTACH_FOCUS_GRACE_MS);
+    this.attachFocusGuards.add(newContents);
     newContents.once('focus', restoreFocus);
+  }
+
+  private isOwnPage(contents: WebContents): boolean {
+    for (const state of this.deps.listTabViewStates()) {
+      if (state.view.webContents === contents) return true;
+    }
+    return false;
   }
 
   private bringToFront(state: TabViewState): void {

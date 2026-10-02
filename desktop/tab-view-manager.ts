@@ -143,7 +143,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 interface TabViewManagerDeps {
   getMainWindow: () => BaseWindow | null;
   sendToRenderer: SendToRenderer;
-  focusMainRendererWindow: () => void;
+  // A page took focus — tells the window-level focus manager the user is
+  // working in it.
+  notePageFocused: (contents: WebContents) => void;
+  // The on-screen page changed (selection, close, agent switch) — lets the
+  // focus manager move the keyboard to the page that is now shown.
+  syncFocus: () => void;
   matchShortcut: (key: string, meta: boolean, ctrl: boolean, shift: boolean, alt: boolean) => string | null;
   handleAction?: (action: string) => void;
   agentId: string;
@@ -210,6 +215,15 @@ export class TabViewManager {
 
   getTabData(tabId: string): TabData | null {
     return this.presenter.getTabData(tabId);
+  }
+
+  /** The selected page's WebContents, while it is actually drawn in the window. */
+  getOnScreenPage(): WebContents | null {
+    const selectedTabId = this.presenter.getSelectedTabId();
+    if (!selectedTabId || !this.layout.isShowingPages()) return null;
+    if (this.tabById(selectedTabId)?.headless) return null;
+    const wc = this.tabViewsByTabId.get(selectedTabId)?.view.webContents;
+    return wc && !wc.isDestroyed() ? wc : null;
   }
 
   // Diagnostic snapshot of main-process tab state — per-tab bounds and
@@ -299,8 +313,12 @@ export class TabViewManager {
       if (!action) return;
 
       event.preventDefault();
-      this.deps.focusMainRendererWindow();
       this.deps.handleAction?.(action);
+    });
+
+    viewWebContents.on('focus', () => {
+      if (this.layout.isUndoingAttachFocus(viewWebContents)) return;
+      this.deps.notePageFocused(viewWebContents);
     });
 
     viewWebContents.on('console-message', (consoleEvent) => {
@@ -492,6 +510,7 @@ export class TabViewManager {
   activateViews(): void {
     this.layout.activateViews();
     this.pushStateToRenderer();
+    this.deps.syncFocus();
   }
 
   // Inverse of activateViews. Called on the outgoing agent during a switch
@@ -687,6 +706,7 @@ export class TabViewManager {
     }
 
     this.pushStateToRenderer();
+    if (shouldSelect) this.deps.syncFocus();
     return { pageId: tabId };
   }
 
@@ -726,6 +746,7 @@ export class TabViewManager {
   // painting on top until the renderer's ResizeObserver catches up.
   private promoteSelectedToFront(): void {
     this.layout.promoteSelectedToFront();
+    this.deps.syncFocus();
   }
 
   async reloadTabHandler(request: { tabId: string }): Promise<void> {

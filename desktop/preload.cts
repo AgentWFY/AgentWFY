@@ -347,6 +347,17 @@ if (isApp) {
         return typedOn(Channels.zenMode.changed, callback);
       },
     },
+    focus: {
+      page(): Promise<void> {
+        return ipcRenderer.invoke(Channels.focus.page);
+      },
+      app(): Promise<void> {
+        return ipcRenderer.invoke(Channels.focus.app);
+      },
+      setSidebarOpen(open: boolean): Promise<void> {
+        return ipcRenderer.invoke(Channels.focus.setSidebarOpen, open);
+      },
+    },
     agentSidebar: {
       getInstalled(): Promise<Array<{ agentId: string; name: string; active: boolean; initialized: boolean; backend: 'local' | 'remote' }>> {
         return ipcRenderer.invoke(Channels.agentSidebar.getInstalled);

@@ -42,6 +42,8 @@ export interface AgentContextFactoryDeps {
   getRendererWebContents: () => Electron.WebContents | null;
   sendToRenderer: SendToRenderer;
   focusMainRendererWindow: () => void;
+  notePageFocused: (contents: Electron.WebContents) => void;
+  syncFocus: () => void;
   getCommandPalette: () => CommandPaletteManager;
   handleShortcutAction: (action: string) => void;
   getActiveAgentId: () => string | null;
@@ -153,7 +155,8 @@ export class AgentContextFactory {
     const tabViewManager = new TabViewManager({
       getMainWindow: this.deps.getMainWindow,
       sendToRenderer: this.deps.sendToRenderer,
-      focusMainRendererWindow: this.deps.focusMainRendererWindow,
+      notePageFocused: this.deps.notePageFocused,
+      syncFocus: this.deps.syncFocus,
       matchShortcut: (key, meta, ctrl, shift, alt) => {
         return agentCtxRef?.shortcutManager.match(key, meta, ctrl, shift, alt) ?? null;
       },
@@ -340,7 +343,8 @@ export class AgentContextFactory {
     const tabViewManager = new TabViewManager({
       getMainWindow: this.deps.getMainWindow,
       sendToRenderer: this.deps.sendToRenderer,
-      focusMainRendererWindow: this.deps.focusMainRendererWindow,
+      notePageFocused: this.deps.notePageFocused,
+      syncFocus: this.deps.syncFocus,
       matchShortcut: (key, meta, ctrl, shift, alt) => {
         return shortcutManager.match(key, meta, ctrl, shift, alt);
       },

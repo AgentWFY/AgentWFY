@@ -37,6 +37,10 @@ export interface CommandPaletteManagerDeps {
   getMainWindow: () => BaseWindow | null;
   getCacheRoot: () => string;
   rendererBridge: RendererBridge;
+  /** Hand the keyboard back to the page or the app's UI, whichever had it. */
+  restoreFocus: () => void;
+  /** The user picked a page — it gets the keyboard once the palette closes. */
+  focusPage: () => void;
   getTabViewManager: () => TabViewManager;
   getPageTools: () => PageApi;
   addAgent: (agentId: string) => Promise<void>;
@@ -165,7 +169,7 @@ export class CommandPaletteManager {
 
     this.view.setVisible(false);
     if (options?.focusMain !== false) {
-      this.deps.rendererBridge.focusMainRendererWindow();
+      this.deps.restoreFocus();
     }
   }
 
@@ -1075,12 +1079,14 @@ export class CommandPaletteManager {
           source: { type: 'view', name: openViewAction.viewName },
           title: openViewAction.title,
         });
+        this.deps.focusPage();
         break;
       }
 
       case 'select-tab': {
         const selectTabAction = action as Extract<CommandPaletteAction, { type: 'select-tab' }>;
         await this.deps.getTabViewManager().selectTabHandler({ tabId: selectTabAction.tabId });
+        this.deps.focusPage();
         break;
       }
 

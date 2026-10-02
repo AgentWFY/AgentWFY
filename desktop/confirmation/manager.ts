@@ -5,6 +5,8 @@ import { CONFIRMATION_CHANNEL, type ConfirmationResult } from './types.js'
 
 export interface ConfirmationManagerDeps {
   getMainWindow: () => BaseWindow | null
+  /** Hand the keyboard back to the page or the app's UI, whichever had it. */
+  restoreFocus: () => void
 }
 
 export interface ConfirmationOptions {
@@ -142,6 +144,7 @@ export class ConfirmationManager {
     this.rejectAllPending()
     if (this.view && !this.view.webContents.isDestroyed() && this.view.getVisible()) {
       this.view.setVisible(false)
+      this.deps.restoreFocus()
     }
   }
 

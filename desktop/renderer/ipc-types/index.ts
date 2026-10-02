@@ -84,6 +84,17 @@ export interface ZenModeApi {
   onChanged(callback: (isZen: boolean) => void): () => void
 }
 
+/** Every page is its own WebContents, so only one of them or the app's UI gets
+ *  the keyboard — and an element.focus() here does nothing while a page has it. */
+export interface FocusApi {
+  /** Give the keyboard to the page on screen (no-op when there is none). */
+  page(): Promise<void>
+  /** Take the keyboard for the app's UI, e.g. to type into the chat input. */
+  app(): Promise<void>
+  /** With the sidebar closed the page owns the keyboard, whatever was clicked. */
+  setSidebarOpen(open: boolean): Promise<void>
+}
+
 export interface PreviewCursorApi {
   setPos(x: number, y: number): Promise<void>
   setVisible(visible: boolean): Promise<void>
@@ -116,6 +127,7 @@ export interface AppIpc {
   agent: AgentApi
   traces: TracesApi
   zenMode: ZenModeApi
+  focus: FocusApi
   previewCursor: PreviewCursorApi
   agentSidebar: AgentSidebarApi
   restart(): Promise<void>

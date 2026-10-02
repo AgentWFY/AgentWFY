@@ -1,6 +1,7 @@
 import { BaseWindow, WebContentsView, dialog, nativeTheme, shell, type IpcMainInvokeEvent } from 'electron';
 import path from 'path';
 import { RendererBridge } from './renderer-bridge.js';
+import { FocusManager } from './focus-manager.js';
 import { CommandPaletteManager, COMMAND_PALETTE_CHANNEL } from './command-palette/manager.js';
 import { PreviewCursorManager } from './preview-cursor-manager.js';
 import { getConfigValue, getGlobalValue, setAgentConfig, clearAgentConfig, removeAgentConfig } from '#shared/settings/config.js';
@@ -75,8 +76,19 @@ class WindowManager {
   private readonly factory: AgentContextFactory;
   private readonly orchestrator: AgentOrchestrator;
   private readonly actionRegistry: ActionRegistry;
+  private readonly focusManager: FocusManager;
 
   constructor() {
+    this.focusManager = new FocusManager({
+      getMainWindow: () => this.mainWindow,
+      getRendererWebContents: () => this.rendererView?.webContents ?? null,
+      getOnScreenPage: () => this.orchestrator.getActiveAgentContext()?.tabViewManager.getOnScreenPage() ?? null,
+      overlayHasKeyboard: () => [this.commandPalette, this.confirmation].some((overlay) => {
+        const wc = overlay?.isVisible() ? overlay.getWebContents() : null;
+        return !!wc && wc.isFocused();
+      }),
+    });
+
     this.actionRegistry = new ActionRegistry();
     registerBuiltInActions(this.actionRegistry, {
       getActiveAgentContext: () => this.orchestrator.getActiveAgentContext(),
@@ -93,6 +105,8 @@ class WindowManager {
       getRendererWebContents: () => this.rendererView?.webContents ?? null,
       sendToRenderer: (ch, data) => this.sendToRenderer(ch, data),
       focusMainRendererWindow: () => this.rendererBridge?.focusMainRendererWindow(),
+      notePageFocused: (contents) => this.focusManager.notePageFocused(contents),
+      syncFocus: () => this.focusManager.sync(),
       getCommandPalette: () => this.commandPalette!,
       handleShortcutAction: (action) => this.handleShortcutAction(action),
       getActiveAgentId: () => this.orchestrator.getActiveAgentId(),
@@ -173,6 +187,8 @@ class WindowManager {
       getMainWindow: () => this.mainWindow!,
       getCacheRoot: () => this.orchestrator.getActiveCacheRoot()!,
       rendererBridge: this.rendererBridge,
+      restoreFocus: () => this.focusManager.sync(),
+      focusPage: () => this.focusManager.focusPage(),
       getTabViewManager: () => this.orchestrator.getActiveAgentContext()!.tabViewManager,
       getPageTools: () => this.orchestrator.getActiveAgentContext()!.pageTools,
       addAgent: (id) => this.orchestrator.addAgent(id),
@@ -222,6 +238,7 @@ class WindowManager {
 
     this.confirmation = new ConfirmationManager({
       getMainWindow: () => this.mainWindow!,
+      restoreFocus: () => this.focusManager.sync(),
     });
 
     if (process.env.AGENTWFY_PREVIEW_CURSOR) {
@@ -274,19 +291,11 @@ class WindowManager {
       this.confirmation?.syncBounds();
     });
 
-    // When the main window regains focus, ensure a WebContents has focus
-    // so before-input-event handlers fire.
+    // When the main window regains focus no WebContents has it, so
+    // before-input-event handlers would not fire — hand it to the page or the
+    // app's UI, whichever the user was in.
     window.on('focus', () => {
-      // Don't steal focus from overlay views (command palette, confirmation)
-      const cpWc = this.commandPalette?.getWebContents();
-      if (cpWc && !cpWc.isDestroyed() && cpWc.isFocused()) return;
-      const cfWc = this.confirmation?.getWebContents();
-      if (cfWc && !cfWc.isDestroyed() && cfWc.isFocused()) return;
-
-      const rwcRef = this.rendererView?.webContents;
-      if (rwcRef && !rwcRef.isDestroyed() && !rwcRef.isFocused()) {
-        rwcRef.focus();
-      }
+      this.focusManager.sync();
     });
 
     if (process.env.AGENTWFY_HEADLESS) {
@@ -317,6 +326,10 @@ class WindowManager {
       for (const ctx of this.orchestrator.getAllContexts()) {
         ctx.tabViewManager.destroyAllTabViews();
       }
+    });
+
+    rwc.on('focus', () => {
+      this.focusManager.noteAppFocused();
     });
 
     rwc.on('before-input-event', (event, input) => {
@@ -422,12 +435,19 @@ class WindowManager {
     for (const ctx of this.orchestrator.getAllContexts()) {
       ctx.tabViewManager.setAllTabsCollapsed(value);
     }
+    this.focusManager.sync();
     this.sendToRenderer(Channels.zenMode.changed, this.isZenMode);
   }
 
   toggleZenMode(): void {
     this.setZenMode(!this.isZenMode);
   }
+
+  // --- Keyboard focus (requests from the renderer) ---
+
+  focusPage(): void { this.focusManager.focusPage(); }
+  focusApp(): void { this.focusManager.focusApp(); }
+  setSidebarOpen(open: boolean): void { this.focusManager.setSidebarOpen(open); }
 
   // --- Broadcast ---
 

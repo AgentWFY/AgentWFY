@@ -93,6 +93,11 @@ export const Channels = {
     set: 'zenMode:set',
     changed: 'zenMode:changed',
   },
+  focus: {
+    page: 'focus:page',
+    app: 'focus:app',
+    setSidebarOpen: 'focus:setSidebarOpen',
+  },
   agentSidebar: {
     getInstalled: 'agent-sidebar:getInstalled',
     switch: 'agent-sidebar:switch',

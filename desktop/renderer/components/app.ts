@@ -53,6 +53,8 @@ export class TlApp extends HTMLElement {
   private _resizeDispatchPending: number | null = null
   private isZenMode = false
   private isAgentSidebarHidden = false
+  private isChatShown = false
+  private reportedSidebarOpen: boolean | null = null
 
   private openPanel(panel: string) {
     if (this.activeSidebarPanel !== panel) {
@@ -101,6 +103,7 @@ export class TlApp extends HTMLElement {
 
   private onFocusChatInput = () => {
     if (this.activeSidebarPanel === 'agent-chat') {
+      void window.ipc?.focus.app()
       requestAnimationFrame(() => {
         (this.agentChatEl as any).focusInput?.()
       })
@@ -554,6 +557,18 @@ export class TlApp extends HTMLElement {
     const agentChatVisible = this.activeSidebarPanel === 'agent-chat'
     this.agentChatEl.classList.toggle('panel-hidden', !agentChatVisible)
     this.taskPanelEl.classList.toggle('panel-hidden', this.activeSidebarPanel !== 'tasks')
+
+    // Closing the sidebar hands the keyboard to the page (main does that on
+    // the report); opening the chat takes it, or the caret would blink in the
+    // chat input while keys still go to the page.
+    if (isOpen !== this.reportedSidebarOpen) {
+      this.reportedSidebarOpen = isOpen
+      void window.ipc?.focus.setSidebarOpen(isOpen)
+    }
+    if (agentChatVisible && !this.isChatShown) {
+      void window.ipc?.focus.app()
+    }
+    this.isChatShown = agentChatVisible
 
     if (agentChatVisible) {
       requestAnimationFrame(() => {

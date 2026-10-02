@@ -191,6 +191,14 @@ The preview runs Electron headless against a wayvnc compositor — close to the 
 - **Renderer logs don't land in `/app/.dev.log`.** That file only captures main-process stdout/stderr. For renderer diagnostics use `--logs --renderer` (streams `Runtime.consoleAPICalled` over CDP).
 - **Main-process state is authoritative for tab geometry.** The renderer tells the main process what bounds tabs should have; `--eval` only sees the renderer's view. When the screenshot disagrees with `window.ipc.tabs.getTabState()`, run `--inspect tabs` — it dumps per-tab `bounds`, `zIndex`, `visible` straight from the main process's BaseWindow children.
 
+### Real keyboard and mouse input (focus bugs)
+
+`el.click()` and `el.focus()` from `--eval` never move native focus between WebContents, so keyboard-focus bugs need real input. `document.hasFocus()` is unreliable here too — install a `keydown` logger in the renderer and each tab (`--eval --tab`) and check where typed keys land.
+
+- **Keys:** `wtype` inside the container, with `XDG_RUNTIME_DIR=/tmp/preview-xdg` and `WAYLAND_DISPLAY` set to the socket in it. Every invocation drops its first key event unless it starts with `-s 300`. Shortcuts: `wtype -s 300 -M ctrl -s 100 -k i -s 100 -m ctrl` (mod is ctrl on Linux).
+- **Mouse:** the headless seat has no pointer, so `wlrctl pointer` and `swaymsg seat - cursor` clicks never reach the app. Only a connected VNC client's pointer does: speak RFB to wayvnc on `127.0.0.1:5900` in the container (security type None; a PointerEvent is `[5, mask, x16, y16]` in window pixels). Keep **one** connection open for the whole test — each new connection re-creates the pointer device, and the press then lands at the previous position. Send a few motion events before pressing.
+- HTML5 drag-and-drop starts and fires `dragover` but never drops with that pointer, so tab reordering can't be tested this way.
+
 ## App Layout
 
 ```

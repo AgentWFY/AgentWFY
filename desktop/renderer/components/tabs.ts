@@ -193,6 +193,7 @@ export class TlTabs extends HTMLElement {
     close.addEventListener('click', (e) => {
       e.stopPropagation()
       window.ipc?.pages.closePage({ pageId: tab.id })
+      void window.ipc?.focus.page()
     })
     status.appendChild(close)
 
@@ -284,12 +285,16 @@ export class TlTabs extends HTMLElement {
           })
         })
 
+        // Clicking the tab bar is pointing at the page, so it gets the
+        // keyboard — not the tab bar the click happened to land on.
         tabItem.addEventListener('click', () => {
           window.ipc?.tabs.selectTab(tab.id)
+          void window.ipc?.focus.page()
         })
         tabItem.addEventListener('auxclick', (e) => {
           if (e.button === 1 && !tab.pinned) {
             window.ipc?.pages.closePage({ pageId: tab.id })
+            void window.ipc?.focus.page()
           }
         })
 

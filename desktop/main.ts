@@ -18,6 +18,7 @@ import { registerAgentSessionHandlers, setupAgentChatPump } from './ipc/agent-se
 import { BLOB_HOST, readBlob } from './chat/message-blobs.js';
 import { registerTraceHandlers } from './ipc/traces.js';
 import { registerZenModeHandlers } from './ipc/zen-mode.js';
+import { registerFocusHandlers } from './ipc/focus.js';
 import { registerPreviewCursorHandlers } from './ipc/preview-cursor.js';
 import { flushDesktopTraceWriters } from './runtime/desktop-runtime-registry.js';
 import {
@@ -279,6 +280,11 @@ registerAgentSidebarHandlers({
 registerZenModeHandlers({
   toggleZenMode: () => windowManager.toggleZenMode(),
   setZenMode: (value) => windowManager.setZenMode(value),
+});
+registerFocusHandlers({
+  focusPage: () => windowManager.focusPage(),
+  focusApp: () => windowManager.focusApp(),
+  setSidebarOpen: (open) => windowManager.setSidebarOpen(open),
 });
 registerPreviewCursorHandlers({
   getPreviewCursor: () => windowManager.getPreviewCursor(),
