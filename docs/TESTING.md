@@ -283,11 +283,12 @@ Selected: `.provider-card.selected`.
 
 | Element | Selector |
 |---------|----------|
-| Session tab | `.awfy-st-tab` (pill-shaped, in composer top strip) |
-| Active session | `.awfy-st-tab.active` (bolder border + expanded label) |
+| Session tab | `.awfy-st-tab` (in composer top strip) |
+| Active session | `.awfy-st-tab.active` (raised chip) |
 | Streaming dot | `.awfy-st-dot.streaming` (pulsing blue) |
-| Collapsed tab | `.awfy-st-tab.collapsed` (20×20 dot box when >2 sessions) |
-| Close session | middle-click or right-click on `.awfy-st-tab` |
+| Finished-while-away dot | `.awfy-st-dot.unseen` (green, cleared on viewing the session) |
+| Collapsed tab | `.awfy-st-tab.collapsed` (dot only — when the strip is too narrow for every title, least recently viewed first) |
+| Close session | `.awfy-st-close` (shown on tab hover), or middle-click / right-click on `.awfy-st-tab` |
 | New session | `.awfy-st-new` (+ button in strip) |
 | All sessions | `.icon-btn[title="All sessions"]` |
 | Settings | `.icon-btn[title="Settings"]` |
@@ -412,7 +413,7 @@ Insert directly into the agent's `agent.db` (bypasses the app's TEMP write-guard
 
 ### Closing a session tab
 
-There's no explicit close button. Middle-click (`button === 1`) or right-click a `.awfy-st-tab` to close it, or call `window.ipc.agent.closeSession()` via CDP for the active session.
+`.awfy-st-close` only renders while its tab is hovered, and collapsed tabs don't have one. Middle-click (`button === 1`) or right-click a `.awfy-st-tab` closes any tab, or call `window.ipc.agent.closeSession()` via CDP for the active session.
 
 ### Headless-page repro needs full-viewport body
 
