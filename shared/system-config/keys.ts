@@ -22,6 +22,7 @@ export const SystemConfigKeys = {
   openaiCompatibleProviderModelId: "system.openai-compatible-provider.model-id",
   openaiCompatibleProviderBaseUrl: "system.openai-compatible-provider.base-url",
   openaiCompatibleProviderReasoning: "system.openai-compatible-provider.reasoning",
+  openaiCompatibleProviderHideThinking: "system.openai-compatible-provider.hide-thinking",
   showTabSource: "system.show-tab-source",
   shortcutsToggleCommandPalette: "system.shortcuts.toggle-command-palette",
   shortcutsToggleAgentChat: "system.shortcuts.toggle-agent-chat",

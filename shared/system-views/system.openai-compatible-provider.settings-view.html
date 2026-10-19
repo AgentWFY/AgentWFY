@@ -161,6 +161,47 @@
     pointer-events: none;
   }
 
+  /* ── Toggle ── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 520px;
+    cursor: pointer;
+  }
+  .toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--color-bg3);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    transition: background 120ms ease, border-color 120ms ease;
+  }
+  .toggle input:checked + .toggle-track {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 120ms ease;
+    pointer-events: none;
+  }
+  .toggle input:checked ~ .toggle-knob { transform: translateX(16px); }
+
   /* ── Saved indicator ── */
   .saved-indicator {
     position: fixed;
@@ -285,6 +326,23 @@
     </div>
 
     <div class="section">
+      <div class="section-title">Display</div>
+      <div class="setting">
+        <label class="toggle-row" for="hideThinking">
+          <div>
+            <div class="setting-label">Hide thinking blocks</div>
+            <div class="setting-hint">Thinking is still sent back to the model; it just isn't shown. Applies to new and reopened sessions.</div>
+          </div>
+          <span class="toggle">
+            <input type="checkbox" id="hideThinking">
+            <span class="toggle-track"></span>
+            <span class="toggle-knob"></span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Connection</div>
       <div class="setting">
         <div class="setting-label">Base URL</div>
@@ -311,6 +369,7 @@
       modelId: `${PREFIX}.model-id`,
       baseUrl: `${PREFIX}.base-url`,
       reasoning: `${PREFIX}.reasoning`,
+      hideThinking: `${PREFIX}.hide-thinking`,
     };
     const DEFAULTS = {
       modelId: 'deepseek/deepseek-v3.2',
@@ -346,6 +405,11 @@
           else if (row.name === KEYS.modelId) { $('#modelId').value = val; lastSaved[KEYS.modelId] = val; }
           else if (row.name === KEYS.baseUrl) { $('#baseUrl').value = val; lastSaved[KEYS.baseUrl] = val; }
           else if (row.name === KEYS.reasoning) { $('#reasoning').value = val || 'off'; lastSaved[KEYS.reasoning] = val || 'off'; }
+          else if (row.name === KEYS.hideThinking) {
+            const checked = val === 'true';
+            $('#hideThinking').checked = checked;
+            lastSaved[KEYS.hideThinking] = String(checked);
+          }
         }
       } catch (e) {
         console.error('Failed to load config', e);
@@ -405,6 +469,13 @@
       if (lastSaved[KEYS.reasoning] === val) return;
       lastSaved[KEYS.reasoning] = val;
       saveValue(KEYS.reasoning, val);
+    });
+
+    $('#hideThinking').addEventListener('change', () => {
+      const val = String($('#hideThinking').checked);
+      if (lastSaved[KEYS.hideThinking] === val) return;
+      lastSaved[KEYS.hideThinking] = val;
+      saveValue(KEYS.hideThinking, val);
     });
 
     // ── Toggle password visibility ──

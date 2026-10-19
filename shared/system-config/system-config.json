@@ -60,6 +60,10 @@
     "description": "Reasoning effort level: off, minimal, low, medium, high, xhigh, max (default: off)"
   },
   {
+    "name": "system.openai-compatible-provider.hide-thinking",
+    "description": "Hide thinking blocks in the chat display; they are still sent back to the model (default: false)"
+  },
+  {
     "name": "system.show-tab-source",
     "description": "Show each tab's source (view name, file path, or URL) on a second line under the title (default: true)"
   },

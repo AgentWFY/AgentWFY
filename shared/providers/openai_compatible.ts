@@ -121,6 +121,17 @@ function retrySleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+// ── Thinking display ──
+
+/** With thinking hidden there are no per-token updates to display, so the
+ *  status line carries a running estimate instead. Emitted on a timer, not per
+ *  token — and far enough apart to stay under the agent's stall watchdog. */
+const THINKING_KEEPALIVE_MS = 30_000
+
+function formatTokenCount(tokens: number): string {
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(tokens)
+}
+
 // ── Internal message types (OpenAI format) ──
 
 interface InternalMessage {
@@ -153,6 +164,9 @@ interface ProviderConfigSnapshot {
   modelId: string
   apiKey: string
   reasoning: string | undefined
+  /** Display-only: thinking stays in the API history and in `getState()`, it is
+   *  just left out of `getDisplayMessages()`. */
+  hideThinking: boolean
 }
 
 class OpenAICompatibleSession implements ProviderSession {
@@ -208,7 +222,15 @@ class OpenAICompatibleSession implements ProviderSession {
   }
 
   getDisplayMessages(): DisplayMessage[] {
-    return this.displayMessages.slice()
+    if (!this.providerConfig.hideThinking) return this.displayMessages.slice()
+    // Filter on the way out, never in `displayMessages` itself: the raw blocks
+    // are what `getState()` persists and what the retry/abort bookkeeping
+    // indexes, so the stored transcript stays complete either way. Messages
+    // without thinking pass through untouched instead of being cloned.
+    return this.displayMessages.map((msg) => {
+      if (msg.role !== 'assistant' || !msg.blocks.some(b => b.type === 'thinking')) return msg
+      return { ...msg, blocks: msg.blocks.filter(b => b.type !== 'thinking') }
+    })
   }
 
   getState(): unknown {
@@ -423,6 +445,8 @@ class OpenAICompatibleSession implements ProviderSession {
     const toolCalls = new Map<number, ToolCallEntry>()
     const pendingTools: PendingToolCall[] = []
     let inputTokens = 0
+    const hideThinking = this.providerConfig.hideThinking
+    let lastThinkingKeepaliveAt = Date.now()
 
     try {
       for await (const sseEvent of parseSSE(response)) {
@@ -456,7 +480,18 @@ class OpenAICompatibleSession implements ProviderSession {
         // Reasoning content
         if (delta.reasoning_content && typeof delta.reasoning_content === 'string') {
           thinkingText += delta.reasoning_content
-          yield { type: 'thinking_delta', delta: delta.reasoning_content }
+          if (!hideThinking) {
+            yield { type: 'thinking_delta', delta: delta.reasoning_content }
+          } else if (Date.now() - lastThinkingKeepaliveAt >= THINKING_KEEPALIVE_MS) {
+            // Nothing is displayed per token, so report progress instead of
+            // letting the turn look stalled.
+            lastThinkingKeepaliveAt = Date.now()
+            const estimatedTokens = Math.round(thinkingText.length / 4)
+            yield {
+              type: 'status_line',
+              text: `${this.buildStatusLine()} · +~${formatTokenCount(estimatedTokens)} thinking`,
+            }
+          }
         }
 
         // Tool calls
@@ -693,12 +728,16 @@ export function createOpenAICompatibleFactory(
 ): ProviderFactory {
   const { getConfig } = configAccessors
 
-  function readProviderConfig(): { baseUrl: string; modelId: string; apiKey: string; reasoning: string | undefined } {
+  function readProviderConfig(): { baseUrl: string; modelId: string; apiKey: string; reasoning: string | undefined; hideThinking: boolean } {
+    const hideThinking = getConfig(SystemConfigKeys.openaiCompatibleProviderHideThinking, 'false')
     return {
       baseUrl: (getConfig(SystemConfigKeys.openaiCompatibleProviderBaseUrl, DEFAULT_BASE_URL) as string),
       modelId: (getConfig(SystemConfigKeys.openaiCompatibleProviderModelId, DEFAULT_MODEL_ID) as string),
       apiKey: (getConfig(SystemConfigKeys.openaiCompatibleProviderApiKey, '') as string),
       reasoning: getConfig(SystemConfigKeys.openaiCompatibleProviderReasoning, undefined) as string | undefined,
+      // Stored as a string in the config table; boolean-tolerant so a value set
+      // through the global config JSON works too.
+      hideThinking: hideThinking === true || hideThinking === 'true',
     }
   }
 
