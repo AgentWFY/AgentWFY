@@ -11,6 +11,7 @@ import {
 import { parseTabLink, copyToButton, CLOSE_ICON_SVG, escapeHtml } from './chat_utils.js'
 import { dispatch, listen, type DesktopEventMap } from '../events.js'
 import { agentSession, type AgentSessionState } from '../services/agent-session.js'
+import type { DisplayMessage } from '#shared/agent/provider_types.js'
 import type { TlChatInput } from './chat_input.js'
 import type { TlTracePanel } from './trace_panel.js'
 
@@ -1031,6 +1032,23 @@ const STYLES = `
   }
 `
 
+/** Where the viewport sat in a session, and whether it was following the end. */
+interface SessionScrollState {
+  /** The transcript was pinned to the bottom (auto-follow was on). */
+  stickToBottom: boolean
+  /** Index of the block at the top of the viewport, for anchoring. */
+  blockIndex: number | null
+  /** That block's top edge, in px from the viewport's top (negative = partly
+   *  scrolled past). Anchoring on a block survives layout estimates. */
+  blockOffset: number
+  /** Raw offset, used when no block could be identified. */
+  scrollTop: number
+}
+
+type ScrollSettleTarget =
+  | { mode: 'bottom' }
+  | { mode: 'anchor'; blockIndex: number; blockOffset: number }
+
 export class TlAgentChat extends HTMLElement {
   private _unsubs: (() => void)[] = []
   private error: string | null = null
@@ -1082,15 +1100,21 @@ export class TlAgentChat extends HTMLElement {
   private _isZenMode = false
   private _unlistenZenMode: (() => void) | null = null
 
-  // Per-agent state cache (scroll & tool state only — input state is in chat-input)
-  private _chatStateCache = new Map<string, { userScrolledUp: boolean }>()
   private _currentAgentId: string | null = null
 
-  // Per-session scroll cache — only populated when the user scrolled up;
-  // at-bottom is represented by absence (auto-scroll handles it).
-  private _sessionScrollCache = new Map<string, { scrollTop: number }>()
+  // Per-session scroll cache. Every session is recorded when it stops being
+  // displayed, so switching back restores both where the user was and whether
+  // the transcript was following new messages.
+  private _sessionScrollCache = new Map<string, SessionScrollState>()
   private _currentSessionId: string | null = null
-  private _pendingScrollTarget: number | null = null
+  // A switch stores the state to restore; it is applied by the first render
+  // that actually shows the new session's transcript.
+  private _pendingRestore: { sessionId: string; previousMessages: DisplayMessage[] | null; state: SessionScrollState } | null = null
+  /** Transcript the current DOM was built from — tells a real session change
+   *  apart from a re-render of the same transcript. */
+  private _renderedMessages: DisplayMessage[] | null = null
+  private _scrollSettleRaf: number | null = null
+  private _scrollSettleToken = 0
 
   connectedCallback() {
     this.style.display = 'flex'
@@ -1130,6 +1154,8 @@ export class TlAgentChat extends HTMLElement {
       cancelAnimationFrame(this._updateMessagesPending)
       this._updateMessagesPending = null
     }
+    this.cancelScrollSettle()
+    this._pendingRestore = null
     this.clearChatRefs()
     this._renderMode = null
   }
@@ -1150,32 +1176,13 @@ export class TlAgentChat extends HTMLElement {
 
   private onAgentSwitched = (detail: DesktopEventMap['agent-switched']) => {
     const newAgentId = detail.agentId
-    const agents = detail.agents
 
     if (newAgentId === this._currentAgentId) return
 
-    if (this._currentAgentId) {
-      this._chatStateCache.set(this._currentAgentId, {
-        userScrolledUp: this.userScrolledUp,
-      })
-    }
-
-    const cached = newAgentId ? this._chatStateCache.get(newAgentId) : null
-    if (cached) {
-      this.userScrolledUp = cached.userScrolledUp
-    } else {
-      this.userScrolledUp = false
-    }
+    // The session cache is keyed by session id, so the agent's sessions keep
+    // their parked positions; the active-session event already restored one.
     this.closeToolPopup()
     this._tracePanelEl?.close()
-
-    if (agents) {
-      const activeIds = new Set(agents.map(a => a.agentId))
-      for (const key of this._chatStateCache.keys()) {
-        if (!activeIds.has(key)) this._chatStateCache.delete(key)
-      }
-    }
-
     this.error = null
     this._currentAgentId = newAgentId
   }
@@ -1491,31 +1498,136 @@ export class TlAgentChat extends HTMLElement {
   // ── Scroll management ──
 
   private onActiveSessionChanged(newSessionId: string | null): void {
-    const openSessionIds = new Set(agentSession.state.openSessions.map(s => s.sessionId))
     // DOM still reflects the previous session here (messages re-render on rAF).
-    if (this._currentSessionId && this.messagesEl) {
-      if (this.userScrolledUp && openSessionIds.has(this._currentSessionId)) {
-        this._sessionScrollCache.set(this._currentSessionId, {
-          scrollTop: this.messagesEl.scrollTop,
-        })
-      } else {
-        this._sessionScrollCache.delete(this._currentSessionId)
+    // A hidden messages area has no layout to read, so leave its saved state
+    // alone rather than recording a bogus zero.
+    if (this._currentSessionId && this._currentSessionId !== newSessionId && this.messagesEl?.clientHeight) {
+      const state = this.captureScrollState()
+      this._sessionScrollCache.delete(this._currentSessionId)
+      this._sessionScrollCache.set(this._currentSessionId, state)
+      // Bound the cache: sessions closed long ago can never be returned to.
+      while (this._sessionScrollCache.size > 100) {
+        const oldest = this._sessionScrollCache.keys().next().value
+        if (oldest === undefined) break
+        this._sessionScrollCache.delete(oldest)
       }
-    }
-    for (const key of this._sessionScrollCache.keys()) {
-      if (!openSessionIds.has(key)) this._sessionScrollCache.delete(key)
     }
     this._currentSessionId = newSessionId
     this._tracePanelEl?.close()
+    this.cancelScrollSettle()
+
     const cached = newSessionId ? this._sessionScrollCache.get(newSessionId) : null
-    if (cached) {
-      this.userScrolledUp = true
-      this._pendingScrollTarget = cached.scrollTop
-    } else {
-      this.userScrolledUp = false
-      this._pendingScrollTarget = null
+    const state: SessionScrollState = cached ?? {
+      stickToBottom: true,
+      blockIndex: null,
+      blockOffset: 0,
+      scrollTop: 0,
     }
+    this.userScrolledUp = !state.stickToBottom
+    this._pendingRestore = newSessionId
+      ? { sessionId: newSessionId, previousMessages: this._renderedMessages, state }
+      : null
     this.updateScrollToBottomBtn()
+  }
+
+  /** Snapshot what the user is looking at right now. */
+  private captureScrollState(): SessionScrollState {
+    const el = this.messagesEl
+    if (!el) {
+      return { stickToBottom: true, blockIndex: null, blockOffset: 0, scrollTop: 0 }
+    }
+    // Off-screen blocks carry layout estimates, so a visible gap does not by
+    // itself mean the user scrolled up — trust the explicit intent flag unless
+    // the view really is at the end.
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+    const stickToBottom = !this.userScrolledUp || gap <= TlAgentChat.SCROLL_THRESHOLD
+    const elTop = el.getBoundingClientRect().top
+    const blocks = el.querySelectorAll<HTMLElement>(':scope > [data-msg-idx]')
+    let lo = 0
+    let hi = blocks.length - 1
+    let first: HTMLElement | null = null
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (blocks[mid].getBoundingClientRect().bottom <= elTop + 1) {
+        lo = mid + 1
+      } else {
+        first = blocks[mid]
+        hi = mid - 1
+      }
+    }
+    if (!first) {
+      return { stickToBottom, blockIndex: null, blockOffset: 0, scrollTop: el.scrollTop }
+    }
+    return {
+      stickToBottom,
+      blockIndex: Number(first.dataset.msgIdx),
+      blockOffset: first.getBoundingClientRect().top - elTop,
+      scrollTop: el.scrollTop,
+    }
+  }
+
+  /** Put the viewport back where the session left it, then correct for the
+   *  layout settling (skipped blocks revealing their real height). */
+  private applyScrollState(state: SessionScrollState): void {
+    if (!this.messagesEl) return
+    if (state.stickToBottom) {
+      this.scrollToBottom()
+      this.startScrollSettle({ mode: 'bottom' })
+      return
+    }
+    if (state.blockIndex !== null) {
+      const anchor = this.messagesEl.querySelector(`:scope > [data-msg-idx="${state.blockIndex}"]`)
+      if (anchor) {
+        this.applyAnchorOnce(state.blockIndex, state.blockOffset)
+        this.startScrollSettle({ mode: 'anchor', blockIndex: state.blockIndex, blockOffset: state.blockOffset })
+      } else {
+        // The parked message is gone (rewind, delete, truncation).
+        this.setScrollTop(state.scrollTop)
+      }
+      return
+    }
+    this.setScrollTop(state.scrollTop)
+  }
+
+  private applyAnchorOnce(blockIndex: number, blockOffset: number): boolean {
+    const el = this.messagesEl
+    if (!el) return false
+    const block = el.querySelector<HTMLElement>(`:scope > [data-msg-idx="${blockIndex}"]`)
+    if (!block) return false
+    const currentOffset = block.getBoundingClientRect().top - el.getBoundingClientRect().top
+    const delta = currentOffset - blockOffset
+    if (Math.abs(delta) < 1) return false
+    this.setScrollTop(el.scrollTop + delta)
+    return true
+  }
+
+  /** Re-apply the target for a few frames: `content-visibility` means the
+   *  transcript's height is estimated until its blocks get near the viewport,
+   *  so a single assignment lands short and drifts. A user scroll cancels it. */
+  private startScrollSettle(target: ScrollSettleTarget): void {
+    this.cancelScrollSettle()
+    const token = ++this._scrollSettleToken
+    let frames = 0
+    const tick = () => {
+      this._scrollSettleRaf = null
+      if (token !== this._scrollSettleToken || !this.messagesEl) return
+      if (frames++ >= 10) return
+      const again = target.mode === 'bottom'
+        ? this.pinToBottomOnce()
+        : this.applyAnchorOnce(target.blockIndex, target.blockOffset)
+      // Keep correcting for a few frames even once it looks settled: revealing
+      // one block changes the estimated height of the ones above it.
+      if (again || frames < 4) this._scrollSettleRaf = requestAnimationFrame(tick)
+    }
+    this._scrollSettleRaf = requestAnimationFrame(tick)
+  }
+
+  private cancelScrollSettle(): void {
+    this._scrollSettleToken++
+    if (this._scrollSettleRaf !== null) {
+      cancelAnimationFrame(this._scrollSettleRaf)
+      this._scrollSettleRaf = null
+    }
   }
 
   private handleMessagesScroll = () => {
@@ -1526,7 +1638,9 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private handleUserScrollIntent = (e: Event) => {
-    if (!this.messagesEl || this.userScrolledUp) return
+    if (!this.messagesEl) return
+    this.cancelScrollSettle()
+    if (this.userScrolledUp) return
     if (e.type === 'wheel') {
       const we = e as WheelEvent
       if (we.deltaY >= 0) return
@@ -1539,17 +1653,35 @@ export class TlAgentChat extends HTMLElement {
   private handleScrollKeydown = (e: KeyboardEvent) => {
     if ((e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home') && !this.userScrolledUp) {
       if (this.messagesEl && this.messagesEl.scrollTop > 0) {
+        this.cancelScrollSettle()
         this.userScrolledUp = true
         this.updateScrollToBottomBtn()
       }
     }
   }
 
-  private scrollToBottom() {
+  /** Assign scrollTop as our own move, so the scroll listener does not read it
+   *  as the user scrolling away from the end. */
+  private setScrollTop(value: number) {
     if (!this.messagesEl) return
     this._programmaticScrollCount++
-    this.messagesEl.scrollTop = this.messagesEl.scrollHeight
+    this.messagesEl.scrollTop = value
     requestAnimationFrame(() => { this._programmaticScrollCount-- })
+  }
+
+  /** True while the transcript still has to be pulled to the end. */
+  private pinToBottomOnce(): boolean {
+    const el = this.messagesEl
+    if (!el || this.userScrolledUp) return false
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (gap <= TlAgentChat.SCROLL_THRESHOLD) return false
+    this.scrollToBottom()
+    return true
+  }
+
+  private scrollToBottom() {
+    if (!this.messagesEl) return
+    this.setScrollTop(this.messagesEl.scrollHeight)
   }
 
   private updateScrollToBottomBtn() {
@@ -1583,6 +1715,8 @@ export class TlAgentChat extends HTMLElement {
   }
 
   private clearChatRefs() {
+    this.cancelScrollSettle()
+    this._renderedMessages = null
     this.messagesEl = null
     this._errorBanner = null
     this._retryBanner = null
@@ -1640,6 +1774,9 @@ export class TlAgentChat extends HTMLElement {
     this.messagesEl.addEventListener('wheel', this.handleUserScrollIntent, { passive: true })
     this.messagesEl.addEventListener('keydown', this.handleScrollKeydown)
     this.messagesEl.addEventListener('mousedown', (e) => {
+      // Clicking the scrollbar (or selecting text) is user scroll intent: it
+      // must stop the restore's settling pass from fighting it.
+      this.cancelScrollSettle()
       const target = e.target as HTMLElement
 
       // Tool header → open details popup
@@ -2010,13 +2147,19 @@ export class TlAgentChat extends HTMLElement {
     const displayBlocks = buildRenderBlocks(allMessages)
 
     const prevChildCount = this.messagesEl.childElementCount
-    const wasScrolledUp = this.userScrolledUp
-    const pendingTarget = this._pendingScrollTarget
-    this._pendingScrollTarget = null
-    const prevScrollTop = pendingTarget !== null
-      ? pendingTarget
-      : (wasScrolledUp ? this.messagesEl.scrollTop : 0)
-    updateMessagesEl(this.messagesEl, displayBlocks, s.isStreaming)
+    const prevScrollTop = this.messagesEl.scrollTop
+    // Apply a switch's saved position only once the new transcript is what is
+    // actually on screen; a render of the old transcript must not eat it.
+    const pending = this._pendingRestore
+    const restore = pending
+      && pending.sessionId === s.activeSessionId
+      && (pending.previousMessages === null || s.messages !== pending.previousMessages)
+      ? pending
+      : null
+    if (restore) this._pendingRestore = null
+
+    updateMessagesEl(this.messagesEl, displayBlocks, s.isStreaming, s.activeSessionId)
+    this._renderedMessages = s.messages
     this.updatePhaseLabel(s)
     this.refreshToolPopup()
 
@@ -2026,15 +2169,14 @@ export class TlAgentChat extends HTMLElement {
 
     this.updateMessageActions()
 
-    if (!this.userScrolledUp) {
-      const gap = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight
-      if (gap > TlAgentChat.SCROLL_THRESHOLD) {
-        this.scrollToBottom()
+    if (restore) {
+      this.applyScrollState(restore.state)
+    } else if (!this.userScrolledUp) {
+      if (this.pinToBottomOnce() && this._scrollSettleRaf === null) {
+        this.startScrollSettle({ mode: 'bottom' })
       }
-    } else if (pendingTarget !== null || this.messagesEl.scrollTop !== prevScrollTop) {
-      this._programmaticScrollCount++
-      this.messagesEl.scrollTop = prevScrollTop
-      requestAnimationFrame(() => { this._programmaticScrollCount-- })
+    } else if (this.messagesEl.scrollTop !== prevScrollTop) {
+      this.setScrollTop(prevScrollTop)
     }
     this.updateScrollToBottomBtn()
   }

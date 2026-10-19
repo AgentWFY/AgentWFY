@@ -322,6 +322,9 @@ export function renderToolDetailsHtml(tool: ToolPair, parsed?: ParsedResult): st
 // --- Incremental DOM rendering ---
 
 interface BlockCacheEntry {
+  /** Displayed session; blocks are recycled across sessions and identical
+   *  timestamps there must not count as the same message. */
+  sessionKey: string | null
   messageKey: number
   blockType: 'user' | 'assistant'
   textLen: number
@@ -336,8 +339,9 @@ interface BlockCacheEntry {
 const _blockCache = new WeakMap<HTMLElement, BlockCacheEntry>()
 const _indicatorCache = new WeakMap<HTMLElement, string>()
 
-function blockCacheEntry(block: RenderBlock): BlockCacheEntry {
+function blockCacheEntry(block: RenderBlock, sessionKey: string | null): BlockCacheEntry {
   return {
+    sessionKey,
     messageKey: block.ref.timestamp,
     blockType: block.type === 'user' ? 'user' : 'assistant',
     textLen: block.text.length,
@@ -351,7 +355,8 @@ function blockCacheEntry(block: RenderBlock): BlockCacheEntry {
 }
 
 function blockCacheMatches(a: BlockCacheEntry, b: BlockCacheEntry): boolean {
-  return a.messageKey === b.messageKey
+  return a.sessionKey === b.sessionKey
+    && a.messageKey === b.messageKey
     && a.blockType === b.blockType
     && a.textLen === b.textLen
     && a.thinkingLen === b.thinkingLen
@@ -412,6 +417,7 @@ export function updateMessagesEl(
   container: HTMLElement,
   blocks: RenderBlock[],
   isStreaming: boolean,
+  sessionId: string | null = null,
 ): void {
   let indicator = container.querySelector<HTMLElement>('#streaming-indicator')
   let anchor = container.querySelector<HTMLElement>('#anchor')
@@ -434,7 +440,7 @@ export function updateMessagesEl(
 
   const existingCount = Math.min(wrappers.length, blocks.length)
   for (let i = 0; i < existingCount; i++) {
-    const entry = blockCacheEntry(blocks[i])
+    const entry = blockCacheEntry(blocks[i], sessionId)
     const cached = _blockCache.get(wrappers[i])
     if (cached && blockCacheMatches(cached, entry)) continue
     wrappers[i].innerHTML = renderBlockHtml(blocks[i])
@@ -445,7 +451,7 @@ export function updateMessagesEl(
     const wrapper = document.createElement('div')
     wrapper.dataset.msgIdx = String(i)
     wrapper.innerHTML = renderBlockHtml(blocks[i])
-    _blockCache.set(wrapper, blockCacheEntry(blocks[i]))
+    _blockCache.set(wrapper, blockCacheEntry(blocks[i], sessionId))
     container.insertBefore(wrapper, indicator)
   }
 
